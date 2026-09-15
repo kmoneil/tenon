@@ -11,6 +11,8 @@
 # passed during the run.
 
 NU
+ST-001
+ST-002
 TY
 defer TY-001 asserts a property of values, which do not exist yet
 defer TY-002 is asserted across the constructor surface once values exist
