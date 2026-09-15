@@ -283,6 +283,10 @@ func (v Value) write(b *strings.Builder) {
 			b.WriteString(string(d.Code))
 			b.WriteString(": ")
 			b.WriteString(d.Message)
+			if d.Path.Len() > 0 {
+				b.WriteString(" at ")
+				b.WriteString(d.Path.String())
+			}
 		}
 		b.WriteByte(')')
 		return
