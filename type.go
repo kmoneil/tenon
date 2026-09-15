@@ -114,39 +114,15 @@ func collection(kind Kind, elem Type) Type {
 // Object panics if a name is empty or not valid UTF-8, if two names in the map
 // are the same name, or if an attribute type is the zero Type.
 func Object(attrs map[string]Type) Type {
-	type named struct {
-		original string
-		attribute
-	}
-	list := make([]named, 0, len(attrs))
-	for _, name := range slices.Sorted(maps.Keys(attrs)) {
-		typ := attrs[name]
-		if typ.t == nil {
-			usagePanic("the type of object attribute %q is the zero Type", name)
+	entries := attributeEntries(attrs, "object attribute")
+	list := make([]attribute, len(entries))
+	for i, e := range entries {
+		if e.value.t == nil {
+			usagePanic("the type of object attribute %q is the zero Type", e.original)
 		}
-		list = append(list, named{name, attribute{attributeName(name), typ}})
+		list[i] = attribute{e.name, e.value}
 	}
-	slices.SortStableFunc(list, func(a, b named) int { return strings.Compare(a.name, b.name) })
-	out := make([]attribute, len(list))
-	for i, n := range list {
-		if i > 0 && n.name == list[i-1].name {
-			usagePanic("object attribute names %q and %q are the same name after normalization", list[i-1].original, n.original)
-		}
-		out[i] = n.attribute
-	}
-	return intern(&typeData{kind: KindObject, attrs: out})
-}
-
-// attributeName returns the normalized form of an object attribute name,
-// panicking if name cannot be one.
-func attributeName(name string) string {
-	if name == "" {
-		usagePanic("an object attribute name must not be empty")
-	}
-	if !utf8.ValidString(name) {
-		usagePanic("object attribute name %q is not valid UTF-8", name)
-	}
-	return uni.NFC(name)
+	return intern(&typeData{kind: KindObject, attrs: list})
 }
 
 // Tuple returns the tuple type whose elements have the given types, in order.
@@ -158,6 +134,59 @@ func Tuple(elems ...Type) Type {
 		}
 	}
 	return intern(&typeData{kind: KindTuple, elems: slices.Clone(elems)})
+}
+
+// nameEntry is an entry of a map keyed by attribute names.
+type nameEntry[V any] struct {
+	name     string // the normalized name
+	original string // the name as given
+	value    V
+}
+
+// attributeEntries returns the entries of m sorted by normalized name. It
+// panics if a key is not a valid attribute name or two keys are the same name
+// after normalization. what describes the keys in panic messages, as in
+// "object attribute".
+func attributeEntries[V any](m map[string]V, what string) []nameEntry[V] {
+	entries := make([]nameEntry[V], 0, len(m))
+	for _, original := range slices.Sorted(maps.Keys(m)) {
+		entries = append(entries, nameEntry[V]{attributeName(original, what), original, m[original]})
+	}
+	slices.SortStableFunc(entries, func(a, b nameEntry[V]) int { return strings.Compare(a.name, b.name) })
+	for i := 1; i < len(entries); i++ {
+		if entries[i].name == entries[i-1].name {
+			usagePanic("%s names %q and %q are the same name after normalization", what, entries[i-1].original, entries[i].original)
+		}
+	}
+	return entries
+}
+
+// attributeName returns the normalized form of an attribute name, panicking
+// if name cannot be one. what describes the name in panic messages.
+func attributeName(name, what string) string {
+	if name == "" {
+		usagePanic("an %s name must not be empty", what)
+	}
+	if !utf8.ValidString(name) {
+		usagePanic("%s name %q is not valid UTF-8", what, name)
+	}
+	return uni.NFC(name)
+}
+
+// findName returns the element of list, which is sorted by name, whose name is
+// the normalized form of name.
+func findName[E any](list []E, name string, nameOf func(E) string) (E, bool) {
+	var zero E
+	if !utf8.ValidString(name) {
+		return zero, false
+	}
+	i, found := slices.BinarySearchFunc(list, uni.NFC(name), func(e E, name string) int {
+		return strings.Compare(nameOf(e), name)
+	})
+	if !found {
+		return zero, false
+	}
+	return list[i], true
 }
 
 // data returns the description of t, panicking if t is the zero Type.
@@ -240,16 +269,8 @@ func (t Type) AttributeType(name string) Type {
 // attribute looks up the attribute of an object type with the given name,
 // after normalizing it.
 func (d *typeData) attribute(name string) (Type, bool) {
-	if !utf8.ValidString(name) {
-		return Type{}, false
-	}
-	i, found := slices.BinarySearchFunc(d.attrs, uni.NFC(name), func(a attribute, name string) int {
-		return strings.Compare(a.name, name)
-	})
-	if !found {
-		return Type{}, false
-	}
-	return d.attrs[i].typ, true
+	a, ok := findName(d.attrs, name, func(a attribute) string { return a.name })
+	return a.typ, ok
 }
 
 // TupleLength returns the number of elements of a tuple type. It panics if t
