@@ -4,10 +4,16 @@ package tenon
 // condition joined by a dot, as in "number.divide_by_zero".
 type Code string
 
-// The diagnostic codes of the conditions that tenon reports.
+// The diagnostic codes of the conditions that the specification names. Every
+// code tenon reports is one of these; a caller minting its own follows the
+// same shape, as in "myapp.unknown_setting".
 const (
-	CodeMapDuplicateKey     Code = "map.duplicate_key"
-	CodeNumberInvalidSyntax Code = "number.invalid_syntax"
-	CodeNumberOutOfRange    Code = "number.out_of_range"
-	CodeStringInvalidUTF8   Code = "string.invalid_utf8"
+	CodeMapDuplicateKey          Code = "map.duplicate_key"
+	CodeNumberDivideByZero       Code = "number.divide_by_zero"
+	CodeNumberInvalidSyntax      Code = "number.invalid_syntax"
+	CodeNumberModuloByZero       Code = "number.modulo_by_zero"
+	CodeNumberOutOfRange         Code = "number.out_of_range"
+	CodeRangeContradiction       Code = "range.contradiction"
+	CodeSerializeUnencodableMark Code = "serialize.unencodable_mark"
+	CodeStringInvalidUTF8        Code = "string.invalid_utf8"
 )
