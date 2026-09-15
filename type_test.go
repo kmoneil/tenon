@@ -41,6 +41,7 @@ func TestConformance_TY010_TypeKinds(t *testing.T) {
 		{tenon.Map(str), tenon.KindMap, "Map"},
 		{tenon.Object(map[string]tenon.Type{"a": str}), tenon.KindObject, "Object"},
 		{tenon.Tuple(str), tenon.KindTuple, "Tuple"},
+		{sampleCapsule, tenon.KindCapsule, "Capsule"},
 	}
 	for _, tt := range tests {
 		if got := tt.typ.Kind(); got != tt.kind || got.String() != tt.name {
@@ -48,7 +49,7 @@ func TestConformance_TY010_TypeKinds(t *testing.T) {
 		}
 	}
 
-	// Capsule is the ninth kind, and there are no others.
+	// There are no other kinds.
 	var names []string
 	for k := range tenon.Kind(32) {
 		if name := k.String(); !strings.HasPrefix(name, "Kind(") {

@@ -49,8 +49,9 @@ func (k Kind) String() string {
 // Type describes what a value is. A type is always fully concrete, and it is
 // immutable.
 //
-// Types are interned: two types have the same structure exactly when they are
-// ==, so == and Equals agree, and a Type can be used as a map key.
+// Types of the same structure are the same type, except that every capsule
+// type is distinct from every other type. Types are interned, so two types are
+// the same type exactly when they are ==, and a Type can be used as a map key.
 //
 // The zero Type is not a type: every method except String panics when called
 // on it.
@@ -60,11 +61,12 @@ type Type struct {
 
 // typeData is the immutable description that a Type refers to.
 type typeData struct {
-	id    uint64      // unique among the types in the process (see intern)
-	kind  Kind        // the kind of the type
-	elem  Type        // the element type of a List, Set or Map
-	attrs []attribute // the attributes of an Object, sorted by name
-	elems []Type      // the element types of a Tuple
+	id      uint64       // unique among the types in the process (see intern)
+	kind    Kind         // the kind of the type
+	elem    Type         // the element type of a List, Set or Map
+	attrs   []attribute  // the attributes of an Object, sorted by name
+	elems   []Type       // the element types of a Tuple
+	capsule *capsuleData // what a Capsule type declares
 }
 
 // attribute is one attribute of an object type.
@@ -295,9 +297,9 @@ func (t Type) TupleElementTypes() []Type {
 	return slices.Clone(t.mustKind(KindTuple, "TupleElementTypes").elems)
 }
 
-// Equals reports whether t and u are the same type. Types of the same
-// structure are the same type; since types are interned, Equals is t == u for
-// types other than the zero Type.
+// Equals reports whether t and u are the same type: types of the same
+// structure are, and a capsule type is the same type only as itself. For types
+// other than the zero Type, Equals is t == u.
 func (t Type) Equals(u Type) bool {
 	return t.data() == u.data()
 }
@@ -344,5 +346,9 @@ func (t Type) write(b *strings.Builder) {
 			e.write(b)
 		}
 		b.WriteString("])")
+	case KindCapsule:
+		b.WriteString("capsule(")
+		b.WriteString(strconv.Quote(d.capsule.name))
+		b.WriteByte(')')
 	}
 }

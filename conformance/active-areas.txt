@@ -10,18 +10,8 @@
 # covered when a test that called conformance.Covers with its identifier
 # passed during the run.
 
-TY-010
-TY-011
-TY-012
-TY-013
-TY-014
-TY-015
-TY-020
-TY-021
-TY-022
-TY-030
-TY-031
-TY-032
-TY-033
-TY-034
-TY-035
+TY
+defer TY-001 asserts a property of values, which do not exist yet
+defer TY-002 is asserted across the constructor surface once values exist
+defer TY-003 concerns conversion targets and parameters, which do not exist yet
+defer TY-016 map keys exist only on map values, which do not exist yet

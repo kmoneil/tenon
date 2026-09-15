@@ -9,8 +9,7 @@ import (
 	"tenon/conformance"
 )
 
-// sampleTypes returns distinct types of every kind that has a constructor,
-// nested ones included.
+// sampleTypes returns distinct types of every kind, nested ones included.
 func sampleTypes() []tenon.Type {
 	str, num, boolean := tenon.StringType(), tenon.NumberType(), tenon.BoolType()
 	return []tenon.Type{
@@ -25,6 +24,7 @@ func sampleTypes() []tenon.Type {
 		tenon.Object(map[string]tenon.Type{"name": str, "tags": tenon.List(str)}),
 		tenon.Object(map[string]tenon.Type{"name": str, "extra": boolean}),
 		tenon.Object(map[string]tenon.Type{"tags": tenon.List(str)}),
+		sampleCapsule, tenon.List(sampleCapsule),
 	}
 }
 
