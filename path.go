@@ -197,3 +197,24 @@ func (p Path) String() string {
 	}
 	return b.String()
 }
+
+// prepend returns the path of what p locates, seen from one step further out:
+// s followed by the steps of p.
+func (p Path) prepend(s Step) Path {
+	out := Path{}.extend(s)
+	for _, step := range p.Steps() {
+		out = out.extend(step)
+	}
+	return out
+}
+
+// attributeStep returns a step to the attribute of the given normalized name.
+func attributeStep(name string) Step {
+	return Step{kind: StepAttribute, name: name}
+}
+
+// indexStep returns a step to the element with the given key, which must be a
+// Number or String value.
+func indexStep(key Value) Step {
+	return Step{kind: StepIndex, key: key}
+}

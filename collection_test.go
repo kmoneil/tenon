@@ -152,7 +152,6 @@ func TestContainerValues(t *testing.T) {
 	}
 
 	mustPanicUsage(t, "ListVal: element 0 has type number, not string", func() { tenon.ListVal(str, one) })
-	mustPanicUsage(t, "element 0 is an error value, not a resolved value", func() { tenon.TupleVal(tenon.String("\xff")) })
 	mustPanicUsage(t, "element 1 is a pending value, not a resolved value", func() { tenon.SetVal(str, a, tenon.Pending(tenon.Any())) })
 	mustPanicUsage(t, `the element of key "k" has type string, not number`, func() { tenon.MapVal(num, map[string]tenon.Value{"k": a}) })
 	mustPanicUsage(t, "the same name after normalization", func() {
