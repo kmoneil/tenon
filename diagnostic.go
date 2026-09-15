@@ -11,6 +11,13 @@ type Diagnostic struct {
 	Path    Path
 }
 
+// Equal reports whether d and e are the same diagnostic: the same code, the
+// same message, and the same path. Diagnostics are compared this way rather
+// than with ==, because a path holds a pointer.
+func (d Diagnostic) Equal(e Diagnostic) bool {
+	return d.Code == e.Code && d.Message == e.Message && d.Path.Equal(e.Path)
+}
+
 // ErrorVal returns an error value carrying diags. Data that is wrong produces
 // an error value like this one rather than a panic, and operations on it carry
 // its diagnostics forward.
