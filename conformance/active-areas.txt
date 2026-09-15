@@ -9,3 +9,9 @@
 # Only rules that are neither outline nor withdrawn are enforced. A rule is
 # covered when a test that called conformance.Covers with its identifier
 # passed during the run.
+
+TY-010
+TY-011
+TY-012
+TY-013
+TY-022
