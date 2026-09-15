@@ -26,6 +26,7 @@ type CapsuleOps[E any] struct {
 // encapsulated values held as any.
 type capsuleData struct {
 	name    string
+	accepts func(v any) bool    // whether v is a pointer of the encapsulated type
 	equals  func(a, b any) bool // nil if not declared
 	hash    func(v any) uint64  // nil if not declared
 	compare func(a, b any) int  // nil if not declared
@@ -43,6 +44,10 @@ func Capsule[E any](name string, ops CapsuleOps[E]) Type {
 		usagePanic("capsule type %q declares Equals but not Hash", name)
 	}
 	d := &capsuleData{name: name}
+	d.accepts = func(v any) bool {
+		_, ok := v.(*E)
+		return ok
+	}
 	if f := ops.Equals; f != nil {
 		d.equals = func(a, b any) bool { return f(a.(*E), b.(*E)) }
 	}

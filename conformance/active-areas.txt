@@ -11,13 +11,13 @@
 # passed during the run.
 
 BO
-defer BO-001 bool values do not exist yet
+ER-001
 NU
 ST
-defer ST-004 the error value it requires does not exist yet
 TY
 defer TY-001 asserts a property of values, which do not exist yet
 defer TY-002 is asserted across the constructor surface once values exist
 defer TY-003 concerns conversion targets and parameters, which do not exist yet
 defer TY-016 map keys exist only on map values, which do not exist yet
 defer TY-017 map values do not exist yet
+VA-001
