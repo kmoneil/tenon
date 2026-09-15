@@ -191,7 +191,7 @@ func (p problemList) err() error {
 		return p[i].msg < p[j].msg
 	})
 	var b strings.Builder
-	fmt.Fprintf(&b, "%d problem(s) in the specification:", len(p))
+	fmt.Fprintf(&b, "%d problem(s):", len(p))
 	for _, q := range p {
 		if q.line > 0 {
 			fmt.Fprintf(&b, "\n  line %d: %s", q.line, q.msg)

@@ -1,0 +1,11 @@
+# Rule coverage that make check enforces.
+#
+# Each line is one of:
+#
+#   XX                  every rule in area XX
+#   XX-nnn              a single rule
+#   defer XX-nnn why    exempt one rule of an active area, saying why
+#
+# Only rules that are neither outline nor withdrawn are enforced. A rule is
+# covered when a test that called conformance.Covers with its identifier
+# passed during the run.

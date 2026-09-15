@@ -7,66 +7,109 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"tenon/conformance"
 )
 
-func TestRun(t *testing.T) {
+// cli runs rulecheck commands for a test.
+type cli struct {
+	t *testing.T
+}
+
+// ok runs a command that must succeed and print want.
+func (c cli) ok(want string, args ...string) {
+	c.t.Helper()
+	var out bytes.Buffer
+	if err := run(args, &out); err != nil {
+		c.t.Fatalf("rulecheck %s: %v", strings.Join(args, " "), err)
+	}
+	if !strings.Contains(out.String(), want) {
+		c.t.Fatalf("rulecheck %s printed %q, want it to contain %q", strings.Join(args, " "), out.String(), want)
+	}
+}
+
+// fails runs a command that must fail with an error containing want.
+func (c cli) fails(want string, args ...string) {
+	c.t.Helper()
+	err := run(args, io.Discard)
+	if err == nil || !strings.Contains(err.Error(), want) {
+		c.t.Fatalf("rulecheck %s: error %v, want one containing %q", strings.Join(args, " "), err, want)
+	}
+}
+
+func TestRunManifest(t *testing.T) {
 	dir := t.TempDir()
 	spec := filepath.Join(dir, "spec.md")
 	manifest := filepath.Join(dir, "conformance", "rules.json")
+	active := filepath.Join(dir, "active-areas.txt")
+	writeFile(t, active, nil)
 	t.Setenv("TENON_SPEC", "")
-
-	runOK := func(want string, args ...string) {
-		t.Helper()
-		var out bytes.Buffer
-		if err := run(args, &out); err != nil {
-			t.Fatalf("rulecheck %s: %v", strings.Join(args, " "), err)
-		}
-		if !strings.Contains(out.String(), want) {
-			t.Fatalf("rulecheck %s printed %q, want it to contain %q", strings.Join(args, " "), out.String(), want)
-		}
-	}
-	runErr := func(want string, args ...string) {
-		t.Helper()
-		err := run(args, io.Discard)
-		if err == nil || !strings.Contains(err.Error(), want) {
-			t.Fatalf("rulecheck %s: error %v, want one containing %q", strings.Join(args, " "), err, want)
-		}
+	c := cli{t}
+	check := func(extra ...string) []string {
+		args := []string{"check", "-manifest", manifest, "-active", active, "-cover", filepath.Join(dir, "cover")}
+		return append(args, extra...)
 	}
 
 	writeFile(t, spec, fixture("## 2. Alpha", "", "`[AA-001]` One.", "", "`[AA-002]` Two."))
 
 	// Generating writes the manifest, and regenerating changes nothing.
-	runOK("wrote", "manifest", "-spec", spec, "-manifest", manifest)
+	c.ok("wrote", "manifest", "-spec", spec, "-manifest", manifest)
 	generated := readFile(t, manifest)
-	runOK("already up to date", "manifest", "-spec", spec, "-manifest", manifest)
+	c.ok("already up to date", "manifest", "-spec", spec, "-manifest", manifest)
 	if !bytes.Equal(readFile(t, manifest), generated) {
 		t.Fatal("regenerating changed the manifest")
 	}
 
-	// check is the default command. It verifies freshness when it has a
-	// specification, from -spec or TENON_SPEC, and says so when it has none.
-	runOK("manifest up to date", "check", "-spec", spec, "-manifest", manifest)
-	runOK("TENON_SPEC not set", "-manifest", manifest)
+	// check, the default command, verifies freshness when it has a
+	// specification from -spec or TENON_SPEC, and says so when it has none.
+	c.ok("manifest up to date", check("-spec", spec)...)
+	c.ok("TENON_SPEC not set", check()...)
+	c.ok("TENON_SPEC not set", check()[1:]...)
 	t.Setenv("TENON_SPEC", spec)
-	runOK("manifest up to date", "-manifest", manifest)
+	c.ok("manifest up to date", check()...)
 
 	// A new rule makes the manifest stale.
 	writeFile(t, spec, fixture("## 2. Alpha", "", "`[AA-001]` One.", "", "`[AA-002]` Two.", "", "`[AA-003]` Three."))
-	runErr("added AA-003", "check", "-manifest", manifest)
+	c.fails("added AA-003", check()...)
 
 	// Removing a rule is refused by both commands, and manifest leaves the
 	// file alone.
 	writeFile(t, spec, fixture("## 2. Alpha", "", "`[AA-001]` One."))
-	runErr("rule AA-002 has disappeared", "check", "-manifest", manifest)
-	runErr("rule AA-002 has disappeared", "manifest", "-manifest", manifest)
+	c.fails("rule AA-002 has disappeared", check()...)
+	c.fails("rule AA-002 has disappeared", "manifest", "-manifest", manifest)
 	if !bytes.Equal(readFile(t, manifest), generated) {
 		t.Fatal("a refused regeneration changed the manifest")
 	}
 
 	t.Setenv("TENON_SPEC", "")
-	runErr("set TENON_SPEC", "manifest", "-manifest", manifest)
-	runErr("unknown command", "frobnicate")
-	runErr("unexpected arguments", "check", "-manifest", manifest, "extra")
+	c.fails("set TENON_SPEC", "manifest", "-manifest", manifest)
+	c.fails("unknown command", "frobnicate")
+	c.fails("unexpected arguments", check("extra")...)
+}
+
+// TestRunCoverage checks coverage end to end, from records that package
+// conformance writes to the verdict of check.
+func TestRunCoverage(t *testing.T) {
+	dir := t.TempDir()
+	spec := filepath.Join(dir, "spec.md")
+	manifest := filepath.Join(dir, "rules.json")
+	active := filepath.Join(dir, "active-areas.txt")
+	cover := filepath.Join(dir, "cover")
+	t.Setenv("TENON_SPEC", "")
+	c := cli{t}
+	check := []string{"check", "-manifest", manifest, "-active", active, "-cover", cover}
+
+	writeFile(t, spec, fixture("## 2. Alpha", "", "`[AA-001]` One.", "", "`[AA-002]` Two."))
+	c.ok("wrote", "manifest", "-spec", spec, "-manifest", manifest)
+	writeFile(t, active, []byte("AA\n"))
+	c.fails("2 enforced rule(s) have no passing conformance test:\n  AA-001\n  AA-002", check...)
+
+	t.Setenv(conformance.EnvDir, cover)
+	t.Run("covers AA-001", func(t *testing.T) { conformance.Covers(t, "AA-001") })
+	c.fails("1 enforced rule(s) have no passing conformance test:\n  AA-002", check...)
+
+	t.Run("covers AA-002", func(t *testing.T) { conformance.Covers(t, "AA-002") })
+	c.ok("all 2 enforced rules covered, 0 deferred", check...)
 }
 
 func writeFile(t *testing.T, path string, data []byte) {
