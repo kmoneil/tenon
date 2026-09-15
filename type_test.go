@@ -120,7 +120,7 @@ func TestConformance_TY012_StructuralTypes(t *testing.T) {
 func TestConformance_TY013_AttributeNames(t *testing.T) {
 	conformance.Covers(t, "TY-013")
 	num := tenon.NumberType()
-	composed, decomposed := "café", "café"
+	composed, decomposed := "caf\u00e9", "cafe\u0301"
 
 	// A name that is not in NFC and its NFC form construct equal types, and
 	// the name is kept in its normalized form.

@@ -84,7 +84,7 @@ func TestConformance_TY020_StructuralEquality(t *testing.T) {
 
 func TestConformance_TY021_DeterministicEquality(t *testing.T) {
 	conformance.Covers(t, "TY-021")
-	names := []string{"alpha", "beta", "gamma", "delta", "epsilon", "café"}
+	names := []string{"alpha", "beta", "gamma", "delta", "epsilon", "caf\u00e9"}
 	attrType := func(i int) tenon.Type {
 		switch i % 3 {
 		case 0:

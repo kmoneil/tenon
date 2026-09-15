@@ -168,18 +168,18 @@ func TestConformance_TY032_ObjectWith(t *testing.T) {
 	}
 
 	// Field names are normalized as attribute names are.
-	decomposed := tenon.ObjectWith(map[string]tenon.Field{"café": tenon.Required(tenon.Any())}, true)
-	if !tenon.Satisfies(decomposed, object(map[string]tenon.Type{"café": num})) {
+	decomposed := tenon.ObjectWith(map[string]tenon.Field{"cafe\u0301": tenon.Required(tenon.Any())}, true)
+	if !tenon.Satisfies(decomposed, object(map[string]tenon.Type{"caf\u00e9": num})) {
 		t.Errorf("%v is not satisfied by an attribute named in another normal form", decomposed)
 	}
-	if f, ok := decomposed.Field("café"); !ok || !f.Required {
+	if f, ok := decomposed.Field("caf\u00e9"); !ok || !f.Required {
 		t.Errorf("Field lookup did not normalize the name")
 	}
 	mustPanicUsage(t, "must not be empty", func() {
 		tenon.ObjectWith(map[string]tenon.Field{"": tenon.Required(tenon.Any())}, true)
 	})
 	mustPanicUsage(t, "the same name after normalization", func() {
-		tenon.ObjectWith(map[string]tenon.Field{"café": tenon.Required(tenon.Any()), "café": tenon.Optional(tenon.Any())}, false)
+		tenon.ObjectWith(map[string]tenon.Field{"caf\u00e9": tenon.Required(tenon.Any()), "cafe\u0301": tenon.Optional(tenon.Any())}, false)
 	})
 }
 
