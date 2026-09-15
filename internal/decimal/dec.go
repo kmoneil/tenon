@@ -22,6 +22,10 @@ const (
 	ErrSyntax Error = iota + 1
 	// ErrOutOfRange reports a number whose adjusted exponent is out of range.
 	ErrOutOfRange
+	// ErrDivideByZero reports a division by zero.
+	ErrDivideByZero
+	// ErrModuloByZero reports a remainder with a zero divisor.
+	ErrModuloByZero
 )
 
 func (e Error) Error() string {
@@ -30,6 +34,10 @@ func (e Error) Error() string {
 		return "decimal: invalid number syntax"
 	case ErrOutOfRange:
 		return "decimal: number out of range"
+	case ErrDivideByZero:
+		return "decimal: division by zero"
+	case ErrModuloByZero:
+		return "decimal: modulo by zero"
 	}
 	return "decimal: error " + strconv.Itoa(int(e))
 }

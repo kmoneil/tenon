@@ -13,7 +13,14 @@
 NU-001
 NU-002
 NU-003
+NU-010
+NU-011
+NU-012
+NU-013
+NU-014
+NU-015
 NU-016
+NU-017
 TY
 defer TY-001 asserts a property of values, which do not exist yet
 defer TY-002 is asserted across the constructor surface once values exist
