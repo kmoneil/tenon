@@ -208,12 +208,12 @@ func TestTypeEquals(t *testing.T) {
 		{tenon.Tuple(), object(nil)},
 	}
 	for _, p := range equal {
-		if !p[0].Equals(p[1]) || !p[1].Equals(p[0]) {
+		if !p[0].Equals(p[1]) || !p[1].Equals(p[0]) || p[0] != p[1] {
 			t.Errorf("%v and %v are not equal", p[0], p[1])
 		}
 	}
 	for _, p := range unequal {
-		if p[0].Equals(p[1]) || p[1].Equals(p[0]) {
+		if p[0].Equals(p[1]) || p[1].Equals(p[0]) || p[0] == p[1] {
 			t.Errorf("%v and %v are equal", p[0], p[1])
 		}
 	}

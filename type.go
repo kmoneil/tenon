@@ -49,15 +49,19 @@ func (k Kind) String() string {
 // Type describes what a value is. A type is always fully concrete, and it is
 // immutable.
 //
+// Types are interned: two types have the same structure exactly when they are
+// ==, so == and Equals agree, and a Type can be used as a map key.
+//
 // The zero Type is not a type: every method except String panics when called
-// on it. Compare types with Equals.
+// on it.
 type Type struct {
 	t *typeData
 }
 
 // typeData is the immutable description that a Type refers to.
 type typeData struct {
-	kind  Kind
+	id    uint64      // unique among the types in the process (see intern)
+	kind  Kind        // the kind of the type
 	elem  Type        // the element type of a List, Set or Map
 	attrs []attribute // the attributes of an Object, sorted by name
 	elems []Type      // the element types of a Tuple
@@ -70,9 +74,9 @@ type attribute struct {
 }
 
 var (
-	boolType   = &typeData{kind: KindBool}
-	numberType = &typeData{kind: KindNumber}
-	stringType = &typeData{kind: KindString}
+	boolType   = &typeData{id: 1, kind: KindBool}
+	numberType = &typeData{id: 2, kind: KindNumber}
+	stringType = &typeData{id: 3, kind: KindString}
 )
 
 // BoolType returns the type Bool.
@@ -99,7 +103,7 @@ func collection(kind Kind, elem Type) Type {
 	if elem.t == nil {
 		usagePanic("the element type of a %s type is the zero Type", kind)
 	}
-	return Type{&typeData{kind: kind, elem: elem}}
+	return intern(&typeData{kind: kind, elem: elem})
 }
 
 // Object returns the object type with the given attributes. Attribute names
@@ -130,7 +134,7 @@ func Object(attrs map[string]Type) Type {
 		}
 		out[i] = n.attribute
 	}
-	return Type{&typeData{kind: KindObject, attrs: out}}
+	return intern(&typeData{kind: KindObject, attrs: out})
 }
 
 // attributeName returns the normalized form of an object attribute name,
@@ -153,7 +157,7 @@ func Tuple(elems ...Type) Type {
 			usagePanic("the type of tuple element %d is the zero Type", i)
 		}
 	}
-	return Type{&typeData{kind: KindTuple, elems: slices.Clone(elems)}}
+	return intern(&typeData{kind: KindTuple, elems: slices.Clone(elems)})
 }
 
 // data returns the description of t, panicking if t is the zero Type.
@@ -271,27 +275,10 @@ func (t Type) TupleElementTypes() []Type {
 }
 
 // Equals reports whether t and u are the same type. Types of the same
-// structure are the same type.
+// structure are the same type; since types are interned, Equals is t == u for
+// types other than the zero Type.
 func (t Type) Equals(u Type) bool {
-	a, b := t.data(), u.data()
-	if a == b {
-		return true
-	}
-	if a.kind != b.kind {
-		return false
-	}
-	switch a.kind {
-	case KindList, KindSet, KindMap:
-		return a.elem.Equals(b.elem)
-	case KindObject:
-		return slices.EqualFunc(a.attrs, b.attrs, func(x, y attribute) bool {
-			return x.name == y.name && x.typ.Equals(y.typ)
-		})
-	case KindTuple:
-		return slices.EqualFunc(a.elems, b.elems, Type.Equals)
-	}
-	// The primitive types are singletons, so a == b has decided them.
-	return false
+	return t.data() == u.data()
 }
 
 // String describes t for messages, as in
