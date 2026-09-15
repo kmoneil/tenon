@@ -10,6 +10,10 @@
 # covered when a test that called conformance.Covers with its identifier
 # passed during the run.
 
+NU-001
+NU-002
+NU-003
+NU-016
 TY
 defer TY-001 asserts a property of values, which do not exist yet
 defer TY-002 is asserted across the constructor surface once values exist
