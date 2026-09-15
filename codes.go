@@ -6,6 +6,7 @@ type Code string
 
 // The diagnostic codes of the conditions that tenon reports.
 const (
+	CodeMapDuplicateKey     Code = "map.duplicate_key"
 	CodeNumberInvalidSyntax Code = "number.invalid_syntax"
 	CodeNumberOutOfRange    Code = "number.out_of_range"
 	CodeStringInvalidUTF8   Code = "string.invalid_utf8"

@@ -15,9 +15,8 @@ ER-001
 NU
 ST
 TY
-defer TY-001 asserts a property of values, which do not exist yet
-defer TY-002 is asserted across the constructor surface once values exist
+defer TY-001 needs unknown values, which do not exist yet
+defer TY-002 is asserted across the whole constructor surface, which is not complete yet
 defer TY-003 concerns conversion targets and parameters, which do not exist yet
-defer TY-016 map keys exist only on map values, which do not exist yet
-defer TY-017 map values do not exist yet
 VA-001
+VA-005

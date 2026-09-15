@@ -42,8 +42,10 @@ type node struct {
 	typ   Type // the type of a resolved value
 	// data is the []Diagnostic of an error value or the Constraint of a
 	// pending value. For a resolved value it is the content that the kind of
-	// its type calls for: a bool, a decimal.Dec, a canonical string, or the
-	// pointer that a capsule encapsulates.
+	// its type calls for: a bool, a decimal.Dec, a canonical string, the
+	// pointer that a capsule encapsulates, the []Value elements of a list, set
+	// or tuple, the []Value attributes of an object in its type's attribute
+	// order, or the []mapEntry entries of a map, sorted by key.
 	data any
 }
 
@@ -114,16 +116,24 @@ func invalidUTF8At(s string) int {
 }
 
 // quoted quotes text for a diagnostic message, shortening it if it is long.
-func quoted(s string) string {
+func quoted(s string) string { return shortened(s, strconv.Quote) }
+
+// quotedASCII quotes text for a diagnostic message in ASCII, so that spellings
+// that normalize alike stay distinguishable, shortening it if it is long.
+func quotedASCII(s string) string { return shortened(s, strconv.QuoteToASCII) }
+
+// shortened applies quote to s, or to a prefix of s followed by "..." if s is
+// long.
+func shortened(s string, quote func(string) string) string {
 	const limit = 32
 	if len(s) <= limit {
-		return strconv.Quote(s)
+		return quote(s)
 	}
 	cut := limit
 	for cut > 0 && !utf8.RuneStart(s[cut]) {
 		cut--
 	}
-	return strconv.Quote(s[:cut]) + "..."
+	return quote(s[:cut]) + "..."
 }
 
 // CapsuleVal returns the value of capsule type t that encapsulates p. It panics
@@ -250,7 +260,7 @@ func (v Value) AsInt64() (int64, bool) {
 	return v.known(KindNumber, "AsInt64").data.(decimal.Dec).Int64()
 }
 
-// String describes v for messages, as in "text", 1.5 or
+// String describes v for messages, as in "text", list(number)[1, 2.5] or
 // error(string.invalid_utf8: ...). It is not a format for parsing.
 func (v Value) String() string {
 	if v.n == nil {
@@ -291,5 +301,7 @@ func (v Value) write(b *strings.Builder) {
 		b.WriteString(strconv.Quote(n.data.(string)))
 	case KindCapsule:
 		n.typ.write(b)
+	default:
+		n.writeContainer(b)
 	}
 }
