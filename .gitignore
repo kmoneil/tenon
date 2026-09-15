@@ -29,3 +29,6 @@ CLAUDE.md
 
 # IDE
 .vscode/
+
+# Local make settings (see Makefile)
+local.mk
