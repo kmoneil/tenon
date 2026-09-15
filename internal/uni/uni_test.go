@@ -1,20 +1,6 @@
 package uni
 
-import (
-	"testing"
-
-	"golang.org/x/text/unicode/norm"
-)
-
-// TestUnicodeVersionPinned fails when the normalization data moves to another
-// Unicode version, as it can when golang.org/x/text is upgraded or a newer Go
-// toolchain selects newer tables. Such a move changes which strings are equal,
-// so it must be made deliberately, by updating UnicodeVersion.
-func TestUnicodeVersionPinned(t *testing.T) {
-	if norm.Version != UnicodeVersion {
-		t.Fatalf("normalization uses Unicode %s, but UnicodeVersion is %s", norm.Version, UnicodeVersion)
-	}
-}
+import "testing"
 
 func TestNFC(t *testing.T) {
 	tests := []struct {

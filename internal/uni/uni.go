@@ -11,8 +11,9 @@ import (
 )
 
 // UnicodeVersion is the version of the Unicode Standard whose data tenon's
-// Unicode operations use. Normalization depends on it, so changing it can
-// change which strings are equal: it is a breaking change.
+// Unicode operations use: normalization and grapheme cluster segmentation.
+// Changing it can change which strings are equal and how long they are, so it
+// is a breaking change.
 const UnicodeVersion = "15.0.0"
 
 // Error is an error reported by this package. Its values are constants, which
