@@ -91,13 +91,13 @@ func TestConformance_ER006_ErrorsDoNotShortCircuit(t *testing.T) {
 	// An operand of another type is a mistake in the calling program, and
 	// stays one when the other operand is an error value that would otherwise
 	// have decided the result.
-	mustPanicUsage(t, "And: the first operand is a value of type number, not a value of type bool", func() {
+	mustPanicUsage(t, "And: the first operand is a value of type number, which does not satisfy exactly(bool)", func() {
 		tenon.And(tenon.NumberFromInt(1), tr)
 	})
-	mustPanicUsage(t, "Or: the second operand is a value of type string, not a value of type bool", func() {
+	mustPanicUsage(t, "Or: the second operand is a value of type string, which does not satisfy exactly(bool)", func() {
 		tenon.Or(tr, tenon.String("x"))
 	})
-	mustPanicUsage(t, "Not: the operand is a value of type number, not a value of type bool", func() {
+	mustPanicUsage(t, "Not: the operand is a value of type number, which does not satisfy exactly(bool)", func() {
 		tenon.Not(tenon.NumberFromInt(1))
 	})
 	mustPanicUsage(t, "And: the second operand is a value of type number", func() {
@@ -224,7 +224,7 @@ func TestConformance_UN023_PendingOperands(t *testing.T) {
 		t.Fatalf("NOT of a pending number = %v, want an error value", bad)
 	}
 	d := bad.Diagnostics()[0]
-	want := "the operand of Not cannot turn out to be a bool: its constraint is exactly(number)"
+	want := "the operand of Not is pending with constraint exactly(number), and no type it allows satisfies exactly(bool)"
 	if d.Code != tenon.CodeOperationWrongType || d.Message != want {
 		t.Errorf("NOT of a pending number gave %v, want %s saying %q", d, tenon.CodeOperationWrongType, want)
 	}

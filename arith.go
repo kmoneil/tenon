@@ -37,37 +37,40 @@ func Mod(a, b Value) Value { return modOp.apply(a, b) }
 var (
 	addOp = &op{
 		name:    "Add",
-		operand: Type{numberType},
+		operand: numberOperand,
 		result:  fixedResult(Type{numberType}),
 		known:   func(args []Value) Value { return arithmetic(decOf(args[0]).Add(decOf(args[1]))) },
 		narrow:  addBounds,
 	}
 	subOp = &op{
 		name:    "Sub",
-		operand: Type{numberType},
+		operand: numberOperand,
 		result:  fixedResult(Type{numberType}),
 		known:   func(args []Value) Value { return arithmetic(decOf(args[0]).Sub(decOf(args[1]))) },
 		narrow:  subBounds,
 	}
 	mulOp = &op{
 		name:    "Mul",
-		operand: Type{numberType},
+		operand: numberOperand,
 		result:  fixedResult(Type{numberType}),
 		known:   func(args []Value) Value { return arithmetic(decOf(args[0]).Mul(decOf(args[1]))) },
 	}
 	divOp = &op{
 		name:    "Div",
-		operand: Type{numberType},
+		operand: numberOperand,
 		result:  fixedResult(Type{numberType}),
 		known:   func(args []Value) Value { return arithmetic(decOf(args[0]).Div(decOf(args[1]))) },
 	}
 	modOp = &op{
 		name:    "Mod",
-		operand: Type{numberType},
+		operand: numberOperand,
 		result:  fixedResult(Type{numberType}),
 		known:   func(args []Value) Value { return arithmetic(decOf(args[0]).Mod(decOf(args[1]))) },
 	}
 )
+
+// numberOperand is what the arithmetic operations accept.
+var numberOperand = Exactly(Type{numberType})
 
 // decOf returns the number that a known Number value holds.
 func decOf(v Value) decimal.Dec { return v.n.data.(decimal.Dec) }

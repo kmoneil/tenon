@@ -41,9 +41,13 @@ func propagate(operands ...Value) (Value, bool) {
 // the result it gives for operands that are not known excludes null. An
 // operation that can produce null will have to say so.
 type op struct {
-	name    string // names the operation in messages
-	operand Type   // the type every operand must have; the zero Type takes any
-	nulls   bool   // whether the operation has an answer for a null operand
+	name string // names the operation in messages
+	// operand is what every operand must satisfy. It is a constraint and not a
+	// type, because what an operation accepts is an acceptance test: an
+	// operation that takes any value says Any, rather than a type with a
+	// wildcard in it or a zero value standing in for one.
+	operand Constraint
+	nulls   bool // whether the operation has an answer for a null operand
 	// result describes what the operation produces, given the type of each
 	// operand, or the zero Type for an operand that is pending and whose
 	// constraint names no single type. Exactly(T) settles the result type; any
@@ -75,11 +79,11 @@ func (o *op) apply(args ...Value) Value {
 	// was already carrying.
 	for i, a := range args {
 		n := a.data()
-		if o.operand.t == nil || n.state == stateError || n.state == statePending {
+		if n.state == stateError || n.state == statePending {
 			continue
 		}
-		if n.typ != o.operand {
-			usagePanic("%s: %s is %s, not a value of type %s",
+		if !Satisfies(o.operand, n.typ) {
+			usagePanic("%s: %s is %s, which does not satisfy %s",
 				o.name, operandName(i, len(args)), n.describe(), o.operand)
 		}
 	}
@@ -94,7 +98,7 @@ func (o *op) apply(args ...Value) Value {
 		case statePending:
 			known = false
 			c := n.data.(Constraint)
-			if o.operand.t != nil && !Satisfies(c, o.operand) {
+			if !couldSatisfy(c, o.operand) {
 				diags = append(diags, o.wrongType(i, len(args), c))
 				continue
 			}
@@ -163,19 +167,37 @@ func (o *op) nullOperand(i, n int) Diagnostic {
 	}
 }
 
-// wrongType returns the diagnostic for a pending operand that cannot turn out
-// to have the type the operation needs.
+// couldSatisfy reports whether some type satisfying c satisfies the operand
+// constraint too, so that the operation could still apply once the type of a
+// pending value is settled.
+//
+// Every operation states Any or Exactly, which is what the TY-003 test holds
+// them to. Deciding a richer operand constraint would mean comparing two
+// constraints, which nothing needs yet; assuming it could apply leaves the
+// answer to the value rather than inventing one here.
+func couldSatisfy(c, operand Constraint) bool {
+	if operand.Kind() == ConstraintExactly {
+		return Satisfies(c, operand.Type())
+	}
+	return true
+}
+
+// wrongType returns the diagnostic for a pending operand that can never have a
+// type the operation accepts.
 func (o *op) wrongType(i, n int, c Constraint) Diagnostic {
 	return Diagnostic{
 		Code: CodeOperationWrongType,
-		Message: operandName(i, n) + " of " + o.name + " cannot turn out to be a " +
-			o.operand.String() + ": its constraint is " + c.String(),
+		Message: operandName(i, n) + " of " + o.name + " is pending with constraint " +
+			c.String() + ", and no type it allows satisfies " + o.operand.String(),
 	}
 }
 
 // unknownBool is the answer to a test that nothing has settled: a Bool that
 // could be either, and that is not null, because a test does have an answer.
 var unknownBool = Narrow(Unknown(Type{boolType}), NotNull())
+
+// boolOperand is what the logical operations accept.
+var boolOperand = Exactly(Type{boolType})
 
 // And returns the conjunction of two Bool values. An operand that is false
 // decides the answer, whatever the other one turns out to be.
@@ -199,7 +221,7 @@ func Not(a Value) Value { return notOp.apply(a) }
 var (
 	andOp = &op{
 		name:    "And",
-		operand: Type{boolType},
+		operand: boolOperand,
 		result:  fixedResult(Type{boolType}),
 		known: func(args []Value) Value {
 			return Bool(args[0].n.data.(bool) && args[1].n.data.(bool))
@@ -208,7 +230,7 @@ var (
 	}
 	orOp = &op{
 		name:    "Or",
-		operand: Type{boolType},
+		operand: boolOperand,
 		result:  fixedResult(Type{boolType}),
 		known: func(args []Value) Value {
 			return Bool(args[0].n.data.(bool) || args[1].n.data.(bool))
@@ -217,7 +239,7 @@ var (
 	}
 	notOp = &op{
 		name:    "Not",
-		operand: Type{boolType},
+		operand: boolOperand,
 		result:  fixedResult(Type{boolType}),
 		known:   func(args []Value) Value { return Bool(!args[0].n.data.(bool)) },
 	}
@@ -244,10 +266,11 @@ func decidedBy(args []Value, b bool) (Value, bool) {
 func IsNull(v Value) Value { return isNullOp.apply(v) }
 
 var isNullOp = &op{
-	name:   "IsNull",
-	nulls:  true,
-	result: fixedResult(Type{boolType}),
-	known:  func(args []Value) Value { return Bool(args[0].n.state == stateNull) },
+	name:    "IsNull",
+	operand: Any(),
+	nulls:   true,
+	result:  fixedResult(Type{boolType}),
+	known:   func(args []Value) Value { return Bool(args[0].n.state == stateNull) },
 	decided: func(args []Value) (Value, bool) {
 		switch n := args[0].n; n.state {
 		case stateUnknown:

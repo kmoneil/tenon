@@ -40,7 +40,7 @@ func TestConformance_UN008_KnownOperandsAnswerOrFail(t *testing.T) {
 	// where an unknown value would turn up with nothing to explain it.
 	broken := &op{
 		name:    "broken",
-		operand: Type{boolType},
+		operand: boolOperand,
 		result:  fixedResult(Type{boolType}),
 		known:   func([]Value) Value { return Unknown(Type{boolType}) },
 	}
@@ -50,7 +50,7 @@ func TestConformance_UN008_KnownOperandsAnswerOrFail(t *testing.T) {
 	// Failing is the other answer the rule allows, and is not caught.
 	failing := &op{
 		name:    "failing",
-		operand: Type{boolType},
+		operand: boolOperand,
 		result:  fixedResult(Type{boolType}),
 		known: func([]Value) Value {
 			return errorValue(Diagnostic{Code: "app.failed", Message: "it failed"})
@@ -67,8 +67,9 @@ func TestConformance_UN023_PendingWithNoSettledResultType(t *testing.T) {
 	// that ships has a fixed result type, so this one stands in for those that
 	// conversion and access will bring.
 	same := &op{
-		name:  "same",
-		nulls: true,
+		name:    "same",
+		operand: Any(),
+		nulls:   true,
 		result: func(types []Type) Constraint {
 			if types[0].t == nil {
 				return Any()

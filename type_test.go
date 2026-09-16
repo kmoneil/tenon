@@ -1,6 +1,10 @@
 package tenon_test
 
 import (
+	"go/ast"
+	"go/parser"
+	"go/token"
+	"path/filepath"
 	"reflect"
 	"slices"
 	"strings"
@@ -252,4 +256,255 @@ func TestZeroType(t *testing.T) {
 	mustPanicUsage(t, "zero Type", func() { tenon.List(zero) })
 	mustPanicUsage(t, "zero Type", func() { tenon.Tuple(str, zero) })
 	mustPanicUsage(t, "zero Type", func() { tenon.Object(map[string]tenon.Type{"a": zero}) })
+}
+
+// exportedFuncs returns the names of the package's exported functions whose
+// results include the named type, sorted. Methods are left out: they hand back
+// what a function made in the first place.
+func exportedFuncs(t *testing.T, result string) []string {
+	t.Helper()
+	var names []string
+	fset := token.NewFileSet()
+	for _, path := range sourceFiles(t) {
+		file, err := parser.ParseFile(fset, path, nil, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, d := range file.Decls {
+			fn, ok := d.(*ast.FuncDecl)
+			if !ok || fn.Recv != nil || !fn.Name.IsExported() || fn.Type.Results == nil {
+				continue
+			}
+			for _, r := range fn.Type.Results.List {
+				if id, ok := r.Type.(*ast.Ident); ok && id.Name == result {
+					names = append(names, fn.Name.Name)
+					break
+				}
+			}
+		}
+	}
+	slices.Sort(names)
+	return names
+}
+
+// sourceFiles returns the package's own Go files, leaving out its tests.
+func sourceFiles(t *testing.T) []string {
+	t.Helper()
+	all, err := filepath.Glob("*.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var files []string
+	for _, path := range all {
+		if !strings.HasSuffix(path, "_test.go") {
+			files = append(files, path)
+		}
+	}
+	return files
+}
+
+// concrete walks ty and fails unless every type in it, at any depth, is one of
+// the kinds a value can have.
+func concrete(t *testing.T, name string, ty tenon.Type) {
+	t.Helper()
+	switch k := ty.Kind(); k {
+	case tenon.KindBool, tenon.KindNumber, tenon.KindString, tenon.KindCapsule:
+	case tenon.KindList, tenon.KindSet, tenon.KindMap:
+		concrete(t, name, ty.ElementType())
+	case tenon.KindObject:
+		for _, a := range ty.AttributeNames() {
+			concrete(t, name, ty.AttributeType(a))
+		}
+	case tenon.KindTuple:
+		for _, e := range ty.TupleElementTypes() {
+			concrete(t, name, e)
+		}
+	default:
+		t.Errorf("%s: %v has kind %v, which is not a kind a value can have", name, ty, k)
+	}
+}
+
+func TestConformance_TY001_EveryValueHasOneConcreteType(t *testing.T) {
+	conformance.Covers(t, "TY-001")
+	type thing struct{}
+	held := tenon.Capsule("thing", tenon.CapsuleOps[thing]{})
+	str, num, bl := tenon.StringType(), tenon.NumberType(), tenon.BoolType()
+	one, tr := tenon.NumberFromInt(1), tenon.Bool(true)
+	typed := map[string]tenon.Value{
+		"Bool":           tr,
+		"NumberFromInt":  one,
+		"NumberFromText": tenon.NumberFromText("1.5"),
+		"String":         tenon.String("x"),
+		"CapsuleVal":     tenon.CapsuleVal(held, &thing{}),
+		"NullVal":        tenon.NullVal(str),
+		"Unknown":        tenon.Unknown(str),
+		"ListVal":        tenon.ListVal(str, tenon.String("a")),
+		"SetVal":         tenon.SetVal(str),
+		"MapVal":         tenon.MapVal(str, map[string]tenon.Value{"k": tenon.String("v")}),
+		"TupleVal":       tenon.TupleVal(one, tr),
+		"ObjectVal":      tenon.ObjectVal(map[string]tenon.Value{"a": one}),
+		"Narrow":         tenon.Narrow(tenon.Unknown(num), tenon.NotNull()),
+		"Resolve":        tenon.Resolve(tenon.Pending(tenon.Any()), str),
+		"And":            tenon.And(tr, tenon.Bool(false)),
+		"Or":             tenon.Or(tr, tenon.Bool(false)),
+		"Not":            tenon.Not(tr),
+		"IsNull":         tenon.IsNull(one),
+		"Add":            tenon.Add(one, one),
+		"Sub":            tenon.Sub(one, one),
+		"Mul":            tenon.Mul(one, one),
+		"Div":            tenon.Div(one, one),
+		"Mod":            tenon.Mod(one, one),
+	}
+	want := map[string]tenon.Type{
+		"Bool": bl, "NumberFromInt": num, "NumberFromText": num, "String": str,
+		"CapsuleVal": held, "NullVal": str, "Unknown": str,
+		"ListVal": tenon.List(str), "SetVal": tenon.Set(str), "MapVal": tenon.Map(str),
+		"TupleVal": tenon.Tuple(num, bl), "ObjectVal": tenon.Object(map[string]tenon.Type{"a": num}),
+		"Narrow": num, "Resolve": str, "And": bl, "Or": bl, "Not": bl, "IsNull": bl,
+		"Add": num, "Sub": num, "Mul": num, "Div": num, "Mod": num,
+	}
+	// A value with no type is the other half of the rule.
+	untyped := map[string]tenon.Value{
+		"ErrorVal": tenon.ErrorVal(tenon.Diagnostic{Code: "app.failed", Message: "it failed"}),
+		"Pending":  tenon.Pending(tenon.Any()),
+	}
+	// Between them these are every function that makes a value, so one added
+	// later has to be accounted for here before this test passes again.
+	var covered []string
+	for name := range typed {
+		covered = append(covered, name)
+	}
+	for name := range untyped {
+		covered = append(covered, name)
+	}
+	slices.Sort(covered)
+	if funcs := exportedFuncs(t, "Value"); !slices.Equal(covered, funcs) {
+		t.Errorf("this test covers\n%q\nbut the package makes values with\n%q", covered, funcs)
+	}
+	for name, v := range typed {
+		if !v.IsResolved() {
+			t.Errorf("%s: %v is neither resolved nor covered as an error or pending value", name, v)
+			continue
+		}
+		got := v.Type()
+		if got != v.Type() {
+			t.Errorf("%s: the type of %v is not the same each time it is asked for", name, v)
+		}
+		if got != want[name] {
+			t.Errorf("%s: the type of %v is %v, want %v", name, v, got, want[name])
+		}
+		concrete(t, name, got)
+	}
+	for name, v := range untyped {
+		if v.IsResolved() {
+			t.Errorf("%s: %v is resolved, so it is covered by the wrong half of this test", name, v)
+		}
+		mustPanicUsage(t, "which has no type", func() { v.Type() })
+	}
+}
+
+func TestConformance_TY002_NoWildcardInATypeAtAnyDepth(t *testing.T) {
+	conformance.Covers(t, "TY-002")
+	// The package makes types in nine ways, one for each kind, and each takes
+	// types and names. There is no tenth that takes a constraint or a
+	// placeholder, and adding one would have to start here.
+	want := []string{"BoolType", "Capsule", "List", "Map", "NumberType", "Object", "Set", "StringType", "Tuple"}
+	if got := exportedFuncs(t, "Type"); !slices.Equal(got, want) {
+		t.Errorf("the package makes types with\n%q\nwant\n%q", got, want)
+	}
+	// Nesting the kinds as deeply as they go finds nothing that is not a kind.
+	str, bl := tenon.StringType(), tenon.BoolType()
+	deep := tenon.Object(map[string]tenon.Type{
+		"a": tenon.List(tenon.Map(tenon.Set(tenon.Tuple(str, tenon.List(bl))))),
+	})
+	concrete(t, "a deeply nested type", deep)
+	// Optionality is an acceptance test, and stays on that side: a constraint
+	// can leave an attribute out, and the two object types it then answers for
+	// are different types, each of them concrete.
+	c := tenon.ObjectWith(map[string]tenon.Field{"a": tenon.Optional(tenon.Exactly(str))}, false)
+	with, without := tenon.Object(map[string]tenon.Type{"a": str}), tenon.Object(nil)
+	if !tenon.Satisfies(c, with) || !tenon.Satisfies(c, without) {
+		t.Error("an optional field did not accept the object with and the object without")
+	}
+	if with == without {
+		t.Error("the two objects are one type, so optionality reached into the type")
+	}
+	concrete(t, "an object with the attribute", with)
+	concrete(t, "an object without it", without)
+}
+
+func TestConformance_TY003_AcceptanceIsExpressedAsConstraints(t *testing.T) {
+	conformance.Covers(t, "TY-003")
+	str := tenon.StringType()
+	// A schema is a constraint, which is what lets it accept a set of types
+	// rather than naming one, and an optional attribute be expressible at all.
+	schema := tenon.ObjectWith(map[string]tenon.Field{
+		"name": tenon.Required(tenon.Exactly(str)),
+		"tags": tenon.Optional(tenon.ListOf(tenon.Exactly(str))),
+	}, false)
+	for _, tt := range []struct {
+		ty   tenon.Type
+		want bool
+	}{
+		{tenon.Object(map[string]tenon.Type{"name": str}), true},
+		{tenon.Object(map[string]tenon.Type{"name": str, "tags": tenon.List(str)}), true},
+		{tenon.Object(map[string]tenon.Type{"name": str, "tags": tenon.Set(str)}), false},
+		{tenon.Object(nil), false},
+	} {
+		if got := tenon.Satisfies(schema, tt.ty); got != tt.want {
+			t.Errorf("%v satisfies the schema: %t, want %t", tt.ty, got, tt.want)
+		}
+	}
+	// What an operation accepts is a parameter declaration, so every operation
+	// states it as a constraint. Conversion targets are the third surface the
+	// rule names, and arrive with conversion itself.
+	for _, lit := range operationLiterals(t) {
+		for _, field := range []string{"name", "operand", "result", "known"} {
+			if !lit.keys[field] {
+				t.Errorf("%s: an operation literal does not set %s", lit.where, field)
+			}
+		}
+	}
+}
+
+// operationLiteral is one &op{...} in the package's source.
+type operationLiteral struct {
+	where string
+	keys  map[string]bool
+}
+
+// operationLiterals returns every operation the package defines.
+func operationLiterals(t *testing.T) []operationLiteral {
+	t.Helper()
+	var lits []operationLiteral
+	fset := token.NewFileSet()
+	for _, path := range sourceFiles(t) {
+		file, err := parser.ParseFile(fset, path, nil, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ast.Inspect(file, func(n ast.Node) bool {
+			lit, ok := n.(*ast.CompositeLit)
+			if !ok {
+				return true
+			}
+			if id, ok := lit.Type.(*ast.Ident); !ok || id.Name != "op" {
+				return true
+			}
+			keys := map[string]bool{}
+			for _, e := range lit.Elts {
+				if kv, ok := e.(*ast.KeyValueExpr); ok {
+					if id, ok := kv.Key.(*ast.Ident); ok {
+						keys[id.Name] = true
+					}
+				}
+			}
+			lits = append(lits, operationLiteral{where: fset.Position(lit.Pos()).String(), keys: keys})
+			return true
+		})
+	}
+	if len(lits) == 0 {
+		t.Fatal("found no operations to check")
+	}
+	return lits
 }

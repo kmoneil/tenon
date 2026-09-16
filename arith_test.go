@@ -55,7 +55,7 @@ func TestArithmeticThatHasNoAnswer(t *testing.T) {
 		}
 	}
 	// An operand of another type is the calling program's mistake.
-	mustPanicUsage(t, "Add: the second operand is a value of type string, not a value of type number", func() {
+	mustPanicUsage(t, "Add: the second operand is a value of type string, which does not satisfy exactly(number)", func() {
 		tenon.Add(one, tenon.String("1"))
 	})
 }

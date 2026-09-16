@@ -9,40 +9,13 @@
 # Only rules that are neither outline nor withdrawn are enforced. A rule is
 # covered when a test that called conformance.Covers with its identifier
 # passed during the run.
+#
+# EQ and MK are not here yet: equality, sets and marks are still to come.
 
 BO
-ER-001
-ER-002
-ER-003
-ER-004
-ER-005
-ER-006
-ER-007
-ER-008
+ER
 NU
 ST
 TY
-defer TY-001 is a walk over every constructor, which is not complete yet
-defer TY-002 is asserted across the whole constructor surface, which is not complete yet
-defer TY-003 concerns conversion targets and parameters, which do not exist yet
-UN-001
-UN-002
-UN-003
-UN-004
-UN-005
-UN-006
-UN-007
-UN-008
-UN-009
-UN-023
-UN-020
-UN-021
-UN-022
-UN-024
-VA-001
-VA-002
-VA-003
-VA-004
-VA-005
-VA-020
-VA-021
+UN
+VA
