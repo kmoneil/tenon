@@ -21,7 +21,8 @@ import (
 // result of every operation that consumes the marked value; an Isolate mark
 // stays on the value it was attached to. Narrowing and resolving refine the
 // value they are given rather than deriving a new one, so both keep every
-// mark, Isolate included.
+// mark, Isolate included. A mark that implements DeepMark can also reach
+// down, to every value within the one it is attached to.
 type Mark interface {
 	// MarkID returns the stable identifier of the mark, used where the mark
 	// must be named without its value: redaction placeholders and encodings.
@@ -31,6 +32,26 @@ type Mark interface {
 	// Redacting reports whether diagnostics must hide the contents of a
 	// value carrying the mark.
 	Redacting() bool
+}
+
+// DeepMark is a Mark that can declare itself deep. A deep mark attached to a
+// collection or structural value is attached to every value within it as
+// well, at any depth, so a mark put on a whole document is on each part of it
+// that is read out. A mark type declares itself deep by implementing DeepMark
+// with a Deep method that reports true, and Deep must give the same answer
+// every time it is asked. A mark that does not implement DeepMark is not deep.
+//
+// WithMarks applies a deep mark when it attaches it, rather than leaving it to
+// be looked up later: once WithMarks returns, the values within carry the mark
+// in their own right, and taking it off the outer value with Unmark leaves it
+// on them. The members of a set are the exception, because they carry no
+// marks (see SetVal): a deep mark on a set stays on the set, and Elements
+// attaches it to each member as it returns the member.
+type DeepMark interface {
+	Mark
+	// Deep reports whether the mark is attached to every value within the
+	// value it is attached to.
+	Deep() bool
 }
 
 // Propagation says how a mark moves through operations.
@@ -49,7 +70,8 @@ const (
 // markSet is the immutable set of marks on a value, held sorted by
 // identifier, attachment order breaking ties. It is nil on an unmarked
 // value, which therefore pays a nil pointer and nothing else for the marks
-// it does not have.
+// it does not have. Nothing changes a mark set once it is made, so values
+// that carry the same marks may share one.
 type markSet struct {
 	list []Mark
 }
@@ -64,14 +86,14 @@ func (n *node) markList() []Mark {
 
 // WithMarks returns v carrying the given marks beside those it already
 // carries. A mark that is already on v is not attached twice, and with
-// nothing new to attach the result is v itself.
+// nothing new to attach the result is v itself. A deep mark (DeepMark) is
+// attached to every value within v as well, except the members of a set,
+// which Elements marks as it returns them.
 //
 // WithMarks panics if a mark is nil or of a type that is not comparable,
 // since Go equality is what tells marks apart.
 func WithMarks(v Value, marks ...Mark) Value {
 	n := v.data()
-	held := n.markList()
-	merged, grew := held, false
 	for i, m := range marks {
 		if m == nil {
 			usagePanic("WithMarks called with a nil Mark as mark %d", i)
@@ -79,6 +101,26 @@ func WithMarks(v Value, marks ...Mark) Value {
 		if !reflect.TypeOf(m).Comparable() {
 			usagePanic("WithMarks called with a mark of type %T, which is not comparable and so cannot be told from other marks", m)
 		}
+	}
+	merged, grew := mergeMarks(n.markList(), marks)
+	if !grew {
+		// A deep mark v carries already is on everything within v too, since
+		// it was attached to those values when it was attached to v.
+		return v
+	}
+	nn := *n
+	nn.marks = &markSet{list: merged}
+	if deep := deepMarks(marks); deep != nil {
+		(&attachment{deep: deep}).within(&nn)
+	}
+	return Value{&nn}
+}
+
+// mergeMarks returns held with marks added, each once, sorted by identifier,
+// and whether any of them was not held already. held itself is left as it is.
+func mergeMarks(held, marks []Mark) ([]Mark, bool) {
+	merged, grew := held, false
+	for _, m := range marks {
 		if slices.Contains(merged, m) {
 			continue
 		}
@@ -87,13 +129,137 @@ func WithMarks(v Value, marks ...Mark) Value {
 		}
 		merged = append(merged, m)
 	}
-	if !grew {
-		return v
+	if grew {
+		sortMarks(merged)
 	}
-	sortMarks(merged)
+	return merged, grew
+}
+
+// isDeep reports whether m is a deep mark.
+func isDeep(m Mark) bool {
+	d, ok := m.(DeepMark)
+	return ok && d.Deep()
+}
+
+// deepMarks returns the deep marks among marks, each once, sorted by
+// identifier, or nil when there are none.
+func deepMarks(marks []Mark) []Mark {
+	var deep []Mark
+	for _, m := range marks {
+		if isDeep(m) && !slices.Contains(deep, m) {
+			deep = append(deep, m)
+		}
+	}
+	sortMarks(deep)
+	return deep
+}
+
+// attachment attaches deep marks to everything within a value. It relies on
+// what it keeps: a value carrying a deep mark has it on every value within
+// it, except the members of a set, which carry no marks. Attaching a mark to
+// a value that carries it already can therefore stop there.
+//
+// Values that held the same marks before the attachment hold the same marks
+// after it, so they share one mark set rather than each holding a copy. Most
+// of the values within a value being marked held no marks, and all of those
+// share one.
+type attachment struct {
+	deep     []Mark                // the marks to attach, each once, sorted
+	unmarked *markSet              // what a value that held no marks holds after
+	sets     map[*markSet]*markSet // what a value that held some holds after
+}
+
+// within attaches the deep marks to every value n holds, at any depth, other
+// than the members of a set. n is a copy that nothing shares yet, and within
+// replaces its content when a member changes.
+func (a *attachment) within(n *node) {
+	if n.state != stateKnown {
+		return
+	}
+	switch data := n.data.(type) {
+	case []Value:
+		if n.typ.t.kind == KindSet {
+			// The marks stay on the set, and Elements attaches them to each
+			// member it returns.
+			return
+		}
+		var members []Value
+		for i, m := range data {
+			if r := a.attach(m.n); r != m.n {
+				if members == nil {
+					members = slices.Clone(data)
+				}
+				members[i] = Value{r}
+			}
+		}
+		if members != nil {
+			n.data, n.markedWithin = members, true
+		}
+	case []mapEntry:
+		var entries []mapEntry
+		for i, e := range data {
+			if r := a.attach(e.val.n); r != e.val.n {
+				if entries == nil {
+					entries = slices.Clone(data)
+				}
+				entries[i].val = Value{r}
+			}
+		}
+		if entries != nil {
+			n.data, n.markedWithin = entries, true
+		}
+	}
+}
+
+// attach returns n carrying the deep marks, with everything within it
+// carrying them too, or n itself when it carries them already.
+func (a *attachment) attach(n *node) *node {
+	marks, grew := a.merged(n.marks)
+	if !grew {
+		return n
+	}
 	nn := *n
-	nn.marks = &markSet{list: merged}
-	return Value{&nn}
+	nn.marks = marks
+	a.within(&nn)
+	return &nn
+}
+
+// merged returns the mark set that a value holding held holds once the deep
+// marks are attached to it, and whether that adds any.
+func (a *attachment) merged(held *markSet) (*markSet, bool) {
+	if held == nil {
+		if a.unmarked == nil {
+			a.unmarked = &markSet{list: a.deep}
+		}
+		return a.unmarked, true
+	}
+	if set, ok := a.sets[held]; ok {
+		return set, set != held
+	}
+	list, grew := mergeMarks(held.list, a.deep)
+	set := held
+	if grew {
+		set = &markSet{list: list}
+	}
+	if a.sets == nil {
+		a.sets = map[*markSet]*markSet{}
+	}
+	a.sets[held] = set
+	return set, grew
+}
+
+// retrievedMembers returns the members of a known set as a caller retrieves
+// them: in a new slice, each carrying the set's deep marks, which the set
+// keeps on itself because its members carry no marks in storage.
+func (n *node) retrievedMembers() []Value {
+	members := slices.Clone(n.data.([]Value))
+	if deep := deepMarks(n.markList()); deep != nil {
+		a := attachment{deep: deep}
+		for i, m := range members {
+			members[i] = Value{a.attach(m.n)}
+		}
+	}
+	return members
 }
 
 // sortMarks sorts marks by identifier, leaving marks that share an identifier
@@ -106,7 +272,10 @@ func sortMarks(ms []Mark) {
 
 // Unmark returns v without the marks it carries, and those marks, sorted by
 // identifier. The values v holds keep their own marks, which UnmarkDeep takes
-// too. A value that carries no mark comes back as itself, with no marks.
+// too. Those include a deep mark attached to v, which the values within v
+// carry in their own right, but not a deep mark attached to a set, which its
+// members carry only as Elements returns them. A value that carries no mark
+// comes back as itself, with no marks.
 func Unmark(v Value) (Value, []Mark) {
 	n := v.data()
 	if n.marks == nil {

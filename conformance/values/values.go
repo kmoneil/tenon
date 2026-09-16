@@ -37,6 +37,17 @@ func (label) Redacting() bool                { return false }
 // whether they carry one.
 var origin, audit tenon.Mark = label("origin"), label("audit")
 
+// layer is a deep mark: attached to a value, it is attached to every value
+// within it too.
+type layer string
+
+func (m layer) MarkID() string               { return string(m) }
+func (layer) Propagation() tenon.Propagation { return tenon.Propagate }
+func (layer) Redacting() bool                { return false }
+func (layer) Deep() bool                     { return true }
+
+var sealed tenon.Mark = layer("sealed")
+
 // All returns one value of every shape, in a fixed order. Some of them are the
 // same value reached two ways, such as a number written with and without a
 // trailing zero, or a set given its members in either order: a comparison that
@@ -174,6 +185,20 @@ func All() []tenon.Value {
 		tenon.MapVal(num, map[string]tenon.Value{"k": tenon.WithMarks(n(1), origin)}),
 		tenon.TupleVal(tenon.WithMarks(unknownStr, audit)),
 		tenon.ObjectVal(map[string]tenon.Value{"a": tenon.WithMarks(n(1), origin), "b": s("x")}),
+
+		// Deep-marked values, whose mark is on everything within them but the
+		// members of a set, which get it when they are read. Two are one value
+		// reached two ways: a list marked whole, and the same list marked whole
+		// after one of its elements was marked alone.
+		tenon.WithMarks(tenon.ListVal(tenon.List(num), tenon.ListVal(num, n(1), n(2))), sealed),
+		tenon.WithMarks(tenon.ListVal(tenon.List(num), tenon.ListVal(num, tenon.WithMarks(n(1), sealed), n(2))), sealed),
+		tenon.WithMarks(tenon.SetVal(str, s("a"), s("b")), sealed),
+		tenon.WithMarks(tenon.MapVal(num, map[string]tenon.Value{"k": n(1)}), sealed),
+		tenon.WithMarks(tenon.ObjectVal(map[string]tenon.Value{
+			"a": tenon.SetVal(str, s("a")),
+			"b": unknownNum,
+			"c": tenon.WithMarks(n(1), origin),
+		}), sealed),
 	}
 }
 

@@ -95,3 +95,23 @@ func TestMarkedValuesAreThere(t *testing.T) {
 		t.Error("no container holding a marked member that is not known")
 	}
 }
+
+// TestDeepMarkedValuesAreThere holds the generator to covering deep marks on a
+// set, whose members carry the mark only once read, and on the other kinds of
+// container, whose members carry it in storage.
+func TestDeepMarkedValuesAreThere(t *testing.T) {
+	kinds := map[tenon.Kind]bool{}
+	for _, v := range values.All() {
+		_, own := tenon.Unmark(v)
+		for _, m := range own {
+			if d, ok := m.(tenon.DeepMark); ok && d.Deep() && v.IsResolved() {
+				kinds[v.Type().Kind()] = true
+			}
+		}
+	}
+	for _, want := range []tenon.Kind{tenon.KindList, tenon.KindSet, tenon.KindMap, tenon.KindObject} {
+		if !kinds[want] {
+			t.Errorf("no deep-marked value of kind %v in the generator", want)
+		}
+	}
+}

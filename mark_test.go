@@ -9,16 +9,26 @@ import (
 	"tenon/conformance/values"
 )
 
-// stamp is a Mark for tests: comparable, with a policy and a redaction flag.
+// stamp is a Mark for tests: comparable, with a policy, a redaction flag, and
+// whether it is deep.
 type stamp struct {
 	id     string
 	policy tenon.Propagation
 	redact bool
+	deep   bool
 }
 
 func (m stamp) MarkID() string                 { return m.id }
 func (m stamp) Propagation() tenon.Propagation { return m.policy }
 func (m stamp) Redacting() bool                { return m.redact }
+func (m stamp) Deep() bool                     { return m.deep }
+
+// bare is a Mark that does not implement DeepMark at all.
+type bare string
+
+func (m bare) MarkID() string               { return string(m) }
+func (bare) Propagation() tenon.Propagation { return tenon.Propagate }
+func (bare) Redacting() bool                { return false }
 
 // slippery is a Mark whose type is not comparable, which WithMarks refuses.
 type slippery struct {
@@ -491,5 +501,189 @@ func TestConformance_MK006_MarkedValuesHaveNoHashAndNoPlaceInASet(t *testing.T) 
 	}
 	if refused < 10 {
 		t.Errorf("only %d marked values were refused, which is too few to say much", refused)
+	}
+}
+
+// readable returns a known value and every value a caller can read out of it,
+// at any depth, through the accessors a caller would use.
+func readable(v tenon.Value) []tenon.Value {
+	out := []tenon.Value{v}
+	if tenon.IsNull(v).AsBool() {
+		return out
+	}
+	switch v.Type().Kind() {
+	case tenon.KindList, tenon.KindSet, tenon.KindTuple:
+		for _, e := range v.Elements() {
+			out = append(out, readable(e)...)
+		}
+	case tenon.KindMap:
+		for _, k := range v.MapKeys() {
+			e, _ := v.MapElement(k)
+			out = append(out, readable(e)...)
+		}
+	case tenon.KindObject:
+		for _, name := range v.Type().AttributeNames() {
+			out = append(out, readable(v.Attribute(name))...)
+		}
+	}
+	return out
+}
+
+func TestConformance_MK008_DeepMarks(t *testing.T) {
+	conformance.Covers(t, "MK-008")
+	num, str := tenon.NumberType(), tenon.StringType()
+	deep := stamp{id: "deep", deep: true}
+	one, two := tenon.NumberFromInt(1), tenon.NumberFromInt(2)
+	set := tenon.SetVal(str, tenon.String("a"), tenon.String("b"))
+	// A value with every kind of container in it, a set among them, a null and
+	// a member that is not known.
+	tree := tenon.ObjectVal(map[string]tenon.Value{
+		"list":  tenon.ListVal(num, one, tenon.Unknown(num)),
+		"map":   tenon.MapVal(num, map[string]tenon.Value{"k": two}),
+		"tuple": tenon.TupleVal(set, tenon.NullVal(str)),
+	})
+
+	// A deep mark attached to a value is attached to every value within it,
+	// whatever state that value is in and however it is read.
+	marked := tenon.WithMarks(tree, deep)
+	list, tuple := marked.Attribute("list"), marked.Attribute("tuple")
+	k, _ := marked.Attribute("map").MapElement("k")
+	for _, r := range []struct {
+		where string
+		v     tenon.Value
+	}{
+		{"the value", marked},
+		{".list", list},
+		{".list[0]", list.Index(0)},
+		{".list[1], which is not known", list.Index(1)},
+		{".map", marked.Attribute("map")},
+		{`.map["k"]`, k},
+		{".tuple", tuple},
+		{".tuple[0], a set", tuple.Index(0)},
+		{".tuple[0], a member of the set", tuple.Index(0).Elements()[1]},
+		{".tuple[1], null", tuple.Index(1)},
+	} {
+		if !tenon.HasMark(r.v, deep) {
+			t.Errorf("%s does not carry the deep mark: %v", r.where, r.v)
+		}
+	}
+
+	// A mark that is not deep marks the value it is attached to and nothing
+	// within it, whether it says so or does not implement DeepMark at all. A
+	// deep mark's policy governs how it moves through operations, not how far
+	// down it is attached, so a deep Isolate mark marks everything within too.
+	shallow, plain := stamp{id: "shallow"}, bare("plain")
+	isolated := stamp{id: "isolated", policy: tenon.Isolate, deep: true}
+	several := tenon.WithMarks(tree, shallow, plain, isolated)
+	inner := several.Attribute("list").Index(0)
+	if !tenon.HasMark(several, shallow) || !tenon.HasMark(several, plain) {
+		t.Errorf("%v lost the marks attached to it", several)
+	}
+	if tenon.HasMark(inner, shallow) || tenon.HasMark(inner, plain) {
+		t.Errorf("a mark that is not deep reached %v", inner)
+	}
+	if !tenon.HasMark(inner, isolated) {
+		t.Errorf("a deep Isolate mark did not reach %v", inner)
+	}
+
+	// Deep marking is applied when the mark is attached, not when a value is
+	// inspected: taking the mark off the value afterwards leaves it on the
+	// values within, which carry it in their own right.
+	stripped, _ := tenon.Unmark(marked)
+	if tenon.HasMark(stripped, deep) || !tenon.HasMark(stripped.Attribute("list").Index(0), deep) {
+		t.Errorf("unmarking the value changed what is within it: %v", stripped)
+	}
+	if tenon.Identical(stripped, tree) {
+		t.Error("a value whose deep mark was taken off again is identical to one never marked")
+	}
+
+	// Except a set's members, which carry no marks. The deep mark is recorded
+	// on the set, its members stay unmarked in storage, and each member
+	// carries the mark from the moment it is retrieved.
+	sealed := tenon.WithMarks(set, deep)
+	if stored, _ := tenon.Unmark(sealed); !tenon.Identical(stored, set) {
+		t.Errorf("the members of a deep-marked set were marked in storage: %v", stored)
+	}
+	for i, got := range sealed.Elements() {
+		if want := tenon.WithMarks(set.Elements()[i], deep); !tenon.Identical(got, want) {
+			t.Errorf("member %d was retrieved as %v, want %v", i, got, want)
+		}
+	}
+	if stored, _ := tenon.Unmark(tuple.Index(0)); !tenon.Identical(stored, set) {
+		t.Errorf("the set within the deep-marked value holds marked members: %v", stored)
+	}
+	// Retrieval applies the mark deeply, to what a member holds.
+	lists := tenon.WithMarks(tenon.SetVal(tenon.List(num), tenon.ListVal(num, one)), deep)
+	if got := lists.Elements()[0].Index(0); !tenon.HasMark(got, deep) {
+		t.Errorf("the element of a retrieved member does not carry the deep mark: %v", got)
+	}
+	// A mark on a set that is not deep stays on the set.
+	if got := tenon.WithMarks(set, shallow).Elements()[0]; tenon.HasMark(got, shallow) {
+		t.Errorf("a member retrieved from a set carries the set's shallow mark: %v", got)
+	}
+
+	// A deep mark is added to the marks a value within carries, and replaces
+	// none of them.
+	owned := tenon.WithMarks(tenon.ListVal(num, tenon.WithMarks(one, shallow), tenon.WithMarks(two, plain)), deep)
+	for i, want := range []tenon.Mark{shallow, plain} {
+		if e := owned.Index(i); !tenon.HasMark(e, want) || !tenon.HasMark(e, deep) {
+			t.Errorf("element %d of the deep-marked list is %v, without its own mark or the deep one", i, e)
+		}
+	}
+
+	// Marking a value whose members carry the mark already gives what marking
+	// it unmarked gives: one value, one representation. Attaching the mark
+	// again gives the value itself.
+	got := tenon.WithMarks(tenon.ListVal(num, tenon.WithMarks(one, deep)), deep)
+	if want := tenon.WithMarks(tenon.ListVal(num, one), deep); !tenon.Identical(got, want) {
+		t.Errorf("marking a list whose element carries the mark gave %v, want %v", got, want)
+	}
+	if tenon.WithMarks(marked, deep) != marked {
+		t.Error("attaching a deep mark again did not return the value itself")
+	}
+
+	// A mark carried onto a value that narrowing comes down to is applied
+	// deeply there too: to a tuple's elements, and to the set a listing
+	// describes, on the set.
+	tup := tenon.Narrow(tenon.WithMarks(tenon.Unknown(tenon.Tuple(tenon.Tuple())), deep), tenon.NotNull())
+	if !tup.IsKnown() || !tenon.HasMark(tup.Index(0), deep) {
+		t.Errorf("narrowing came down to %v, whose element does not carry the deep mark", tup)
+	}
+	listed := tenon.Narrow(tenon.WithMarks(tenon.Unknown(tenon.Set(num)), deep),
+		tenon.NotNull(), tenon.Members(one), tenon.LengthMax(1))
+	if stored, _ := tenon.Unmark(listed); !tenon.Identical(stored, tenon.SetVal(num, one)) || !tenon.HasMark(listed.Elements()[0], deep) {
+		t.Errorf("narrowing came down to the set %v, marked in the wrong place", listed)
+	}
+
+	// A deep mark survives the trip into a set and back out: unmark the member,
+	// reapply its marks to the set, and retrieval puts the mark back where it
+	// was.
+	member := tenon.WithMarks(tenon.ListVal(num, one, two), deep)
+	u, ms := tenon.UnmarkDeep(member)
+	outer := tenon.WithMarks(tenon.SetVal(tenon.List(num), u), ms...)
+	if back := outer.Elements()[0]; !tenon.Identical(back, member) {
+		t.Errorf("the member came back out of the set as %v, want %v", back, member)
+	}
+
+	// Over every value the generator holds: a deep mark changes nothing but
+	// marks, attaches once, and reaches everything a caller can read out of a
+	// known value.
+	for _, v := range values.All() {
+		dv := tenon.WithMarks(v, deep)
+		if !tenon.HasMark(dv, deep) || tenon.WithMarks(dv, deep) != dv {
+			t.Errorf("%v took the deep mark as %v, and not once", v, dv)
+		}
+		got, _ := tenon.UnmarkDeep(dv)
+		if want, _ := tenon.UnmarkDeep(v); !tenon.Identical(got, want) {
+			t.Errorf("deep marking %v changed more than its marks: %v", v, got)
+		}
+		if !v.IsKnown() {
+			continue
+		}
+		for _, r := range readable(dv) {
+			if !tenon.HasMark(r, deep) {
+				t.Errorf("%v, read out of %v, does not carry the deep mark", r, dv)
+			}
+		}
 	}
 }

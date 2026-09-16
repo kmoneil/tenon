@@ -395,13 +395,19 @@ func (v Value) Index(i int) Value {
 
 // Elements returns the elements of a list, set or tuple in order, in a new
 // slice. It panics for other values.
+//
+// A set's members carry no marks where the set holds them, so a deep mark on
+// the set is attached to each member as Elements returns it, and a member
+// comes out as it would out of a list carrying the mark.
 func (v Value) Elements() []Value {
 	n := v.data()
 	n.noContent("Elements")
 	if n.state == stateKnown {
 		switch n.typ.t.kind {
-		case KindList, KindSet, KindTuple:
+		case KindList, KindTuple:
 			return slices.Clone(n.data.([]Value))
+		case KindSet:
+			return n.retrievedMembers()
 		}
 	}
 	usagePanic("Elements called on %s, not a list, set or tuple value", n.describe())
