@@ -370,7 +370,6 @@ func TestConformance_TY001_EveryValueHasOneConcreteType(t *testing.T) {
 		"Mul":            tenon.Mul(one, one),
 		"Div":            tenon.Div(one, one),
 		"Mod":            tenon.Mod(one, one),
-		"Encode":         encodedOne(),
 		"Convert":        tenon.Convert(one, tenon.Exactly(str), tenon.Unsafe),
 		"WithMarks":      tenon.WithMarks(one, stamp{id: "m"}),
 		"Unmark":         unmarked(tenon.WithMarks(one, stamp{id: "m"})),
@@ -383,7 +382,7 @@ func TestConformance_TY001_EveryValueHasOneConcreteType(t *testing.T) {
 		"TupleVal": tenon.Tuple(num, bl), "ObjectVal": tenon.Object(map[string]tenon.Type{"a": num}),
 		"Narrow": num, "Resolve": str, "And": bl, "Or": bl, "Not": bl, "IsNull": bl,
 		"Equals": bl, "LessThan": bl, "Length": num, "Contains": bl,
-		"Add": num, "Sub": num, "Mul": num, "Div": num, "Mod": num, "Convert": str, "Encode": num,
+		"Add": num, "Sub": num, "Mul": num, "Div": num, "Mod": num, "Convert": str,
 		"WithMarks": num, "Unmark": num, "UnmarkDeep": tenon.List(num),
 	}
 	// A value with no type is the other half of the rule.
@@ -585,10 +584,4 @@ func deserializeFailure() tenon.Value {
 func projectFailure() tenon.Value {
 	_, failure, _ := tenon.ProjectJSON(tenon.Unknown(tenon.NumberType()))
 	return failure
-}
-
-// encodedOne returns the encoding of the Go number 1.
-func encodedOne() tenon.Value {
-	v, _ := tenon.Encode(1)
-	return v
 }

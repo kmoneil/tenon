@@ -1,4 +1,4 @@
-package tenon
+package gotenon
 
 import (
 	"math/big"
@@ -7,7 +7,7 @@ import (
 	"sync"
 	"unicode/utf8"
 
-	"tenon/internal/uni"
+	"tenon"
 )
 
 // goKind is how a Go type maps to tenon.
@@ -37,7 +37,7 @@ const (
 type ValueMarshaler interface {
 	// MarshalValue returns the value the Go value encodes as, or an error.
 	// An error that is a *DiagnosticError contributes its diagnostics.
-	MarshalValue() (Value, error)
+	MarshalValue() (tenon.Value, error)
 }
 
 // ValueUnmarshaler is implemented by a pointer to a Go type that decodes
@@ -47,7 +47,7 @@ type ValueMarshaler interface {
 type ValueUnmarshaler interface {
 	// UnmarshalValue sets the Go value from v, or returns an error. An error
 	// that is a *DiagnosticError contributes its diagnostics.
-	UnmarshalValue(v Value) error
+	UnmarshalValue(v tenon.Value) error
 }
 
 // goMapping is how a Go type maps to tenon: the type its values encode as,
@@ -58,14 +58,17 @@ type goMapping struct {
 	// typ is the type the Go type's values encode as, and the zero Type where
 	// the Go type maps to no type, since what its values encode as depends on
 	// what they hold.
-	typ        Type
-	constraint Constraint
+	typ        tenon.Type
+	constraint tenon.Constraint
 	elem       *goMapping // the element of a slice, array, map or pointer
 	fields     []goField  // the mapped fields of a struct, in field order
 	// marshal and unmarshal say the Go type encodes or decodes itself, in
 	// place of its mapping in that direction.
 	marshal, unmarshal bool
 }
+
+// typed reports whether the Go type maps to a type.
+func (m *goMapping) typed() bool { return m.typ != (tenon.Type{}) }
 
 // goField is a struct field that maps to an attribute.
 type goField struct {
@@ -76,7 +79,7 @@ type goField struct {
 }
 
 var (
-	valueGoType    = reflect.TypeFor[Value]()
+	valueGoType    = reflect.TypeFor[tenon.Value]()
 	bigIntGoType   = reflect.TypeFor[big.Int]()
 	bigFloatGoType = reflect.TypeFor[big.Float]()
 	bigRatGoType   = reflect.TypeFor[big.Rat]()
@@ -116,43 +119,43 @@ func buildMapping(rt reflect.Type, building map[reflect.Type]bool) *goMapping {
 		m.unmarshal = reflect.PointerTo(rt).Implements(unmarshalerGoType)
 	}
 	if m.marshal && m.unmarshal {
-		m.kind, m.constraint = goCustom, Any()
+		m.kind, m.constraint = goCustom, tenon.Any()
 		actual, _ := goMappings.LoadOrStore(rt, m)
 		return actual.(*goMapping)
 	}
-	number := Exactly(Type{numberType})
+	number := tenon.Exactly(tenon.NumberType())
 	switch rt {
 	case valueGoType:
-		m.kind, m.constraint = goValue, Any()
+		m.kind, m.constraint = goValue, tenon.Any()
 	case bigIntGoType:
-		m.kind, m.typ, m.constraint = goBigInt, Type{numberType}, number
+		m.kind, m.typ, m.constraint = goBigInt, tenon.NumberType(), number
 	case bigFloatGoType:
-		m.kind, m.typ, m.constraint = goBigFloat, Type{numberType}, number
+		m.kind, m.typ, m.constraint = goBigFloat, tenon.NumberType(), number
 	case bigRatGoType:
-		m.kind, m.typ, m.constraint = goBigRat, Type{numberType}, number
+		m.kind, m.typ, m.constraint = goBigRat, tenon.NumberType(), number
 	default:
 		switch rt.Kind() {
 		case reflect.Bool:
-			m.kind, m.typ = goBool, Type{boolType}
-			m.constraint = Exactly(m.typ)
+			m.kind, m.typ = goBool, tenon.BoolType()
+			m.constraint = tenon.Exactly(m.typ)
 		case reflect.String:
-			m.kind, m.typ = goString, Type{stringType}
-			m.constraint = Exactly(m.typ)
+			m.kind, m.typ = goString, tenon.StringType()
+			m.constraint = tenon.Exactly(m.typ)
 		case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-			m.kind, m.typ, m.constraint = goInt, Type{numberType}, number
+			m.kind, m.typ, m.constraint = goInt, tenon.NumberType(), number
 		case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
-			m.kind, m.typ, m.constraint = goUint, Type{numberType}, number
+			m.kind, m.typ, m.constraint = goUint, tenon.NumberType(), number
 		case reflect.Float32, reflect.Float64:
-			m.kind, m.typ, m.constraint = goFloat, Type{numberType}, number
+			m.kind, m.typ, m.constraint = goFloat, tenon.NumberType(), number
 		case reflect.Slice, reflect.Array:
 			m.kind = goSlice
 			if rt.Kind() == reflect.Array {
 				m.kind = goArray
 			}
 			m.elem = buildMapping(rt.Elem(), building)
-			m.constraint = Any()
-			if m.elem.typ.t != nil {
-				m.typ, m.constraint = List(m.elem.typ), ListOf(m.elem.constraint)
+			m.constraint = tenon.Any()
+			if m.elem.typed() {
+				m.typ, m.constraint = tenon.List(m.elem.typ), tenon.ListOf(m.elem.constraint)
 			}
 		case reflect.Map:
 			if rt.Key().Kind() != reflect.String {
@@ -160,9 +163,9 @@ func buildMapping(rt reflect.Type, building map[reflect.Type]bool) *goMapping {
 			}
 			m.kind = goMap
 			m.elem = buildMapping(rt.Elem(), building)
-			m.constraint = Any()
-			if m.elem.typ.t != nil {
-				m.typ, m.constraint = Map(m.elem.typ), MapOf(m.elem.constraint)
+			m.constraint = tenon.Any()
+			if m.elem.typed() {
+				m.typ, m.constraint = tenon.Map(m.elem.typ), tenon.MapOf(m.elem.constraint)
 			}
 		case reflect.Struct:
 			m.kind = goStruct
@@ -181,10 +184,10 @@ func buildMapping(rt reflect.Type, building map[reflect.Type]bool) *goMapping {
 	// A type that encodes or decodes itself maps to no type, or to Any, in
 	// that direction, and by its own kind in the other.
 	if m.marshal {
-		m.typ = Type{}
+		m.typ = tenon.Type{}
 	}
 	if m.unmarshal {
-		m.constraint = Any()
+		m.constraint = tenon.Any()
 	}
 	actual, _ := goMappings.LoadOrStore(rt, m)
 	return actual.(*goMapping)
@@ -195,8 +198,8 @@ func buildMapping(rt reflect.Type, building map[reflect.Type]bool) *goMapping {
 func structMapping(m *goMapping, building map[reflect.Type]bool) {
 	rt := m.rt
 	names := map[string]string{} // normalized attribute name to the field mapped to it
-	fields := map[string]Field{}
-	attrs := map[string]Type{}
+	fields := map[string]tenon.Field{}
+	attrs := map[string]tenon.Type{}
 	typed := true
 	for i := range rt.NumField() {
 		sf := rt.Field(i)
@@ -228,22 +231,22 @@ func structMapping(m *goMapping, building map[reflect.Type]bool) {
 		if !utf8.ValidString(name) {
 			usagePanic("field %s of %s has a tag naming an attribute that is not valid UTF-8", sf.Name, rt)
 		}
-		normalized := uni.NFC(name)
+		normalized := tenon.String(name).AsString()
 		if other, ok := names[normalized]; ok {
 			usagePanic("fields %s and %s of %s both map to the attribute %q", other, sf.Name, rt, normalized)
 		}
 		names[normalized] = sf.Name
 		fm := buildMapping(sf.Type, building)
 		m.fields = append(m.fields, goField{index: i, name: normalized, optional: optional, m: fm})
-		fields[normalized] = Field{Constraint: fm.constraint, Required: !optional}
-		if fm.typ.t == nil {
+		fields[normalized] = tenon.Field{Constraint: fm.constraint, Required: !optional}
+		if !fm.typed() {
 			typed = false
 		} else {
 			attrs[normalized] = fm.typ
 		}
 	}
-	m.constraint = ObjectWith(fields, true)
+	m.constraint = tenon.ObjectWith(fields, true)
 	if typed {
-		m.typ = Object(attrs)
+		m.typ = tenon.Object(attrs)
 	}
 }

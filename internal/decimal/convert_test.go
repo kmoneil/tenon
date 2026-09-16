@@ -14,8 +14,12 @@ func TestRat(t *testing.T) {
 	rng := rand.New(rand.NewPCG(26, 26))
 	for range 2000 {
 		d := randomNumber(t, rng)
-		if got, want := d.Rat(), toRat(d); got.Cmp(want) != 0 {
+		got, want := d.Rat(), toRat(d)
+		if got.Cmp(want) != 0 {
 			t.Fatalf("%s as a rational is %s, want %s", d, got.RatString(), want.RatString())
+		}
+		if b, ok := d.BigInt(); ok != want.IsInt() || ok && b.Cmp(want.Num()) != 0 {
+			t.Fatalf("%s as an integer is %v, %t", d, b, ok)
 		}
 	}
 }

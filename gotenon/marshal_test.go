@@ -1,4 +1,4 @@
-package tenon_test
+package gotenon_test
 
 import (
 	"errors"
@@ -7,6 +7,7 @@ import (
 
 	"tenon"
 	"tenon/conformance"
+	"tenon/gotenon"
 )
 
 // moment is a time that marshals itself as text.
@@ -21,7 +22,7 @@ func (m moment) MarshalValue() (tenon.Value, error) {
 
 func (m *moment) UnmarshalValue(v tenon.Value) error {
 	if !v.IsKnown() || v.IsError() || v.Type() != tenon.StringType() {
-		return &tenon.DiagnosticError{Value: tenon.ErrorVal(tenon.Diagnostic{Code: "app.not_a_moment", Message: "a moment is a known string, not " + v.String()})}
+		return &gotenon.DiagnosticError{Value: tenon.ErrorVal(tenon.Diagnostic{Code: "app.not_a_moment", Message: "a moment is a known string, not " + v.String()})}
 	}
 	t, err := time.Parse(time.RFC3339Nano, v.AsString())
 	if err != nil {
@@ -140,7 +141,7 @@ func TestMarshalersAtTheBoundary(t *testing.T) {
 		wantDiag{"app.not_a_moment", ".start"})
 	wantEncodeFailure(t, "a moment with no time", schedule{At: instant{time.Now()}},
 		wantDiag{tenon.CodeEncodeMarshalFailed, ".start"})
-	mustPanicUsage(t, "returned the zero Value", func() { tenon.Encode(zeroMarshaler{}) })
+	mustPanicUsage(t, "returned the zero Value", func() { gotenon.Encode(zeroMarshaler{}) })
 }
 
 // zeroMarshaler breaks the contract of a marshaler.

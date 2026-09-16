@@ -1,7 +1,6 @@
 package tenon
 
 import (
-	"reflect"
 	"slices"
 	"strings"
 )
@@ -111,7 +110,7 @@ func WithMarks(v Value, marks ...Mark) Value {
 		if m == nil {
 			usagePanic("WithMarks called with a nil Mark as mark %d", i)
 		}
-		if !reflect.TypeOf(m).Comparable() {
+		if !comparableMark(m) {
 			usagePanic("WithMarks called with a mark of type %T, which is not comparable and so cannot be told from other marks", m)
 		}
 	}
@@ -127,6 +126,19 @@ func WithMarks(v Value, marks ...Mark) Value {
 		(&attachment{deep: deep}).within(&nn)
 	}
 	return Value{&nn}
+}
+
+// comparableMark reports whether m is of a type Go equality can compare, which
+// telling marks apart needs. Comparing a value of a type that is not comparable
+// panics, and the panic is the answer.
+func comparableMark(m Mark) (ok bool) {
+	defer func() {
+		if recover() != nil {
+			ok = false
+		}
+	}()
+	_ = m == m
+	return true
 }
 
 // mergeMarks returns held with marks added, each once, sorted by identifier,

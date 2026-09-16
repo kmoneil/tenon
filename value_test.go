@@ -108,6 +108,34 @@ func TestConformance_BO001_BoolDomain(t *testing.T) {
 	}
 }
 
+func TestHasContent(t *testing.T) {
+	str := tenon.StringType()
+	partial := tenon.ListVal(str, tenon.Unknown(str))
+	for _, tt := range []struct {
+		v    tenon.Value
+		want bool
+	}{
+		{tenon.ListVal(str, tenon.String("x")), true},
+		{partial, true},
+		{tenon.WithMarks(tenon.ListVal(str), stamp{id: "m"}), true},
+		{tenon.NullVal(tenon.List(str)), false},
+		{tenon.Unknown(tenon.List(str)), false},
+		{tenon.Pending(tenon.ListOf(tenon.Exactly(str))), false},
+		{tenon.ErrorVal(tenon.Diagnostic{Code: "app.failed", Message: "it failed"}), false},
+	} {
+		if got := tt.v.HasContent(); got != tt.want {
+			t.Errorf("%v: HasContent() = %t, want %t", tt.v, got, tt.want)
+		}
+		if !tt.want {
+			mustPanicUsage(t, "Len called on", func() { tt.v.Len() })
+		}
+	}
+	// A partial value is not known, and its members are there to read.
+	if partial.IsKnown() || partial.Len() != 1 {
+		t.Errorf("%v: IsKnown() = %t, Len() = %d", partial, partial.IsKnown(), partial.Len())
+	}
+}
+
 func TestNumberValues(t *testing.T) {
 	for _, tt := range []struct {
 		v     tenon.Value
@@ -127,8 +155,12 @@ func TestNumberValues(t *testing.T) {
 		if i, ok := tt.v.AsInt64(); i != tt.i || ok != tt.isInt {
 			t.Errorf("%v: AsInt64() = %d, %t", tt.v, i, ok)
 		}
-		if want, _ := new(big.Rat).SetString(tt.text); tt.v.AsBigRat().Cmp(want) != 0 {
+		want, _ := new(big.Rat).SetString(tt.text)
+		if tt.v.AsBigRat().Cmp(want) != 0 {
 			t.Errorf("%v: AsBigRat() = %s", tt.v, tt.v.AsBigRat().RatString())
+		}
+		if b, ok := tt.v.AsBigInt(); ok != want.IsInt() || ok && b.Cmp(want.Num()) != 0 {
+			t.Errorf("%v: AsBigInt() = %v, %t", tt.v, b, ok)
 		}
 	}
 

@@ -23,6 +23,15 @@ func (d Dec) Int64() (int64, bool) {
 	return scaleSmall(d.small, d.exp)
 }
 
+// BigInt returns d as a new big.Int and true if d is an integer, and nil and
+// false otherwise. A fraction is refused without arithmetic, however small.
+func (d Dec) BigInt() (*big.Int, bool) {
+	if d.exp < 0 {
+		return nil, false
+	}
+	return d.scaledCoefficient(d.exp), true
+}
+
 // Parts returns the coefficient and exponent of d, which is coefficient ×
 // 10^exp. The coefficient is in small where big is nil, and has no trailing
 // zero unless d is zero, whose parts are all zero. big must not be modified.

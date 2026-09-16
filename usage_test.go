@@ -14,10 +14,11 @@ import (
 
 // TestConformance_ER001_OnlyTheHelperPanics scans the module's Go source,
 // tests included, for calls to panic. Every usage error goes through the
-// helper in usage.go, beside the one for an internal defect, which keeps the
-// panic surface in one file.
+// helper in its package's usage.go, beside the one for an internal defect in
+// tenon's, which keeps each package's panic surface in one file.
 func TestConformance_ER001_OnlyTheHelperPanics(t *testing.T) {
 	conformance.Covers(t, "ER-001")
+	helpers := map[string]bool{"usage.go": true, filepath.Join("gotenon", "usage.go"): true}
 	fset := token.NewFileSet()
 	scanned := 0
 	err := filepath.WalkDir(".", func(path string, d fs.DirEntry, err error) error {
@@ -30,7 +31,7 @@ func TestConformance_ER001_OnlyTheHelperPanics(t *testing.T) {
 			}
 			return nil
 		}
-		if !strings.HasSuffix(path, ".go") || path == "usage.go" {
+		if !strings.HasSuffix(path, ".go") || helpers[path] {
 			return nil
 		}
 		file, err := parser.ParseFile(fset, path, nil, 0)

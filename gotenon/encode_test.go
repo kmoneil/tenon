@@ -1,4 +1,4 @@
-package tenon_test
+package gotenon_test
 
 import (
 	"errors"
@@ -8,12 +8,13 @@ import (
 
 	"tenon"
 	"tenon/conformance"
+	"tenon/gotenon"
 )
 
 // encoded encodes x, failing t if encoding fails.
 func encoded[T any](t *testing.T, x T) tenon.Value {
 	t.Helper()
-	v, err := tenon.Encode(x)
+	v, err := gotenon.Encode(x)
 	if err != nil {
 		t.Fatalf("Encode(%v) failed: %v", x, err)
 	}
@@ -24,8 +25,8 @@ func encoded[T any](t *testing.T, x T) tenon.Value {
 // diagnostics.
 func wantEncodeFailure[T any](t *testing.T, what string, x T, want ...wantDiag) {
 	t.Helper()
-	_, err := tenon.Encode(x)
-	var de *tenon.DiagnosticError
+	_, err := gotenon.Encode(x)
+	var de *gotenon.DiagnosticError
 	if !errors.As(err, &de) {
 		t.Errorf("%s: Encode gave %v, want a *DiagnosticError", what, err)
 		return
@@ -108,32 +109,32 @@ type Address struct {
 
 func TestConformance_GO011_UnsupportedTypes(t *testing.T) {
 	conformance.Covers(t, "GO-011", "GO-021")
-	mustPanicUsage(t, "of kind interface", func() { tenon.Encode[any](1) })
-	mustPanicUsage(t, "of kind chan", func() { tenon.Encode(make(chan int)) })
-	mustPanicUsage(t, "of kind func", func() { tenon.Encode(func() {}) })
-	mustPanicUsage(t, "of kind complex128", func() { tenon.Encode(complex(1, 2)) })
-	mustPanicUsage(t, "pointer to tenon.Value", func() { tenon.Encode(&tenon.Value{}) })
-	mustPanicUsage(t, "keys of kind int", func() { tenon.Encode(map[int]string{}) })
-	mustPanicUsage(t, "holds itself", func() { tenon.Encode(selfish{}) })
+	mustPanicUsage(t, "of kind interface", func() { gotenon.Encode[any](1) })
+	mustPanicUsage(t, "of kind chan", func() { gotenon.Encode(make(chan int)) })
+	mustPanicUsage(t, "of kind func", func() { gotenon.Encode(func() {}) })
+	mustPanicUsage(t, "of kind complex128", func() { gotenon.Encode(complex(1, 2)) })
+	mustPanicUsage(t, "pointer to tenon.Value", func() { gotenon.Encode(&tenon.Value{}) })
+	mustPanicUsage(t, "keys of kind int", func() { gotenon.Encode(map[int]string{}) })
+	mustPanicUsage(t, "holds itself", func() { gotenon.Encode(selfish{}) })
 
 	// Tags are checked when the type is first met.
 	mustPanicUsage(t, `whose option "omitempty" is not optional`, func() {
-		tenon.Encode(struct {
+		gotenon.Encode(struct {
 			A int `tenon:"a,omitempty"`
 		}{})
 	})
 	mustPanicUsage(t, "skips it and so takes no options", func() {
-		tenon.Encode(struct {
+		gotenon.Encode(struct {
 			A int `tenon:"-,optional"`
 		}{})
 	})
 	mustPanicUsage(t, "both map to the attribute", func() {
-		tenon.Encode(struct {
+		gotenon.Encode(struct {
 			A int `tenon:"caf\U000000e9"`
 			B int `tenon:"cafe\U00000301"`
 		}{})
 	})
-	mustPanicUsage(t, "must be named by its tenon tag", func() { tenon.Encode(embedsUntagged{}) })
+	mustPanicUsage(t, "must be named by its tenon tag", func() { gotenon.Encode(embedsUntagged{}) })
 	// An embedded field named by its tag is a field of its own type, and an
 	// unexported one is not mapped.
 	wantValue(t, "an embedded field", encoded(t, embeds{Address: Address{Street: "Main"}, address: address{Street: "hidden"}, Name: "x"}),
@@ -182,7 +183,7 @@ func TestConformance_GO012_ValuesOfManyTypes(t *testing.T) {
 	wantValue(t, "an absent extra", encoded(t, holder{Name: "x"}), obj(map[string]tenon.Value{"name": s("x")}))
 	wantValue(t, "an extra", encoded(t, holder{Name: "x", Extra: n(1)}), obj(map[string]tenon.Value{"name": s("x"), "extra": n(1)}))
 	mustPanicUsage(t, "holding the zero Value", func() {
-		tenon.Encode(struct {
+		gotenon.Encode(struct {
 			V tenon.Value `tenon:"v"`
 		}{})
 	})
@@ -235,8 +236,8 @@ func TestConformance_GO030_NumbersEncodeExactly(t *testing.T) {
 		wantDiag{tenon.CodeEncodeInexact, ".d"},
 		wantDiag{tenon.CodeStringInvalidUTF8, ".e"},
 		wantDiag{tenon.CodeNumberOutOfRange, ".f"})
-	_, err := tenon.Encode(bad)
-	if msg := err.Error(); msg == "" || !errors.As(err, new(*tenon.DiagnosticError)) {
+	_, err := gotenon.Encode(bad)
+	if msg := err.Error(); msg == "" || !errors.As(err, new(*gotenon.DiagnosticError)) {
 		t.Errorf("the error reads %q", msg)
 	}
 	wantValue(t, "a string in normal form", encoded(t, "cafe\U00000301"), s("caf\U000000e9"))

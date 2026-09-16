@@ -323,6 +323,13 @@ func (v Value) IsResolved() bool { return v.data().state.resolved() }
 // to read; it is the range that a member leaves open, not the content.
 func (v Value) IsKnown() bool { return v.data().isKnown() }
 
+// HasContent reports whether v's content can be read: v is a known value other
+// than null, or a collection or structural value holding members that are not
+// all known, whose members are there to read all the same. Len, Index,
+// Elements, MapKeys, MapElement, Attribute and the As accessors need it; a null,
+// an unknown value, a pending value and an error value have no content.
+func (v Value) HasContent() bool { return v.data().state == stateKnown }
+
 // IsPending reports whether v is a pending value, whose type is not yet
 // determined.
 func (v Value) IsPending() bool { return v.data().state == statePending }
@@ -381,6 +388,13 @@ func (v Value) AsBigRat() *big.Rat {
 // Number value.
 func (v Value) AsInt64() (int64, bool) {
 	return v.known(KindNumber, "AsInt64").data.(decimal.Dec).Int64()
+}
+
+// AsBigInt returns the content of a Number value as a new big.Int and true if
+// it is an integer, and nil and false otherwise. It panics if v is not a
+// Number value.
+func (v Value) AsBigInt() (*big.Int, bool) {
+	return v.known(KindNumber, "AsBigInt").data.(decimal.Dec).BigInt()
 }
 
 // String describes v for messages, as in "text", list(number)[1, 2.5] or
