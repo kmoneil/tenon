@@ -451,11 +451,6 @@ func TestConformance_UN005_NarrowingToOneValue(t *testing.T) {
 			tenon.TupleVal(),
 		},
 		{
-			"a type whose members have one value", tenon.Unknown(tenon.Tuple(empty, empty)),
-			[]tenon.Narrowing{tenon.NotNull()},
-			tenon.TupleVal(tenon.TupleVal(), tenon.TupleVal()),
-		},
-		{
 			"an object with no attributes", tenon.Unknown(tenon.Object(nil)),
 			[]tenon.Narrowing{tenon.NotNull()},
 			tenon.ObjectVal(nil),
@@ -493,6 +488,16 @@ func TestConformance_UN005_NarrowingToOneValue(t *testing.T) {
 			[]tenon.Narrowing{tenon.NotNull()},
 		},
 		{
+			// Each member of the pair may be the empty tuple or null.
+			"members whose types have one value besides null", tenon.Unknown(tenon.Tuple(empty, empty)),
+			[]tenon.Narrowing{tenon.NotNull()},
+		},
+		{
+			"an attribute whose type has one value besides null",
+			tenon.Unknown(tenon.Object(map[string]tenon.Type{"a": tenon.Object(nil)})),
+			[]tenon.Narrowing{tenon.NotNull()},
+		},
+		{
 			// A list of exactly three empty tuples holds one value too, but
 			// finding that out means building a value as large as the bounds
 			// allow, which the rule permits an implementation to decline.
@@ -502,6 +507,13 @@ func TestConformance_UN005_NarrowingToOneValue(t *testing.T) {
 	} {
 		if got := tenon.Narrow(tt.v, tt.ns...); got.IsKnown() {
 			t.Errorf("%s: narrowed to the known value %v", tt.name, got)
+		}
+	}
+	// Both values that range holds exist.
+	pair := tenon.Tuple(empty, empty)
+	for _, v := range []tenon.Value{tenon.TupleVal(tenon.TupleVal(), tenon.TupleVal()), tenon.TupleVal(tenon.NullVal(empty), tenon.TupleVal())} {
+		if v.Type() != pair || !v.IsKnown() {
+			t.Errorf("%v is not a known value of %v", v, pair)
 		}
 	}
 }

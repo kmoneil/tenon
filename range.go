@@ -666,33 +666,18 @@ func (r *rangeData) singleton(t Type) (Value, bool) {
 func (r *rangeData) emptyOnly() bool { return r.lenHi.set && r.lenHi.n == 0 }
 
 // soleValue returns the only value of type t other than null, and whether t
-// has only one: the empty tuple and the empty object have no room to differ,
-// and neither do tuples and objects built from types with the same property.
-// Every other kind has at least two values, so no narrowing but Null and none
-// of the length bounds can pin one down.
+// has only one: the empty tuple and the empty object have no room to differ.
+// A tuple or object with members always has room, because a member may be
+// null, so a tuple of one empty tuple holds both (()) and (null). Every other
+// kind has at least two values, so no narrowing but Null and none of the
+// length bounds can pin one down.
 func soleValue(t Type) (Value, bool) {
 	d := t.t
-	switch d.kind {
-	case KindTuple:
-		elems := make([]Value, len(d.elems))
-		for i, e := range d.elems {
-			v, ok := soleValue(e)
-			if !ok {
-				return Value{}, false
-			}
-			elems[i] = v
-		}
-		return TupleVal(elems...), true
-	case KindObject:
-		attrs := make(map[string]Value, len(d.attrs))
-		for _, a := range d.attrs {
-			v, ok := soleValue(a.typ)
-			if !ok {
-				return Value{}, false
-			}
-			attrs[a.name] = v
-		}
-		return ObjectVal(attrs), true
+	switch {
+	case d.kind == KindTuple && len(d.elems) == 0:
+		return TupleVal(), true
+	case d.kind == KindObject && len(d.attrs) == 0:
+		return ObjectVal(nil), true
 	}
 	return Value{}, false
 }

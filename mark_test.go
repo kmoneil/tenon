@@ -698,12 +698,12 @@ func TestConformance_MK008_DeepMarks(t *testing.T) {
 		t.Error("attaching a deep mark again did not return the value itself")
 	}
 
-	// A mark carried onto a value that narrowing comes down to is applied
-	// deeply there too: to a tuple's elements, and to the set a listing
-	// describes, on the set.
-	tup := tenon.Narrow(tenon.WithMarks(tenon.Unknown(tenon.Tuple(tenon.Tuple())), deep), tenon.NotNull())
-	if !tup.IsKnown() || !tenon.HasMark(tup.Index(0), deep) {
-		t.Errorf("narrowing came down to %v, whose element does not carry the deep mark", tup)
+	// A mark carried onto a value that narrowing comes down to stays on it:
+	// on the empty tuple, and on the set a listing describes, where Elements
+	// applies it to the members.
+	tup := tenon.Narrow(tenon.WithMarks(tenon.Unknown(tenon.Tuple()), deep), tenon.NotNull())
+	if !tup.IsKnown() || !tenon.HasMark(tup, deep) {
+		t.Errorf("narrowing came down to %v, which does not carry the deep mark", tup)
 	}
 	listed := tenon.Narrow(tenon.WithMarks(tenon.Unknown(tenon.Set(num)), deep),
 		tenon.NotNull(), tenon.Members(one), tenon.LengthMax(1))
