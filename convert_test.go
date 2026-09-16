@@ -422,8 +422,13 @@ func TestConformance_CV023_ConvertingToObjects(t *testing.T) {
 	fields := map[string]tenon.Field{"name": tenon.Required(is(str)), "port": tenon.Optional(is(num))}
 	closed, open := tenon.ObjectWith(fields, true), tenon.ObjectWith(fields, false)
 
-	// An optional attribute that is absent stays absent.
-	wantValue(t, "name only", tenon.Convert(obj(map[string]tenon.Value{"name": n(1)}), closed, uns), obj(map[string]tenon.Value{"name": s("1")}))
+	// An optional attribute that is absent is added as null where its
+	// constraint gives a type, and stays absent where it gives none.
+	noPort := tenon.NullVal(num)
+	wantValue(t, "name only", tenon.Convert(obj(map[string]tenon.Value{"name": n(1)}), closed, uns),
+		obj(map[string]tenon.Value{"name": s("1"), "port": noPort}))
+	loose := tenon.ObjectWith(map[string]tenon.Field{"name": tenon.Required(is(str)), "note": tenon.Optional(tenon.Any())}, true)
+	wantValue(t, "optional any", tenon.Convert(obj(map[string]tenon.Value{"name": s("a")}), loose, safe), obj(map[string]tenon.Value{"name": s("a")}))
 	wantValue(t, "name and port", tenon.Convert(obj(map[string]tenon.Value{"name": s("a"), "port": s("80")}), closed, uns),
 		obj(map[string]tenon.Value{"name": s("a"), "port": n(80)}))
 
@@ -435,7 +440,7 @@ func TestConformance_CV023_ConvertingToObjects(t *testing.T) {
 	isolated := stamp{id: "isolated", policy: tenon.Isolate}
 	extra := tenon.WithMarks(tenon.Bool(true), isolated)
 	wantValue(t, "open, extra", tenon.Convert(obj(map[string]tenon.Value{"name": s("a"), "debug": extra}), open, safe),
-		obj(map[string]tenon.Value{"name": s("a"), "debug": extra}))
+		obj(map[string]tenon.Value{"name": s("a"), "debug": extra, "port": noPort}))
 	wantErrors(t, "closed, extra", tenon.Convert(obj(map[string]tenon.Value{"name": s("a"), "prot": n(80)}), closed, safe),
 		wantDiag{tenon.CodeConvertUnexpectedAttribute, ".prot"})
 
@@ -532,7 +537,7 @@ func TestConformance_CV030_NullsConvertToNulls(t *testing.T) {
 		"port": tenon.Optional(is(num)),
 	}, true)
 	wantValue(t, "null map of maps to map_of(object_with)", tenon.Convert(tenon.NullVal(tenon.Map(tenon.Map(str))), tenon.MapOf(server), uns),
-		tenon.NullVal(tenon.Map(tenon.Object(map[string]tenon.Type{"name": str}))))
+		tenon.NullVal(tenon.Map(tenon.Object(map[string]tenon.Type{"name": str, "port": num}))))
 	nested := tenon.ObjectWith(map[string]tenon.Field{
 		"tags": tenon.Required(tenon.ObjectWith(map[string]tenon.Field{"env": tenon.Required(is(str))}, false)),
 		"note": tenon.Optional(tenon.Any()),
@@ -541,7 +546,7 @@ func TestConformance_CV030_NullsConvertToNulls(t *testing.T) {
 		tenon.NullVal(tenon.Object(map[string]tenon.Type{"tags": tenon.Object(map[string]tenon.Type{"env": str})})))
 	wantValue(t, "null map of strings to object_with", tenon.Convert(tenon.NullVal(tenon.Map(str)), tenon.ObjectWith(map[string]tenon.Field{
 		"name": tenon.Required(is(str)), "port": tenon.Optional(is(num)),
-	}, false), uns), tenon.NullVal(tenon.Object(map[string]tenon.Type{"name": str})))
+	}, false), uns), tenon.NullVal(tenon.Object(map[string]tenon.Type{"name": str, "port": num})))
 	wantErrors(t, "null map whose element cannot fill a required field", tenon.Convert(tenon.NullVal(tenon.Map(boo)),
 		tenon.ObjectWith(map[string]tenon.Field{"a": tenon.Required(is(num))}, false), uns), wantDiag{tenon.CodeConvertNoConversion, ""})
 }
@@ -822,6 +827,9 @@ func TestConformance_CV001_EveryResultSatisfiesItsTarget(t *testing.T) {
 				switch {
 				case r.IsError():
 				case r.IsPending():
+					if again := tenon.Convert(r, c, p); !tenon.Identical(again, r) {
+						t.Errorf("%s = %v, which converts again to %v", what, r, again)
+					}
 					if got := tenon.PendingConstraint(r); got.String() != c.String() {
 						t.Errorf("%s = %v, a pending value whose constraint is not the target", what, r)
 					}
@@ -832,6 +840,11 @@ func TestConformance_CV001_EveryResultSatisfiesItsTarget(t *testing.T) {
 					t.Errorf("%s = %v, whose type does not satisfy the target", what, r)
 				case v.IsKnown() && !r.IsKnown():
 					t.Errorf("%s = %v: a known value converted to one that is not known", what, r)
+				default:
+					// A result converts again to itself.
+					if again := tenon.Convert(r, c, p); !tenon.Identical(again, r) {
+						t.Errorf("%s = %v, which converts again to %v", what, r, again)
+					}
 				}
 			}
 		}
@@ -959,5 +972,108 @@ func TestConversionMessagesWithholdRedactedShape(t *testing.T) {
 				t.Errorf("Convert(%v, %v) says %q, which shows %s", tt.v, tt.c, d.Message, tt.hide)
 			}
 		}
+	}
+}
+
+func TestConformance_CV027_TheTypeAConstraintGives(t *testing.T) {
+	conformance.Covers(t, "CV-027", "CV-032")
+	pendingAny := tenon.Pending(tenon.Any())
+	server := tenon.ObjectWith(map[string]tenon.Field{
+		"name": tenon.Required(is(str)),
+		"port": tenon.Optional(is(num)),
+		"tags": tenon.Optional(tenon.ListOf(tenon.ObjectWith(map[string]tenon.Field{"k": tenon.Optional(is(str))}, true))),
+		"none": tenon.Optional(tenon.OneOf()),
+	}, true)
+	serverType := tenon.Object(map[string]tenon.Type{
+		"name": str, "port": num, "tags": tenon.List(tenon.Object(map[string]tenon.Type{"k": str})),
+	})
+	// Where a constraint gives a type, whatever a pending value turns out to
+	// be converts to that type.
+	for _, tt := range []struct {
+		c    tenon.Constraint
+		want tenon.Type
+	}{
+		{is(num), num},
+		{tenon.ListOf(is(str)), tenon.List(str)},
+		{tenon.SetOf(tenon.TupleOf(is(num), is(boo))), tenon.Set(tenon.Tuple(num, boo))},
+		{server, serverType},
+		{tenon.MapOf(server), tenon.Map(serverType)},
+		{tenon.OneOf(tenon.ListOf(is(str)), is(tenon.List(str)), tenon.OneOf()), tenon.List(str)},
+	} {
+		wantValue(t, "Convert(pending, "+tt.c.String()+")", tenon.Convert(pendingAny, tt.c, uns), tenon.Unknown(tt.want))
+	}
+	// Where it gives none, the result is pending.
+	for _, c := range []tenon.Constraint{
+		tenon.ListOf(tenon.Any()),
+		tenon.ObjectWith(map[string]tenon.Field{"port": tenon.Optional(is(num))}, false),
+		tenon.ObjectWith(map[string]tenon.Field{"note": tenon.Optional(tenon.Any())}, true),
+		tenon.OneOf(is(num), is(str)),
+		tenon.TupleOf(is(num), tenon.Any()),
+	} {
+		wantValue(t, "Convert(pending, "+c.String()+")", tenon.Convert(pendingAny, c, uns), tenon.Pending(c))
+	}
+
+	// A known value converts to the type too, its absent optional attributes
+	// null at every depth.
+	got := tenon.Convert(obj(map[string]tenon.Value{"name": s("a"), "tags": tenon.TupleVal(obj(nil))}), server, uns)
+	wantValue(t, "a server", got, obj(map[string]tenon.Value{
+		"name": s("a"),
+		"port": tenon.NullVal(num),
+		"tags": tenon.ListVal(tenon.Object(map[string]tenon.Type{"k": str}), obj(map[string]tenon.Value{"k": tenon.NullVal(str)})),
+	}))
+	// An unknown map has a settled type where the constraint gives one, and a
+	// pending one where its keys could still add an attribute.
+	wantValue(t, "unknown map", tenon.Convert(tenon.Unknown(tenon.Map(str)), tenon.ObjectWith(map[string]tenon.Field{"port": tenon.Optional(is(num))}, true), uns),
+		tenon.Unknown(tenon.Object(map[string]tenon.Type{"port": num})))
+	loose := tenon.ObjectWith(map[string]tenon.Field{"note": tenon.Optional(tenon.Any())}, true)
+	wantValue(t, "unknown map, optional any", tenon.Convert(tenon.Unknown(tenon.Map(str)), loose, uns), tenon.Pending(loose))
+	// An empty tuple takes the element type the constraint gives.
+	wantValue(t, "empty tuple", tenon.Convert(tenon.TupleVal(), tenon.ListOf(server), safe), tenon.ListVal(serverType))
+}
+
+func TestConformance_CV002_ValuesInFullShapeConvertToThemselves(t *testing.T) {
+	conformance.Covers(t, "CV-002")
+	c := tenon.ListOf(tenon.ObjectWith(map[string]tenon.Field{"name": tenon.Required(is(str)), "port": tenon.Optional(is(num))}, true))
+	full := tenon.ListVal(tenon.Object(map[string]tenon.Type{"name": str, "port": num}),
+		obj(map[string]tenon.Value{"name": s("a"), "port": n(80)}))
+	if got := tenon.Convert(full, c, safe); !tenon.Identical(got, full) {
+		t.Errorf("a value already in full shape converted to %v", got)
+	}
+	// A value whose type satisfies the constraint but lacks an attribute the
+	// conversion adds is not yet in that shape, at any depth.
+	short := tenon.ListVal(tenon.Object(map[string]tenon.Type{"name": str}), obj(map[string]tenon.Value{"name": s("a")}))
+	if !tenon.Satisfies(c, short.Type()) {
+		t.Fatalf("%v does not satisfy %v", short.Type(), c)
+	}
+	wantValue(t, "short", tenon.Convert(short, c, safe), tenon.ListVal(tenon.Object(map[string]tenon.Type{"name": str, "port": num}),
+		obj(map[string]tenon.Value{"name": s("a"), "port": tenon.NullVal(num)})))
+}
+
+func TestConformance_CV032_PendingValuesConvertedToAny(t *testing.T) {
+	conformance.Covers(t, "CV-032", "CV-025")
+	carried := stamp{id: "carried"}
+	isolated := stamp{id: "isolated", policy: tenon.Isolate}
+	lists := tenon.Narrow(tenon.Pending(tenon.ListOf(tenon.Any())), tenon.NotNull())
+	wantValue(t, "pending list", tenon.Convert(tenon.WithMarks(lists, carried, isolated), tenon.Any(), safe), tenon.WithMarks(lists, carried))
+	// A constraint naming one type still settles the result.
+	wantValue(t, "pending number", tenon.Convert(tenon.Narrow(tenon.Pending(is(num)), tenon.Null()), tenon.Any(), safe), tenon.NullVal(num))
+}
+
+func TestConformance_CV033_FailuresCarryOnlyTheMarksTheyRead(t *testing.T) {
+	conformance.Covers(t, "CV-033", "MK-003")
+	prop := stamp{id: "prop"}
+	// A map does not convert to a set, so none of its members is read.
+	m := tenon.MapVal(num, map[string]tenon.Value{"k": tenon.WithMarks(n(1), prop)})
+	if got := tenon.Convert(m, tenon.SetOf(tenon.Any()), uns); !got.IsError() || tenon.HasMark(got, prop) {
+		t.Errorf("a map converted to a set gave %v, want an error value without the member's mark", got)
+	}
+	// A member read and failing gives the failure its mark.
+	list := tenon.ListVal(num, tenon.WithMarks(n(1), prop))
+	if got := tenon.Convert(list, tenon.SetOf(is(boo)), uns); !got.IsError() || !tenon.HasMark(got, prop) {
+		t.Errorf("a failing member converted into a set gave %v, want an error value carrying its mark", got)
+	}
+	// A member read and placed in the set gives the set its mark.
+	if got := tenon.Convert(list, tenon.SetOf(tenon.Any()), uns); got.IsError() || !tenon.HasMark(got, prop) {
+		t.Errorf("a member converted into a set gave %v, want a set carrying its mark", got)
 	}
 }

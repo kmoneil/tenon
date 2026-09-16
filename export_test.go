@@ -38,7 +38,7 @@ func RegisteredOperations() []RegisteredOperation {
 		for _, operand := range o.operands {
 			r.Constraints = append(r.Constraints, operand.constraint)
 			r.Nulls = append(r.Nulls, operand.nulls)
-			r.Within = append(r.Within, operand.within)
+			r.Within = append(r.Within, operand.within || operand.marksWithin)
 		}
 		// A result function is asked about operands whose types nothing has
 		// settled; one that names a type then names it whatever they are.

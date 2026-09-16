@@ -115,7 +115,7 @@ func TestParameterizedOperationsAreBound(t *testing.T) {
 	})
 	// Binding leaves the template as it was.
 	b := convertOp.with(conversion{SetOf(Any()), Unsafe})
-	if !b.operands[0].within || convertOp.operands[0].within || convertOp.known != nil {
+	if !b.operands[0].marksWithin || b.operands[0].within || convertOp.operands[0].marksWithin || convertOp.known != nil {
 		t.Error("binding a conversion changed the registered template")
 	}
 	if len(convertOp.samples) == 0 {

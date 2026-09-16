@@ -58,7 +58,7 @@ func (x converter) value(v Value, c Constraint) Value {
 	case statePending:
 		return x.pending(v, c)
 	case stateNull, stateUnknown:
-		if Satisfies(c, n.typ) {
+		if fits(c, n.typ) {
 			u, _ := Unmark(v)
 			return u
 		}
@@ -184,8 +184,14 @@ func (x converter) pending(v Value, c Constraint) Value {
 		}
 		return narrowedUnknown(out.typ, n.null, nil)
 	}
-	if t, ok := soleType(c); ok {
+	if t, ok := resultType(c); ok {
 		return narrowedUnknown(t, n.null, nil)
+	}
+	if c.c.kind == ConstraintAny {
+		// Whatever type the value takes satisfies Any, so its own constraint
+		// says more than Any would.
+		u, _ := Unmark(v)
+		return u
 	}
 	return pendingValue(c, n.null)
 }
@@ -194,7 +200,7 @@ func (x converter) pending(v Value, c Constraint) Value {
 // may not be known.
 func (x converter) known(v Value, c Constraint) Value {
 	n, d := v.n, c.c
-	if Satisfies(c, n.typ) {
+	if fits(c, n.typ) {
 		u, _ := Unmark(v)
 		return u
 	}
@@ -549,6 +555,7 @@ func (x converter) object(v Value, c Constraint) Value {
 			if fields[0].Required {
 				missing(fields[0].name)
 			}
+			addNullValue(attrs, fields[0])
 			fields = fields[1:]
 		}
 		m := h.vals[i]
@@ -583,6 +590,7 @@ func (x converter) object(v Value, c Constraint) Value {
 		if f.Required {
 			missing(f.name)
 		}
+		addNullValue(attrs, f)
 	}
 	if e, failed := errs.value(); failed {
 		return e
@@ -742,4 +750,12 @@ func holdsRedacting(n *node) bool {
 		}
 	}
 	return false
+}
+
+// addNullValue adds to attrs the attribute that an absent optional field f
+// adds, where its constraint gives a type: the null of that type.
+func addNullValue(attrs map[string]Value, f field) {
+	if t, ok := resultType(f.Constraint); ok {
+		attrs[f.name] = NullVal(t)
+	}
 }

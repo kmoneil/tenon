@@ -245,6 +245,12 @@ type operand struct {
 	// shape, as a length does. A value it reads is consumed along with the
 	// operand, so its Propagate marks reach the result.
 	within bool
+	// marksWithin says the operation reads within the operand as within
+	// does, but puts the marks of what it read on the result itself, because
+	// which values it reads depends on the operand: a conversion to a set
+	// reads no member where it fails first. The framework adds nothing for
+	// it, and the operand matrix expects what within would give.
+	marksWithin bool
 }
 
 // alike returns the operands of an operation that takes n of them on the same

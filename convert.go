@@ -35,8 +35,11 @@ func (p Policy) String() string {
 // Convert returns v converted to a type that satisfies c under the policy p,
 // or an error value saying why it does not convert.
 //
-// A value whose type satisfies c already converts to itself. Otherwise the
-// conversion applies the one conversion that the value's type and c call for,
+// An object converted to an ObjectWith constraint gains each absent optional
+// attribute as null, where the field's constraint settles the attribute's
+// type, and a value whose type satisfies c and holds every such attribute
+// already converts to itself. Otherwise the conversion applies the one
+// conversion that the value's type and c call for,
 // and never a chain of them: a number converts to a string and a string to a
 // bool, but a number does not convert to a bool. A conversion that p does not
 // allow fails with code CodeConvertUnsafe.
@@ -53,8 +56,9 @@ func (p Policy) String() string {
 // to the unknown of it. A container converts member by member, so members that
 // are not known stay unknown within the result. A pending value converts to
 // an unknown value where its type would settle the result type, and to a
-// pending value where it would not; so does an unknown map converted to an
-// object whose attributes its keys would settle.
+// pending value where it would not, keeping its own constraint when c is Any;
+// an unknown map converted to an object whose attributes its keys would
+// settle converts to a pending value too.
 //
 // The result carries the Propagate marks of v. A member converted within v
 // carries its own Propagate marks, a member carried across unchanged keeps
@@ -83,16 +87,17 @@ func (cv conversion) String() string {
 
 var convertOp = register(&op{
 	name: "Convert",
-	// Any value converts or fails as data, null included. The operation reads
-	// within its operand only where the result is a set, which takes the marks
-	// of every member placed into it; any other result leaves the marks of the
-	// members on the members.
+	// Any value converts or fails as data, null included. A conversion to a
+	// set reads the members it places in the set and gives the set their
+	// marks, which only the conversion knows, so it says so to the matrix
+	// rather than asking the framework to read within; any other result
+	// leaves the marks of the members on the members.
 	operands: []operand{{constraint: Any(), nulls: true}},
 	bind: func(o *op, param opParam) {
 		cv := param.(conversion)
-		o.operands[0].within = makesSet(cv.target)
+		o.operands[0].marksWithin = makesSet(cv.target)
 		o.result = func([]Type) Constraint {
-			if t, ok := soleType(cv.target); ok {
+			if t, ok := resultType(cv.target); ok {
 				return Exactly(t)
 			}
 			return cv.target
@@ -123,6 +128,7 @@ func conversionSamples() []opParam {
 		conversion{TupleOf(Any()), Unsafe},
 		conversion{ObjectWith(map[string]Field{"a": Optional(Exactly(num))}, false), Unsafe},
 		conversion{ObjectWith(map[string]Field{"k": Required(Exactly(num))}, true), Unsafe},
+		conversion{ObjectWith(map[string]Field{"k": Optional(Exactly(str))}, true), Safe},
 		conversion{OneOf(Exactly(num), ListOf(Exactly(str))), Safe},
 		conversion{Any(), Safe},
 	}
@@ -130,7 +136,7 @@ func conversionSamples() []opParam {
 
 // makesSet reports whether every conversion to c that succeeds gives a set.
 func makesSet(c Constraint) bool {
-	if t, ok := soleType(c); ok {
+	if t, ok := resultType(c); ok {
 		return t.t.kind == KindSet
 	}
 	return c.c.kind == ConstraintSetOf
@@ -196,6 +202,115 @@ func soleType(c Constraint) (Type, bool) {
 		return sole, sole.t != nil
 	}
 	return Type{}, false
+}
+
+// resultType returns the type that c gives, and whether it gives one: the type
+// every conversion to c that succeeds has (CV-027). It gives one wherever it
+// admits exactly one, and also where a closed object constraint has optional
+// fields whose types are settled, since a conversion adds those as null.
+func resultType(c Constraint) (Type, bool) {
+	d := c.c
+	switch d.kind {
+	case ConstraintExactly:
+		return d.typ, true
+	case ConstraintListOf, ConstraintSetOf, ConstraintMapOf:
+		elem, ok := resultType(d.elem)
+		switch {
+		case !ok:
+			return Type{}, false
+		case d.kind == ConstraintListOf:
+			return List(elem), true
+		case d.kind == ConstraintSetOf:
+			return Set(elem), true
+		}
+		return Map(elem), true
+	case ConstraintTupleOf:
+		elems := make([]Type, len(d.members))
+		for i, m := range d.members {
+			t, ok := resultType(m)
+			if !ok {
+				return Type{}, false
+			}
+			elems[i] = t
+		}
+		return Tuple(elems...), true
+	case ConstraintObjectWith:
+		if !d.closed {
+			return Type{}, false
+		}
+		attrs := make(map[string]Type, len(d.fields))
+		for _, f := range d.fields {
+			if admitsNone(f.Constraint) {
+				if f.Required {
+					return Type{}, false
+				}
+				continue
+			}
+			t, ok := resultType(f.Constraint)
+			if !ok {
+				return Type{}, false
+			}
+			attrs[f.name] = t
+		}
+		return Object(attrs), true
+	case ConstraintOneOf:
+		var given Type
+		for _, m := range d.members {
+			if admitsNone(m) {
+				continue
+			}
+			t, ok := resultType(m)
+			if !ok || given.t != nil && t != given {
+				return Type{}, false
+			}
+			given = t
+		}
+		return given, given.t != nil
+	}
+	return Type{}, false
+}
+
+// fits reports whether a value of type t converts to c as itself: t satisfies
+// c and already holds, at every depth, each attribute a conversion would add.
+func fits(c Constraint, t Type) bool {
+	return Satisfies(c, t) && complete(c, t)
+}
+
+// complete reports whether t, which satisfies c, holds at every depth each
+// optional attribute whose field's constraint gives a type.
+func complete(c Constraint, t Type) bool {
+	d, td := c.c, t.t
+	switch d.kind {
+	case ConstraintListOf, ConstraintSetOf, ConstraintMapOf:
+		return complete(d.elem, td.elem)
+	case ConstraintTupleOf:
+		for i, m := range d.members {
+			if !complete(m, td.elems[i]) {
+				return false
+			}
+		}
+	case ConstraintObjectWith:
+		for _, f := range d.fields {
+			at, ok := td.attribute(f.name)
+			if !ok {
+				if _, gives := resultType(f.Constraint); gives {
+					return false
+				}
+				continue
+			}
+			if !complete(f.Constraint, at) {
+				return false
+			}
+		}
+	case ConstraintOneOf:
+		for _, m := range d.members {
+			if Satisfies(m, t) && complete(m, t) {
+				return true
+			}
+		}
+		return false
+	}
+	return true
 }
 
 // admitsNone reports whether no type satisfies c.

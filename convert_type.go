@@ -43,7 +43,7 @@ func (f *failure) diagnostic() Diagnostic {
 func typeConvert(t Type, c Constraint, p Policy, k keys) typeOutcome {
 	out := typeConvertKind(t, c, p, k)
 	if out.pending {
-		if s, ok := soleType(c); ok {
+		if s, ok := resultType(c); ok {
 			return typeOutcome{typ: s}
 		}
 	}
@@ -51,7 +51,7 @@ func typeConvert(t Type, c Constraint, p Policy, k keys) typeOutcome {
 }
 
 func typeConvertKind(t Type, c Constraint, p Policy, k keys) typeOutcome {
-	if Satisfies(c, t) {
+	if fits(c, t) {
 		return typeOutcome{typ: t}
 	}
 	d := c.c
@@ -188,7 +188,7 @@ func collectionTypeConvert(t Type, c Constraint, p Policy, k keys) typeOutcome {
 // types out of a message, where a map's keys that a redacting mark withholds
 // may have named their attributes.
 func elementType(types []Type, c Constraint, p Policy, withhold bool) (Type, *failure) {
-	if s, ok := soleType(c); ok {
+	if s, ok := resultType(c); ok {
 		types = append(types[:len(types):len(types)], s)
 	}
 	if len(types) == 0 {
@@ -218,7 +218,7 @@ func elementType(types []Type, c Constraint, p Policy, withhold bool) (Type, *fa
 // is pending.
 func pendingElements(settled, least []Type, c Constraint, p Policy, withhold bool) typeOutcome {
 	types := append(append([]Type{}, settled...), least...)
-	if s, ok := soleType(c); ok {
+	if s, ok := resultType(c); ok {
 		types = append(types, s)
 	}
 	if _, ok := unifyTypes(types, p); !ok {
@@ -311,6 +311,7 @@ func objectTypeConvert(t Type, c Constraint, p Policy, k keys) typeOutcome {
 			if fields[0].Required {
 				return failed(missingAttribute(fields[0].name))
 			}
+			addNull(attrs, fields[0])
 			fields = fields[1:]
 		}
 		if len(fields) == 0 || fields[0].name != a.name {
@@ -335,6 +336,7 @@ func objectTypeConvert(t Type, c Constraint, p Policy, k keys) typeOutcome {
 		if f.Required {
 			return failed(missingAttribute(f.name))
 		}
+		addNull(attrs, f)
 	}
 	if pending {
 		return typeOutcome{pending: true}
@@ -342,15 +344,30 @@ func objectTypeConvert(t Type, c Constraint, p Policy, k keys) typeOutcome {
 	return typeOutcome{typ: Object(attrs)}
 }
 
+// addNull adds to attrs the attribute that an absent optional field f adds,
+// where its constraint gives a type: the null of that type is present in its
+// place.
+func addNull(attrs map[string]Type, f field) {
+	if t, ok := resultType(f.Constraint); ok {
+		attrs[f.name] = t
+	}
+}
+
 // mapObjectTypeConvert converts a map type to an ObjectWith constraint. The
-// attributes come from the keys, so only a map with none, which holds the
-// required attributes, has a type to give; an unknown map's is pending.
+// attributes come from the keys. A map with none holds the required fields and
+// the optional ones a conversion adds as null. An unknown map's type is
+// pending where its keys could still decide which attributes are there: under
+// an open constraint, or for an optional field that adds nothing when absent.
 func mapObjectTypeConvert(t Type, c Constraint, p Policy, k keys) typeOutcome {
 	d := c.c
 	attrs := map[string]Type{}
-	pending := false
+	pending := k == keysUnknown && !d.closed
 	for _, f := range d.fields {
 		if !f.Required {
+			if _, ok := resultType(f.Constraint); !ok && k == keysUnknown && !admitsNone(f.Constraint) {
+				pending = true
+			}
+			addNull(attrs, f)
 			continue
 		}
 		out := typeConvert(t.t.elem, f.Constraint, p, k)
@@ -366,7 +383,7 @@ func mapObjectTypeConvert(t Type, c Constraint, p Policy, k keys) typeOutcome {
 	if p == Safe {
 		return failed(unsafeConversion(t, c))
 	}
-	if pending || k == keysUnknown {
+	if pending {
 		return typeOutcome{pending: true}
 	}
 	return typeOutcome{typ: Object(attrs)}

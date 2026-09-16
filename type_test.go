@@ -458,11 +458,12 @@ func TestConformance_TY002_NoWildcardInATypeAtAnyDepth(t *testing.T) {
 func TestConformance_TY003_AcceptanceIsExpressedAsConstraints(t *testing.T) {
 	conformance.Covers(t, "TY-003")
 	str := tenon.StringType()
-	// A conversion target is a constraint: a value converts to whatever type
-	// the constraint accepts, and an optional attribute may stay absent.
+	// A conversion target is a constraint: a value converts to a type the
+	// constraint accepts, an optional attribute absent from it included.
 	target := tenon.ObjectWith(map[string]tenon.Field{"tags": tenon.Optional(tenon.ListOf(tenon.Exactly(str)))}, true)
-	if got := tenon.Convert(tenon.ObjectVal(nil), target, tenon.Safe); !tenon.Identical(got, tenon.ObjectVal(nil)) {
-		t.Errorf("converting an empty object to %v gave %v", target, got)
+	want := tenon.ObjectVal(map[string]tenon.Value{"tags": tenon.NullVal(tenon.List(str))})
+	if got := tenon.Convert(tenon.ObjectVal(nil), target, tenon.Safe); !tenon.Identical(got, want) {
+		t.Errorf("converting an empty object to %v gave %v, want %v", target, got, want)
 	}
 	// A schema is a constraint, which is what lets it accept a set of types
 	// rather than naming one, and an optional attribute be expressible at all.
