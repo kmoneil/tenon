@@ -216,6 +216,13 @@ func (r *rangeData) holds(n *node) bool {
 			return false
 		}
 	}
+	// A set in the range holds every recorded member, so a set that provably
+	// does not hold one of them is outside it.
+	for _, m := range r.members {
+		if found, settled := membership(n, m); settled && !found {
+			return false
+		}
+	}
 	return true
 }
 

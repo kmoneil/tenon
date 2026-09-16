@@ -21,6 +21,11 @@ func Length(v Value) Value { return lengthOp.apply(v) }
 // not v, and unknown in between, which is what a set holding members that are
 // not known leaves.
 //
+// An unknown set answers from its range: a member recorded there by the
+// Members narrowing settles containment as a held member would, once the
+// range excludes null, because were the set to turn out null the answer
+// would be an error rather than true.
+//
 // The value looked for may be of any type: a value of another type than the
 // set's members is simply not one of them. It may also be null, which is a
 // member like any other. A null set gives an error value, since null holds
@@ -77,13 +82,20 @@ var lengthOp = &op{
 // have: the members that are provably distinct from every member counted before
 // them, and all of them.
 func setLengthBounds(members []Value) (low, high int) {
+	return provablyDistinct(members), len(members)
+}
+
+// provablyDistinct returns how many of these members are provably distinct
+// from every member counted before them, taken in the order they are held,
+// which is canonical for a set and for the members recorded in a range alike.
+func provablyDistinct(members []Value) int {
 	var counted []Value
 	for _, m := range members {
 		if distinctFromAll(counted, m) {
 			counted = append(counted, m)
 		}
 	}
-	return len(counted), len(members)
+	return len(counted)
 }
 
 // distinctFromAll reports whether equality settles that m differs from every
@@ -115,14 +127,22 @@ var containsOp = &op{
 		return Bool(found)
 	},
 	decided: func(args []Value) (Value, bool) {
-		set := args[0].n
-		if set.state != stateKnown {
-			// The set itself is unknown or pending, so there are no members to
-			// look through.
-			return Value{}, false
-		}
-		if found, settled := membership(set, args[1]); settled {
-			return Bool(found), true
+		switch set := args[0].n; set.state {
+		case stateKnown:
+			if found, settled := membership(set, args[1]); settled {
+				return Bool(found), true
+			}
+		case stateUnknown:
+			// A member recorded in the set's range settles membership as a
+			// held member would, once null is excluded: a set that could
+			// still turn out null could still have an error for an answer.
+			if rd := set.data.(*rangeData); rd.null == nullNo {
+				for _, m := range rd.members {
+					if eq, settled := equality(m.n, args[1].n); settled && eq {
+						return Bool(true), true
+					}
+				}
+			}
 		}
 		return Value{}, false
 	},

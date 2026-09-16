@@ -1,6 +1,7 @@
 package tenon
 
 import (
+	"slices"
 	"strconv"
 	"strings"
 
@@ -182,12 +183,19 @@ type rangeData struct {
 	pfx   string      // String: the required prefix, empty when there is none
 	lenLo int64       // String and collections: the least length
 	lenHi lengthBound // String and collections: the greatest length
+	// members holds the values every set in the range has among its members,
+	// in the order a set iterates them: values that are one member appear
+	// once, and one whose range excludes nothing is not here, because it
+	// promises no more than the least length already records.
+	members []Value
 }
 
 // equal reports whether r and s describe the same set.
 func (r *rangeData) equal(s *rangeData) bool {
 	return r.null == s.null && r.lo.equal(s.lo) && r.hi.equal(s.hi) &&
-		r.pfx == s.pfx && r.lenLo == s.lenLo && r.lenHi == s.lenHi
+		r.pfx == s.pfx && r.lenLo == s.lenLo && r.lenHi == s.lenHi &&
+		len(r.members) == len(s.members) &&
+		sameMembersFunc(r.members, s.members, Identical)
 }
 
 func (r *rangeData) write(b *strings.Builder) {
@@ -206,6 +214,10 @@ func (r *rangeData) write(b *strings.Builder) {
 		b.WriteString(", prefix ")
 		b.WriteString(strconv.Quote(r.pfx))
 	}
+	if len(r.members) > 0 {
+		b.WriteString(", ")
+		writeMembers(b, r.members)
+	}
 	if r.lenLo > 0 {
 		b.WriteString(", length >= ")
 		b.WriteString(strconv.FormatInt(r.lenLo, 10))
@@ -214,6 +226,18 @@ func (r *rangeData) write(b *strings.Builder) {
 		b.WriteString(", length <= ")
 		b.WriteString(strconv.FormatInt(r.lenHi.n, 10))
 	}
+}
+
+// writeMembers renders a member listing, as in members {1, 2}.
+func writeMembers(b *strings.Builder, members []Value) {
+	b.WriteString("members {")
+	for i, m := range members {
+		if i > 0 {
+			b.WriteString(", ")
+		}
+		m.write(b)
+	}
+	b.WriteByte('}')
 }
 
 // narrowingKind identifies which row of the narrowings table a Narrowing is.
@@ -227,6 +251,7 @@ const (
 	narrowPrefix
 	narrowLengthMin
 	narrowLengthMax
+	narrowMembers
 )
 
 // Narrowing is one fact about a value that rules out some of what it could
@@ -234,11 +259,12 @@ const (
 //
 // The zero Narrowing is not a narrowing.
 type Narrowing struct {
-	kind narrowingKind
-	incl bool
-	num  decimal.Dec
-	str  string
-	n    int64
+	kind    narrowingKind
+	incl    bool
+	num     decimal.Dec
+	str     string
+	n       int64
+	members []Value
 }
 
 // NotNull returns the narrowing that excludes null. It applies to every type.
@@ -299,6 +325,30 @@ func LengthMax(n int64) Narrowing {
 	return Narrowing{kind: narrowLengthMax, n: lengthArg("LengthMax", n)}
 }
 
+// Members returns the narrowing that requires a Set value to hold every
+// listed value as a member. A listed value may be null, which a set can hold,
+// and it may be unknown: the set then needs a member that the listed value's
+// range allows.
+//
+// The record a range keeps of a listing is canonical. Listed values that
+// could turn out to be one value promise one member between them, so the
+// least length of the set rises to the count of listed values that are
+// provably distinct, and a listed value whose range excludes nothing is kept
+// only as that least length, since it promises no more than that a member
+// exists.
+//
+// Members panics if a listed value is an error value or a pending value: a
+// narrowing carries no diagnostics, and a value that has no type yet says
+// nothing a member could be held to.
+func Members(vs ...Value) Narrowing {
+	for i, v := range vs {
+		if n := v.data(); !n.state.resolved() {
+			usagePanic("Members called with %s as member %d, not a resolved value", n.describe(), i)
+		}
+	}
+	return Narrowing{kind: narrowMembers, members: slices.Clone(vs)}
+}
+
 // numberBound returns the content of a bound supplied to a number narrowing,
 // panicking unless it is a known Number value. fn names the narrowing.
 func numberBound(fn string, v Value) decimal.Dec {
@@ -335,14 +385,21 @@ func (nw Narrowing) String() string {
 		return "length >= " + strconv.FormatInt(nw.n, 10)
 	case narrowLengthMax:
 		return "length <= " + strconv.FormatInt(nw.n, 10)
+	case narrowMembers:
+		var b strings.Builder
+		writeMembers(&b, nw.members)
+		return b.String()
 	}
 	return "<zero Narrowing>"
 }
 
 // message renders nw for a diagnostic, shortening text that is long.
 func (nw Narrowing) message() string {
-	if nw.kind == narrowPrefix {
+	switch nw.kind {
+	case narrowPrefix:
 		return "prefix " + quoted(nw.str)
+	case narrowMembers:
+		return shortened(nw.String(), func(s string) string { return s })
 	}
 	return nw.String()
 }
@@ -356,6 +413,8 @@ func (nw Narrowing) appliesTo(t Type) bool {
 		return t.t.kind == KindNumber
 	case narrowPrefix:
 		return t.t.kind == KindString
+	case narrowMembers:
+		return t.t.kind == KindSet
 	}
 	switch t.t.kind {
 	case KindString, KindList, KindSet, KindMap:
@@ -386,6 +445,16 @@ func (nw Narrowing) holdsFor(n *node) bool {
 		return n.length() >= nw.n
 	case narrowLengthMax:
 		return n.length() <= nw.n
+	case narrowMembers:
+		// The value is a range of one, so a listed value that could still
+		// turn out to be a member leaves it standing; only one that provably
+		// is not a member contradicts it.
+		for _, m := range nw.members {
+			if found, settled := membership(n, m); settled && !found {
+				return false
+			}
+		}
+		return true
 	}
 	return false
 }
@@ -407,7 +476,10 @@ func (n *node) length() int64 {
 // returns it or contradicts it.
 //
 // A narrowing that brings a range down to a single value produces that value,
-// known: an unknown that nothing more could ever say is not unknown.
+// known: an unknown that nothing more could ever say is not unknown. A set
+// range recording as many members as its greatest length allows, all of them
+// provably distinct and null excluded, has come down to the set holding those
+// members, which is known when every member is.
 //
 // Apart from Null and NotNull, a narrowing says what a value is when it is not
 // null, so a range that still holds null keeps it: NotNull alone excludes
@@ -437,6 +509,12 @@ func Narrow(v Value, ns ...Narrowing) Value {
 		if !nw.appliesTo(n.typ) {
 			usagePanic("Narrow called with %s, which does not apply to a value of type %s", nw, n.typ)
 		}
+		for i, m := range nw.members {
+			if m.n.typ != n.typ.t.elem {
+				usagePanic("Narrow called with %s as member %d of a Members narrowing, but the members of %s are of type %s",
+					m.n.describe(), i, n.typ, n.typ.t.elem)
+			}
+		}
 	}
 	if n.state != stateUnknown {
 		for _, nw := range ns {
@@ -456,6 +534,9 @@ func Narrow(v Value, ns ...Narrowing) Value {
 	}
 	if sole, ok := r.singleton(n.typ); ok {
 		return sole
+	}
+	if set, ok := r.memberSet(n.typ); ok {
+		return set
 	}
 	if r.equal(old) {
 		return v
@@ -637,8 +718,76 @@ func (r *rangeData) apply(nw Narrowing) (string, bool) {
 		if !r.lengthOK() {
 			return r.lengthMinText(), false
 		}
+	case narrowMembers:
+		r.addMembers(nw.members)
+		if !r.lengthOK() {
+			return r.lengthMaxText(), false
+		}
 	}
 	return "", true
+}
+
+// addMembers records vs among the members every set in the range holds. The
+// record is canonical, however the listings arrive: values that are one
+// member appear once, a value whose range excludes nothing is dropped, the
+// rest are held in the order a set iterates them, and the least length rises
+// to the count of members that are provably distinct, or to one, since any
+// listing promises a member.
+func (r *rangeData) addMembers(vs []Value) {
+	if len(vs) == 0 {
+		return
+	}
+	merged := slices.Clone(r.members)
+	for _, v := range vs {
+		if vacuousMember(v) || slices.ContainsFunc(merged, func(k Value) bool { return oneMember(k, v) }) {
+			continue
+		}
+		merged = append(merged, v)
+	}
+	r.members = orderMembers(merged)
+	lo := int64(provablyDistinct(r.members))
+	if lo == 0 {
+		lo = 1
+	}
+	if lo > r.lenLo {
+		r.lenLo = lo
+	}
+}
+
+// oneMember reports whether a set holding k needs no separate note that it
+// holds v: equality settles that they are one value, or they are identical,
+// which two unknowns with one range are. A set value keeps identical unknown
+// members apart, since each may resolve its own way, but a range records
+// requirements, and two identical ones require the same thing.
+func oneMember(k, v Value) bool {
+	if eq, settled := equality(k.n, v.n); settled && eq {
+		return true
+	}
+	return Identical(k, v)
+}
+
+// vacuousMember reports whether a listed member's range excludes nothing, so
+// that listing it says only that some member exists. Recording it would give
+// one range two spellings: with such a member listed, and with the least
+// length it implies.
+func vacuousMember(v Value) bool {
+	rd, ok := unknownRange(v.n)
+	return ok && rd.equal(&rangeData{})
+}
+
+// memberSet returns the set that r has come down to, and whether it has come
+// down to one: null excluded, as many members recorded as the greatest length
+// allows, and every pair of them provably distinct, so that the sets r
+// describes are exactly the sets holding one value from each member's range.
+// A pair that could yet be one member would leave room for a set of fewer,
+// other values, which no set holding the members describes.
+func (r *rangeData) memberSet(t Type) (Value, bool) {
+	if t.t.kind != KindSet || r.null != nullNo || len(r.members) == 0 ||
+		!r.lenHi.set || r.lenHi.n != int64(len(r.members)) ||
+		provablyDistinct(r.members) != len(r.members) {
+		return Value{}, false
+	}
+	return SetVal(t.t.elem, r.members...), true
 }
 
 // implyLength records the least length that the prefix of r forces. The first
@@ -663,6 +812,11 @@ func (r *rangeData) lengthOK() bool {
 func (r *rangeData) lengthMinText() string {
 	if r.pfx != "" && int64(uni.GraphemeCount(r.pfx)) >= r.lenLo {
 		return "prefix " + quoted(r.pfx)
+	}
+	if len(r.members) > 0 && int64(provablyDistinct(r.members)) >= r.lenLo {
+		var b strings.Builder
+		writeMembers(&b, r.members)
+		return shortened(b.String(), func(s string) string { return s })
 	}
 	return "length >= " + strconv.FormatInt(r.lenLo, 10)
 }

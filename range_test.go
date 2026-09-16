@@ -505,3 +505,152 @@ func TestConformance_UN005_NarrowingToOneValue(t *testing.T) {
 		}
 	}
 }
+
+func TestConformance_UN002_MembersNarrowing(t *testing.T) {
+	conformance.Covers(t, "UN-002")
+	num := tenon.NumberType()
+	set := tenon.Set(num)
+	n := func(i int64) tenon.Value { return tenon.NumberFromInt(i) }
+	one, two, three := n(1), n(2), n(3)
+	atLeast := func(i int64) tenon.Value {
+		return tenon.Narrow(tenon.Unknown(num), tenon.NumberMin(n(i), true))
+	}
+	atMostZero := tenon.Narrow(tenon.Unknown(num), tenon.NumberMax(n(0), true))
+
+	// The recorded members are canonical: values that are one member appear
+	// once, the order is the order a set iterates in, and the least length
+	// they imply is recorded with them.
+	a := tenon.Narrow(tenon.Unknown(set), tenon.Members(two, tenon.NumberFromText("1.000"), one))
+	if got, want := a.String(), "unknown(set(number), members {1, 2}, length >= 2)"; got != want {
+		t.Errorf("recorded members render as %s, want %s", got, want)
+	}
+	b := tenon.Narrow(tenon.Unknown(set), tenon.Members(one), tenon.Members(two))
+	if !tenon.Identical(a, b) {
+		t.Errorf("%v and %v record one listing two ways, but are not identical", a, b)
+	}
+	if got := tenon.Narrow(a, tenon.Members(one, two)); got != a {
+		t.Errorf("listing recorded members again produced %v, want the range unchanged", got)
+	}
+	if got, want := tenon.Narrow(tenon.Unknown(set), tenon.Members(tenon.NullVal(num), one)).String(),
+		"unknown(set(number), members {null, 1}, length >= 2)"; got != want {
+		t.Errorf("a listed null member renders as %s, want %s", got, want)
+	}
+	// The narrowing says nothing about the set being null, so the range
+	// keeps null until NotNull takes it away.
+	if !a.Range().AllowsNull() {
+		t.Errorf("%v excludes null, but only NotNull excludes null", a)
+	}
+
+	// Membership through the narrowing: known true for a recorded member once
+	// null is excluded, unknown for anything else, and unknown for everything
+	// while the set could still be null, which would make the answer an error.
+	nn := tenon.Narrow(a, tenon.NotNull())
+	if got := tenon.Contains(nn, one).String(); got != "true" {
+		t.Errorf("Contains of a recorded member is %s, want true", got)
+	}
+	if got := tenon.Contains(nn, three); got.IsKnown() {
+		t.Errorf("Contains of an unlisted value is %v, want an unknown Bool", got)
+	}
+	if got := tenon.Contains(a, one); got.IsKnown() {
+		t.Errorf("Contains on a possibly-null set is %v, want an unknown Bool", got)
+	}
+
+	// The length of the set answers from the recorded members.
+	if got, want := tenon.Length(nn).String(), "unknown(number, not null, >= 2)"; got != want {
+		t.Errorf("Length is %s, want %s", got, want)
+	}
+
+	// Listed values raise the least length only where they are provably
+	// distinct, and a pair with identical ranges is recorded once.
+	distinct := tenon.Narrow(tenon.Unknown(set), tenon.Members(atLeast(5), atMostZero))
+	if got, want := distinct.String(),
+		"unknown(set(number), members {unknown(number, <= 0), unknown(number, >= 5)}, length >= 2)"; got != want {
+		t.Errorf("provably distinct members render as %s, want %s", got, want)
+	}
+	overlap := tenon.Narrow(tenon.Unknown(set), tenon.Members(atLeast(5), atLeast(6)))
+	if got, want := overlap.String(),
+		"unknown(set(number), members {unknown(number, >= 5), unknown(number, >= 6)}, length >= 1)"; got != want {
+		t.Errorf("possibly-equal members render as %s, want %s", got, want)
+	}
+	twice := tenon.Narrow(tenon.Unknown(set), tenon.Members(atLeast(5), atLeast(5)))
+	if got, want := twice.String(),
+		"unknown(set(number), members {unknown(number, >= 5)}, length >= 1)"; got != want {
+		t.Errorf("identical listed values render as %s, want %s", got, want)
+	}
+
+	// A listed value whose range excludes nothing promises only that a member
+	// exists, so it is recorded as the least length it implies.
+	vacuous := tenon.Narrow(tenon.Unknown(set), tenon.Members(tenon.Unknown(num)))
+	if got, want := vacuous.String(), "unknown(set(number), length >= 1)"; got != want {
+		t.Errorf("a member that could be anything renders as %s, want %s", got, want)
+	}
+	if !tenon.Identical(vacuous, tenon.Narrow(tenon.Unknown(set), tenon.LengthMin(1))) {
+		t.Error("a member that could be anything and LengthMin(1) spell one range two ways")
+	}
+
+	// More provably distinct members than the greatest length allows is a
+	// contradiction, in whichever order the two narrowings arrive.
+	for _, ns := range [][]tenon.Narrowing{
+		{tenon.Members(one, two), tenon.LengthMax(1)},
+		{tenon.LengthMax(1), tenon.Members(one, two)},
+	} {
+		got := tenon.Narrow(tenon.Unknown(set), ns...)
+		if !got.IsError() {
+			t.Fatalf("narrowing to nothing produced %v, want an error value", got)
+		}
+		if diags := got.Diagnostics(); diags[0].Code != tenon.CodeRangeContradiction {
+			t.Errorf("code %s, want %s", diags[0].Code, tenon.CodeRangeContradiction)
+		}
+	}
+
+	// As many provably distinct members as the greatest length allows leaves
+	// exactly the set holding them: known members make a known set, members
+	// that are not known make the set that holds them, still not known, and
+	// members that could turn out to be one member leave the range standing.
+	full := tenon.Narrow(tenon.Unknown(set), tenon.NotNull(), tenon.Members(one, two), tenon.LengthMax(2))
+	if !full.IsKnown() || !tenon.Identical(full, tenon.SetVal(num, one, two)) {
+		t.Errorf("a full listing of known members produced %v, want the set holding them", full)
+	}
+	held := tenon.Narrow(tenon.Unknown(set), tenon.NotNull(),
+		tenon.Members(atLeast(5), atMostZero), tenon.LengthMax(2))
+	if held.IsKnown() || !tenon.Identical(held, tenon.SetVal(num, atLeast(5), atMostZero)) {
+		t.Errorf("a full listing of distinct unknowns produced %v, want the set holding them", held)
+	}
+	loose := tenon.Narrow(tenon.Unknown(set), tenon.NotNull(),
+		tenon.Members(atLeast(5), atLeast(6)), tenon.LengthMax(2))
+	if got, want := loose.String(),
+		"unknown(set(number), not null, members {unknown(number, >= 5), unknown(number, >= 6)}, length >= 1, length <= 2)"; got != want {
+		t.Errorf("members that could be one render as %s, want %s", got, want)
+	}
+
+	// A known set is a range of one: a listing it could satisfy leaves it,
+	// one it provably cannot contradicts it, and the null set satisfies any
+	// listing vacuously, since a narrowing says nothing about null.
+	s12 := tenon.SetVal(num, one, two)
+	if got := tenon.Narrow(s12, tenon.Members(one), tenon.Members(tenon.Unknown(num))); got != s12 {
+		t.Errorf("narrowing a known set it could satisfy produced %v, want the set itself", got)
+	}
+	if got := tenon.Narrow(s12, tenon.Members(three)); !got.IsError() {
+		t.Errorf("narrowing a known set by a member it provably lacks produced %v, want an error value", got)
+	}
+	nullSet := tenon.NullVal(set)
+	if got := tenon.Narrow(nullSet, tenon.Members(one)); got != nullSet {
+		t.Errorf("narrowing the null set produced %v, want the value itself", got)
+	}
+
+	// Mistakes in the calling program panic: a Members narrowing on a type
+	// that is not a set, a member of another type than the set's, and a
+	// listed value that is not resolved.
+	mustPanicUsage(t, "does not apply to a value of type list(number)", func() {
+		tenon.Narrow(tenon.Unknown(tenon.List(num)), tenon.Members(one))
+	})
+	mustPanicUsage(t, "are of type number", func() {
+		tenon.Narrow(tenon.Unknown(set), tenon.Members(tenon.String("x")))
+	})
+	mustPanicUsage(t, "not a resolved value", func() {
+		tenon.Members(tenon.Pending(tenon.Any()))
+	})
+	mustPanicUsage(t, "not a resolved value", func() {
+		tenon.Members(tenon.ErrorVal(tenon.Diagnostic{Code: "app.x", Message: "m"}))
+	})
+}

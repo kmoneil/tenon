@@ -10,28 +10,10 @@
 # covered when a test that called conformance.Covers with its identifier
 # passed during the run.
 #
-# The EQ rules arrive one task at a time; MK is not here yet at all.
+# MK is not here yet at all.
 
 BO
-EQ-001
-EQ-002
-EQ-003
-EQ-004
-EQ-005
-EQ-010
-EQ-011
-EQ-012
-EQ-020
-EQ-030
-EQ-031
-EQ-032
-EQ-040
-EQ-041
-EQ-042
-EQ-043
-EQ-044
-EQ-045
-EQ-046
+EQ
 ER
 NU
 ST
