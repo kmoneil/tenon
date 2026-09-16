@@ -64,6 +64,12 @@ type node struct {
 	// whose members lie in its members' ranges, which is more than one, so the
 	// value is not known however settled its own shape is.
 	partial bool
+	// markedWithin is set on a collection or structural value that holds a
+	// marked member: one that carries a mark, or holds a marked member in
+	// turn. A value marked anywhere has no hash, no canonical order and no
+	// place in a set, and the flag says so without a walk. It sits in what
+	// would otherwise be padding, so it costs an unmarked value nothing.
+	markedWithin bool
 	// null is the nullness fact of a pending value: whether it is known to be
 	// null, known not to be, or neither yet. An unknown value keeps the same
 	// fact in its range instead, where the other narrowings are.

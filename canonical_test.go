@@ -89,6 +89,14 @@ func TestConformance_EQ045_CanonicalOrder(t *testing.T) {
 	mustPanicUsage(t, "which is not a known value", func() {
 		tenon.CanonicalCompare(tenon.Unknown(num), n(1))
 	})
+	// The order is not defined over marked values either, on either side.
+	m := stamp{id: "m"}
+	mustPanicUsage(t, "that carries marks", func() {
+		tenon.CanonicalCompare(tenon.WithMarks(n(1), m), n(1))
+	})
+	mustPanicUsage(t, "that holds a marked value at [0]", func() {
+		tenon.CanonicalCompare(n(1), tenon.ListVal(num, tenon.WithMarks(n(1), m)))
+	})
 }
 
 func TestConformance_EQ046_TheOrderIsTheHostsAndNotTheLanguages(t *testing.T) {
@@ -121,9 +129,9 @@ func TestConformance_EQ046_TheOrderIsTheHostsAndNotTheLanguages(t *testing.T) {
 }
 
 func TestCanonicalOrderIsATotalOrder(t *testing.T) {
-	all := values.Known()
+	all := values.Orderable()
 	if len(all) < 20 {
-		t.Fatalf("only %d known values, which is too few to say much", len(all))
+		t.Fatalf("only %d orderable values, which is too few to say much", len(all))
 	}
 	together := 0
 	for i, a := range all {

@@ -90,16 +90,23 @@ func WithMarks(v Value, marks ...Mark) Value {
 	if !grew {
 		return v
 	}
-	slices.SortStableFunc(merged, func(a, b Mark) int {
-		return strings.Compare(a.MarkID(), b.MarkID())
-	})
+	sortMarks(merged)
 	nn := *n
 	nn.marks = &markSet{list: merged}
 	return Value{&nn}
 }
 
-// Unmark returns v without its marks, and the marks it carried, sorted by
-// identifier. An unmarked value comes back as itself, with no marks.
+// sortMarks sorts marks by identifier, leaving marks that share an identifier
+// in the order they had.
+func sortMarks(ms []Mark) {
+	slices.SortStableFunc(ms, func(a, b Mark) int {
+		return strings.Compare(a.MarkID(), b.MarkID())
+	})
+}
+
+// Unmark returns v without the marks it carries, and those marks, sorted by
+// identifier. The values v holds keep their own marks, which UnmarkDeep takes
+// too. A value that carries no mark comes back as itself, with no marks.
 func Unmark(v Value) (Value, []Mark) {
 	n := v.data()
 	if n.marks == nil {
@@ -108,6 +115,111 @@ func Unmark(v Value) (Value, []Mark) {
 	nn := *n
 	nn.marks = nil
 	return Value{&nn}, slices.Clone(n.marks.list)
+}
+
+// UnmarkDeep returns v without a mark anywhere in it: without its own marks,
+// and with every value it holds, at any depth, unmarked too. It returns the
+// marks it took, each once, sorted by identifier. A value that carries no mark
+// and holds none comes back as itself, with no marks.
+//
+// A marked value, one that carries a mark or holds one, has no hash, no place
+// in the canonical order and no place in a set. UnmarkDeep is the first half of
+// what to do instead; the second is reapplying the marks it returns, which are
+// the caller's to place. SetVal shows the usual place: the set.
+func UnmarkDeep(v Value) (Value, []Mark) {
+	n := v.data()
+	if !n.isMarked() {
+		return v, nil
+	}
+	var taken []Mark
+	u := n.unmarkDeep(&taken)
+	sortMarks(taken)
+	return Value{u}, taken
+}
+
+// unmarkDeep returns n with no mark at any depth, adding each mark it takes to
+// taken unless one equal to it is there already. Whatever holds no mark is
+// shared rather than copied.
+func (n *node) unmarkDeep(taken *[]Mark) *node {
+	if !n.isMarked() {
+		return n
+	}
+	for _, m := range n.markList() {
+		if !slices.Contains(*taken, m) {
+			*taken = append(*taken, m)
+		}
+	}
+	nn := *n
+	nn.marks = nil
+	if n.markedWithin {
+		nn.markedWithin = false
+		switch data := n.data.(type) {
+		case []Value:
+			members := make([]Value, len(data))
+			for i, m := range data {
+				members[i] = Value{m.n.unmarkDeep(taken)}
+			}
+			nn.data = members
+		case []mapEntry:
+			entries := make([]mapEntry, len(data))
+			for i, e := range data {
+				entries[i] = mapEntry{key: e.key, val: Value{e.val.n.unmarkDeep(taken)}}
+			}
+			nn.data = entries
+		}
+	}
+	return &nn
+}
+
+// isMarked reports whether n carries a mark or holds, at any depth, a value
+// that does. Hashing, the canonical order and set membership are defined only
+// for values that are not marked.
+func (n *node) isMarked() bool { return n.marks != nil || n.markedWithin }
+
+// describeMarked names a marked value and says where its marks are, for a
+// panic message, as in "a value of type number that carries marks" or "a value
+// of type list(number) that holds a marked value at [0]".
+func (n *node) describeMarked() string {
+	if n.marks != nil {
+		return n.describe() + " that carries marks"
+	}
+	return n.describe() + " that holds a marked value at " + n.markPath().String()
+}
+
+// markPath returns the path from n to the first value within it that carries
+// a mark, taking members in the order they are held. n must hold one.
+func (n *node) markPath() Path {
+	var p Path
+	for n.marks == nil {
+		step, member := n.markedMember()
+		p, n = p.extend(step), member
+	}
+	return p
+}
+
+// markedMember returns the first member of n that is marked, and the step
+// that locates it. n must hold one.
+func (n *node) markedMember() (Step, *node) {
+	switch data := n.data.(type) {
+	case []mapEntry:
+		for _, e := range data {
+			if e.val.n.isMarked() {
+				return indexStep(String(e.key)), e.val.n
+			}
+		}
+	case []Value:
+		for i, m := range data {
+			if !m.n.isMarked() {
+				continue
+			}
+			if n.typ.t.kind == KindObject {
+				return attributeStep(n.typ.t.attrs[i].name), m.n
+			}
+			return indexStep(NumberFromInt(int64(i))), m.n
+		}
+	}
+	internalPanic("%s says it holds a marked member and holds none", n.describe())
+	return Step{}, nil
 }
 
 // HasMark reports whether v carries the mark.

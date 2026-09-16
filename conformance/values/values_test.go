@@ -52,7 +52,46 @@ func TestEveryShapeIsThere(t *testing.T) {
 	if !bounded {
 		t.Error("no unknown value with a narrowed range")
 	}
-	if got := len(values.Known()); got == 0 || got == len(values.All()) {
-		t.Errorf("Known returned %d of %d values", got, len(values.All()))
+	if got := len(values.Orderable()); got == 0 || got == len(values.All()) {
+		t.Errorf("Orderable returned %d of %d values", got, len(values.All()))
+	}
+}
+
+// TestMarkedValuesAreThere holds the generator to covering marks: a value
+// carrying one in every state, and a container that holds one without
+// carrying one, known and not.
+func TestMarkedValuesAreThere(t *testing.T) {
+	carries := map[string]bool{}
+	holdsKnown, holdsPartial := false, false
+	for _, v := range values.All() {
+		_, own := tenon.Unmark(v)
+		_, all := tenon.UnmarkDeep(v)
+		switch {
+		case len(own) > 0 && v.IsError():
+			carries["error"] = true
+		case len(own) > 0 && v.IsPending():
+			carries["pending"] = true
+		case len(own) > 0 && tenon.IsNull(v).String() == "true":
+			carries["null"] = true
+		case len(own) > 0 && !v.IsKnown():
+			carries["unknown"] = true
+		case len(own) > 0:
+			carries["known"] = true
+		case len(all) > 0 && v.IsKnown():
+			holdsKnown = true
+		case len(all) > 0:
+			holdsPartial = true
+		}
+	}
+	for _, want := range []string{"error", "pending", "null", "unknown", "known"} {
+		if !carries[want] {
+			t.Errorf("no marked %s value in the generator", want)
+		}
+	}
+	if !holdsKnown {
+		t.Error("no known container holding a marked member")
+	}
+	if !holdsPartial {
+		t.Error("no container holding a marked member that is not known")
 	}
 }

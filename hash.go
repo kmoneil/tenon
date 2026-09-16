@@ -19,7 +19,11 @@ var hashSeed = maphash.MakeSeed()
 // The hash is stable within a process and not between processes. It must not be
 // written down, serialized, or compared against one from another run.
 //
-// Hash panics on a value that is not known, and on null, which has no hash.
+// Hash panics on a value that is not known, on null, which has no hash, and on
+// a marked value, one that carries a mark or holds one at any depth. A hash
+// stands in for a value where its marks cannot follow, so a marked value gives
+// its marks up first, as it does to join a set: hash the value UnmarkDeep
+// returns, and keep the marks beside the hash where they matter.
 func Hash(v Value) uint64 {
 	n := v.data()
 	if n.state == stateNull {
@@ -27,6 +31,9 @@ func Hash(v Value) uint64 {
 	}
 	if !n.isKnown() {
 		usagePanic("Hash called on %s, which is not a known value", n.describe())
+	}
+	if n.isMarked() {
+		usagePanic("Hash called on %s, and a marked value has no hash; hash the value UnmarkDeep returns", n.describeMarked())
 	}
 	return hashNode(n)
 }

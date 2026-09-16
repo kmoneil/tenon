@@ -13,10 +13,10 @@ import (
 )
 
 // hashable returns the values of the generator that have a hash: the known
-// ones, less null, which has none.
+// ones that are not marked, less null, which has none.
 func hashable() []tenon.Value {
 	var out []tenon.Value
-	for _, v := range values.Known() {
+	for _, v := range values.Orderable() {
 		if !tenon.IsNull(v).AsBool() {
 			out = append(out, v)
 		}
@@ -68,6 +68,13 @@ func TestConformance_EQ030_IdenticalValuesHashAlike(t *testing.T) {
 	} {
 		mustPanicUsage(t, "which is not a known value", func() { tenon.Hash(tt.v) })
 	}
+	// Nor is there a hash for a marked value, whether the mark is its own or a
+	// member's.
+	m := stamp{id: "m"}
+	mustPanicUsage(t, "that carries marks", func() { tenon.Hash(tenon.WithMarks(tenon.String("a"), m)) })
+	mustPanicUsage(t, "that holds a marked value at [0]", func() {
+		tenon.Hash(tenon.ListVal(str, tenon.WithMarks(tenon.String("a"), m)))
+	})
 }
 
 func TestConformance_EQ031_HashingIsStableAcrossRepresentations(t *testing.T) {

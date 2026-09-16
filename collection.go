@@ -71,9 +71,27 @@ func ListVal(elem Type, elems ...Value) Value {
 	return sequenceValue(List(elem), "ListVal", elems)
 }
 
-// SetVal returns the set with element type elem and the given members. It does
-// not yet remove members that equal one another. SetVal does not retain the
-// slice, and treats error members and panics as ListVal does.
+// SetVal returns the set with element type elem and the given members. Equality
+// tells members apart: members it settles are one value are one member, of
+// which the set keeps the first given, and members that are not known stay
+// apart unless it settles that. A set holds its members in the order it
+// iterates them. SetVal does not retain the slice, and treats error members and
+// panics as ListVal does.
+//
+// A member must not be marked: it must carry no mark and hold none, at any
+// depth. Equality tells members apart without looking at marks, so of two
+// members that differ only by their marks a set would keep one and lose the
+// other's marks, and which it lost would depend on the order they were given
+// in. SetVal panics on a marked member rather than choose. Take the marks off
+// the members, and put them on the set:
+//
+//	var marks []tenon.Mark
+//	for i, m := range members {
+//		var taken []tenon.Mark
+//		members[i], taken = tenon.UnmarkDeep(m)
+//		marks = append(marks, taken...)
+//	}
+//	set := tenon.WithMarks(tenon.SetVal(elem, members...), marks...)
 func SetVal(elem Type, elems ...Value) Value {
 	return sequenceValue(Set(elem), "SetVal", elems)
 }
@@ -88,6 +106,10 @@ func sequenceValue(t Type, fn string, elems []Value) Value {
 			continue
 		}
 		requireMember(fn, "element "+strconv.Itoa(i), e, t.t.elem)
+		if t.t.kind == KindSet && e.n.isMarked() {
+			usagePanic("%s: element %d is %s, and a set's members carry no marks; %s",
+				fn, i, e.n.describeMarked(), unmarkForSet)
+		}
 	}
 	if v, ok := errs.value(); ok {
 		return v
@@ -96,8 +118,12 @@ func sequenceValue(t Type, fn string, elems []Value) Value {
 	if t.t.kind == KindSet {
 		members = orderMembers(distinctMembers(members))
 	}
-	return Value{&node{state: stateKnown, partial: anyPartial(members), typ: t, data: members}}
+	return Value{&node{state: stateKnown, partial: anyPartial(members), markedWithin: anyMarked(members), typ: t, data: members}}
 }
+
+// unmarkForSet is what a panic message tells a caller who gave a set a marked
+// member: the way to do it that keeps the marks.
+const unmarkForSet = "unmark it with UnmarkDeep and reapply the marks to the set"
 
 // TupleVal returns the tuple with the given elements, in order, whose type is
 // the tuple type of the elements' types. TupleVal does not retain the slice.
@@ -117,7 +143,7 @@ func TupleVal(elems ...Value) Value {
 	if v, ok := errs.value(); ok {
 		return v
 	}
-	return Value{&node{state: stateKnown, partial: anyPartial(elems), typ: Tuple(types...), data: slices.Clone(elems)}}
+	return Value{&node{state: stateKnown, partial: anyPartial(elems), markedWithin: anyMarked(elems), typ: Tuple(types...), data: slices.Clone(elems)}}
 }
 
 // ObjectVal returns the object with the given attributes, whose type is the
@@ -144,7 +170,7 @@ func ObjectVal(attrs map[string]Value) Value {
 	if v, ok := errs.value(); ok {
 		return v
 	}
-	return Value{&node{state: stateKnown, partial: anyPartial(vals), typ: Object(types), data: vals}}
+	return Value{&node{state: stateKnown, partial: anyPartial(vals), markedWithin: anyMarked(vals), typ: Object(types), data: vals}}
 }
 
 // distinctMembers returns the members of a set: members that equality reports
@@ -226,6 +252,17 @@ func anyPartial(vals []Value) bool {
 	return false
 }
 
+// anyMarked reports whether a container holding these members holds a marked
+// value, which it does as soon as one member is marked.
+func anyMarked(vals []Value) bool {
+	for _, v := range vals {
+		if v.n.isMarked() {
+			return true
+		}
+	}
+	return false
+}
+
 // MapVal returns the map with element type elem and the given entries. Keys are
 // normalized to Unicode Normalization Form C. MapVal does not retain the map.
 //
@@ -292,14 +329,12 @@ func MapVal(elem Type, entries map[string]Value) Value {
 	if v, ok := errs.value(); ok {
 		return v
 	}
-	partial := false
+	partial, marked := false, false
 	for _, e := range out {
-		if !e.val.n.isKnown() {
-			partial = true
-			break
-		}
+		partial = partial || !e.val.n.isKnown()
+		marked = marked || e.val.n.isMarked()
 	}
-	return Value{&node{state: stateKnown, partial: partial, typ: t, data: out}}
+	return Value{&node{state: stateKnown, partial: partial, markedWithin: marked, typ: t, data: out}}
 }
 
 // memberType returns the type of a member of a container, panicking if v is not

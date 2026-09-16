@@ -1,8 +1,8 @@
 // Package values builds the values that conformance property tests run over:
 // one of every shape the value system can hold. A property asserted over these
-// is asserted over error values, pending values, unknown values and the
-// containers that hold them, rather than only over the values that are easy to
-// write down.
+// is asserted over error values, pending values, unknown values, marked values
+// and the containers that hold them, rather than only over the values that are
+// easy to write down.
 //
 // It is a package beside conformance rather than part of it because it imports
 // tenon, and tenon's own internal tests import conformance.
@@ -24,6 +24,18 @@ var Compared = tenon.Capsule("compared", tenon.CapsuleOps[point]{
 })
 
 var shared = &point{1, 2}
+
+// label is a mark the generator attaches. Marks are told apart by Go equality,
+// so two labels with one name are one mark.
+type label string
+
+func (m label) MarkID() string               { return string(m) }
+func (label) Propagation() tenon.Propagation { return tenon.Propagate }
+func (label) Redacting() bool                { return false }
+
+// Two marks, so that values can differ by which mark they carry as well as by
+// whether they carry one.
+var origin, audit tenon.Mark = label("origin"), label("audit")
 
 // All returns one value of every shape, in a fixed order. Some of them are the
 // same value reached two ways, such as a number written with and without a
@@ -137,17 +149,43 @@ func All() []tenon.Value {
 		tenon.ObjectVal(map[string]tenon.Value{"a": unknownNum}),
 		tenon.ListVal(tenon.List(str), tenon.ListVal(str, s("a"))),
 		tenon.ObjectVal(map[string]tenon.Value{"a": tenon.ListVal(str, s("a"))}),
+
+		// Marked values, in every state. Two are one value reached two ways: a
+		// number written two ways under one mark, and two marks attached in
+		// either order.
+		tenon.WithMarks(n(1), origin),
+		tenon.WithMarks(tenon.NumberFromText("1.000"), origin),
+		tenon.WithMarks(n(1), audit),
+		tenon.WithMarks(s("a"), origin, audit),
+		tenon.WithMarks(tenon.WithMarks(s("a"), audit), origin),
+		tenon.WithMarks(tenon.NullVal(num), origin),
+		tenon.WithMarks(unknownNum, origin),
+		tenon.WithMarks(tenon.Pending(tenon.Any()), origin),
+		tenon.WithMarks(tenon.ErrorVal(tenon.Diagnostic{Code: "app.failed", Message: "it failed"}), origin),
+		tenon.WithMarks(tenon.ListVal(str, s("a")), origin),
+		tenon.WithMarks(tenon.SetVal(str, s("a"), s("b")), origin),
+
+		// Containers holding a marked member, which are marked although they
+		// carry no mark themselves, at one depth and at two, and one whose
+		// marked member is not known.
+		tenon.ListVal(num, tenon.WithMarks(n(1), origin)),
+		tenon.ListVal(num, tenon.WithMarks(tenon.NumberFromText("1.0"), origin)),
+		tenon.ListVal(tenon.List(num), tenon.ListVal(num, n(2), tenon.WithMarks(n(1), audit))),
+		tenon.MapVal(num, map[string]tenon.Value{"k": tenon.WithMarks(n(1), origin)}),
+		tenon.TupleVal(tenon.WithMarks(unknownStr, audit)),
+		tenon.ObjectVal(map[string]tenon.Value{"a": tenon.WithMarks(n(1), origin), "b": s("x")}),
 	}
 }
 
-// Known returns the values of All that are known: the ones whose range holds
-// one value, which is what hashing and canonical order are defined over.
-func Known() []tenon.Value {
-	var known []tenon.Value
+// Orderable returns the values of All that hashing and the canonical order are
+// defined over: the known ones that are not marked, carrying no mark and
+// holding none.
+func Orderable() []tenon.Value {
+	var out []tenon.Value
 	for _, v := range All() {
-		if v.IsKnown() {
-			known = append(known, v)
+		if _, marks := tenon.UnmarkDeep(v); v.IsKnown() && len(marks) == 0 {
+			out = append(out, v)
 		}
 	}
-	return known
+	return out
 }

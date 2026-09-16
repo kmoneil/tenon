@@ -11,8 +11,8 @@ import (
 
 // CanonicalCompare orders two known values, returning a negative number, zero
 // or a positive number as a sorts before, together with, or after b. It is a
-// total order over every known value: it returns zero exactly for values that
-// Identical reports the same.
+// total order over every known value that is not marked: it returns zero
+// exactly for values that Identical reports the same.
 //
 // Null sorts before every other value. Values of different kinds sort in the
 // order Bool, Number, String, List, Set, Map, Tuple, Object, Capsule. Within a
@@ -27,7 +27,10 @@ import (
 // tenon offers it to its users is that language's decision, and LessThan is the
 // operation its users would otherwise reach for.
 //
-// CanonicalCompare panics on a value that is not known.
+// CanonicalCompare panics on a value that is not known, and on a marked value,
+// one that carries a mark or holds one at any depth. The order is by what
+// values hold, so it would sort a marked value together with its unmarked twin,
+// which Identical tells apart: compare the values UnmarkDeep returns.
 func CanonicalCompare(a, b Value) int {
 	return compareCanonical(canonicalOperand(a), canonicalOperand(b))
 }
@@ -37,6 +40,10 @@ func canonicalOperand(v Value) *node {
 	n := v.data()
 	if !n.isKnown() {
 		usagePanic("CanonicalCompare called on %s, which is not a known value", n.describe())
+	}
+	if n.isMarked() {
+		usagePanic("CanonicalCompare called on %s, and the canonical order is not defined for a marked value; compare the values UnmarkDeep returns",
+			n.describeMarked())
 	}
 	return n
 }

@@ -339,11 +339,18 @@ func LengthMax(n int64) Narrowing {
 //
 // Members panics if a listed value is an error value or a pending value: a
 // narrowing carries no diagnostics, and a value that has no type yet says
-// nothing a member could be held to.
+// nothing a member could be held to. It panics on a marked value too, for the
+// reason SetVal gives: a set's members carry no marks. Unmark the value with
+// UnmarkDeep, and reapply the marks to the set being narrowed.
 func Members(vs ...Value) Narrowing {
 	for i, v := range vs {
-		if n := v.data(); !n.state.resolved() {
+		n := v.data()
+		if !n.state.resolved() {
 			usagePanic("Members called with %s as member %d, not a resolved value", n.describe(), i)
+		}
+		if n.isMarked() {
+			usagePanic("Members called with %s as member %d, and a set's members carry no marks; %s",
+				n.describeMarked(), i, unmarkForSet)
 		}
 	}
 	return Narrowing{kind: narrowMembers, members: slices.Clone(vs)}
