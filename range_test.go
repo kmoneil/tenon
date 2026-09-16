@@ -1,6 +1,8 @@
 package tenon_test
 
 import (
+	"strconv"
+	"strings"
 	"testing"
 
 	"tenon"
@@ -80,7 +82,7 @@ func TestConformance_UN002_NarrowingTable(t *testing.T) {
 		{"NumberMin exclusive", tenon.Unknown(num), []tenon.Narrowing{tenon.NumberMin(five, false)}, "unknown(number, > 5)"},
 		{"NumberMax inclusive", tenon.Unknown(num), []tenon.Narrowing{tenon.NumberMax(five, true)}, "unknown(number, <= 5)"},
 		{"NumberMax exclusive", tenon.Unknown(num), []tenon.Narrowing{tenon.NumberMax(five, false)}, "unknown(number, < 5)"},
-		{"StringPrefix", tenon.Unknown(str), []tenon.Narrowing{tenon.StringPrefix("ab")}, `unknown(string, prefix "ab", length >= 2)`},
+		{"StringPrefix", tenon.Unknown(str), []tenon.Narrowing{tenon.StringPrefix("ab-")}, `unknown(string, prefix "ab-", length >= 3)`},
 		{"LengthMin on a list", tenon.Unknown(lst), []tenon.Narrowing{tenon.LengthMin(2)}, "unknown(list(string), length >= 2)"},
 		{"LengthMax on a set", tenon.Unknown(set), []tenon.Narrowing{tenon.LengthMax(3)}, "unknown(set(string), length <= 3)"},
 		{"LengthMin on a map", tenon.Unknown(mp), []tenon.Narrowing{tenon.LengthMin(1)}, "unknown(map(string), length >= 1)"},
@@ -139,7 +141,7 @@ func TestConformance_UN003_NarrowingIsMonotone(t *testing.T) {
 		{"bound inclusivity", tenon.Unknown(num), tenon.NumberMin(five, false), tenon.NumberMin(five, true), "unknown(number, > 5)"},
 		{"upper bound", tenon.Unknown(num), tenon.NumberMax(one, true), tenon.NumberMax(five, true), "unknown(number, <= 1)"},
 		{"length", tenon.Unknown(lst), tenon.LengthMax(3), tenon.LengthMax(9), "unknown(list(string), length <= 3)"},
-		{"prefix", tenon.Unknown(str), tenon.StringPrefix("abc"), tenon.StringPrefix("ab"), `unknown(string, prefix "abc", length >= 3)`},
+		{"prefix", tenon.Unknown(str), tenon.StringPrefix("abc-"), tenon.StringPrefix("ab"), `unknown(string, prefix "abc-", length >= 4)`},
 		{"not null", tenon.Unknown(num), tenon.NotNull(), tenon.NotNull(), "unknown(number, not null)"},
 	} {
 		for _, order := range [][]tenon.Narrowing{{tt.a, tt.b}, {tt.b, tt.a}} {
@@ -185,13 +187,13 @@ func TestConformance_UN004_ContradictionIsAnErrorValue(t *testing.T) {
 
 		{
 			"two prefixes that diverge", tenon.Unknown(str),
-			[]tenon.Narrowing{tenon.StringPrefix("ab"), tenon.StringPrefix("ax")},
-			`no value of type string satisfies both prefix "ab" and prefix "ax"`,
+			[]tenon.Narrowing{tenon.StringPrefix("ab-"), tenon.StringPrefix("ax-")},
+			`no value of type string satisfies both prefix "ab-" and prefix "ax-"`,
 		},
 		{
 			"a prefix longer than the length allows", tenon.Unknown(str),
-			[]tenon.Narrowing{tenon.StringPrefix("ab"), tenon.LengthMax(1)},
-			`no value of type string satisfies both prefix "ab" and length <= 1`,
+			[]tenon.Narrowing{tenon.StringPrefix("ab-"), tenon.LengthMax(1)},
+			`no value of type string satisfies both prefix "ab-" and length <= 1`,
 		},
 		{
 			"length bounds that cross", tenon.Unknown(lst),
@@ -200,8 +202,8 @@ func TestConformance_UN004_ContradictionIsAnErrorValue(t *testing.T) {
 		},
 		{
 			"a known value that does not satisfy the narrowing", tenon.String("xy"),
-			[]tenon.Narrowing{tenon.StringPrefix("ab")},
-			`the value "xy" does not satisfy prefix "ab"`,
+			[]tenon.Narrowing{tenon.StringPrefix("ab-")},
+			`the value "xy" does not satisfy prefix "ab-"`,
 		},
 		{
 			"a known null that cannot be not null", tenon.NullVal(str),
@@ -321,11 +323,58 @@ func TestNarrowingLengthIsGraphemeClusters(t *testing.T) {
 	if got := tenon.Narrow(text, tenon.LengthMin(2)); !got.IsError() {
 		t.Errorf("narrowing a one-cluster string to length >= 2 produced %v, want an error value", got)
 	}
-	// A prefix of one cluster forces a length of at least one, even though it
-	// is two scalars long.
-	want := "unknown(string, prefix \"\U000000e9\", length >= 1)"
-	if got := tenon.Narrow(tenon.Unknown(tenon.StringType()), tenon.StringPrefix("e\U00000301")).String(); got != want {
+	// A prefix of one cluster forces a length of at least one, though this one
+	// is two scalar values and eight bytes long.
+	flag := "\U0001F1E9\U0001F1EA"
+	want := "unknown(string, prefix " + strconv.Quote(flag) + ", length >= 1)"
+	if got := tenon.Narrow(tenon.Unknown(tenon.StringType()), tenon.StringPrefix(flag)).String(); got != want {
 		t.Errorf("narrowed to %s, want %s", got, want)
+	}
+}
+
+func TestConformance_UN006_PrefixTruncation(t *testing.T) {
+	conformance.Covers(t, "UN-006")
+	str := tenon.StringType()
+	flag := "\U0001F1E9\U0001F1EA"
+	// What a narrowing records is the part of the supplied text that text
+	// following it cannot change.
+	for _, tt := range []struct {
+		name string
+		in   string
+		want string
+	}{
+		{"nothing composes with a hyphen", "ab-", "ab-"},
+		{"nothing composes with a digit", "v1", "v1"},
+		{"q is the one letter nothing composes with", "seq", "seq"},
+		{"a trailing letter a mark would change", "cafe", "caf"},
+		{"a trailing letter, with no accent in sight", "hello world", "hello worl"},
+		{"nothing composes with a regional indicator", flag, flag},
+		{"a combining sequence, which leaves nothing", "e\U00000301", ""},
+	} {
+		got := tenon.Narrow(tenon.Unknown(str), tenon.StringPrefix(tt.in)).String()
+		if tt.want == "" {
+			if got != "unknown(string)" {
+				t.Errorf("%s: %q recorded %s, want unknown(string)", tt.name, tt.in, got)
+			}
+			continue
+		}
+		if want := "prefix " + strconv.Quote(tt.want); !strings.Contains(got, want) {
+			t.Errorf("%s: %q recorded %s, want it to hold %s", tt.name, tt.in, got, want)
+		}
+	}
+	// The truncation is what makes the narrowing sound: however the supplied
+	// text continues, the value it grows into still satisfies the narrowing.
+	for _, suffix := range []string{
+		"", "x", " ", "\U00000301", "\U00000307", "\U0000030C", "\U00000323",
+		"\U00000327", "\U0000200D", "\U0001F1EB", "e\U00000301",
+	} {
+		for _, text := range []string{"cafe", "hello world", "ab-", flag} {
+			v := tenon.String(text + suffix)
+			if got := tenon.Narrow(v, tenon.StringPrefix(text)); got.IsError() {
+				t.Errorf("%q continued by %q gives %v, which contradicts a prefix of %q: %v",
+					text, suffix, v, text, got)
+			}
+		}
 	}
 }
 

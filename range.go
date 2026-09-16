@@ -232,8 +232,15 @@ func NumberMax(v Value, inclusive bool) Narrowing {
 	return Narrowing{kind: narrowNumberMax, num: numberBound("NumberMax", v), incl: inclusive}
 }
 
-// StringPrefix returns the narrowing that requires a String value to begin
-// with s. The prefix is normalized like the content of a string value.
+// StringPrefix returns the narrowing that requires a String value to begin with
+// s. The prefix is normalized like the content of a string value, and then cut
+// back to the part of s that text following s cannot change: a value built from
+// "cafe" and a continuation beginning with a combining acute is "café", which
+// does not begin with "cafe", so the narrowing keeps "caf". Nothing composes
+// with a hyphen or a digit, so "v1-" is kept whole.
+//
+// The narrowing therefore holds of some values that s alone would exclude, and
+// it holds of them whether the value is known yet or not.
 //
 // StringPrefix panics if s is not well-formed UTF-8. A narrowing carries no
 // diagnostics, so, unlike String, it cannot report bad text as data: build a
@@ -243,7 +250,7 @@ func StringPrefix(s string) Narrowing {
 	if err != nil {
 		usagePanic("StringPrefix called with text that is not well-formed UTF-8, at byte %d", invalidUTF8At(s))
 	}
-	return Narrowing{kind: narrowPrefix, str: c}
+	return Narrowing{kind: narrowPrefix, str: uni.StablePrefix(c)}
 }
 
 // LengthMin returns the narrowing that requires a String, list, set or map

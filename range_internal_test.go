@@ -25,8 +25,8 @@ func TestRangesAreCanonical(t *testing.T) {
 	}{
 		{
 			"a prefix implies a least length",
-			Narrow(Unknown(str), StringPrefix("ab"), LengthMax(5)),
-			Narrow(Unknown(str), LengthMax(5), LengthMin(2), StringPrefix("ab")),
+			Narrow(Unknown(str), StringPrefix("ab-"), LengthMax(5)),
+			Narrow(Unknown(str), LengthMax(5), LengthMin(3), StringPrefix("ab-")),
 		},
 		{
 			"the tighter of two bounds at the same value",
