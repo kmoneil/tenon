@@ -830,7 +830,7 @@ func TestConformance_CV001_EveryResultSatisfiesItsTarget(t *testing.T) {
 					if again := tenon.Convert(r, c, p); !tenon.Identical(again, r) {
 						t.Errorf("%s = %v, which converts again to %v", what, r, again)
 					}
-					if got := tenon.PendingConstraint(r); got.String() != c.String() {
+					if got := r.Constraint(); !got.Equal(c) {
 						t.Errorf("%s = %v, a pending value whose constraint is not the target", what, r)
 					}
 					if v.IsKnown() {

@@ -230,6 +230,16 @@ func (c Constraint) mustKind(method string, kinds ...ConstraintKind) *constraint
 	return d
 }
 
+// Equal reports whether c and d are the same constraint: of one kind, built
+// from the same types, members and fields, in the same order where order
+// counts. Unify writes its results canonically, so two of them that constrain
+// alike are Equal. Equal panics if either is the zero Constraint.
+func (c Constraint) Equal(d Constraint) bool {
+	c.data()
+	d.data()
+	return c.equal(d)
+}
+
 // Kind returns the kind of c.
 func (c Constraint) Kind() ConstraintKind { return c.data().kind }
 

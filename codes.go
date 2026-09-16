@@ -25,4 +25,5 @@ const (
 	CodeRangeContradiction         Code = "range.contradiction"
 	CodeSerializeUnencodableMark   Code = "serialize.unencodable_mark"
 	CodeStringInvalidUTF8          Code = "string.invalid_utf8"
+	CodeUnifyNoCommonConstraint    Code = "unify.no_common_constraint"
 )

@@ -47,12 +47,3 @@ func RegisteredOperations() []RegisteredOperation {
 	}
 	return out
 }
-
-// PendingConstraint returns the constraint a pending value carries, which the
-// public API does not expose yet.
-func PendingConstraint(v Value) Constraint {
-	if v.data().state != statePending {
-		usagePanic("PendingConstraint called on %s", v.n.describe())
-	}
-	return v.n.data.(Constraint)
-}

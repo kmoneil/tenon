@@ -39,6 +39,7 @@ var specCodes = []string{
 	"range.contradiction",
 	"serialize.unencodable_mark",
 	"string.invalid_utf8",
+	"unify.no_common_constraint",
 }
 
 func TestConformance_ER007_DiagnosticCodes(t *testing.T) {

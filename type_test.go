@@ -389,6 +389,7 @@ func TestConformance_TY001_EveryValueHasOneConcreteType(t *testing.T) {
 	untyped := map[string]tenon.Value{
 		"ErrorVal": tenon.ErrorVal(tenon.Diagnostic{Code: "app.failed", Message: "it failed"}),
 		"Pending":  tenon.Pending(tenon.Any()),
+		"Unify":    unifyFailure(),
 	}
 	// Between them these are every function that makes a value, so one added
 	// later has to be accounted for here before this test passes again.
@@ -555,4 +556,10 @@ func operationLiterals(t *testing.T) []operationLiteral {
 		t.Fatal("found no operations to check")
 	}
 	return lits
+}
+
+// unifyFailure returns the error value of a unification that fails.
+func unifyFailure() tenon.Value {
+	_, failure, _ := tenon.Unify(tenon.Safe, tenon.Exactly(tenon.NumberType()), tenon.Exactly(tenon.BoolType()))
+	return failure
 }

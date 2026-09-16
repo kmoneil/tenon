@@ -337,6 +337,17 @@ func (v Value) Type() Type {
 	return n.typ
 }
 
+// Constraint returns the constraint that a pending value carries: what its type
+// will satisfy once it is settled. Only pending values carry one, and
+// Constraint panics on other values; test with IsPending first.
+func (v Value) Constraint() Constraint {
+	n := v.data()
+	if n.state != statePending {
+		usagePanic("Constraint called on %s, which is not a pending value", n.describe())
+	}
+	return n.data.(Constraint)
+}
+
 // Diagnostics returns the diagnostics of an error value, in order, in a new
 // slice. It panics if v is not an error value.
 func (v Value) Diagnostics() []Diagnostic {
