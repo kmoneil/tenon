@@ -52,7 +52,10 @@ func Identical(a, b Value) bool {
 func identicalContent(a, b *node) bool {
 	switch a.typ.t.kind {
 	case KindSet:
-		return sameMembersFunc(a.data.([]Value), b.data.([]Value), Identical)
+		// A set can hold one unknown member twice (EQ-041), and holding it
+		// twice is a different range from holding it once, so members are
+		// matched with their repetitions, not only as a set.
+		return sameMultiset(a.data.([]Value), b.data.([]Value))
 	case KindMap:
 		x, y := a.data.([]mapEntry), b.data.([]mapEntry)
 		return slices.EqualFunc(x, y, func(p, q mapEntry) bool {
@@ -104,4 +107,27 @@ func (c Constraint) equal(d Constraint) bool {
 	return slices.EqualFunc(a.fields, b.fields, func(x, y field) bool {
 		return x.name == y.name && x.Required == y.Required && x.Constraint.equal(y.Constraint)
 	})
+}
+
+// sameMultiset reports whether two sets hold identical members, each as many
+// times in one as in the other.
+func sameMultiset(x, y []Value) bool {
+	if len(x) != len(y) {
+		return false
+	}
+	count := func(members []Value, m Value) int {
+		n := 0
+		for _, k := range members {
+			if Identical(k, m) {
+				n++
+			}
+		}
+		return n
+	}
+	for _, m := range x {
+		if count(x, m) != count(y, m) {
+			return false
+		}
+	}
+	return true
 }

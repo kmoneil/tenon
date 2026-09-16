@@ -32,6 +32,20 @@ func TestConformance_EQ010_IdenticalComparesEverything(t *testing.T) {
 			tenon.SetVal(str, tenon.String("b"), tenon.String("a")),
 			true,
 		},
+		// A set holding an unknown member twice has a range that holding it
+		// once does not: it could have two members.
+		{
+			"a set holding an unknown twice and once",
+			tenon.SetVal(str, tenon.Unknown(str), tenon.Unknown(str)),
+			tenon.SetVal(str, tenon.Unknown(str)),
+			false,
+		},
+		{
+			"sets holding an unknown twice, built apart",
+			tenon.SetVal(str, tenon.String("a"), tenon.Unknown(str), tenon.Unknown(str)),
+			tenon.SetVal(str, tenon.Unknown(str), tenon.String("a"), tenon.Unknown(str)),
+			true,
+		},
 		// The state is part of it.
 		{"a value and an unknown of its type", one, tenon.Unknown(num), false},
 		{"an unknown and a null", tenon.Unknown(str), tenon.NullVal(str), false},
