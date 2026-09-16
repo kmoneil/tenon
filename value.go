@@ -138,7 +138,13 @@ func String(s string) Value {
 			Message: "the text is not well-formed UTF-8 at byte " + strconv.Itoa(invalidUTF8At(s)),
 		})
 	}
-	return Value{&node{state: stateKnown, typ: Type{stringType}, data: c}}
+	return stringValue(c)
+}
+
+// stringValue returns the String value of s, which must be in its canonical
+// form already.
+func stringValue(s string) Value {
+	return Value{&node{state: stateKnown, typ: Type{stringType}, data: s}}
 }
 
 // invalidUTF8At returns the offset of the first byte of s that does not begin

@@ -46,6 +46,14 @@ func (mark) Redacting() bool                  { return false }
 func (m mark) Deep() bool                     { return m.deep }
 func (mark) MarkPayload() (tenon.Value, bool) { return tenon.Value{}, false }
 
+// secret is a redacting mark that serializes as its identifier alone.
+type secret struct{}
+
+func (secret) MarkID() string                   { return "r" }
+func (secret) Propagation() tenon.Propagation   { return tenon.Propagate }
+func (secret) Redacting() bool                  { return true }
+func (secret) MarkPayload() (tenon.Value, bool) { return tenon.Value{}, false }
+
 // note is a mark that serializes with a string.
 type note struct{ text string }
 
@@ -64,6 +72,7 @@ var decoders = tenon.Decoders{
 	Marks: map[string]tenon.MarkDecoder{
 		"m": func(tenon.Value, bool) (tenon.Mark, []tenon.Diagnostic) { return plain, nil },
 		"d": func(tenon.Value, bool) (tenon.Mark, []tenon.Diagnostic) { return deep, nil },
+		"r": func(tenon.Value, bool) (tenon.Mark, []tenon.Diagnostic) { return secret{}, nil },
 		"p": func(payload tenon.Value, has bool) (tenon.Mark, []tenon.Diagnostic) {
 			if !has || payload.Type() != tenon.StringType() {
 				return nil, []tenon.Diagnostic{{Code: "vectors.bad_note", Message: "a note needs text"}}
@@ -244,6 +253,9 @@ var valid = []vector{
 	{"marks/set", func(r *rand.Rand) tenon.Value {
 		return tenon.WithMarks(tenon.SetVal(num, shuffled(r, n(1), n(2))...), deep)
 	}},
+	{"marks/redacted", func(r *rand.Rand) tenon.Value {
+		return tenon.ObjectVal(map[string]tenon.Value{"password": marked(r, s("hunter2"), secret{}, plain), "user": s("ann")})
+	}},
 	{"capsule/value", func(*rand.Rand) tenon.Value { return tenon.CapsuleVal(degreesType, &degrees{21}) }},
 }
 
@@ -307,17 +319,23 @@ type invalidOut struct {
 	Code string `json:"code"`
 }
 
+// jsonLine returns v as JSON on one line, with <, > and & written as
+// themselves, which the corpora's display forms are full of.
+func jsonLine(t *testing.T, v any) string {
+	var b bytes.Buffer
+	enc := json.NewEncoder(&b)
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(v); err != nil {
+		t.Fatal(err)
+	}
+	return strings.TrimSuffix(b.String(), "\n")
+}
+
 // render writes the file, one vector to a line so that a change reads as a
 // change to that vector.
 func render(t *testing.T, f file) []byte {
 	var b bytes.Buffer
-	line := func(v any) string {
-		out, err := json.Marshal(v)
-		if err != nil {
-			t.Fatal(err)
-		}
-		return string(out)
-	}
+	line := func(v any) string { return jsonLine(t, v) }
 	b.WriteString("{\n")
 	b.WriteString(`  "format": ` + line(f.Format) + ",\n")
 	b.WriteString(`  "about": ` + line(f.About) + ",\n")
@@ -370,6 +388,7 @@ func TestConformance_SE001_Vectors(t *testing.T) {
 			{"m", "a mark that propagates, serialized as its identifier alone"},
 			{"d", "a deep mark that propagates, serialized as its identifier alone"},
 			{"p", "a mark that propagates, serialized with a string, its text"},
+			{"r", "a redacting mark that propagates, serialized as its identifier alone"},
 		},
 	}
 	names := map[string]bool{}

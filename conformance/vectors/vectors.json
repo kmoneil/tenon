@@ -7,7 +7,8 @@
   "marks": [
     {"id":"m","about":"a mark that propagates, serialized as its identifier alone"},
     {"id":"d","about":"a deep mark that propagates, serialized as its identifier alone"},
-    {"id":"p","about":"a mark that propagates, serialized with a string, its text"}
+    {"id":"p","about":"a mark that propagates, serialized with a string, its text"},
+    {"id":"r","about":"a redacting mark that propagates, serialized as its identifier alone"}
   ],
   "valid": [
     {"name":"bool/false","value":"false","hex":"da74656e008201830001f4"},
@@ -56,10 +57,10 @@
     {"name":"object/empty","value":"{}","hex":"da74656e008201830082088080"},
     {"name":"object/attributes","value":"{\"a\": \"x\", \"b\": 1, \"é\": false}","hex":"da74656e008201830082088382616103826162028262c3a90183617801f4"},
     {"name":"unknown/number","value":"unknown(number)","hex":"da74656e008201830002da74656e01a0"},
-    {"name":"unknown/bounded number","value":"unknown(number, not null, \u003e= 1, \u003c 2.5)","hex":"da74656e008201830002da74656e01a300f5018201f50282c482201819f4"},
-    {"name":"unknown/string prefix","value":"unknown(string, prefix \"cafe-\", length \u003e= 5, length \u003c= 10)","hex":"da74656e008201830003da74656e01a30365636166652d0405050a"},
-    {"name":"unknown/list length","value":"unknown(list(string), length \u003e= 1, length \u003c= 3)","hex":"da74656e0082018300820403da74656e01a204010503"},
-    {"name":"unknown/set members","value":"unknown(set(number), length \u003e= 2, length \u003c= 5, members {1, 2})","hex":"da74656e0082018300820502da74656e01a30402050506820102"},
+    {"name":"unknown/bounded number","value":"unknown(number, not null, >= 1, < 2.5)","hex":"da74656e008201830002da74656e01a300f5018201f50282c482201819f4"},
+    {"name":"unknown/string prefix","value":"unknown(string, prefix \"cafe-\", length >= 5, length <= 10)","hex":"da74656e008201830003da74656e01a30365636166652d0405050a"},
+    {"name":"unknown/list length","value":"unknown(list(string), length >= 1, length <= 3)","hex":"da74656e0082018300820403da74656e01a204010503"},
+    {"name":"unknown/set members","value":"unknown(set(number), length >= 2, length <= 5, members {1, 2})","hex":"da74656e0082018300820502da74656e01a30402050506820102"},
     {"name":"unknown/capsule","value":"unknown(capsule(\"degrees\"), not null)","hex":"da74656e0082018300820963742f63da74656e01a100f5"},
     {"name":"pending/any","value":"pending(any)","hex":"da74656e0082018301810200"},
     {"name":"pending/null","value":"pending(any, null)","hex":"da74656e0082018301810202"},
@@ -76,6 +77,7 @@
     {"name":"marks/pending","value":"marked(pending(any), \"m\")","hex":"da74656e008201da74656e028283018102008181616d"},
     {"name":"marks/error","value":"marked(error(vectors.failed: \"it failed\"), \"m\", \"p\")","hex":"da74656e008201da74656e0282820281836e766563746f72732e6661696c6564696974206661696c6564808281616d836170036165"},
     {"name":"marks/set","value":"marked(set(number)[1, 2], \"d\")","hex":"da74656e0082018300820502da74656e028282010281816164"},
+    {"name":"marks/redacted","value":"{\"password\": redacted(\"r\"), \"user\": \"ann\"}","hex":"da74656e0082018300820882826870617373776f7264038264757365720382da74656e02826768756e746572328281616d81617263616e6e"},
     {"name":"capsule/value","value":"capsule(\"degrees\")","hex":"da74656e0082018300820963742f63820215"}
   ],
   "invalid": [
