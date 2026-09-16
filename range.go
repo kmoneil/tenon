@@ -10,7 +10,9 @@ import (
 
 // Range describes the set of values that a resolved value may be. A known
 // value has the singleton range holding only itself; an unknown value has a
-// wider one, described by the narrowings known to hold of it.
+// wider one, described by the narrowings known to hold of it. The range of a
+// collection or structural value is given by its members, so it reads as the
+// value does, with each member showing its own range.
 //
 // A range is never empty. A narrowing that would leave nothing possible
 // produces an error value instead, because an empty range would describe a

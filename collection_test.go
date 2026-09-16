@@ -152,7 +152,7 @@ func TestContainerValues(t *testing.T) {
 	}
 
 	mustPanicUsage(t, "ListVal: element 0 has type number, not string", func() { tenon.ListVal(str, one) })
-	mustPanicUsage(t, "element 1 is a pending value, not a known value", func() { tenon.SetVal(str, a, tenon.Pending(tenon.Any())) })
+	mustPanicUsage(t, "element 1 is a pending value, not a resolved value", func() { tenon.SetVal(str, a, tenon.Pending(tenon.Any())) })
 	mustPanicUsage(t, `the element of key "k" has type string, not number`, func() { tenon.MapVal(num, map[string]tenon.Value{"k": a}) })
 	mustPanicUsage(t, "the same name after normalization", func() {
 		tenon.ObjectVal(map[string]tenon.Value{"caf\u00e9": a, "cafe\u0301": b})
@@ -186,5 +186,44 @@ func TestContainerString(t *testing.T) {
 		if got := tt.v.String(); got != tt.want {
 			t.Errorf("String() = %s, want %s", got, tt.want)
 		}
+	}
+}
+
+func TestContainersHoldMembersThatAreNotKnown(t *testing.T) {
+	str := tenon.StringType()
+	unknown, null := tenon.Unknown(str), tenon.NullVal(str)
+	l := tenon.ListVal(str, unknown, null, tenon.String("x"))
+	if l.Len() != 3 || l.Index(0) != unknown || l.Index(1) != null {
+		t.Errorf("a list did not keep the members it was given: %v", l)
+	}
+	if l.Type() != tenon.List(str) {
+		t.Errorf("the list has type %v, want %v", l.Type(), tenon.List(str))
+	}
+	if want := `list(string)[unknown(string), null, "x"]`; l.String() != want {
+		t.Errorf("the list reads as %s, want %s", l, want)
+	}
+	// A tuple and an object take their type from members that are not known,
+	// which have types like any other resolved value.
+	if got, want := tenon.TupleVal(unknown, null).Type(), tenon.Tuple(str, str); got != want {
+		t.Errorf("a tuple of unknown and null has type %v, want %v", got, want)
+	}
+	obj := tenon.ObjectVal(map[string]tenon.Value{"a": unknown})
+	if got, want := obj.Type(), tenon.Object(map[string]tenon.Type{"a": str}); got != want {
+		t.Errorf("an object with an unknown attribute has type %v, want %v", got, want)
+	}
+	if v, ok := tenon.MapVal(str, map[string]tenon.Value{"k": unknown}).MapElement("k"); !ok || v != unknown {
+		t.Errorf("a map did not keep the unknown element it was given")
+	}
+	// The element type is still checked, and a member with no type at all is
+	// still a mistake.
+	mustPanicUsage(t, "ListVal: element 0 has type number, not string", func() {
+		tenon.ListVal(str, tenon.Unknown(tenon.NumberType()))
+	})
+	mustPanicUsage(t, "element 0 is a pending value, not a resolved value", func() {
+		tenon.ListVal(str, tenon.Pending(tenon.Any()))
+	})
+	// An error member is still hoisted out of the container.
+	if got := tenon.ListVal(str, tenon.String("\xff"), unknown); !got.IsError() {
+		t.Errorf("a list with an error member is %v, want an error value", got)
 	}
 }

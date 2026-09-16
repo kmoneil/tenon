@@ -300,14 +300,6 @@ func TestUnknownAndNullValues(t *testing.T) {
 	mustPanicUsage(t, "MapKeys called on an unknown value of type map(string), which has no content", func() {
 		tenon.Unknown(tenon.Map(str)).MapKeys()
 	})
-	// A member of a container must still be a known value; null and unknown
-	// members arrive with the rest of the range work.
-	mustPanicUsage(t, "element 0 is an unknown value of type string, not a known value", func() {
-		tenon.ListVal(str, tenon.Unknown(str))
-	})
-	mustPanicUsage(t, "element 0 is the null value of type string, not a known value", func() {
-		tenon.TupleVal(tenon.NullVal(str))
-	})
 	// Neither is a type.
 	mustPanicUsage(t, "use of the zero Type", func() { tenon.Unknown(tenon.Type{}) })
 	mustPanicUsage(t, "use of the zero Type", func() { tenon.NullVal(tenon.Type{}) })

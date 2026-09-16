@@ -191,3 +191,92 @@ func TestValueString(t *testing.T) {
 		}
 	}
 }
+
+func TestConformance_VA003_KnownIsASingletonRange(t *testing.T) {
+	conformance.Covers(t, "VA-003")
+	str, num := tenon.StringType(), tenon.NumberType()
+	five := tenon.NumberFromInt(5)
+	for _, tt := range []struct {
+		name  string
+		v     tenon.Value
+		known bool
+	}{
+		{"a string", tenon.String("text"), true},
+		{"the null value", tenon.NullVal(str), true},
+		{"a fresh unknown", tenon.Unknown(str), false},
+		{"an unknown that cannot be null", tenon.Narrow(tenon.Unknown(str), tenon.NotNull()), false},
+		{
+			"an unknown narrowed to one value",
+			tenon.Narrow(tenon.Unknown(num), tenon.NumberMin(five, true), tenon.NumberMax(five, true), tenon.NotNull()),
+			true,
+		},
+		{"an empty list", tenon.ListVal(str), true},
+		{"a list of known elements", tenon.ListVal(str, tenon.String("a")), true},
+		{"a list holding a null", tenon.ListVal(num, tenon.NullVal(num)), true},
+		{"a list holding an unknown", tenon.ListVal(num, tenon.Unknown(num)), false},
+		{
+			"a list holding a list that holds an unknown",
+			tenon.ListVal(tenon.List(num), tenon.ListVal(num, tenon.Unknown(num))),
+			false,
+		},
+		{"a set holding an unknown", tenon.SetVal(num, tenon.Unknown(num)), false},
+		{"a tuple of known elements", tenon.TupleVal(tenon.Bool(true)), true},
+		{"a tuple holding an unknown", tenon.TupleVal(tenon.Bool(true), tenon.Unknown(str)), false},
+		{"an object with an unknown attribute", tenon.ObjectVal(map[string]tenon.Value{"a": tenon.Unknown(str)}), false},
+		{"a map with an unknown element", tenon.MapVal(str, map[string]tenon.Value{"k": tenon.Unknown(str)}), false},
+		{"a map of known elements", tenon.MapVal(str, map[string]tenon.Value{"k": tenon.String("v")}), true},
+	} {
+		if !tt.v.IsResolved() {
+			t.Errorf("%s: %v is not a resolved value", tt.name, tt.v)
+		}
+		if got := tt.v.IsKnown(); got != tt.known {
+			t.Errorf("%s: IsKnown of %v is %t, want %t", tt.name, tt.v, got, tt.known)
+		}
+	}
+	// A value that is not known still holds the members it was built from:
+	// knownness is a fact about the range, not about what is there to read.
+	l := tenon.ListVal(num, tenon.Unknown(num))
+	if l.Len() != 1 || l.Index(0).IsKnown() {
+		t.Errorf("a list holding an unknown does not read back as one: %v", l)
+	}
+}
+
+func TestConformance_VA004_NullIsAMemberOfTheRange(t *testing.T) {
+	conformance.Covers(t, "VA-004")
+	str := tenon.StringType()
+	null := tenon.NullVal(str)
+	// A known null is an ordinary resolved value of its type, not a state of
+	// its own, and it is known, because its range holds one value.
+	if !null.IsResolved() || null.Type() != str || !null.IsKnown() {
+		t.Errorf("the null value is not a known resolved value of its type: %v", null)
+	}
+	if null.IsError() || null.IsPending() {
+		t.Errorf("the null value is in another state as well: %v", null)
+	}
+	// It is the value whose range is exactly null: narrowing to null reaches
+	// it, and narrowing null away from it leaves nothing.
+	if got := tenon.Narrow(tenon.Unknown(str), tenon.Null()); !got.IsKnown() || got.String() != null.String() {
+		t.Errorf("narrowing to null gave %v, want %v", got, null)
+	}
+	if got := tenon.Narrow(null, tenon.NotNull()); !got.IsError() {
+		t.Errorf("narrowing the null value to not null gave %v, want an error value", got)
+	}
+	// Null starts out in the range of every unknown, and leaves it only by
+	// narrowing, which IsNull reports from the range.
+	for _, tt := range []struct {
+		name string
+		v    tenon.Value
+		want string
+	}{
+		{"the null value", null, "true"},
+		{"a known string", tenon.String("text"), "false"},
+		{"a list, which is a value and not null", tenon.ListVal(str), "false"},
+		{"a fresh unknown", tenon.Unknown(str), "unknown(bool, not null)"},
+		{"an unknown that cannot be null", tenon.Narrow(tenon.Unknown(str), tenon.NotNull()), "false"},
+		{"an unknown that is still open about it", tenon.Narrow(tenon.Unknown(str), tenon.LengthMax(3)), "unknown(bool, not null)"},
+	} {
+		if got := tenon.IsNull(tt.v).String(); got != tt.want {
+			t.Errorf("%s: IsNull is %s, want %s", tt.name, got, tt.want)
+		}
+	}
+}

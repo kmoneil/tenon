@@ -63,6 +63,35 @@ func Not(a Value) Value {
 	return Bool(!boolOperand("Not", a))
 }
 
+// unknownBool is the answer to a test that the ranges do not settle: a Bool
+// that could be either, and that is not null, because a test does have an
+// answer.
+var unknownBool = Narrow(Unknown(Type{boolType}), NotNull())
+
+// IsNull returns whether v is null, as a Bool value: known true for the null
+// value of a type, known false for a value whose range no longer holds null,
+// and an unknown Bool while the range holds null and something else.
+//
+// IsNull returns an error value if v is one, and panics on a pending value,
+// which has no range.
+func IsNull(v Value) Value {
+	if e, ok := propagate(v); ok {
+		return e
+	}
+	n := v.data()
+	switch n.state {
+	case stateNull:
+		return Bool(true)
+	case stateUnknown:
+		if n.data.(*rangeData).null == nullMaybe {
+			return unknownBool
+		}
+	case statePending:
+		usagePanic("IsNull called on a pending value, which has no range")
+	}
+	return Bool(false)
+}
+
 // boolOperand returns the content of a Bool operand, panicking if v is not
 // one. fn names the operation for the message.
 func boolOperand(fn string, v Value) bool {

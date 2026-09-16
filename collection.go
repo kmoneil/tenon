@@ -87,12 +87,12 @@ func sequenceValue(t Type, fn string, elems []Value) Value {
 			errs.add(indexStep(NumberFromInt(int64(i))), e)
 			continue
 		}
-		requireKnown(fn, "element "+strconv.Itoa(i), e, t.t.elem)
+		requireMember(fn, "element "+strconv.Itoa(i), e, t.t.elem)
 	}
 	if v, ok := errs.value(); ok {
 		return v
 	}
-	return Value{&node{state: stateKnown, typ: t, data: slices.Clone(elems)}}
+	return Value{&node{state: stateKnown, partial: anyPartial(elems), typ: t, data: slices.Clone(elems)}}
 }
 
 // TupleVal returns the tuple with the given elements, in order, whose type is
@@ -108,12 +108,12 @@ func TupleVal(elems ...Value) Value {
 			errs.add(indexStep(NumberFromInt(int64(i))), e)
 			continue
 		}
-		types[i] = knownType("TupleVal", "element "+strconv.Itoa(i), e)
+		types[i] = memberType("TupleVal", "element "+strconv.Itoa(i), e)
 	}
 	if v, ok := errs.value(); ok {
 		return v
 	}
-	return Value{&node{state: stateKnown, typ: Tuple(types...), data: slices.Clone(elems)}}
+	return Value{&node{state: stateKnown, partial: anyPartial(elems), typ: Tuple(types...), data: slices.Clone(elems)}}
 }
 
 // ObjectVal returns the object with the given attributes, whose type is the
@@ -134,13 +134,24 @@ func ObjectVal(attrs map[string]Value) Value {
 			errs.add(attributeStep(e.name), e.value)
 			continue
 		}
-		types[e.name] = knownType("ObjectVal", "attribute "+quoted(e.original), e.value)
+		types[e.name] = memberType("ObjectVal", "attribute "+quoted(e.original), e.value)
 		vals[i] = e.value
 	}
 	if v, ok := errs.value(); ok {
 		return v
 	}
-	return Value{&node{state: stateKnown, typ: Object(types), data: vals}}
+	return Value{&node{state: stateKnown, partial: anyPartial(vals), typ: Object(types), data: vals}}
+}
+
+// anyPartial reports whether a container holding these members has a range
+// wider than one value, which it has as soon as one member does.
+func anyPartial(vals []Value) bool {
+	for _, v := range vals {
+		if !v.n.isKnown() {
+			return true
+		}
+	}
+	return false
 }
 
 // MapVal returns the map with element type elem and the given entries. Keys are
@@ -174,7 +185,7 @@ func MapVal(elem Type, entries map[string]Value) Value {
 			if isError(val) {
 				errs.addUnlocated(val)
 			} else {
-				requireKnown("MapVal", "the element of key "+quotedASCII(key), val, elem)
+				requireMember("MapVal", "the element of key "+quotedASCII(key), val, elem)
 			}
 			continue
 		}
@@ -182,7 +193,7 @@ func MapVal(elem Type, entries map[string]Value) Value {
 			errs.add(indexStep(String(normalized)), val)
 			continue
 		}
-		requireKnown("MapVal", "the element of key "+quotedASCII(key), val, elem)
+		requireMember("MapVal", "the element of key "+quotedASCII(key), val, elem)
 		list = append(list, keyed{mapEntry{normalized, val}, key})
 	}
 
@@ -209,22 +220,32 @@ func MapVal(elem Type, entries map[string]Value) Value {
 	if v, ok := errs.value(); ok {
 		return v
 	}
-	return Value{&node{state: stateKnown, typ: t, data: out}}
+	partial := false
+	for _, e := range out {
+		if !e.val.n.isKnown() {
+			partial = true
+			break
+		}
+	}
+	return Value{&node{state: stateKnown, partial: partial, typ: t, data: out}}
 }
 
-// knownType returns the type of v, panicking if v is not a known value. fn and
-// what name the caller and the member for the message.
-func knownType(fn, what string, v Value) Type {
+// memberType returns the type of a member of a container, panicking if v is not
+// a resolved value. A member that is null or unknown has a type all the same,
+// and the container holds it: what a member leaves open is the container's
+// range, which partial records. fn and what name the caller and the member for
+// the message.
+func memberType(fn, what string, v Value) Type {
 	n := v.data()
-	if n.state != stateKnown {
-		usagePanic("%s: %s is %s, not a known value", fn, what, n.describe())
+	if !n.state.resolved() {
+		usagePanic("%s: %s is %s, not a resolved value", fn, what, n.describe())
 	}
 	return n.typ
 }
 
-// requireKnown panics unless v is a known value of type want.
-func requireKnown(fn, what string, v Value, want Type) {
-	if got := knownType(fn, what, v); got != want {
+// requireMember panics unless v is a resolved value of type want.
+func requireMember(fn, what string, v Value, want Type) {
+	if got := memberType(fn, what, v); got != want {
 		usagePanic("%s: %s has type %s, not %s", fn, what, got, want)
 	}
 }

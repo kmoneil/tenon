@@ -44,10 +44,27 @@ func (s state) resolved() bool {
 	return s == stateKnown || s == stateNull || s == stateUnknown
 }
 
+// isKnown reports whether n describes exactly one value: content that no
+// member leaves open, or null, which is one value by itself.
+func (n *node) isKnown() bool {
+	switch n.state {
+	case stateKnown:
+		return !n.partial
+	case stateNull:
+		return true
+	}
+	return false
+}
+
 // node is the immutable description that a Value refers to.
 type node struct {
 	state state
-	typ   Type // the type of a resolved value
+	// partial is set on a collection or structural value that holds a member
+	// which is not known. The range of such a value is every value of its type
+	// whose members lie in its members' ranges, which is more than one, so the
+	// value is not known however settled its own shape is.
+	partial bool
+	typ     Type // the type of a resolved value
 	// data is the []Diagnostic of an error value, the Constraint of a pending
 	// value, the *rangeData of an unknown value, or nil for a null value. For
 	// a known value it is the content that the kind of its type calls for: a
@@ -252,11 +269,12 @@ func (v Value) IsError() bool { return v.data().state == stateError }
 func (v Value) IsResolved() bool { return v.data().state.resolved() }
 
 // IsKnown reports whether v is a resolved value whose range holds exactly one
-// value, so that its content can be read. The null value of a type is known.
-func (v Value) IsKnown() bool {
-	s := v.data().state
-	return s == stateKnown || s == stateNull
-}
+// value. The null value of a type is known.
+//
+// A collection or structural value is known when every one of its members is.
+// Its members can be read whether or not they are known, since they are there
+// to read; it is the range that a member leaves open, not the content.
+func (v Value) IsKnown() bool { return v.data().isKnown() }
 
 // IsPending reports whether v is a pending value, whose type is not yet
 // determined.
