@@ -387,9 +387,10 @@ func TestConformance_TY001_EveryValueHasOneConcreteType(t *testing.T) {
 	}
 	// A value with no type is the other half of the rule.
 	untyped := map[string]tenon.Value{
-		"ErrorVal": tenon.ErrorVal(tenon.Diagnostic{Code: "app.failed", Message: "it failed"}),
-		"Pending":  tenon.Pending(tenon.Any()),
-		"Unify":    unifyFailure(),
+		"ErrorVal":  tenon.ErrorVal(tenon.Diagnostic{Code: "app.failed", Message: "it failed"}),
+		"Pending":   tenon.Pending(tenon.Any()),
+		"Unify":     unifyFailure(),
+		"Serialize": serializeFailure(),
 	}
 	// Between them these are every function that makes a value, so one added
 	// later has to be accounted for here before this test passes again.
@@ -561,5 +562,12 @@ func operationLiterals(t *testing.T) []operationLiteral {
 // unifyFailure returns the error value of a unification that fails.
 func unifyFailure() tenon.Value {
 	_, failure, _ := tenon.Unify(tenon.Safe, tenon.Exactly(tenon.NumberType()), tenon.Exactly(tenon.BoolType()))
+	return failure
+}
+
+// serializeFailure returns the error value of a value that cannot be
+// serialized.
+func serializeFailure() tenon.Value {
+	_, failure, _ := tenon.Serialize(tenon.WithMarks(tenon.Bool(true), stamp{id: "plain"}))
 	return failure
 }

@@ -1,6 +1,9 @@
 package tenon
 
-import "strings"
+import (
+	"strings"
+	"unicode/utf8"
+)
 
 // Diagnostic describes one problem with data: a stable code for programs, a
 // message for people, and the path locating the problem within the value that
@@ -36,6 +39,8 @@ func ErrorVal(diags ...Diagnostic) Value {
 			usagePanic("ErrorVal: diagnostic %d has code %q, which is not an area and a name joined by a dot", i, string(d.Code))
 		case d.Message == "":
 			usagePanic("ErrorVal: diagnostic %d needs a message", i)
+		case !utf8.ValidString(d.Message):
+			usagePanic("ErrorVal: diagnostic %d has a message that is not valid UTF-8", i)
 		}
 	}
 	return errorValue(diags...)

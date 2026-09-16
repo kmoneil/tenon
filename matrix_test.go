@@ -143,7 +143,7 @@ func TestEveryOperationIsRegistered(t *testing.T) {
 	}
 	others := []string{
 		"Bool", "CapsuleVal", "ErrorVal", "ListVal", "MapVal", "Narrow", "NullVal", "NumberFromInt",
-		"NumberFromText", "ObjectVal", "Pending", "Resolve", "SetVal", "String", "TupleVal", "Unknown",
+		"NumberFromText", "ObjectVal", "Pending", "Resolve", "Serialize", "SetVal", "String", "TupleVal", "Unknown",
 		"Unify", "Unmark", "UnmarkDeep", "WithMarks",
 	}
 	for _, name := range exportedFuncs(t, "Value") {

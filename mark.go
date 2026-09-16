@@ -56,6 +56,17 @@ type DeepMark interface {
 	Deep() bool
 }
 
+// EncodableMark is a Mark that declares how it is serialized: as its identifier
+// alone, or with a value. A value carrying a mark that does not implement
+// EncodableMark cannot be serialized.
+type EncodableMark interface {
+	Mark
+	// MarkPayload returns the value the mark is serialized with and true, or
+	// false where the identifier alone serializes it. The value must be known
+	// and unmarked, and marks that are not equal must not serialize alike.
+	MarkPayload() (Value, bool)
+}
+
 // Propagation says how a mark moves through operations.
 type Propagation uint8
 

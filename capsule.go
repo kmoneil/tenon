@@ -37,6 +37,33 @@ type CapsuleOps[E any] struct {
 	// value of the type, which is not null, and returns a known value of the
 	// capsule type, or an error value.
 	ConvertFrom func(t Type) (convert func(v Value) Value, safe bool)
+
+	// Encoding declares how the type's values are serialized. A value that
+	// holds a capsule value, or names a capsule type, of a type that declares
+	// no encoding cannot be serialized.
+	Encoding *CapsuleEncoding[E]
+}
+
+// CapsuleEncoding declares how a capsule type's values are serialized: as
+// values of another type, which are serialized as tenon values are.
+type CapsuleEncoding[E any] struct {
+	// ID identifies the capsule type in what is serialized. It must be the
+	// same in every process that reads what another wrote, and no other
+	// capsule type serialized alongside it may use it.
+	ID string
+
+	// Type is the type that the capsule type's values are serialized as.
+	Type Type
+
+	// Encode returns the value that an encapsulated value is serialized as: a
+	// known, unmarked value of Type. Values that the capsule type's equality
+	// reports equal must give identical values, and values it reports unequal
+	// must not.
+	Encode func(v *E) Value
+
+	// Decode returns the encapsulated value that a value of Type was
+	// serialized from, or the diagnostics that say why there is none.
+	Decode func(v Value) (*E, []Diagnostic)
 }
 
 // capsuleData is what a capsule type declares, with its operations adapted to
@@ -52,6 +79,17 @@ type capsuleData struct {
 	// safe, or a nil function; each is nil if not declared.
 	convertTo   func(t Type) (func(v any) Value, bool)
 	convertFrom func(t Type) (func(v Value) Value, bool)
+	// encoding is what an Encoding declares, or nil.
+	encoding *capsuleEncoding
+}
+
+// capsuleEncoding is a declared encoding with its conversions adapted to
+// encapsulated values held as any.
+type capsuleEncoding struct {
+	id     string
+	typ    Type
+	encode func(v any) Value
+	decode func(v Value) (any, []Diagnostic)
 }
 
 // Capsule returns a new capsule type, whose values carry pointers of type *E
@@ -80,6 +118,29 @@ func Capsule[E any](name string, ops CapsuleOps[E]) Type {
 	}
 	if f := ops.Display; f != nil {
 		d.display = func(v any) string { return f(v.(*E)) }
+	}
+	if enc := ops.Encoding; enc != nil {
+		switch {
+		case enc.ID == "":
+			usagePanic("capsule type %q declares an encoding with no identifier", name)
+		case enc.Type.t == nil:
+			usagePanic("capsule type %q declares an encoding with the zero Type", name)
+		case enc.Encode == nil || enc.Decode == nil:
+			usagePanic("capsule type %q declares an encoding without both Encode and Decode", name)
+		}
+		encode, decode := enc.Encode, enc.Decode
+		d.encoding = &capsuleEncoding{
+			id:     enc.ID,
+			typ:    enc.Type,
+			encode: func(v any) Value { return encode(v.(*E)) },
+			decode: func(v Value) (any, []Diagnostic) {
+				p, diags := decode(v)
+				if p == nil {
+					return nil, diags
+				}
+				return p, diags
+			},
+		}
 	}
 	if f := ops.ConvertTo; f != nil {
 		d.convertTo = func(t Type) (func(any) Value, bool) {
