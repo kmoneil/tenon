@@ -1,0 +1,104 @@
+package tenon_test
+
+import (
+	"testing"
+
+	"tenon"
+	"tenon/conformance"
+)
+
+func TestArithmeticAgreesWithTheDecimalItWraps(t *testing.T) {
+	for _, tt := range []struct {
+		name       string
+		op         func(a, b tenon.Value) tenon.Value
+		a, b, want string
+	}{
+		{"Add", tenon.Add, "1.5", "2.25", "3.75"},
+		{"Add across zero", tenon.Add, "-1.5", "1.5", "0"},
+		{"Sub", tenon.Sub, "1.5", "2.25", "-0.75"},
+		{"Mul", tenon.Mul, "1.5", "2.25", "3.375"},
+		{"Div exact", tenon.Div, "3", "4", "0.75"},
+		{"Div rounded", tenon.Div, "1", "3", "0.333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333"},
+		{"Mod", tenon.Mod, "7", "3", "1"},
+		{"Mod of a negative", tenon.Mod, "-7", "3", "-1"},
+	} {
+		got := tt.op(tenon.NumberFromText(tt.a), tenon.NumberFromText(tt.b))
+		if !got.IsKnown() || got.Type() != tenon.NumberType() {
+			t.Errorf("%s: %s and %s gave %v, want a known number", tt.name, tt.a, tt.b, got)
+			continue
+		}
+		if got.String() != tt.want {
+			t.Errorf("%s: %s and %s = %s, want %s", tt.name, tt.a, tt.b, got, tt.want)
+		}
+	}
+}
+
+func TestArithmeticThatHasNoAnswer(t *testing.T) {
+	one, zero := tenon.NumberFromInt(1), tenon.NumberFromInt(0)
+	huge := tenon.NumberFromText("1e999999")
+	for _, tt := range []struct {
+		name string
+		got  tenon.Value
+		code tenon.Code
+	}{
+		{"divide by zero", tenon.Div(one, zero), tenon.CodeNumberDivideByZero},
+		{"modulo by zero", tenon.Mod(one, zero), tenon.CodeNumberModuloByZero},
+		{"out of range", tenon.Mul(huge, huge), tenon.CodeNumberOutOfRange},
+		{"a null operand", tenon.Add(tenon.NullVal(tenon.NumberType()), one), tenon.CodeOperationNullOperand},
+	} {
+		if !tt.got.IsError() {
+			t.Errorf("%s gave %v, want an error value", tt.name, tt.got)
+			continue
+		}
+		if code := tt.got.Diagnostics()[0].Code; code != tt.code {
+			t.Errorf("%s gave code %s, want %s", tt.name, code, tt.code)
+		}
+	}
+	// An operand of another type is the calling program's mistake.
+	mustPanicUsage(t, "Add: the second operand is a value of type string, not a value of type number", func() {
+		tenon.Add(one, tenon.String("1"))
+	})
+}
+
+func TestConformance_UN007_ArithmeticBoundsWhatItCan(t *testing.T) {
+	conformance.Covers(t, "UN-007")
+	num := tenon.NumberType()
+	zero, one, two, ten := tenon.NumberFromInt(0), tenon.NumberFromInt(1), tenon.NumberFromInt(2), tenon.NumberFromInt(10)
+	// A number between 1 and 10, and one between 0 and 2.
+	x := tenon.Narrow(tenon.Unknown(num), tenon.NumberMin(one, true), tenon.NumberMax(ten, true))
+	y := tenon.Narrow(tenon.Unknown(num), tenon.NumberMin(zero, true), tenon.NumberMax(two, true))
+	for _, tt := range []struct {
+		name string
+		got  tenon.Value
+		want string
+	}{
+		{"a sum of bounds", tenon.Add(x, two), "unknown(number, not null, >= 3, <= 12)"},
+		{"a sum of two ranges", tenon.Add(x, y), "unknown(number, not null, >= 1, <= 12)"},
+		{"a difference turns the bounds around", tenon.Sub(x, y), "unknown(number, not null, >= -1, <= 10)"},
+		{"the bounds of the subtrahend", tenon.Sub(two, x), "unknown(number, not null, >= -8, <= 1)"},
+		// An operand that says nothing leaves the result saying nothing, and
+		// the rule allows a result to say less than it might.
+		{"an operand with no bounds", tenon.Add(x, tenon.Unknown(num)), "unknown(number, not null)"},
+		{"a pending operand", tenon.Add(x, tenon.Pending(tenon.Exactly(num))), "unknown(number, not null)"},
+		{"multiplication, which does not bound", tenon.Mul(x, two), "unknown(number, not null)"},
+		{"division, which does not bound", tenon.Div(x, two), "unknown(number, not null)"},
+	} {
+		if got := tt.got.String(); got != tt.want {
+			t.Errorf("%s = %s, want %s", tt.name, got, tt.want)
+		}
+	}
+	// A bound that is exclusive stays exclusive, since no sum reaches it.
+	above := tenon.Narrow(tenon.Unknown(num), tenon.NumberMin(one, false))
+	if got, want := tenon.Add(above, two).String(), "unknown(number, not null, > 3)"; got != want {
+		t.Errorf("a sum of an exclusive bound = %s, want %s", got, want)
+	}
+	// The bounds hold every outcome: a value drawn from the range, added, is
+	// in the result's range.
+	sum := tenon.Add(x, two)
+	for _, text := range []string{"1", "5.5", "10"} {
+		v := tenon.NumberFromText(text)
+		if got := tenon.Narrow(sum, tenon.NumberMin(tenon.Add(v, two), true), tenon.NumberMax(tenon.Add(v, two), true)); got.IsError() {
+			t.Errorf("%s plus 2 is outside the bounds of the sum: %v", text, got)
+		}
+	}
+}
