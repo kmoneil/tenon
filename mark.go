@@ -61,8 +61,9 @@ type DeepMark interface {
 type EncodableMark interface {
 	Mark
 	// MarkPayload returns the value the mark is serialized with and true, or
-	// false where the identifier alone serializes it. The value must be known
-	// and unmarked, and marks that are not equal must not serialize alike.
+	// false where the identifier alone serializes it. The value must be known,
+	// unmarked and not a null, and marks that are not equal must not serialize
+	// alike.
 	MarkPayload() (Value, bool)
 }
 

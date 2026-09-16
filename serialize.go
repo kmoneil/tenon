@@ -44,7 +44,8 @@ const (
 //
 // Serialize panics on the zero Value, and on a capsule encoding or a mark
 // payload that breaks its contract: one that is not a known, unmarked value of
-// the declared type, or two unequal marks on one value that serialize alike.
+// the declared type other than a null, or two unequal marks on one value that
+// serialize alike.
 func Serialize(v Value) ([]byte, Value, bool) {
 	v.data()
 	e := &encoder{ids: map[string]Type{}}
@@ -314,8 +315,8 @@ func (e *encoder) capsule(b []byte, n *node, p Path) []byte {
 		return cbor.AppendNull(b)
 	}
 	payload := d.encoding.encode(n.data)
-	if payload.n == nil || !payload.n.isKnown() || payload.n.isMarked() || payload.n.typ != d.encoding.typ {
-		usagePanic("capsule type %q serialized a value as %s, not a known, unmarked value of %s",
+	if payload.n == nil || !payload.n.isKnown() || payload.n.state == stateNull || payload.n.isMarked() || payload.n.typ != d.encoding.typ {
+		usagePanic("capsule type %q serialized a value as %s, not a known, unmarked value of %s other than null",
 			d.name, payload, d.encoding.typ)
 	}
 	b = cbor.AppendArray(b, 2)
@@ -382,8 +383,8 @@ func (e *encoder) marks(b []byte, marks []Mark, p Path) []byte {
 			enc = cbor.AppendArray(enc, 1)
 			enc = cbor.AppendText(enc, id)
 		} else {
-			if payload.n == nil || !payload.n.isKnown() || payload.n.isMarked() {
-				usagePanic("the mark %q serialized with %s, not a known, unmarked value", id, payload)
+			if payload.n == nil || !payload.n.isKnown() || payload.n.state == stateNull || payload.n.isMarked() {
+				usagePanic("the mark %q serialized with %s, not a known, unmarked value other than a null", id, payload)
 			}
 			enc = cbor.AppendArray(enc, 3)
 			enc = cbor.AppendText(enc, id)

@@ -24,8 +24,10 @@ type Decoders struct {
 
 // MarkDecoder returns the mark that was serialized with payload, where
 // hasPayload says it was serialized with one; where it was not, payload is
-// the zero Value and must not be used. It returns the diagnostics that say why
-// there is no mark where it refuses what it is given.
+// the zero Value and must not be used. A payload is a known, unmarked value
+// other than a null, of whatever type the input gives, which need not be one
+// the mark ever serializes with. It returns the diagnostics that say why there
+// is no mark where it refuses what it is given.
 type MarkDecoder func(payload Value, hasPayload bool) (Mark, []Diagnostic)
 
 // maxDepth bounds how deeply a document may nest.
@@ -669,8 +671,8 @@ func (d *decoder) capsule(t Type, at int) (Value, *decodeError) {
 	if err != nil {
 		return Value{}, err
 	}
-	if !payload.n.isKnown() || payload.n.isMarked() {
-		return Value{}, d.malformed(at, "a capsule value serialized as a value that is not known, or is marked")
+	if !payload.n.isKnown() || payload.n.state == stateNull || payload.n.isMarked() {
+		return Value{}, d.malformed(at, "a capsule value serialized as a value that is null, not known, or marked")
 	}
 	p, diags := enc.decode(payload)
 	if len(diags) > 0 {
@@ -927,8 +929,8 @@ func (d *decoder) mark() (Mark, *decodeError) {
 		if derr != nil {
 			return nil, derr
 		}
-		if !v.n.isKnown() || v.n.isMarked() {
-			return nil, d.malformed(at, "the mark %s is serialized with a value that is not known, or is marked", quoted(id))
+		if !v.n.isKnown() || v.n.state == stateNull || v.n.isMarked() {
+			return nil, d.malformed(at, "the mark %s is serialized with a value that is null, not known, or marked", quoted(id))
 		}
 		payload = v
 	}

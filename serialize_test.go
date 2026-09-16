@@ -265,6 +265,15 @@ func TestConformance_SE040_Capsules(t *testing.T) {
 	mustPanicUsage(t, `capsule type "liar" serialized a value as "not a number"`, func() {
 		tenon.Serialize(tenon.CapsuleVal(liar, &celsius{}))
 	})
+	// A null is no encoding of a capsule value, which a decoder could not tell
+	// from a value it never gets.
+	nothing := tenon.Capsule("nothing", tenon.CapsuleOps[celsius]{Encoding: &tenon.CapsuleEncoding[celsius]{
+		ID: "t/nothing", Type: num,
+		Encode: func(*celsius) tenon.Value { return tenon.NullVal(num) },
+		Decode: func(tenon.Value) (*celsius, []tenon.Diagnostic) { return nil, nil },
+	}})
+	mustPanicUsage(t, "other than null", func() { tenon.Serialize(tenon.CapsuleVal(nothing, &celsius{})) })
+	wantDecodeFailure(t, "a capsule value serialized as a null", document+"83 00 82 09 63 742f63 82 02 f6", tenon.CodeSerializeMalformed)
 }
 
 func TestConformance_SE042_UnencodableMarks(t *testing.T) {
@@ -281,7 +290,19 @@ func TestConformance_SE042_UnencodableMarks(t *testing.T) {
 	mustPanicUsage(t, "serialize alike", func() {
 		tenon.Serialize(tenon.WithMarks(n(1), note{"p", "v"}, twinNote{"p", "v"}))
 	})
+	// A mark's payload is not a null, going out or coming in.
+	mustPanicUsage(t, "other than a null", func() { tenon.Serialize(tenon.WithMarks(n(1), nullNote{})) })
+	wantDecodeFailure(t, "a mark serialized with a null", document+"83 00 01 da74656e02 82 f5 81 83 6170 03 f6", tenon.CodeSerializeMalformed)
 }
+
+// nullNote is a mark whose payload is a null, which breaks the contract of an
+// encodable mark.
+type nullNote struct{}
+
+func (nullNote) MarkID() string                   { return "p" }
+func (nullNote) Propagation() tenon.Propagation   { return tenon.Propagate }
+func (nullNote) Redacting() bool                  { return false }
+func (nullNote) MarkPayload() (tenon.Value, bool) { return tenon.NullVal(tenon.StringType()), true }
 
 // twinNote is a mark unequal to a note that serializes as one does, which
 // breaks the contract of an encodable mark.

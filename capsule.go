@@ -56,13 +56,17 @@ type CapsuleEncoding[E any] struct {
 	Type Type
 
 	// Encode returns the value that an encapsulated value is serialized as: a
-	// known, unmarked value of Type. Values that the capsule type's equality
+	// known, unmarked value of Type other than its null. Values that the capsule type's equality
 	// reports equal must give identical values, and values it reports unequal
 	// must not.
 	Encode func(v *E) Value
 
 	// Decode returns the encapsulated value that a value of Type was
-	// serialized from, or the diagnostics that say why there is none.
+	// serialized from, or the diagnostics that say why there is none. It is
+	// given a known, unmarked value of Type other than its null, which need not
+	// be one that Encode ever returns: input is refused unless decoding and
+	// encoding it again gives it back, so a value Decode takes and Encode
+	// would write another way is refused as not canonical.
 	Decode func(v Value) (*E, []Diagnostic)
 }
 
