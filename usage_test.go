@@ -13,8 +13,9 @@ import (
 )
 
 // TestConformance_ER001_OnlyTheHelperPanics scans the module's Go source,
-// tests included, for calls to panic. Every usage error goes through the one
-// helper in usage.go, which keeps the panic surface in one place.
+// tests included, for calls to panic. Every usage error goes through the
+// helper in usage.go, beside the one for an internal defect, which keeps the
+// panic surface in one file.
 func TestConformance_ER001_OnlyTheHelperPanics(t *testing.T) {
 	conformance.Covers(t, "ER-001")
 	fset := token.NewFileSet()
