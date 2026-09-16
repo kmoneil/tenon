@@ -1,5 +1,7 @@
 package tenon
 
+import "hash/maphash"
+
 // CapsuleOps declares the optional operations of a capsule type whose values
 // encapsulate pointers of type *E. A nil function is an operation that the
 // type does not declare.
@@ -71,6 +73,17 @@ func (d *capsuleData) equal(a, b any) bool {
 		return d.equals(a, b)
 	}
 	return a == b
+}
+
+// writeHash writes an encapsulated value into h: by the declared hash where
+// there is one, and otherwise by the pointer itself, which is what equal
+// compares when there is none.
+func (d *capsuleData) writeHash(h *maphash.Hash, v any) {
+	if d.hash != nil {
+		writeUint(h, d.hash(v))
+		return
+	}
+	maphash.WriteComparable(h, v)
 }
 
 // CapsuleName returns the name given to a capsule type. It panics if t is not a
