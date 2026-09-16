@@ -8,7 +8,7 @@
 # The tests run with -count=1 because a cached result records nothing.
 RULECOV := $(CURDIR)/.rulecov
 
-.PHONY: check rules codes
+.PHONY: check rules codes report
 
 check:
 	@echo '==> gofmt'
@@ -29,3 +29,10 @@ rules:
 # codes.go.
 codes:
 	go run ./tools/rulecheck codes
+
+# report regenerates CONFORMANCE.md, the conformance report, from a run of the
+# tests that records coverage.
+report:
+	rm -rf '$(RULECOV)'
+	TENON_RULECOV_DIR='$(RULECOV)' go test -count=1 ./...
+	go run ./tools/rulecheck report -cover '$(RULECOV)'

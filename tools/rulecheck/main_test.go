@@ -43,12 +43,13 @@ func TestRunManifest(t *testing.T) {
 	manifest := filepath.Join(dir, "conformance", "rules.json")
 	active := filepath.Join(dir, "active-areas.txt")
 	registry := registryFixture(t, dir)
+	conformanceReport := filepath.Join(dir, "CONFORMANCE.md")
 	writeFile(t, active, nil)
 	t.Setenv("TENON_SPEC", "")
 	c := cli{t}
+	inputs := []string{"-manifest", manifest, "-active", active, "-cover", filepath.Join(dir, "cover"), "-codes", registry, "-report", conformanceReport}
 	check := func(extra ...string) []string {
-		args := []string{"check", "-manifest", manifest, "-active", active, "-cover", filepath.Join(dir, "cover"), "-codes", registry}
-		return append(args, extra...)
+		return append(append([]string{"check"}, inputs...), extra...)
 	}
 
 	writeFile(t, spec, fixture("## 2. Alpha", "", "`[AA-001]` One.", "", "`[AA-002]` Two."))
@@ -56,6 +57,7 @@ func TestRunManifest(t *testing.T) {
 
 	// Generating writes the manifest, and regenerating changes nothing.
 	c.ok("wrote", "manifest", "-spec", spec, "-manifest", manifest)
+	c.ok("wrote", append([]string{"report"}, inputs...)...)
 	generated := readFile(t, manifest)
 	c.ok("already up to date", "manifest", "-spec", spec, "-manifest", manifest)
 	if !bytes.Equal(readFile(t, manifest), generated) {
@@ -99,7 +101,8 @@ func TestRunCoverage(t *testing.T) {
 	cover := filepath.Join(dir, "cover")
 	t.Setenv("TENON_SPEC", "")
 	c := cli{t}
-	check := []string{"check", "-manifest", manifest, "-active", active, "-cover", cover}
+	inputs := []string{"-manifest", manifest, "-active", active, "-cover", cover, "-report", filepath.Join(dir, "CONFORMANCE.md")}
+	check := append([]string{"check"}, inputs...)
 
 	writeFile(t, spec, fixture("## 2. Alpha", "", "`[AA-001]` One.", "", "`[AA-002]` Two."))
 	c.ok("wrote", "manifest", "-spec", spec, "-manifest", manifest)
@@ -111,6 +114,8 @@ func TestRunCoverage(t *testing.T) {
 	c.fails("1 enforced rule(s) have no passing conformance test:\n  AA-002", check...)
 
 	t.Run("covers AA-002", func(t *testing.T) { conformance.Covers(t, "AA-002") })
+	c.fails("CONFORMANCE.md is stale", check...)
+	c.ok("wrote", append([]string{"report"}, inputs...)...)
 	c.ok("all 2 enforced rules covered, 0 deferred", check...)
 }
 

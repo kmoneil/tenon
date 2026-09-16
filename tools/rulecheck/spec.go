@@ -38,17 +38,43 @@ var (
 	areaRow = regexp.MustCompile("^\\|\\s*`([A-Z]{2})`\\s*\\|[^|]*\\|\\s*$")
 )
 
-// loadSpec reads the specification file and derives its rule manifest.
-func loadSpec(path string) ([]Rule, error) {
+// loadSpec reads the specification file and derives its manifest.
+func loadSpec(path string) (Manifest, error) {
 	src, err := os.ReadFile(path)
 	if err != nil {
-		return nil, err
+		return Manifest{}, err
 	}
 	rules, err := parseSpec(src)
 	if err != nil {
-		return nil, fmt.Errorf("%s: %w", path, err)
+		return Manifest{}, fmt.Errorf("%s: %w", path, err)
 	}
-	return rules, nil
+	version, err := specVersion(src)
+	if err != nil {
+		return Manifest{}, fmt.Errorf("%s: %w", path, err)
+	}
+	return Manifest{Version: version, Rules: rules}, nil
+}
+
+// versionLine matches the line that states the specification's version, as in
+// **Version:** 0.1.0-draft, and captures the version.
+var versionLine = regexp.MustCompile(`^\*\*Version:\*\*\s+(\S+)\s*$`)
+
+// specVersion returns the version that the specification states before its
+// first section.
+func specVersion(src []byte) (string, error) {
+	for line := range strings.Lines(string(src)) {
+		line = strings.TrimRight(line, "\r\n")
+		if strings.HasPrefix(line, "## ") {
+			break
+		}
+		if m := versionLine.FindStringSubmatch(line); m != nil {
+			if !specVersionPattern.MatchString(m[1]) {
+				return "", fmt.Errorf("malformed specification version %q", m[1])
+			}
+			return m[1], nil
+		}
+	}
+	return "", errors.New("no **Version:** line before the first section")
 }
 
 // occurrence is one appearance of a rule identifier in the specification.

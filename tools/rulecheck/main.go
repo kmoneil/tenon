@@ -7,13 +7,15 @@
 //	                             diagnostic codes, and rule coverage
 //	rulecheck manifest [flags]   regenerate the rule manifest
 //	rulecheck codes [flags]      regenerate the appendix of diagnostic codes
+//	rulecheck report [flags]     regenerate the conformance report
 //
 // check is the last step of make check. It verifies that the manifest and the
 // specification's appendix of diagnostic codes are current, when it can read
 // the specification, and then that every rule enforced by
 // conformance/active-areas.txt was covered by a passing test in the preceding
-// test run (see package conformance). The -h flag lists the flags that
-// override its inputs.
+// test run (see package conformance), and that the conformance report,
+// CONFORMANCE.md, is what report would write from them. The -h flag lists the
+// flags that override its inputs.
 //
 // The specification is read from the file named by -spec, which defaults to
 // the TENON_SPEC environment variable. Without one, check skips the tests that
@@ -77,6 +79,7 @@ type paths struct {
 	active   string // the list of enforced coverage
 	cover    string // the directory of coverage records
 	codes    string // the registry of diagnostic codes
+	report   string // the conformance report
 }
 
 // run executes the command named by the first argument, or check if there is
@@ -86,8 +89,8 @@ func run(args []string, stdout io.Writer) error {
 	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
 		cmd, args = args[0], args[1:]
 	}
-	if cmd != "check" && cmd != "manifest" && cmd != "codes" {
-		return fmt.Errorf("unknown command %q; want check, manifest or codes", cmd)
+	if cmd != "check" && cmd != "manifest" && cmd != "codes" && cmd != "report" {
+		return fmt.Errorf("unknown command %q; want check, manifest, codes or report", cmd)
 	}
 	var p paths
 	flags := flag.NewFlagSet("rulecheck "+cmd, flag.ContinueOnError)
@@ -96,13 +99,14 @@ func run(args []string, stdout io.Writer) error {
 	flags.StringVar(&p.active, "active", "", "enforced coverage `file`; defaults to conformance/active-areas.txt in the module root")
 	flags.StringVar(&p.cover, "cover", os.Getenv(coverEnv), "coverage record `directory`; defaults to $"+coverEnv+", else .rulecov in the module root")
 	flags.StringVar(&p.codes, "codes", "", "diagnostic code registry `file`; defaults to codes.go in the module root")
+	flags.StringVar(&p.report, "report", "", "conformance report `file`; defaults to CONFORMANCE.md in the module root")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
 	if flags.NArg() > 0 {
 		return fmt.Errorf("unexpected arguments: %s", strings.Join(flags.Args(), " "))
 	}
-	if p.manifest == "" || p.active == "" || p.cover == "" || p.codes == "" {
+	if p.manifest == "" || p.active == "" || p.cover == "" || p.codes == "" || p.report == "" {
 		root, err := moduleRoot()
 		if err != nil {
 			return err
@@ -119,12 +123,17 @@ func run(args []string, stdout io.Writer) error {
 		if p.codes == "" {
 			p.codes = filepath.Join(root, "codes.go")
 		}
+		if p.report == "" {
+			p.report = filepath.Join(root, "CONFORMANCE.md")
+		}
 	}
 	switch cmd {
 	case "manifest":
 		return runManifest(stdout, p)
 	case "codes":
 		return runCodes(stdout, p)
+	case "report":
+		return runReport(stdout, p)
 	}
 	return runCheck(stdout, p)
 }
@@ -135,11 +144,11 @@ func runCheck(w io.Writer, p paths) error {
 	if err != nil {
 		return err
 	}
-	rules, err := decodeManifest(data)
+	m, err := decodeManifest(data)
 	if err != nil {
 		return fmt.Errorf("%s: %w", display(p.manifest), err)
 	}
-	if err := checkFresh(w, p, data, rules); err != nil {
+	if err := checkFresh(w, p, data, m); err != nil {
 		return err
 	}
 	if err := checkCodes(w, p); err != nil {
@@ -153,7 +162,7 @@ func runCheck(w io.Writer, p paths) error {
 	if err != nil {
 		return fmt.Errorf("%s: %w", display(p.active), err)
 	}
-	enforced, deferred, err := resolveActive(rules, list)
+	enforced, deferred, err := resolveActive(m.Rules, list)
 	if err != nil {
 		return fmt.Errorf("%s: %w", display(p.active), err)
 	}
@@ -161,31 +170,38 @@ func runCheck(w io.Writer, p paths) error {
 	if err != nil {
 		return err
 	}
-	return checkCoverage(w, rules, enforced, deferred, covered, p.cover)
+	if err := checkCoverage(w, m.Rules, enforced, deferred, covered, p.cover); err != nil {
+		return err
+	}
+	return checkReport(w, p)
 }
 
 // checkFresh verifies that data, the manifest file holding committed, is
 // exactly what runManifest would write, or says why it cannot tell.
-func checkFresh(w io.Writer, p paths, data []byte, committed []Rule) error {
+func checkFresh(w io.Writer, p paths, data []byte, committed Manifest) error {
 	if p.spec == "" {
-		fmt.Fprintf(w, "rulecheck: TENON_SPEC not set; skipping the manifest freshness check (%s)\n", summarize(committed))
+		fmt.Fprintf(w, "rulecheck: TENON_SPEC not set; skipping the manifest freshness check (%s)\n", summarize(committed.Rules))
 		return nil
 	}
-	rules, err := loadSpec(p.spec)
+	m, err := loadSpec(p.spec)
 	if err != nil {
 		return err
 	}
-	if err := checkPermanence(committed, rules); err != nil {
+	if err := checkPermanence(committed.Rules, m.Rules); err != nil {
 		return err
 	}
-	fresh, err := encodeManifest(rules)
+	fresh, err := encodeManifest(m)
 	if err != nil {
 		return err
 	}
 	if !bytes.Equal(fresh, data) {
-		return fmt.Errorf("%s is stale; regenerate it with `make rules`:\n%s", display(p.manifest), describeChanges(committed, rules))
+		changes := describeChanges(committed.Rules, m.Rules)
+		if committed.Version != m.Version {
+			changes = fmt.Sprintf("  version %s -> %s\n%s", committed.Version, m.Version, changes)
+		}
+		return fmt.Errorf("%s is stale; regenerate it with `make rules`:\n%s", display(p.manifest), changes)
 	}
-	fmt.Fprintf(w, "rulecheck: manifest up to date (%s)\n", summarize(rules))
+	fmt.Fprintf(w, "rulecheck: manifest up to date (version %s, %s)\n", m.Version, summarize(m.Rules))
 	return nil
 }
 
@@ -194,7 +210,7 @@ func runManifest(w io.Writer, p paths) error {
 	if p.spec == "" {
 		return errors.New("no specification: set TENON_SPEC or pass -spec")
 	}
-	rules, err := loadSpec(p.spec)
+	m, err := loadSpec(p.spec)
 	if err != nil {
 		return err
 	}
@@ -207,16 +223,16 @@ func runManifest(w io.Writer, p paths) error {
 		if err != nil {
 			return fmt.Errorf("%s: %w", display(p.manifest), err)
 		}
-		if err := checkPermanence(old, rules); err != nil {
+		if err := checkPermanence(old.Rules, m.Rules); err != nil {
 			return err
 		}
 	}
-	data, err := encodeManifest(rules)
+	data, err := encodeManifest(m)
 	if err != nil {
 		return err
 	}
 	if bytes.Equal(data, existing) {
-		fmt.Fprintf(w, "rulecheck: %s already up to date (%s)\n", display(p.manifest), summarize(rules))
+		fmt.Fprintf(w, "rulecheck: %s already up to date (%s)\n", display(p.manifest), summarize(m.Rules))
 		return nil
 	}
 	if err := os.MkdirAll(filepath.Dir(p.manifest), 0o755); err != nil {
@@ -225,7 +241,7 @@ func runManifest(w io.Writer, p paths) error {
 	if err := os.WriteFile(p.manifest, data, 0o644); err != nil {
 		return err
 	}
-	fmt.Fprintf(w, "rulecheck: wrote %s (%s)\n", display(p.manifest), summarize(rules))
+	fmt.Fprintf(w, "rulecheck: wrote %s (%s)\n", display(p.manifest), summarize(m.Rules))
 	return nil
 }
 

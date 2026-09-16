@@ -11,12 +11,13 @@ func markdown(lines ...string) []byte {
 	return []byte(strings.Join(lines, "\n") + "\n")
 }
 
-// fixture prefixes body with an eleven-line preamble holding the area table.
-// The table lists BB before AA, so that ordering by table position is
-// observable.
+// fixture prefixes body with a twelve-line preamble holding the version and
+// the area table. The table lists BB before AA, so that ordering by table
+// position is observable.
 func fixture(body ...string) []byte {
 	preamble := []string{
 		"# Fixture",
+		"**Version:** 0.0.1-fixture",
 		"",
 		"## 1. Introduction",
 		"",
@@ -93,27 +94,27 @@ func TestParseSpecProblems(t *testing.T) {
 		{
 			name: "rule defined twice",
 			src:  fixture("## 2. Alpha", "", "`[AA-001]` One.", "", "`[AA-001]` Again."),
-			want: []string{"line 16: rule AA-001 is already defined at line 14"},
+			want: []string{"line 17: rule AA-001 is already defined at line 15"},
 		},
 		{
 			name: "normative reference to an undefined rule",
 			src:  fixture("## 2. Alpha", "", "`[AA-001]` Refers to `[AA-002]`."),
-			want: []string{"line 14: rule AA-002 is referenced but never defined"},
+			want: []string{"line 15: rule AA-002 is referenced but never defined"},
 		},
 		{
 			name: "unknown area",
 			src:  fixture("## 2. Alpha", "", "`[ZZ-001]` Wrong area."),
-			want: []string{"line 14: rule ZZ-001 has unknown area ZZ"},
+			want: []string{"line 15: rule ZZ-001 has unknown area ZZ"},
 		},
 		{
 			name: "identifier without backticks",
 			src:  fixture("## 2. Alpha", "", "[AA-001] Not canonical."),
-			want: []string{"line 14: AA-001 is not written as `[AA-001]`"},
+			want: []string{"line 15: AA-001 is not written as `[AA-001]`"},
 		},
 		{
 			name: "identifier without brackets",
 			src:  fixture("## 2. Alpha", "", "`[AA-001]` Refers to `AA-001`."),
-			want: []string{"line 14: AA-001 is not written as `[AA-001]`"},
+			want: []string{"line 15: AA-001 is not written as `[AA-001]`"},
 		},
 		{
 			name: "no area table",
@@ -133,9 +134,9 @@ func TestParseSpecProblems(t *testing.T) {
 				"`[AA-002]` Refers to `[AA-005]`."),
 			want: []string{
 				"3 problem(s)",
-				"line 14: rule AA-004 is referenced but never defined",
-				"line 16: AA-003 is not written as `[AA-003]`",
-				"line 18: rule AA-005 is referenced but never defined",
+				"line 15: rule AA-004 is referenced but never defined",
+				"line 17: AA-003 is not written as `[AA-003]`",
+				"line 19: rule AA-005 is referenced but never defined",
 			},
 		},
 	}
@@ -154,5 +155,20 @@ func TestParseSpecProblems(t *testing.T) {
 				at += i + len(w)
 			}
 		})
+	}
+}
+
+func TestSpecVersion(t *testing.T) {
+	if got, err := specVersion(fixture("## 2. Alpha")); got != "0.0.1-fixture" || err != nil {
+		t.Errorf("specVersion = %q, %v", got, err)
+	}
+	for _, tt := range []struct{ name, src, want string }{
+		{"none", "# Spec\n\n## 1. Introduction\n", "no **Version:** line"},
+		{"after the first section", "# Spec\n\n## 1. Introduction\n\n**Version:** 1.0\n", "no **Version:** line"},
+		{"malformed", "# Spec\n**Version:** 1.0/2\n", "malformed specification version"},
+	} {
+		if _, err := specVersion([]byte(tt.src)); err == nil || !strings.Contains(err.Error(), tt.want) {
+			t.Errorf("%s: error %v, want one containing %q", tt.name, err, tt.want)
+		}
 	}
 }

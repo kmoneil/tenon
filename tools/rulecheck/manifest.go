@@ -13,12 +13,29 @@ import (
 // ruleID matches a bare rule identifier.
 var ruleID = regexp.MustCompile(`^[A-Z]{2}-[0-9]{3}$`)
 
-// encodeManifest renders the manifest file: a JSON object holding the rule
-// list, one rule per line so that changes diff cleanly.
-func encodeManifest(rules []Rule) ([]byte, error) {
+// Manifest is what the manifest file holds: the specification's version and
+// its rules.
+type Manifest struct {
+	Version string
+	Rules   []Rule
+}
+
+// specVersionPattern matches a version as the specification writes it.
+var specVersionPattern = regexp.MustCompile(`^[0-9A-Za-z][0-9A-Za-z.+-]*$`)
+
+// encodeManifest renders the manifest file: a JSON object holding the
+// specification's version and the rule list, one rule per line so that changes
+// diff cleanly.
+func encodeManifest(m Manifest) ([]byte, error) {
 	var b bytes.Buffer
-	b.WriteString("{\n  \"rules\": [")
-	for i, r := range rules {
+	version, err := json.Marshal(m.Version)
+	if err != nil {
+		return nil, err
+	}
+	b.WriteString("{\n  \"version\": ")
+	b.Write(version)
+	b.WriteString(",\n  \"rules\": [")
+	for i, r := range m.Rules {
 		line, err := json.Marshal(r)
 		if err != nil {
 			return nil, err
@@ -34,33 +51,37 @@ func encodeManifest(rules []Rule) ([]byte, error) {
 }
 
 // decodeManifest parses a manifest file. It rejects unknown fields, trailing
-// data, malformed or duplicate identifiers, and areas that disagree with their
-// identifiers.
-func decodeManifest(data []byte) ([]Rule, error) {
+// data, a missing or malformed version, malformed or duplicate identifiers,
+// and areas that disagree with their identifiers.
+func decodeManifest(data []byte) (Manifest, error) {
 	dec := json.NewDecoder(bytes.NewReader(data))
 	dec.DisallowUnknownFields()
 	var file struct {
-		Rules []Rule `json:"rules"`
+		Version string `json:"version"`
+		Rules   []Rule `json:"rules"`
 	}
 	if err := dec.Decode(&file); err != nil {
-		return nil, err
+		return Manifest{}, err
 	}
 	if _, err := dec.Token(); err != io.EOF {
-		return nil, errors.New("unexpected data after the manifest object")
+		return Manifest{}, errors.New("unexpected data after the manifest object")
+	}
+	if !specVersionPattern.MatchString(file.Version) {
+		return Manifest{}, fmt.Errorf("malformed or missing specification version %q", file.Version)
 	}
 	seen := make(map[string]bool, len(file.Rules))
 	for _, r := range file.Rules {
 		switch {
 		case !ruleID.MatchString(r.ID):
-			return nil, fmt.Errorf("malformed rule identifier %q", r.ID)
+			return Manifest{}, fmt.Errorf("malformed rule identifier %q", r.ID)
 		case r.Area != r.ID[:2]:
-			return nil, fmt.Errorf("rule %s has area %q", r.ID, r.Area)
+			return Manifest{}, fmt.Errorf("rule %s has area %q", r.ID, r.Area)
 		case seen[r.ID]:
-			return nil, fmt.Errorf("rule %s is listed twice", r.ID)
+			return Manifest{}, fmt.Errorf("rule %s is listed twice", r.ID)
 		}
 		seen[r.ID] = true
 	}
-	return file.Rules, nil
+	return Manifest{Version: file.Version, Rules: file.Rules}, nil
 }
 
 // checkPermanence enforces that rule identifiers are permanent: every rule in

@@ -53,8 +53,8 @@ func TestNamedCodes(t *testing.T) {
 	// A code is named within a rule, or it has no rule to be listed under.
 	_, err = namedCodes(fixture("## 2. Alpha", "", "Before any rule, `aa.one`.", "", "`[AA-001]` One.", "",
 		"## 3. Beta", "", "A new section starts afresh: `aa.two`."))
-	if err == nil || !strings.Contains(err.Error(), "line 14: code aa.one is named outside any rule") ||
-		!strings.Contains(err.Error(), "line 20: code aa.two is named outside any rule") {
+	if err == nil || !strings.Contains(err.Error(), "line 15: code aa.one is named outside any rule") ||
+		!strings.Contains(err.Error(), "line 21: code aa.two is named outside any rule") {
 		t.Errorf("codes outside rules: error %v", err)
 	}
 }
@@ -133,12 +133,14 @@ func TestRunCodes(t *testing.T) {
 	writeFile(t, active, nil)
 	t.Setenv("TENON_SPEC", "")
 	c := cli{t}
-	noSpec := []string{"check", "-manifest", manifest, "-active", active, "-cover", filepath.Join(dir, "cover"), "-codes", registry}
-	check := append([]string{noSpec[0], "-spec", spec}, noSpec[1:]...)
+	inputs := []string{"-manifest", manifest, "-active", active, "-cover", filepath.Join(dir, "cover"), "-codes", registry, "-report", filepath.Join(dir, "CONFORMANCE.md")}
+	noSpec := append([]string{"check"}, inputs...)
+	check := append([]string{"check", "-spec", spec}, inputs...)
 
 	body := []string{"## 2. Alpha", "", "`[AA-001]` Fails with `aa.one`."}
 	writeFile(t, spec, fixture(body...))
 	c.ok("wrote", "manifest", "-spec", spec, "-manifest", manifest)
+	c.ok("wrote", append([]string{"report"}, inputs...)...)
 
 	// Until the appendix is written, check finds it stale.
 	c.fails("stale; regenerate it with `make codes`", check...)

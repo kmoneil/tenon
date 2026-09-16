@@ -12,11 +12,12 @@ func TestManifestRoundTrip(t *testing.T) {
 		{ID: "BB-001", Area: "BB", Withdrawn: true},
 		{ID: "AA-001", Area: "AA", Outline: true},
 	}
-	data, err := encodeManifest(rules)
+	data, err := encodeManifest(Manifest{Version: "1.2.0-draft", Rules: rules})
 	if err != nil {
 		t.Fatal(err)
 	}
 	want := `{
+  "version": "1.2.0-draft",
   "rules": [
     {"id":"BB-001","area":"BB","withdrawn":true,"outline":false},
     {"id":"AA-001","area":"AA","withdrawn":false,"outline":true}
@@ -30,8 +31,8 @@ func TestManifestRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(back, rules) {
-		t.Errorf("decodeManifest = %+v, want %+v", back, rules)
+	if back.Version != "1.2.0-draft" || !reflect.DeepEqual(back.Rules, rules) {
+		t.Errorf("decodeManifest = %+v, want version 1.2.0-draft and %+v", back, rules)
 	}
 }
 
@@ -42,7 +43,7 @@ func TestManifestDeterministic(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		data, err := encodeManifest(rules)
+		data, err := encodeManifest(Manifest{Version: "1", Rules: rules})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -60,11 +61,13 @@ func TestDecodeManifestRejects(t *testing.T) {
 		name, data, want string
 	}{
 		{"not JSON", `rules`, "invalid character"},
-		{"unknown field", `{"rules":[{"id":"AA-001","area":"AA","withdrawn":false,"outline":false,"note":""}]}`, "unknown field"},
-		{"trailing data", `{"rules":[]} {}`, "unexpected data"},
-		{"malformed identifier", `{"rules":[{"id":"AA-1","area":"AA","withdrawn":false,"outline":false}]}`, "malformed rule identifier"},
-		{"area disagrees with identifier", `{"rules":[{"id":"AA-001","area":"BB","withdrawn":false,"outline":false}]}`, "has area"},
-		{"rule listed twice", `{"rules":[` + rule + `,` + rule + `]}`, "listed twice"},
+		{"unknown field", `{"version":"1","rules":[{"id":"AA-001","area":"AA","withdrawn":false,"outline":false,"note":""}]}`, "unknown field"},
+		{"trailing data", `{"version":"1","rules":[]} {}`, "unexpected data"},
+		{"no version", `{"rules":[]}`, "missing specification version"},
+		{"malformed version", `{"version":"one two","rules":[]}`, "malformed or missing specification version"},
+		{"malformed identifier", `{"version":"1","rules":[{"id":"AA-1","area":"AA","withdrawn":false,"outline":false}]}`, "malformed rule identifier"},
+		{"area disagrees with identifier", `{"version":"1","rules":[{"id":"AA-001","area":"BB","withdrawn":false,"outline":false}]}`, "has area"},
+		{"rule listed twice", `{"version":"1","rules":[` + rule + `,` + rule + `]}`, "listed twice"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
