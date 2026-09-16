@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"tenon"
-	"tenon/conformance"
+	"github.com/kmoneil/tenon"
+	"github.com/kmoneil/tenon/conformance"
 )
 
 func TestConformance_MK011_DiagnosticsWithholdRedactedContents(t *testing.T) {

@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"tenon/conformance"
+	"github.com/kmoneil/tenon/conformance"
 )
 
 // cli runs rulecheck commands for a test.

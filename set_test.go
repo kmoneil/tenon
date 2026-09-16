@@ -3,8 +3,8 @@ package tenon_test
 import (
 	"testing"
 
-	"tenon"
-	"tenon/conformance"
+	"github.com/kmoneil/tenon"
+	"github.com/kmoneil/tenon/conformance"
 )
 
 func TestConformance_EQ040_SetMembersAreToldApartByEquality(t *testing.T) {

@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"tenon"
+	"github.com/kmoneil/tenon"
 )
 
 // Shorthands for the tests.

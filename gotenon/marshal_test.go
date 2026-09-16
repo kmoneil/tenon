@@ -5,9 +5,9 @@ import (
 	"testing"
 	"time"
 
-	"tenon"
-	"tenon/conformance"
-	"tenon/gotenon"
+	"github.com/kmoneil/tenon"
+	"github.com/kmoneil/tenon/conformance"
+	"github.com/kmoneil/tenon/gotenon"
 )
 
 // moment is a time that marshals itself as text.

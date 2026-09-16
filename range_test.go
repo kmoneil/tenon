@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"tenon"
-	"tenon/conformance"
+	"github.com/kmoneil/tenon"
+	"github.com/kmoneil/tenon/conformance"
 )
 
 func TestConformance_VA002_RangeOfAResolvedValue(t *testing.T) {

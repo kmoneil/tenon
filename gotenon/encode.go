@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"strings"
 
-	"tenon"
+	"github.com/kmoneil/tenon"
 )
 
 // DiagnosticError is the error that Decode and Encode return where they fail:

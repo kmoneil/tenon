@@ -5,9 +5,9 @@ import (
 	"strings"
 	"testing"
 
-	"tenon"
-	"tenon/conformance"
-	"tenon/conformance/values"
+	"github.com/kmoneil/tenon"
+	"github.com/kmoneil/tenon/conformance"
+	"github.com/kmoneil/tenon/conformance/values"
 )
 
 // Shorthands for the conversion tests.

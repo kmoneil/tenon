@@ -3,8 +3,8 @@ package values_test
 import (
 	"testing"
 
-	"tenon"
-	"tenon/conformance/values"
+	"github.com/kmoneil/tenon"
+	"github.com/kmoneil/tenon/conformance/values"
 )
 
 // TestEveryShapeIsThere holds the generator to its promise: a property test

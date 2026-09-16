@@ -6,7 +6,7 @@ import (
 	"strings"
 	"sync"
 
-	"tenon/internal/decimal"
+	"github.com/kmoneil/tenon/internal/decimal"
 )
 
 // CanonicalCompare orders two known values, returning a negative number, zero

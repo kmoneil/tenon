@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"tenon"
-	"tenon/conformance"
+	"github.com/kmoneil/tenon"
+	"github.com/kmoneil/tenon/conformance"
 )
 
 func TestConformance_VA001_ThreeStates(t *testing.T) {

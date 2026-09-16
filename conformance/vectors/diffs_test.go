@@ -7,8 +7,8 @@ import (
 	"os"
 	"testing"
 
-	"tenon"
-	"tenon/conformance"
+	"github.com/kmoneil/tenon"
+	"github.com/kmoneil/tenon/conformance"
 )
 
 // mutation changes a vector's value into another value that diffs.json diffs

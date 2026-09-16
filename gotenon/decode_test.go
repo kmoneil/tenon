@@ -9,9 +9,9 @@ import (
 	"strings"
 	"testing"
 
-	"tenon"
-	"tenon/conformance"
-	"tenon/gotenon"
+	"github.com/kmoneil/tenon"
+	"github.com/kmoneil/tenon/conformance"
+	"github.com/kmoneil/tenon/gotenon"
 )
 
 // decoded decodes v into a T under p, failing t if decoding fails.

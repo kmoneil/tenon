@@ -4,7 +4,7 @@ import (
 	"slices"
 	"strconv"
 
-	"tenon/internal/decimal"
+	"github.com/kmoneil/tenon/internal/decimal"
 )
 
 // converter converts values under one policy.

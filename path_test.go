@@ -4,8 +4,8 @@ import (
 	"slices"
 	"testing"
 
-	"tenon"
-	"tenon/conformance"
+	"github.com/kmoneil/tenon"
+	"github.com/kmoneil/tenon/conformance"
 )
 
 func TestConformance_VA020_PathSteps(t *testing.T) {

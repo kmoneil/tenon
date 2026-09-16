@@ -4,7 +4,7 @@ import (
 	"slices"
 	"strings"
 
-	"tenon/internal/decimal"
+	"github.com/kmoneil/tenon/internal/decimal"
 )
 
 // Equals returns whether a and b are the same value, as a Bool value. Values of

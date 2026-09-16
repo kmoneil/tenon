@@ -5,7 +5,7 @@ import (
 
 	"golang.org/x/text/unicode/norm"
 
-	"tenon/conformance"
+	"github.com/kmoneil/tenon/conformance"
 )
 
 func TestConformance_ST001_ScalarValues(t *testing.T) {

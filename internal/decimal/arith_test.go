@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"tenon/conformance"
+	"github.com/kmoneil/tenon/conformance"
 )
 
 // noErr returns a function that fails t on an error and otherwise checks and

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"tenon/internal/uni"
+	"github.com/kmoneil/tenon/internal/uni"
 )
 
 // mapEntry is one entry of a map value.

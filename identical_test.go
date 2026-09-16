@@ -3,9 +3,9 @@ package tenon_test
 import (
 	"testing"
 
-	"tenon"
-	"tenon/conformance"
-	"tenon/conformance/values"
+	"github.com/kmoneil/tenon"
+	"github.com/kmoneil/tenon/conformance"
+	"github.com/kmoneil/tenon/conformance/values"
 )
 
 func TestConformance_EQ010_IdenticalComparesEverything(t *testing.T) {

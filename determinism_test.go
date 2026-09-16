@@ -6,9 +6,9 @@ import (
 	"strings"
 	"testing"
 
-	"tenon"
-	"tenon/conformance"
-	"tenon/conformance/values"
+	"github.com/kmoneil/tenon"
+	"github.com/kmoneil/tenon/conformance"
+	"github.com/kmoneil/tenon/conformance/values"
 )
 
 // TestCanonicalOutputs emits what the value system writes that must not vary

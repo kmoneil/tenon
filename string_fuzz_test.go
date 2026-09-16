@@ -9,7 +9,7 @@ import (
 
 	"golang.org/x/text/unicode/norm"
 
-	"tenon"
+	"github.com/kmoneil/tenon"
 )
 
 // FuzzString holds string construction to its rules for any input. Ill-formed

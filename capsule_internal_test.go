@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"testing"
 
-	"tenon/conformance"
+	"github.com/kmoneil/tenon/conformance"
 )
 
 // capsulePoint is the encapsulated type of the capsule tests.

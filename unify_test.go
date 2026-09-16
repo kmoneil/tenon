@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"tenon"
-	"tenon/conformance"
+	"github.com/kmoneil/tenon"
+	"github.com/kmoneil/tenon/conformance"
 )
 
 // unifyOK unifies cs under p, failing t if unification fails.

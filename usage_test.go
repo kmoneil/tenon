@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"tenon/conformance"
+	"github.com/kmoneil/tenon/conformance"
 )
 
 // TestConformance_ER001_OnlyTheHelperPanics scans the module's Go source,

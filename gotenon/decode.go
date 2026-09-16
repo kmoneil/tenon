@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	"tenon"
+	"github.com/kmoneil/tenon"
 )
 
 // Decode returns the Go value of type T that v decodes to. It converts v, as

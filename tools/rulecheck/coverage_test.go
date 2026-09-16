@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"tenon/conformance"
+	"github.com/kmoneil/tenon/conformance"
 )
 
 func TestCoverEnvMatchesConformance(t *testing.T) {

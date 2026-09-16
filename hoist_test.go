@@ -4,8 +4,8 @@ import (
 	"slices"
 	"testing"
 
-	"tenon"
-	"tenon/conformance"
+	"github.com/kmoneil/tenon"
+	"github.com/kmoneil/tenon/conformance"
 )
 
 // located returns each diagnostic of an error value as "message at path", or

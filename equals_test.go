@@ -4,9 +4,9 @@ import (
 	"slices"
 	"testing"
 
-	"tenon"
-	"tenon/conformance"
-	"tenon/conformance/values"
+	"github.com/kmoneil/tenon"
+	"github.com/kmoneil/tenon/conformance"
+	"github.com/kmoneil/tenon/conformance/values"
 )
 
 // point is a capsule payload for the equality tests.

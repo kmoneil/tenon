@@ -10,8 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	"tenon"
-	"tenon/conformance"
+	"github.com/kmoneil/tenon"
+	"github.com/kmoneil/tenon/conformance"
 )
 
 // mustPanicUsage runs f and fails t unless f panics with a usage error whose

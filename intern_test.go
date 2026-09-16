@@ -5,8 +5,8 @@ import (
 	"sync"
 	"testing"
 
-	"tenon"
-	"tenon/conformance"
+	"github.com/kmoneil/tenon"
+	"github.com/kmoneil/tenon/conformance"
 )
 
 // nested builds the same deeply structured type afresh on every call.

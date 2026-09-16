@@ -4,7 +4,7 @@ import (
 	"strconv"
 	"strings"
 
-	"tenon/internal/decimal"
+	"github.com/kmoneil/tenon/internal/decimal"
 )
 
 // StepKind identifies the kind of a path step.

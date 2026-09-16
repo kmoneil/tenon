@@ -6,8 +6,8 @@ import (
 	"slices"
 	"unicode/utf8"
 
-	"tenon/internal/cbor"
-	"tenon/internal/decimal"
+	"github.com/kmoneil/tenon/internal/cbor"
+	"github.com/kmoneil/tenon/internal/decimal"
 )
 
 // The CBOR tags of the encoding.

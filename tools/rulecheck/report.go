@@ -8,7 +8,7 @@ import (
 	"os"
 	"strings"
 
-	"tenon/internal/uni"
+	"github.com/kmoneil/tenon/internal/uni"
 )
 
 // orderings says what the implementation does where the specification leaves an

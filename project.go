@@ -1,7 +1,7 @@
 package tenon
 
 import (
-	"tenon/internal/decimal"
+	"github.com/kmoneil/tenon/internal/decimal"
 )
 
 // ProjectJSON returns v rendered as JSON text, and true. The projection is

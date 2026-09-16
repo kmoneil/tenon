@@ -1,6 +1,6 @@
 package tenon
 
-import "tenon/internal/decimal"
+import "github.com/kmoneil/tenon/internal/decimal"
 
 // LessThan returns whether a comes before b, as a Bool value. It is defined for
 // Number and String values only: numbers compare numerically, whatever way each

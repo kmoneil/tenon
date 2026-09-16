@@ -5,10 +5,10 @@ import (
 	"testing"
 	"unicode"
 
-	"tenon"
-	"tenon/conformance"
-	"tenon/conformance/values"
-	"tenon/internal/uni"
+	"github.com/kmoneil/tenon"
+	"github.com/kmoneil/tenon/conformance"
+	"github.com/kmoneil/tenon/conformance/values"
+	"github.com/kmoneil/tenon/internal/uni"
 )
 
 // esc returns the display escape of the code point written in hex, as in

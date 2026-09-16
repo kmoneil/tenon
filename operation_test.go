@@ -4,8 +4,8 @@ import (
 	"slices"
 	"testing"
 
-	"tenon"
-	"tenon/conformance"
+	"github.com/kmoneil/tenon"
+	"github.com/kmoneil/tenon/conformance"
 )
 
 // equalDiagnostics reports whether two lists hold the same diagnostics in the

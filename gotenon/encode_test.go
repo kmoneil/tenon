@@ -6,9 +6,9 @@ import (
 	"math/big"
 	"testing"
 
-	"tenon"
-	"tenon/conformance"
-	"tenon/gotenon"
+	"github.com/kmoneil/tenon"
+	"github.com/kmoneil/tenon/conformance"
+	"github.com/kmoneil/tenon/gotenon"
 )
 
 // encoded encodes x, failing t if encoding fails.

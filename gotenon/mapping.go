@@ -7,7 +7,7 @@ import (
 	"sync"
 	"unicode/utf8"
 
-	"tenon"
+	"github.com/kmoneil/tenon"
 )
 
 // goKind is how a Go type maps to tenon.

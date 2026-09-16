@@ -3,8 +3,8 @@ package tenon_test
 import (
 	"testing"
 
-	"tenon"
-	"tenon/conformance"
+	"github.com/kmoneil/tenon"
+	"github.com/kmoneil/tenon/conformance"
 )
 
 // constraintOf returns what an operand says about its type: the one type a

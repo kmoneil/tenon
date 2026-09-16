@@ -4,7 +4,7 @@ import (
 	"hash/maphash"
 	"slices"
 
-	"tenon/internal/decimal"
+	"github.com/kmoneil/tenon/internal/decimal"
 )
 
 // hashSeed is drawn once per process, so a hash means nothing outside the run

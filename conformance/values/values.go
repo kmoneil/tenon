@@ -8,7 +8,7 @@
 // tenon, and tenon's own internal tests import conformance.
 package values
 
-import "tenon"
+import "github.com/kmoneil/tenon"
 
 type point struct{ x, y int }
 

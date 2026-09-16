@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"testing"
 
-	"tenon/conformance"
+	"github.com/kmoneil/tenon/conformance"
 )
 
 // probe is a Mark for the internal tests, deep or not.

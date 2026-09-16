@@ -7,7 +7,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"tenon/internal/uni"
+	"github.com/kmoneil/tenon/internal/uni"
 )
 
 // Kind identifies the kind of a Type.

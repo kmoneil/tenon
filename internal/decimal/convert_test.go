@@ -6,7 +6,7 @@ import (
 	"math/rand/v2"
 	"testing"
 
-	"tenon/conformance"
+	"github.com/kmoneil/tenon/conformance"
 )
 
 func TestRat(t *testing.T) {

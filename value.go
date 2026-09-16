@@ -7,8 +7,8 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"tenon/internal/decimal"
-	"tenon/internal/uni"
+	"github.com/kmoneil/tenon/internal/decimal"
+	"github.com/kmoneil/tenon/internal/uni"
 )
 
 // Value is a tenon value. A value is in exactly one of three states:

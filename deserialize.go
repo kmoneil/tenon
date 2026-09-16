@@ -7,9 +7,9 @@ import (
 	"math"
 	"math/big"
 
-	"tenon/internal/cbor"
-	"tenon/internal/decimal"
-	"tenon/internal/uni"
+	"github.com/kmoneil/tenon/internal/cbor"
+	"github.com/kmoneil/tenon/internal/decimal"
+	"github.com/kmoneil/tenon/internal/uni"
 )
 
 // Decoders supplies what Deserialize needs to read the capsule values and the

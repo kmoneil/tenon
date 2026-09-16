@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"tenon/internal/uni"
+	"github.com/kmoneil/tenon/internal/uni"
 )
 
 func TestReport(t *testing.T) {

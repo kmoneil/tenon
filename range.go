@@ -5,8 +5,8 @@ import (
 	"strconv"
 	"strings"
 
-	"tenon/internal/decimal"
-	"tenon/internal/uni"
+	"github.com/kmoneil/tenon/internal/decimal"
+	"github.com/kmoneil/tenon/internal/uni"
 )
 
 // Range describes the set of values that a resolved value may be. A known

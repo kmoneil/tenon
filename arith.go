@@ -1,6 +1,6 @@
 package tenon
 
-import "tenon/internal/decimal"
+import "github.com/kmoneil/tenon/internal/decimal"
 
 // Add returns the sum of two Number values. The sum is exact: it is never
 // rounded, and a result outside the range of numbers is an error value with

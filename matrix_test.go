@@ -4,9 +4,9 @@ import (
 	"slices"
 	"testing"
 
-	"tenon"
-	"tenon/conformance"
-	"tenon/conformance/matrix"
+	"github.com/kmoneil/tenon"
+	"github.com/kmoneil/tenon/conformance"
+	"github.com/kmoneil/tenon/conformance/matrix"
 )
 
 // registered returns the package's registered operations as the matrix sees

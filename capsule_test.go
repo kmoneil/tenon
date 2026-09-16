@@ -3,8 +3,8 @@ package tenon_test
 import (
 	"testing"
 
-	"tenon"
-	"tenon/conformance"
+	"github.com/kmoneil/tenon"
+	"github.com/kmoneil/tenon/conformance"
 )
 
 // sampleCapsule is one fixed capsule type for tests that list sample types.

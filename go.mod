@@ -1,4 +1,4 @@
-module tenon
+module github.com/kmoneil/tenon
 
 go 1.26.4
 

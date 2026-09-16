@@ -42,7 +42,7 @@ func TestReflectionStaysInTheInteropPackage(t *testing.T) {
 			switch {
 			case imported == "reflect" && !inInterop:
 				t.Errorf("%s imports reflect, which only gotenon may", path)
-			case strings.HasPrefix(imported, "tenon/internal/") && inInterop:
+			case strings.HasPrefix(imported, "github.com/kmoneil/tenon/internal/") && inInterop:
 				t.Errorf("%s imports %s; gotenon uses tenon's exported API alone", path, imported)
 			}
 		}
