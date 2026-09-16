@@ -87,12 +87,12 @@ func sequenceValue(t Type, fn string, elems []Value) Value {
 			errs.add(indexStep(NumberFromInt(int64(i))), e)
 			continue
 		}
-		requireResolved(fn, "element "+strconv.Itoa(i), e, t.t.elem)
+		requireKnown(fn, "element "+strconv.Itoa(i), e, t.t.elem)
 	}
 	if v, ok := errs.value(); ok {
 		return v
 	}
-	return Value{&node{state: stateResolved, typ: t, data: slices.Clone(elems)}}
+	return Value{&node{state: stateKnown, typ: t, data: slices.Clone(elems)}}
 }
 
 // TupleVal returns the tuple with the given elements, in order, whose type is
@@ -108,12 +108,12 @@ func TupleVal(elems ...Value) Value {
 			errs.add(indexStep(NumberFromInt(int64(i))), e)
 			continue
 		}
-		types[i] = resolvedType("TupleVal", "element "+strconv.Itoa(i), e)
+		types[i] = knownType("TupleVal", "element "+strconv.Itoa(i), e)
 	}
 	if v, ok := errs.value(); ok {
 		return v
 	}
-	return Value{&node{state: stateResolved, typ: Tuple(types...), data: slices.Clone(elems)}}
+	return Value{&node{state: stateKnown, typ: Tuple(types...), data: slices.Clone(elems)}}
 }
 
 // ObjectVal returns the object with the given attributes, whose type is the
@@ -134,13 +134,13 @@ func ObjectVal(attrs map[string]Value) Value {
 			errs.add(attributeStep(e.name), e.value)
 			continue
 		}
-		types[e.name] = resolvedType("ObjectVal", "attribute "+quoted(e.original), e.value)
+		types[e.name] = knownType("ObjectVal", "attribute "+quoted(e.original), e.value)
 		vals[i] = e.value
 	}
 	if v, ok := errs.value(); ok {
 		return v
 	}
-	return Value{&node{state: stateResolved, typ: Object(types), data: vals}}
+	return Value{&node{state: stateKnown, typ: Object(types), data: vals}}
 }
 
 // MapVal returns the map with element type elem and the given entries. Keys are
@@ -174,7 +174,7 @@ func MapVal(elem Type, entries map[string]Value) Value {
 			if isError(val) {
 				errs.addUnlocated(val)
 			} else {
-				requireResolved("MapVal", "the element of key "+quotedASCII(key), val, elem)
+				requireKnown("MapVal", "the element of key "+quotedASCII(key), val, elem)
 			}
 			continue
 		}
@@ -182,7 +182,7 @@ func MapVal(elem Type, entries map[string]Value) Value {
 			errs.add(indexStep(String(normalized)), val)
 			continue
 		}
-		requireResolved("MapVal", "the element of key "+quotedASCII(key), val, elem)
+		requireKnown("MapVal", "the element of key "+quotedASCII(key), val, elem)
 		list = append(list, keyed{mapEntry{normalized, val}, key})
 	}
 
@@ -209,22 +209,22 @@ func MapVal(elem Type, entries map[string]Value) Value {
 	if v, ok := errs.value(); ok {
 		return v
 	}
-	return Value{&node{state: stateResolved, typ: t, data: out}}
+	return Value{&node{state: stateKnown, typ: t, data: out}}
 }
 
-// resolvedType returns the type of v, panicking if v is not a resolved value.
-// fn and what name the caller and the member for the message.
-func resolvedType(fn, what string, v Value) Type {
+// knownType returns the type of v, panicking if v is not a known value. fn and
+// what name the caller and the member for the message.
+func knownType(fn, what string, v Value) Type {
 	n := v.data()
-	if n.state != stateResolved {
-		usagePanic("%s: %s is %s, not a resolved value", fn, what, n.describe())
+	if n.state != stateKnown {
+		usagePanic("%s: %s is %s, not a known value", fn, what, n.describe())
 	}
 	return n.typ
 }
 
-// requireResolved panics unless v is a resolved value of type want.
-func requireResolved(fn, what string, v Value, want Type) {
-	if got := resolvedType(fn, what, v); got != want {
+// requireKnown panics unless v is a known value of type want.
+func requireKnown(fn, what string, v Value, want Type) {
+	if got := knownType(fn, what, v); got != want {
 		usagePanic("%s: %s has type %s, not %s", fn, what, got, want)
 	}
 }
@@ -234,7 +234,8 @@ func requireResolved(fn, what string, v Value, want Type) {
 // other values.
 func (v Value) Len() int {
 	n := v.data()
-	if n.state == stateResolved {
+	n.noContent("Len")
+	if n.state == stateKnown {
 		switch n.typ.t.kind {
 		case KindList, KindSet, KindTuple, KindObject:
 			return len(n.data.([]Value))
@@ -250,7 +251,8 @@ func (v Value) Len() int {
 // is out of range.
 func (v Value) Index(i int) Value {
 	n := v.data()
-	if n.state != stateResolved || (n.typ.t.kind != KindList && n.typ.t.kind != KindTuple) {
+	n.noContent("Index")
+	if n.state != stateKnown || (n.typ.t.kind != KindList && n.typ.t.kind != KindTuple) {
 		usagePanic("Index called on %s, not a list or tuple value", n.describe())
 	}
 	elems := n.data.([]Value)
@@ -264,7 +266,8 @@ func (v Value) Index(i int) Value {
 // slice. It panics for other values.
 func (v Value) Elements() []Value {
 	n := v.data()
-	if n.state == stateResolved {
+	n.noContent("Elements")
+	if n.state == stateKnown {
 		switch n.typ.t.kind {
 		case KindList, KindSet, KindTuple:
 			return slices.Clone(n.data.([]Value))

@@ -31,27 +31,36 @@ type Value struct {
 type state uint8
 
 const (
-	stateError state = iota + 1
-	stateResolved
-	statePending
+	stateError   state = iota + 1 // carries diagnostics, and has no type
+	stateKnown                    // has a type and content
+	stateNull                     // has a type, and is null
+	stateUnknown                  // has a type and a range of possible values
+	statePending                  // has a constraint on its type, not a type
 )
+
+// resolved reports whether s is the state of a resolved value: one that has a
+// type, whether or not its content is known.
+func (s state) resolved() bool {
+	return s == stateKnown || s == stateNull || s == stateUnknown
+}
 
 // node is the immutable description that a Value refers to.
 type node struct {
 	state state
 	typ   Type // the type of a resolved value
-	// data is the []Diagnostic of an error value or the Constraint of a
-	// pending value. For a resolved value it is the content that the kind of
-	// its type calls for: a bool, a decimal.Dec, a canonical string, the
-	// pointer that a capsule encapsulates, the []Value elements of a list, set
-	// or tuple, the []Value attributes of an object in its type's attribute
-	// order, or the []mapEntry entries of a map, sorted by key.
+	// data is the []Diagnostic of an error value, the Constraint of a pending
+	// value, the *rangeData of an unknown value, or nil for a null value. For
+	// a known value it is the content that the kind of its type calls for: a
+	// bool, a decimal.Dec, a canonical string, the pointer that a capsule
+	// encapsulates, the []Value elements of a list, set or tuple, the []Value
+	// attributes of an object in its type's attribute order, or the
+	// []mapEntry entries of a map, sorted by key.
 	data any
 }
 
 var (
-	trueValue  = Value{&node{state: stateResolved, typ: Type{boolType}, data: true}}
-	falseValue = Value{&node{state: stateResolved, typ: Type{boolType}, data: false}}
+	trueValue  = Value{&node{state: stateKnown, typ: Type{boolType}, data: true}}
+	falseValue = Value{&node{state: stateKnown, typ: Type{boolType}, data: false}}
 )
 
 // Bool returns the Bool value b.
@@ -85,7 +94,7 @@ func NumberFromText(s string) Value {
 }
 
 func numberValue(d decimal.Dec) Value {
-	return Value{&node{state: stateResolved, typ: Type{numberType}, data: d}}
+	return Value{&node{state: stateKnown, typ: Type{numberType}, data: d}}
 }
 
 // String returns the String value s, normalized to Unicode Normalization
@@ -99,7 +108,7 @@ func String(s string) Value {
 			Message: "the text is not well-formed UTF-8 at byte " + strconv.Itoa(invalidUTF8At(s)),
 		})
 	}
-	return Value{&node{state: stateResolved, typ: Type{stringType}, data: c}}
+	return Value{&node{state: stateKnown, typ: Type{stringType}, data: c}}
 }
 
 // invalidUTF8At returns the offset of the first byte of s that does not begin
@@ -146,7 +155,7 @@ func CapsuleVal[E any](t Type, p *E) Value {
 	if p == nil {
 		usagePanic("CapsuleVal called with a nil pointer for capsule type %s", t)
 	}
-	return Value{&node{state: stateResolved, typ: t, data: p}}
+	return Value{&node{state: stateKnown, typ: t, data: p}}
 }
 
 // CapsuleValue returns the pointer that v encapsulates. It panics if v is not a
@@ -165,6 +174,23 @@ func CapsuleValue[E any](v Value) *E {
 func Pending(c Constraint) Value {
 	c.data()
 	return Value{&node{state: statePending, data: c}}
+}
+
+// Unknown returns the unknown value of type t: the value that could still be
+// any value of t, null included. Narrow returns values that say more.
+func Unknown(t Type) Value {
+	t.data()
+	return Value{&node{state: stateUnknown, typ: t, data: &rangeData{}}}
+}
+
+// NullVal returns the null value of type t. Null is a member of the domain of
+// every type rather than a state of its own, so the null value of t is a known
+// value whose range holds nothing but null.
+//
+// NullVal is the value; Null is the narrowing that produces it.
+func NullVal(t Type) Value {
+	t.data()
+	return Value{&node{state: stateNull, typ: t}}
 }
 
 // errorValue returns an error value that carries diags, which must not be
@@ -191,25 +217,46 @@ func (n *node) describe() string {
 		return "an error value"
 	case statePending:
 		return "a pending value"
+	case stateNull:
+		return "the null value of type " + n.typ.String()
+	case stateUnknown:
+		return "an unknown value of type " + n.typ.String()
 	}
 	return "a value of type " + n.typ.String()
 }
 
-// known returns the description of v, panicking unless v is a resolved value
-// of the given kind.
+// noContent panics if the content of n cannot be read because it is null or
+// unknown. method names the caller.
+func (n *node) noContent(method string) {
+	if n.state == stateNull || n.state == stateUnknown {
+		usagePanic("%s called on %s, which has no content", method, n.describe())
+	}
+}
+
+// known returns the description of v, panicking unless v is a known value of
+// the given kind.
 func (v Value) known(kind Kind, method string) *node {
 	n := v.data()
-	if n.state != stateResolved || n.typ.t.kind != kind {
+	if !n.state.resolved() || n.typ.t.kind != kind {
 		usagePanic("%s called on %s, not a value of kind %s", method, n.describe(), kind)
 	}
+	n.noContent(method)
 	return n
 }
 
 // IsError reports whether v is an error value.
 func (v Value) IsError() bool { return v.data().state == stateError }
 
-// IsResolved reports whether v is a resolved value, which has a type.
-func (v Value) IsResolved() bool { return v.data().state == stateResolved }
+// IsResolved reports whether v is a resolved value, which has a type, whether
+// or not its content is known.
+func (v Value) IsResolved() bool { return v.data().state.resolved() }
+
+// IsKnown reports whether v is a resolved value whose range holds exactly one
+// value, so that its content can be read. The null value of a type is known.
+func (v Value) IsKnown() bool {
+	s := v.data().state
+	return s == stateKnown || s == stateNull
+}
 
 // IsPending reports whether v is a pending value, whose type is not yet
 // determined.
@@ -219,7 +266,7 @@ func (v Value) IsPending() bool { return v.data().state == statePending }
 // have no type, and Type panics on them; test with IsResolved first.
 func (v Value) Type() Type {
 	n := v.data()
-	if n.state != stateResolved {
+	if !n.state.resolved() {
 		usagePanic("Type called on %s, which has no type", n.describe())
 	}
 	return n.typ
@@ -293,6 +340,14 @@ func (v Value) write(b *strings.Builder) {
 	case statePending:
 		b.WriteString("pending(")
 		n.data.(Constraint).write(b)
+		b.WriteByte(')')
+		return
+	case stateNull:
+		b.WriteString("null")
+		return
+	case stateUnknown:
+		b.WriteString("unknown(")
+		Range{v}.write(b)
 		b.WriteByte(')')
 		return
 	}

@@ -141,8 +141,8 @@ func (p Path) Attribute(name string) Path {
 // must be a Number or String value.
 func (p Path) Index(key Value) Path {
 	n := key.data()
-	if n.state != stateResolved || (n.typ.t.kind != KindNumber && n.typ.t.kind != KindString) {
-		usagePanic("Index called with %s as a key; a path indexes by a Number or String value", n.describe())
+	if n.state != stateKnown || (n.typ.t.kind != KindNumber && n.typ.t.kind != KindString) {
+		usagePanic("Index called with %s as a key; a path indexes by a known Number or String value", n.describe())
 	}
 	return p.extend(Step{kind: StepIndex, key: key})
 }

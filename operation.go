@@ -28,10 +28,11 @@ func propagate(operands ...Value) (Value, bool) {
 	return errorValue(diags...), true
 }
 
-// And returns the conjunction of two Bool values. If either operand is an error
-// value the result is an error value, even when the other operand is false.
+// And returns the conjunction of two known Bool values. If either operand is an
+// error value the result is an error value, even when the other operand is
+// false.
 //
-// And panics if an operand is neither a Bool value nor an error value.
+// And panics if an operand is neither a known Bool value nor an error value.
 func And(a, b Value) Value {
 	if v, ok := propagate(a, b); ok {
 		return v
@@ -40,10 +41,11 @@ func And(a, b Value) Value {
 	return Bool(x && y)
 }
 
-// Or returns the disjunction of two Bool values. If either operand is an error
-// value the result is an error value, even when the other operand is true.
+// Or returns the disjunction of two known Bool values. If either operand is an
+// error value the result is an error value, even when the other operand is
+// true.
 //
-// Or panics if an operand is neither a Bool value nor an error value.
+// Or panics if an operand is neither a known Bool value nor an error value.
 func Or(a, b Value) Value {
 	if v, ok := propagate(a, b); ok {
 		return v
@@ -52,8 +54,8 @@ func Or(a, b Value) Value {
 	return Bool(x || y)
 }
 
-// Not returns the negation of a Bool value, or an error value if a is one. It
-// panics if a is neither a Bool value nor an error value.
+// Not returns the negation of a known Bool value, or an error value if a is
+// one. It panics if a is neither a known Bool value nor an error value.
 func Not(a Value) Value {
 	if v, ok := propagate(a); ok {
 		return v
@@ -65,8 +67,8 @@ func Not(a Value) Value {
 // one. fn names the operation for the message.
 func boolOperand(fn string, v Value) bool {
 	n := v.data()
-	if n.state != stateResolved || n.typ.t.kind != KindBool {
-		usagePanic("%s: %s is not a Bool value", fn, n.describe())
+	if n.state != stateKnown || n.typ.t.kind != KindBool {
+		usagePanic("%s: %s is not a known Bool value", fn, n.describe())
 	}
 	return n.data.(bool)
 }

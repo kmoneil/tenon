@@ -22,10 +22,15 @@ ER-008
 NU
 ST
 TY
-defer TY-001 needs unknown values, which do not exist yet
+defer TY-001 is a walk over every constructor, which is not complete yet
 defer TY-002 is asserted across the whole constructor surface, which is not complete yet
 defer TY-003 concerns conversion targets and parameters, which do not exist yet
+UN-001
+UN-002
+UN-003
+UN-004
 VA-001
+VA-002
 VA-005
 VA-020
 VA-021

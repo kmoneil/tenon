@@ -24,6 +24,8 @@ func TestConformance_VA001_ThreeStates(t *testing.T) {
 		{tenon.NumberFromText("-1.5e3"), "resolved"},
 		{tenon.String("text"), "resolved"},
 		{tenon.CapsuleVal(holder, &thing{}), "resolved"},
+		{tenon.NullVal(tenon.StringType()), "resolved"},
+		{tenon.Unknown(tenon.StringType()), "resolved"},
 		{tenon.String("\xff"), "error"},
 		{tenon.NumberFromText("1,000"), "error"},
 		{tenon.Pending(tenon.Any()), "pending"},

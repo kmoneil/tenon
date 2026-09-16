@@ -89,7 +89,7 @@ func TestConformance_ER006_ErrorsDoNotShortCircuit(t *testing.T) {
 	}
 
 	// Operands are Bool values or error values, and nothing else.
-	mustPanicUsage(t, "And: a value of type number is not a Bool value", func() { tenon.And(tenon.NumberFromInt(1), tr) })
-	mustPanicUsage(t, "is not a Bool value", func() { tenon.Or(tr, tenon.String("x")) })
-	mustPanicUsage(t, "a pending value is not a Bool value", func() { tenon.Not(tenon.Pending(tenon.Any())) })
+	mustPanicUsage(t, "And: a value of type number is not a known Bool value", func() { tenon.And(tenon.NumberFromInt(1), tr) })
+	mustPanicUsage(t, "is not a known Bool value", func() { tenon.Or(tr, tenon.String("x")) })
+	mustPanicUsage(t, "a pending value is not a known Bool value", func() { tenon.Not(tenon.Pending(tenon.Any())) })
 }
