@@ -64,7 +64,11 @@ type node struct {
 	// whose members lie in its members' ranges, which is more than one, so the
 	// value is not known however settled its own shape is.
 	partial bool
-	typ     Type // the type of a resolved value
+	// null is the nullness fact of a pending value: whether it is known to be
+	// null, known not to be, or neither yet. An unknown value keeps the same
+	// fact in its range instead, where the other narrowings are.
+	null nullness
+	typ  Type // the type of a resolved value
 	// data is the []Diagnostic of an error value, the Constraint of a pending
 	// value, the *rangeData of an unknown value, or nil for a null value. For
 	// a known value it is the content that the kind of its type calls for: a
@@ -187,10 +191,41 @@ func CapsuleValue[E any](v Value) *E {
 }
 
 // Pending returns a pending value: a value whose type is not yet determined,
-// and will satisfy c.
+// and will satisfy c. Whether it will be null is not determined either;
+// Narrow with Null or NotNull says so when the caller knows.
 func Pending(c Constraint) Value {
 	c.data()
 	return Value{&node{state: statePending, data: c}}
+}
+
+// Resolve returns the value that a pending value takes once its type turns out
+// to be t: an unknown value of t, narrowed by what the pending value already
+// said. A pending value known to be null resolves to the null value of t, which
+// is how a null read before its type is known keeps the one thing that was said
+// about it.
+//
+// Resolve returns an error value if v is one. It panics if v is not a pending
+// value, or if t does not satisfy the constraint that v carries, which is a
+// mistake in the caller rather than in any data: the caller chose both.
+func Resolve(v Value, t Type) Value {
+	if e, ok := propagate(v); ok {
+		return e
+	}
+	n := v.data()
+	if n.state != statePending {
+		usagePanic("Resolve called on %s, which is not a pending value", n.describe())
+	}
+	c := n.data.(Constraint)
+	if !Satisfies(c, t) {
+		usagePanic("Resolve called with type %s, which does not satisfy the constraint %s of the pending value", t, c)
+	}
+	switch n.null {
+	case nullOnly:
+		return NullVal(t)
+	case nullNo:
+		return Narrow(Unknown(t), NotNull())
+	}
+	return Unknown(t)
 }
 
 // Unknown returns the unknown value of type t: the value that could still be
@@ -358,6 +393,12 @@ func (v Value) write(b *strings.Builder) {
 	case statePending:
 		b.WriteString("pending(")
 		n.data.(Constraint).write(b)
+		switch n.null {
+		case nullNo:
+			b.WriteString(", not null")
+		case nullOnly:
+			b.WriteString(", null")
+		}
 		b.WriteByte(')')
 		return
 	case stateNull:

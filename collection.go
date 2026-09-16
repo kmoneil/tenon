@@ -237,6 +237,9 @@ func MapVal(elem Type, entries map[string]Value) Value {
 // the message.
 func memberType(fn, what string, v Value) Type {
 	n := v.data()
+	if n.state == statePending {
+		usagePanic("%s: %s is a pending value, which has no type; Resolve it to one first", fn, what)
+	}
 	if !n.state.resolved() {
 		usagePanic("%s: %s is %s, not a resolved value", fn, what, n.describe())
 	}

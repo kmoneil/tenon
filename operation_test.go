@@ -94,17 +94,12 @@ func TestConformance_ER006_ErrorsDoNotShortCircuit(t *testing.T) {
 	mustPanicUsage(t, "a pending value is not a known Bool value", func() { tenon.Not(tenon.Pending(tenon.Any())) })
 }
 
-func TestIsNullOnValuesWithoutARange(t *testing.T) {
+func TestIsNullOnAValueWithNoAnswer(t *testing.T) {
 	// An error value carries forward, as through any other operation.
 	bad := tenon.String("\xff")
 	got := tenon.IsNull(bad)
 	if !got.IsError() || got.Diagnostics()[0].Code != tenon.CodeStringInvalidUTF8 {
 		t.Errorf("IsNull of an error value is %v, want its diagnostics", got)
 	}
-	// A pending value has no range to answer from, until pending values carry
-	// a nullness of their own.
-	mustPanicUsage(t, "IsNull called on a pending value, which has no range", func() {
-		tenon.IsNull(tenon.Pending(tenon.Any()))
-	})
 	mustPanicUsage(t, "use of the zero Value", func() { tenon.IsNull(tenon.Value{}) })
 }

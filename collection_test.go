@@ -152,7 +152,7 @@ func TestContainerValues(t *testing.T) {
 	}
 
 	mustPanicUsage(t, "ListVal: element 0 has type number, not string", func() { tenon.ListVal(str, one) })
-	mustPanicUsage(t, "element 1 is a pending value, not a resolved value", func() { tenon.SetVal(str, a, tenon.Pending(tenon.Any())) })
+	mustPanicUsage(t, "element 1 is a pending value, which has no type", func() { tenon.SetVal(str, a, tenon.Pending(tenon.Any())) })
 	mustPanicUsage(t, `the element of key "k" has type string, not number`, func() { tenon.MapVal(num, map[string]tenon.Value{"k": a}) })
 	mustPanicUsage(t, "the same name after normalization", func() {
 		tenon.ObjectVal(map[string]tenon.Value{"caf\u00e9": a, "cafe\u0301": b})
@@ -219,7 +219,7 @@ func TestContainersHoldMembersThatAreNotKnown(t *testing.T) {
 	mustPanicUsage(t, "ListVal: element 0 has type number, not string", func() {
 		tenon.ListVal(str, tenon.Unknown(tenon.NumberType()))
 	})
-	mustPanicUsage(t, "element 0 is a pending value, not a resolved value", func() {
+	mustPanicUsage(t, "element 0 is a pending value, which has no type; Resolve it to one first", func() {
 		tenon.ListVal(str, tenon.Pending(tenon.Any()))
 	})
 	// An error member is still hoisted out of the container.

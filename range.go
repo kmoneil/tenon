@@ -397,13 +397,15 @@ func Narrow(v Value, ns ...Narrowing) Value {
 		return e
 	}
 	n := v.data()
-	if !n.state.resolved() {
-		usagePanic("Narrow called on %s, which has no range", n.describe())
-	}
 	for _, nw := range ns {
 		if nw.kind == 0 {
 			usagePanic("Narrow called with the zero Narrowing")
 		}
+	}
+	if n.state == statePending {
+		return narrowPending(v, n, ns)
+	}
+	for _, nw := range ns {
 		if !nw.appliesTo(n.typ) {
 			usagePanic("Narrow called with %s, which does not apply to a value of type %s", nw, n.typ)
 		}
@@ -506,6 +508,33 @@ func soleValue(t Type) (Value, bool) {
 		return ObjectVal(attrs), true
 	}
 	return Value{}, false
+}
+
+// narrowPending returns the pending value v narrowed by ns. A pending value has
+// no type, so the only narrowings it can take are the two that say nothing
+// about one: whether it will be null.
+func narrowPending(v Value, n *node, ns []Narrowing) Value {
+	null := n.null
+	for _, nw := range ns {
+		switch nw.kind {
+		case narrowNotNull:
+			if null == nullOnly {
+				return contradiction("no pending value satisfies both " + Null().String() + " and " + nw.String())
+			}
+			null = nullNo
+		case narrowNull:
+			if null == nullNo {
+				return contradiction("no pending value satisfies both " + NotNull().String() + " and " + nw.String())
+			}
+			null = nullOnly
+		default:
+			usagePanic("Narrow called with %s, which does not apply to a pending value, whose type is not determined", nw)
+		}
+	}
+	if null == n.null {
+		return v
+	}
+	return Value{&node{state: statePending, null: null, data: n.data}}
 }
 
 // contradiction returns the error value for a narrowing that leaves no value

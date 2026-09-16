@@ -70,10 +70,11 @@ var unknownBool = Narrow(Unknown(Type{boolType}), NotNull())
 
 // IsNull returns whether v is null, as a Bool value: known true for the null
 // value of a type, known false for a value whose range no longer holds null,
-// and an unknown Bool while the range holds null and something else.
+// and an unknown Bool while the range holds null and something else. A pending
+// value answers from the nullness fact it carries, which it has whether or not
+// its type is settled.
 //
-// IsNull returns an error value if v is one, and panics on a pending value,
-// which has no range.
+// IsNull returns an error value if v is one.
 func IsNull(v Value) Value {
 	if e, ok := propagate(v); ok {
 		return e
@@ -87,7 +88,12 @@ func IsNull(v Value) Value {
 			return unknownBool
 		}
 	case statePending:
-		usagePanic("IsNull called on a pending value, which has no range")
+		switch n.null {
+		case nullOnly:
+			return Bool(true)
+		case nullMaybe:
+			return unknownBool
+		}
 	}
 	return Bool(false)
 }

@@ -280,3 +280,124 @@ func TestConformance_VA004_NullIsAMemberOfTheRange(t *testing.T) {
 		}
 	}
 }
+
+func TestConformance_UN020_PendingCarriesAConstraint(t *testing.T) {
+	conformance.Covers(t, "UN-020")
+	str := tenon.StringType()
+	lst := tenon.List(str)
+	p := tenon.Pending(tenon.ListOf(tenon.Exactly(str)))
+	if !p.IsPending() {
+		t.Fatalf("%v is not a pending value", p)
+	}
+	// The constraint says what the type may turn out to be: a type that
+	// satisfies it resolves, and one that does not is the caller's mistake.
+	got := tenon.Resolve(p, lst)
+	if !got.IsResolved() || got.Type() != lst {
+		t.Errorf("resolving %v to %v gave %v", p, lst, got)
+	}
+	if want := "unknown(list(string))"; got.String() != want {
+		t.Errorf("resolving gave %s, want %s", got, want)
+	}
+	mustPanicUsage(t, "does not satisfy the constraint", func() { tenon.Resolve(p, str) })
+	mustPanicUsage(t, "Resolve called on a value of type string, which is not a pending value", func() {
+		tenon.Resolve(tenon.String("x"), str)
+	})
+}
+
+func TestConformance_UN021_PendingAnyIsTheLeastInformative(t *testing.T) {
+	conformance.Covers(t, "UN-021")
+	type thing struct{}
+	p := tenon.Pending(tenon.Any())
+	// It resolves to every type there is, which no narrower constraint does.
+	for _, ty := range []tenon.Type{
+		tenon.BoolType(),
+		tenon.NumberType(),
+		tenon.StringType(),
+		tenon.List(tenon.StringType()),
+		tenon.Set(tenon.NumberType()),
+		tenon.Map(tenon.BoolType()),
+		tenon.Tuple(),
+		tenon.Object(nil),
+		tenon.Capsule("thing", tenon.CapsuleOps[thing]{}),
+	} {
+		if got := tenon.Resolve(p, ty); got.Type() != ty {
+			t.Errorf("resolving the least-informative value to %v gave %v", ty, got)
+		}
+	}
+	// It says nothing about null either, so nothing about it is settled.
+	if want := "unknown(bool, not null)"; tenon.IsNull(p).String() != want {
+		t.Errorf("IsNull of the least-informative value is %s, want %s", tenon.IsNull(p), want)
+	}
+}
+
+func TestConformance_UN022_PendingHasNoType(t *testing.T) {
+	conformance.Covers(t, "UN-022")
+	str := tenon.StringType()
+	p := tenon.Pending(tenon.Any())
+	// The discriminator answers before a type is asked for, and asking for one
+	// without testing first is a usage error rather than an answer.
+	if !p.IsPending() || p.IsResolved() || p.IsError() {
+		t.Errorf("the discriminators do not agree that %v is pending", p)
+	}
+	mustPanicUsage(t, "Type called on a pending value, which has no type", func() { p.Type() })
+	mustPanicUsage(t, "Range called on a pending value, which has no range", func() { p.Range() })
+	// Every other value answers the same discriminator.
+	for _, v := range []tenon.Value{
+		tenon.String("text"),
+		tenon.NullVal(str),
+		tenon.Unknown(str),
+		tenon.String("\xff"),
+	} {
+		if v.IsPending() {
+			t.Errorf("%v reports itself pending", v)
+		}
+	}
+}
+
+func TestConformance_UN024_PendingNullness(t *testing.T) {
+	conformance.Covers(t, "UN-024")
+	str := tenon.StringType()
+	p := tenon.Pending(tenon.Any())
+	null, notNull := tenon.Narrow(p, tenon.Null()), tenon.Narrow(p, tenon.NotNull())
+	// The fact is there to read before the type is.
+	for _, tt := range []struct {
+		name string
+		v    tenon.Value
+		want string
+	}{
+		{"undetermined", p, "unknown(bool, not null)"},
+		{"known null", null, "true"},
+		{"known not null", notNull, "false"},
+	} {
+		if got := tenon.IsNull(tt.v).String(); got != tt.want {
+			t.Errorf("%s: IsNull is %s, want %s", tt.name, got, tt.want)
+		}
+	}
+	if want := "pending(" + tenon.Any().String() + ", null)"; null.String() != want {
+		t.Errorf("a pending value known to be null reads as %s, want %s", null, want)
+	}
+	// A null met before its type is known keeps the one thing the document
+	// said: resolving it gives the known null of the type.
+	resolved := tenon.Resolve(null, str)
+	if !resolved.IsKnown() || resolved.Type() != str || tenon.IsNull(resolved).String() != "true" {
+		t.Errorf("resolving a pending null to string gave %v, want the null string", resolved)
+	}
+	// The other two facts carry into the range of the result as well.
+	if got, want := tenon.Resolve(notNull, str).String(), "unknown(string, not null)"; got != want {
+		t.Errorf("resolving a pending not-null gave %s, want %s", got, want)
+	}
+	if got, want := tenon.Resolve(p, str).String(), "unknown(string)"; got != want {
+		t.Errorf("resolving an undetermined pending gave %s, want %s", got, want)
+	}
+	// Facts that conflict leave nothing possible, and narrowings that speak of
+	// a structure have no type here to speak of.
+	got := tenon.Narrow(null, tenon.NotNull())
+	if !got.IsError() || got.Diagnostics()[0].Code != tenon.CodeRangeContradiction {
+		t.Errorf("narrowing a pending null to not null gave %v, want a contradiction", got)
+	}
+	mustPanicUsage(t, "does not apply to a pending value", func() { tenon.Narrow(p, tenon.LengthMax(1)) })
+	// A narrowing that says nothing new leaves the value as it was.
+	if again := tenon.Narrow(null, tenon.Null()); again != null {
+		t.Errorf("narrowing a pending null to null again produced a new value")
+	}
+}
