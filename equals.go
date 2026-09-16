@@ -108,13 +108,20 @@ func sameValue(a, b *node) bool {
 // in different orders and with repetitions, so the comparison is membership
 // each way rather than position by position.
 func sameMembers(x, y []Value) bool {
-	return holdsEvery(x, y) && holdsEvery(y, x)
+	return sameMembersFunc(x, y, func(a, b Value) bool { return sameValue(a.n, b.n) })
 }
 
-// holdsEvery reports whether every member of want equals some member of have.
-func holdsEvery(have, want []Value) bool {
+// sameMembersFunc reports whether every member of each set is a member of the
+// other, by whichever comparison the caller holds members to. That comparison
+// must be an equivalence relation, or this is not one either.
+func sameMembersFunc(x, y []Value, same func(a, b Value) bool) bool {
+	return holdsEvery(x, y, same) && holdsEvery(y, x, same)
+}
+
+// holdsEvery reports whether every member of want matches some member of have.
+func holdsEvery(have, want []Value, same func(a, b Value) bool) bool {
 	for _, w := range want {
-		if !slices.ContainsFunc(have, func(h Value) bool { return sameValue(h.n, w.n) }) {
+		if !slices.ContainsFunc(have, func(h Value) bool { return same(h, w) }) {
 			return false
 		}
 	}

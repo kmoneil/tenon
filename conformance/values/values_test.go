@@ -1,0 +1,58 @@
+package values_test
+
+import (
+	"testing"
+
+	"tenon"
+	"tenon/conformance/values"
+)
+
+// TestEveryShapeIsThere holds the generator to its promise: a property test
+// over it is only as good as what it covers.
+func TestEveryShapeIsThere(t *testing.T) {
+	states := map[string]bool{}
+	kinds := map[tenon.Kind]bool{}
+	partial, bounded := false, false
+	for _, v := range values.All() {
+		switch {
+		case v.IsError():
+			states["error"] = true
+		case v.IsPending():
+			states["pending"] = true
+		default:
+			kinds[v.Type().Kind()] = true
+			switch {
+			case !v.IsKnown() && v.Type().Kind() != tenon.KindList:
+				states["unknown"] = true
+			case !v.IsKnown():
+				partial = true
+			case tenon.IsNull(v).String() == "true":
+				states["null"] = true
+			default:
+				states["known"] = true
+			}
+		}
+		if v.IsResolved() && !v.IsKnown() && v.Range().String() != v.Type().String() {
+			bounded = true
+		}
+	}
+	for _, want := range []string{"error", "pending", "null", "unknown", "known"} {
+		if !states[want] {
+			t.Errorf("no %s value in the generator", want)
+		}
+	}
+	for k := tenon.KindBool; k <= tenon.KindCapsule; k++ {
+		if !kinds[k] {
+			t.Errorf("no value of kind %v in the generator", k)
+		}
+	}
+	if !partial {
+		t.Error("no container holding a member that is not known")
+	}
+	if !bounded {
+		t.Error("no unknown value with a narrowed range")
+	}
+	if got := len(values.Known()); got == 0 || got == len(values.All()) {
+		t.Errorf("Known returned %d of %d values", got, len(values.All()))
+	}
+}
