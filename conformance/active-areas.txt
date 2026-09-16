@@ -12,6 +12,9 @@
 
 BO
 CV
+DI-001
+DI-002
+DI-003
 EQ
 GO
 ER

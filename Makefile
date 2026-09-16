@@ -8,7 +8,7 @@
 # The tests run with -count=1 because a cached result records nothing.
 RULECOV := $(CURDIR)/.rulecov
 
-.PHONY: check rules
+.PHONY: check rules codes
 
 check:
 	@echo '==> gofmt'
@@ -24,3 +24,8 @@ check:
 # rules regenerates conformance/rules.json from the specification.
 rules:
 	go run ./tools/rulecheck manifest
+
+# codes regenerates the specification's appendix of diagnostic codes from
+# codes.go.
+codes:
+	go run ./tools/rulecheck codes

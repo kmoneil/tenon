@@ -42,15 +42,17 @@ func TestRunManifest(t *testing.T) {
 	spec := filepath.Join(dir, "spec.md")
 	manifest := filepath.Join(dir, "conformance", "rules.json")
 	active := filepath.Join(dir, "active-areas.txt")
+	registry := registryFixture(t, dir)
 	writeFile(t, active, nil)
 	t.Setenv("TENON_SPEC", "")
 	c := cli{t}
 	check := func(extra ...string) []string {
-		args := []string{"check", "-manifest", manifest, "-active", active, "-cover", filepath.Join(dir, "cover")}
+		args := []string{"check", "-manifest", manifest, "-active", active, "-cover", filepath.Join(dir, "cover"), "-codes", registry}
 		return append(args, extra...)
 	}
 
 	writeFile(t, spec, fixture("## 2. Alpha", "", "`[AA-001]` One.", "", "`[AA-002]` Two."))
+	c.ok("wrote the appendix", "codes", "-spec", spec, "-codes", registry)
 
 	// Generating writes the manifest, and regenerating changes nothing.
 	c.ok("wrote", "manifest", "-spec", spec, "-manifest", manifest)

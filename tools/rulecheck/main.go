@@ -3,18 +3,21 @@
 //
 // Usage:
 //
-//	rulecheck [check] [flags]    verify the rule manifest and rule coverage
+//	rulecheck [check] [flags]    verify the rule manifest, the appendix of
+//	                             diagnostic codes, and rule coverage
 //	rulecheck manifest [flags]   regenerate the rule manifest
+//	rulecheck codes [flags]      regenerate the appendix of diagnostic codes
 //
-// check is the last step of make check. It verifies that the manifest is
-// current, when it can read the specification, and then that every rule
-// enforced by conformance/active-areas.txt was covered by a passing test in
-// the preceding test run (see package conformance). The -h flag lists the
-// flags that override its inputs.
+// check is the last step of make check. It verifies that the manifest and the
+// specification's appendix of diagnostic codes are current, when it can read
+// the specification, and then that every rule enforced by
+// conformance/active-areas.txt was covered by a passing test in the preceding
+// test run (see package conformance). The -h flag lists the flags that
+// override its inputs.
 //
 // The specification is read from the file named by -spec, which defaults to
-// the TENON_SPEC environment variable. Without one, check skips the manifest
-// freshness test and says so, and manifest refuses to run.
+// the TENON_SPEC environment variable. Without one, check skips the tests that
+// need it and says so, and manifest and codes refuse to run.
 //
 // The manifest, conformance/rules.json, lists every rule identifier in the
 // specification with its area and whether the rule is withdrawn or belongs to
@@ -34,9 +37,17 @@
 //   - A defining paragraph whose identifier is followed by *(withdrawn)* marks
 //     the rule withdrawn.
 //
-// Rule identifiers are permanent. Both commands fail if a rule in the existing
-// manifest has disappeared from the specification or a withdrawn rule has been
-// reinstated.
+// Rule identifiers are permanent. Both check and manifest fail if a rule in the
+// existing manifest has disappeared from the specification or a withdrawn rule
+// has been reinstated.
+//
+// The appendix of diagnostic codes, the section headed "Appendix D: diagnostic
+// codes", lists every code that the registry file, codes.go by default,
+// declares as a string constant, with the rules that name it. A code is written
+// in backticks, as in `number.divide_by_zero`, and belongs to the rule whose
+// definition most recently precedes it in its section. The registry and the
+// codes that normative sections name must be the same codes, and any other
+// backticked text in those sections must not be shaped like a code.
 package main
 
 import (
@@ -65,6 +76,7 @@ type paths struct {
 	manifest string // the rule manifest
 	active   string // the list of enforced coverage
 	cover    string // the directory of coverage records
+	codes    string // the registry of diagnostic codes
 }
 
 // run executes the command named by the first argument, or check if there is
@@ -74,8 +86,8 @@ func run(args []string, stdout io.Writer) error {
 	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
 		cmd, args = args[0], args[1:]
 	}
-	if cmd != "check" && cmd != "manifest" {
-		return fmt.Errorf("unknown command %q; want check or manifest", cmd)
+	if cmd != "check" && cmd != "manifest" && cmd != "codes" {
+		return fmt.Errorf("unknown command %q; want check, manifest or codes", cmd)
 	}
 	var p paths
 	flags := flag.NewFlagSet("rulecheck "+cmd, flag.ContinueOnError)
@@ -83,13 +95,14 @@ func run(args []string, stdout io.Writer) error {
 	flags.StringVar(&p.manifest, "manifest", "", "rule manifest `file`; defaults to conformance/rules.json in the module root")
 	flags.StringVar(&p.active, "active", "", "enforced coverage `file`; defaults to conformance/active-areas.txt in the module root")
 	flags.StringVar(&p.cover, "cover", os.Getenv(coverEnv), "coverage record `directory`; defaults to $"+coverEnv+", else .rulecov in the module root")
+	flags.StringVar(&p.codes, "codes", "", "diagnostic code registry `file`; defaults to codes.go in the module root")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
 	if flags.NArg() > 0 {
 		return fmt.Errorf("unexpected arguments: %s", strings.Join(flags.Args(), " "))
 	}
-	if p.manifest == "" || p.active == "" || p.cover == "" {
+	if p.manifest == "" || p.active == "" || p.cover == "" || p.codes == "" {
 		root, err := moduleRoot()
 		if err != nil {
 			return err
@@ -103,9 +116,15 @@ func run(args []string, stdout io.Writer) error {
 		if p.cover == "" {
 			p.cover = filepath.Join(root, ".rulecov")
 		}
+		if p.codes == "" {
+			p.codes = filepath.Join(root, "codes.go")
+		}
 	}
-	if cmd == "manifest" {
+	switch cmd {
+	case "manifest":
 		return runManifest(stdout, p)
+	case "codes":
+		return runCodes(stdout, p)
 	}
 	return runCheck(stdout, p)
 }
@@ -121,6 +140,9 @@ func runCheck(w io.Writer, p paths) error {
 		return fmt.Errorf("%s: %w", display(p.manifest), err)
 	}
 	if err := checkFresh(w, p, data, rules); err != nil {
+		return err
+	}
+	if err := checkCodes(w, p); err != nil {
 		return err
 	}
 	active, err := os.ReadFile(p.active)
