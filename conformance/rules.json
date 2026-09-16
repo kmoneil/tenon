@@ -151,6 +151,27 @@
     {"id":"SE-060","area":"SE","withdrawn":false,"outline":false},
     {"id":"SE-061","area":"SE","withdrawn":false,"outline":false},
     {"id":"SE-062","area":"SE","withdrawn":false,"outline":false},
-    {"id":"SE-063","area":"SE","withdrawn":false,"outline":false}
+    {"id":"SE-063","area":"SE","withdrawn":false,"outline":false},
+    {"id":"GO-001","area":"GO","withdrawn":false,"outline":false},
+    {"id":"GO-002","area":"GO","withdrawn":false,"outline":false},
+    {"id":"GO-003","area":"GO","withdrawn":false,"outline":false},
+    {"id":"GO-004","area":"GO","withdrawn":false,"outline":false},
+    {"id":"GO-010","area":"GO","withdrawn":false,"outline":false},
+    {"id":"GO-011","area":"GO","withdrawn":false,"outline":false},
+    {"id":"GO-012","area":"GO","withdrawn":false,"outline":false},
+    {"id":"GO-013","area":"GO","withdrawn":false,"outline":false},
+    {"id":"GO-014","area":"GO","withdrawn":false,"outline":false},
+    {"id":"GO-020","area":"GO","withdrawn":false,"outline":false},
+    {"id":"GO-021","area":"GO","withdrawn":false,"outline":false},
+    {"id":"GO-022","area":"GO","withdrawn":false,"outline":false},
+    {"id":"GO-030","area":"GO","withdrawn":false,"outline":false},
+    {"id":"GO-031","area":"GO","withdrawn":false,"outline":false},
+    {"id":"GO-032","area":"GO","withdrawn":false,"outline":false},
+    {"id":"GO-033","area":"GO","withdrawn":false,"outline":false},
+    {"id":"GO-040","area":"GO","withdrawn":false,"outline":false},
+    {"id":"GO-041","area":"GO","withdrawn":false,"outline":false},
+    {"id":"GO-042","area":"GO","withdrawn":false,"outline":false},
+    {"id":"GO-043","area":"GO","withdrawn":false,"outline":false},
+    {"id":"GO-050","area":"GO","withdrawn":false,"outline":false}
   ]
 }
