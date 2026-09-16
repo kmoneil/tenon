@@ -20,10 +20,10 @@ import "tenon/internal/decimal"
 func LessThan(a, b Value) Value { return lessThanOp.apply(a, b) }
 
 var lessThanOp = &op{
-	name:    "LessThan",
-	operand: OneOf(Exactly(Type{numberType}), Exactly(Type{stringType})),
-	agree:   true,
-	result:  fixedResult(Type{boolType}),
+	name:     "LessThan",
+	operands: alike(2, OneOf(Exactly(Type{numberType}), Exactly(Type{stringType})), false),
+	agree:    true,
+	result:   fixedResult(Type{boolType}),
 	known: func(args []Value) Value {
 		a, b := args[0].n, args[1].n
 		if a.typ.t.kind == KindNumber {

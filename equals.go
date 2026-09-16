@@ -22,10 +22,9 @@ import (
 func Equals(a, b Value) Value { return equalsOp.apply(a, b) }
 
 var equalsOp = &op{
-	name:    "Equals",
-	operand: Any(),
-	nulls:   true,
-	result:  fixedResult(Type{boolType}),
+	name:     "Equals",
+	operands: alike(2, Any(), true),
+	result:   fixedResult(Type{boolType}),
 	known: func(args []Value) Value {
 		eq, settled := equality(args[0].n, args[1].n)
 		if !settled {

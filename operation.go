@@ -42,12 +42,11 @@ func propagate(operands ...Value) (Value, bool) {
 // operation that can produce null will have to say so.
 type op struct {
 	name string // names the operation in messages
-	// operand is what every operand must satisfy. It is a constraint and not a
-	// type, because what an operation accepts is an acceptance test: an
-	// operation that takes any value says Any, rather than a type with a
-	// wildcard in it or a zero value standing in for one.
-	operand Constraint
-	nulls   bool // whether the operation has an answer for a null operand
+	// operands is what the operation accepts in each position. Most operations
+	// take their operands on the same terms, and some do not: membership takes
+	// a set and then anything at all, and answers for a null member but not
+	// for a null set.
+	operands []operand
 	// agree requires the operands to have one type between them. Equality
 	// takes two of different types and answers false; ordering does not, and
 	// says so rather than inventing an order across types.
@@ -78,6 +77,10 @@ func fixedResult(t Type) func([]Type) Constraint {
 // apply runs the operation over args, settling what the operands are before the
 // operation itself is asked anything.
 func (o *op) apply(args ...Value) Value {
+	if len(args) != len(o.operands) {
+		internalPanic("%s: %d operands were given to an operation that takes %d",
+			o.name, len(args), len(o.operands))
+	}
 	// The type of an operand is checked before diagnostics are collected, so
 	// that a mistake in the calling program is not masked by an error value it
 	// was already carrying.
@@ -86,9 +89,9 @@ func (o *op) apply(args ...Value) Value {
 		if n.state == stateError || n.state == statePending {
 			continue
 		}
-		if !Satisfies(o.operand, n.typ) {
+		if !Satisfies(o.operands[i].constraint, n.typ) {
 			usagePanic("%s: %s is %s, which does not satisfy %s",
-				o.name, operandName(i, len(args)), n.describe(), o.operand)
+				o.name, operandName(i, len(args)), n.describe(), o.operands[i].constraint)
 		}
 	}
 	if o.agree {
@@ -109,11 +112,11 @@ func (o *op) apply(args ...Value) Value {
 		case statePending:
 			known = false
 			c := n.data.(Constraint)
-			if !couldSatisfy(c, o.operand) {
+			if !couldSatisfy(c, o.operands[i].constraint) {
 				diags = append(diags, o.wrongType(i, len(args), c))
 				continue
 			}
-			if !o.nulls && n.null == nullOnly {
+			if !o.operands[i].nulls && n.null == nullOnly {
 				diags = append(diags, o.nullOperand(i, len(args)))
 				continue
 			}
@@ -122,7 +125,7 @@ func (o *op) apply(args ...Value) Value {
 			}
 		case stateNull:
 			types[i] = n.typ
-			if !o.nulls {
+			if !o.operands[i].nulls {
 				diags = append(diags, o.nullOperand(i, len(args)))
 			}
 		default:
@@ -164,6 +167,24 @@ func (o *op) apply(args ...Value) Value {
 		r = o.narrow(args, r)
 	}
 	return r
+}
+
+// operand is what an operation accepts in one position: the constraint that the
+// type of the value there must satisfy, and whether the operation has an answer
+// for null there.
+type operand struct {
+	constraint Constraint
+	nulls      bool
+}
+
+// alike returns the operands of an operation that takes n of them on the same
+// terms.
+func alike(n int, c Constraint, nulls bool) []operand {
+	list := make([]operand, n)
+	for i := range list {
+		list[i] = operand{constraint: c, nulls: nulls}
+	}
+	return list
 }
 
 // operandName names operand i of n for a message.
@@ -250,7 +271,7 @@ func (o *op) wrongType(i, n int, c Constraint) Diagnostic {
 	return Diagnostic{
 		Code: CodeOperationWrongType,
 		Message: operandName(i, n) + " of " + o.name + " is pending with constraint " +
-			c.String() + ", and no type it allows satisfies " + o.operand.String(),
+			c.String() + ", and no type it allows satisfies " + o.operands[i].constraint.String(),
 	}
 }
 
@@ -282,28 +303,28 @@ func Not(a Value) Value { return notOp.apply(a) }
 
 var (
 	andOp = &op{
-		name:    "And",
-		operand: boolOperand,
-		result:  fixedResult(Type{boolType}),
+		name:     "And",
+		operands: alike(2, boolOperand, false),
+		result:   fixedResult(Type{boolType}),
 		known: func(args []Value) Value {
 			return Bool(args[0].n.data.(bool) && args[1].n.data.(bool))
 		},
 		decided: func(args []Value) (Value, bool) { return decidedBy(args, false) },
 	}
 	orOp = &op{
-		name:    "Or",
-		operand: boolOperand,
-		result:  fixedResult(Type{boolType}),
+		name:     "Or",
+		operands: alike(2, boolOperand, false),
+		result:   fixedResult(Type{boolType}),
 		known: func(args []Value) Value {
 			return Bool(args[0].n.data.(bool) || args[1].n.data.(bool))
 		},
 		decided: func(args []Value) (Value, bool) { return decidedBy(args, true) },
 	}
 	notOp = &op{
-		name:    "Not",
-		operand: boolOperand,
-		result:  fixedResult(Type{boolType}),
-		known:   func(args []Value) Value { return Bool(!args[0].n.data.(bool)) },
+		name:     "Not",
+		operands: alike(1, boolOperand, false),
+		result:   fixedResult(Type{boolType}),
+		known:    func(args []Value) Value { return Bool(!args[0].n.data.(bool)) },
 	}
 )
 
@@ -328,11 +349,10 @@ func decidedBy(args []Value, b bool) (Value, bool) {
 func IsNull(v Value) Value { return isNullOp.apply(v) }
 
 var isNullOp = &op{
-	name:    "IsNull",
-	operand: Any(),
-	nulls:   true,
-	result:  fixedResult(Type{boolType}),
-	known:   func(args []Value) Value { return Bool(args[0].n.state == stateNull) },
+	name:     "IsNull",
+	operands: alike(1, Any(), true),
+	result:   fixedResult(Type{boolType}),
+	known:    func(args []Value) Value { return Bool(args[0].n.state == stateNull) },
 	decided: func(args []Value) (Value, bool) {
 		switch n := args[0].n; n.state {
 		case stateUnknown:

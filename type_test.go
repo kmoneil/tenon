@@ -348,6 +348,8 @@ func TestConformance_TY001_EveryValueHasOneConcreteType(t *testing.T) {
 		"And":            tenon.And(tr, tenon.Bool(false)),
 		"Equals":         tenon.Equals(one, one),
 		"LessThan":       tenon.LessThan(one, one),
+		"Length":         tenon.Length(tenon.ListVal(str, tenon.String("a"))),
+		"Contains":       tenon.Contains(tenon.SetVal(str), one),
 		"Or":             tenon.Or(tr, tenon.Bool(false)),
 		"Not":            tenon.Not(tr),
 		"IsNull":         tenon.IsNull(one),
@@ -363,7 +365,7 @@ func TestConformance_TY001_EveryValueHasOneConcreteType(t *testing.T) {
 		"ListVal": tenon.List(str), "SetVal": tenon.Set(str), "MapVal": tenon.Map(str),
 		"TupleVal": tenon.Tuple(num, bl), "ObjectVal": tenon.Object(map[string]tenon.Type{"a": num}),
 		"Narrow": num, "Resolve": str, "And": bl, "Or": bl, "Not": bl, "IsNull": bl,
-		"Equals": bl, "LessThan": bl,
+		"Equals": bl, "LessThan": bl, "Length": num, "Contains": bl,
 		"Add": num, "Sub": num, "Mul": num, "Div": num, "Mod": num,
 	}
 	// A value with no type is the other half of the rule.
@@ -462,7 +464,7 @@ func TestConformance_TY003_AcceptanceIsExpressedAsConstraints(t *testing.T) {
 	// states it as a constraint. Conversion targets are the third surface the
 	// rule names, and arrive with conversion itself.
 	for _, lit := range operationLiterals(t) {
-		for _, field := range []string{"name", "operand", "result", "known"} {
+		for _, field := range []string{"name", "operands", "result", "known"} {
 			if !lit.keys[field] {
 				t.Errorf("%s: an operation literal does not set %s", lit.where, field)
 			}

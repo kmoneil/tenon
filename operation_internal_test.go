@@ -39,19 +39,19 @@ func TestConformance_UN008_KnownOperandsAnswerOrFail(t *testing.T) {
 	// One that breaks it is caught where it breaks it, rather than downstream
 	// where an unknown value would turn up with nothing to explain it.
 	broken := &op{
-		name:    "broken",
-		operand: boolOperand,
-		result:  fixedResult(Type{boolType}),
-		known:   func([]Value) Value { return Unknown(Type{boolType}) },
+		name:     "broken",
+		operands: alike(1, boolOperand, false),
+		result:   fixedResult(Type{boolType}),
+		known:    func([]Value) Value { return Unknown(Type{boolType}) },
 	}
 	mustPanicInternal(t, "broken: every operand was known, but the result is an unknown value of type bool", func() {
 		broken.apply(Bool(true))
 	})
 	// Failing is the other answer the rule allows, and is not caught.
 	failing := &op{
-		name:    "failing",
-		operand: boolOperand,
-		result:  fixedResult(Type{boolType}),
+		name:     "failing",
+		operands: alike(1, boolOperand, false),
+		result:   fixedResult(Type{boolType}),
 		known: func([]Value) Value {
 			return errorValue(Diagnostic{Code: "app.failed", Message: "it failed"})
 		},
@@ -67,9 +67,8 @@ func TestConformance_UN023_PendingWithNoSettledResultType(t *testing.T) {
 	// that ships has a fixed result type, so this one stands in for those that
 	// conversion and access will bring.
 	same := &op{
-		name:    "same",
-		operand: Any(),
-		nulls:   true,
+		name:     "same",
+		operands: alike(1, Any(), true),
 		result: func(types []Type) Constraint {
 			if types[0].t == nil {
 				return Any()

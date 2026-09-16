@@ -105,3 +105,122 @@ func TestConformance_EQ041_MembersThatAreNotKnownAreKept(t *testing.T) {
 		t.Error("a set holding an unknown reports itself known")
 	}
 }
+
+func TestConformance_EQ042_TheLengthOfASetHoldingUnknowns(t *testing.T) {
+	conformance.Covers(t, "EQ-042")
+	num, str := tenon.NumberType(), tenon.StringType()
+	n := func(i int64) tenon.Value { return tenon.NumberFromInt(i) }
+	unknown := tenon.Unknown(num)
+	atLeastFive := tenon.Narrow(tenon.Unknown(num), tenon.NumberMin(n(5), true))
+	for _, tt := range []struct {
+		name string
+		got  tenon.Value
+		want string
+	}{
+		// Two unknowns could be one member or two, so the length is both.
+		{"two unknowns", tenon.Length(tenon.SetVal(num, unknown, unknown)), "unknown(number, not null, >= 1, <= 2)"},
+		{"one unknown", tenon.Length(tenon.SetVal(num, unknown)), "1"},
+		{
+			"an unknown beside a value it could be",
+			tenon.Length(tenon.SetVal(num, n(1), unknown)),
+			"unknown(number, not null, >= 1, <= 2)",
+		},
+		// An unknown that cannot be the value beside it is another member,
+		// which settles the length after all.
+		{"an unknown that is provably another member", tenon.Length(tenon.SetVal(num, n(1), atLeastFive)), "2"},
+		{
+			"two of them, one provably distinct and one not",
+			tenon.Length(tenon.SetVal(num, n(1), atLeastFive, unknown)),
+			"unknown(number, not null, >= 2, <= 3)",
+		},
+		// Every other container has the length it has.
+		{"a set of known members", tenon.Length(tenon.SetVal(num, n(1), n(2), n(1))), "2"},
+		{"a list holding an unknown", tenon.Length(tenon.ListVal(num, unknown, unknown)), "2"},
+		{"a map holding an unknown", tenon.Length(tenon.MapVal(num, map[string]tenon.Value{"k": unknown})), "1"},
+		{"a string", tenon.Length(tenon.String("e\U00000301x")), "2"},
+		{"nothing at all", tenon.Length(tenon.SetVal(num)), "0"},
+		// A value that is not there to count says what its range says, and a
+		// length is never negative whatever else is unknown.
+		{"an unknown list", tenon.Length(tenon.Unknown(tenon.List(num))), "unknown(number, not null, >= 0)"},
+		{
+			"an unknown string with a length bound",
+			tenon.Length(tenon.Narrow(tenon.Unknown(str), tenon.LengthMin(2), tenon.LengthMax(5))),
+			"unknown(number, not null, >= 2, <= 5)",
+		},
+		{"a pending value", tenon.Length(tenon.Pending(tenon.Any())), "unknown(number, not null, >= 0)"},
+	} {
+		if got := tt.got.String(); got != tt.want {
+			t.Errorf("%s: the length is %s, want %s", tt.name, got, tt.want)
+		}
+	}
+	// Length is for the kinds that have one.
+	for _, v := range []tenon.Value{tenon.Bool(true), n(1), tenon.TupleVal(), tenon.ObjectVal(nil)} {
+		mustPanicUsage(t, "does not satisfy one_of", func() { tenon.Length(v) })
+	}
+	null := tenon.Length(tenon.NullVal(tenon.List(num)))
+	if !null.IsError() || null.Diagnostics()[0].Code != tenon.CodeOperationNullOperand {
+		t.Errorf("the length of null is %v, want a null-operand error value", null)
+	}
+}
+
+func TestConformance_EQ043_MembershipOfASetHoldingUnknowns(t *testing.T) {
+	conformance.Covers(t, "EQ-043")
+	num, str := tenon.NumberType(), tenon.StringType()
+	n := func(i int64) tenon.Value { return tenon.NumberFromInt(i) }
+	unknown := tenon.Unknown(num)
+	atLeastFive := tenon.Narrow(tenon.Unknown(num), tenon.NumberMin(n(5), true))
+	known := tenon.SetVal(num, n(1), n(2))
+	open := tenon.SetVal(num, n(1), unknown)
+	for _, tt := range []struct {
+		name string
+		got  tenon.Value
+		want string
+	}{
+		{"a member of a known set", tenon.Contains(known, n(1)), "true"},
+		{"a value that is not one", tenon.Contains(known, n(3)), "false"},
+		{"the same value written another way", tenon.Contains(known, tenon.NumberFromText("2.00")), "true"},
+		{"a value of another type, which is not a member", tenon.Contains(known, tenon.String("1")), "false"},
+		{"null, which is not a member here", tenon.Contains(known, tenon.NullVal(num)), "false"},
+		{"null, which is one there", tenon.Contains(tenon.SetVal(num, tenon.NullVal(num)), tenon.NullVal(num)), "true"},
+		{"nothing is a member of an empty set", tenon.Contains(tenon.SetVal(num), n(1)), "false"},
+		// A member that is provably there settles it however open the rest is.
+		{"a known member of a set holding an unknown", tenon.Contains(open, n(1)), "true"},
+		// Otherwise the unknown member could be the value looked for.
+		{"a value the unknown member could be", tenon.Contains(open, n(3)), "unknown(bool, not null)"},
+		// Unless it provably is not, which settles it the other way.
+		{
+			"a value no member could be",
+			tenon.Contains(tenon.SetVal(num, n(1), atLeastFive), n(3)),
+			"false",
+		},
+		{
+			"a value looked for that is not known itself",
+			tenon.Contains(known, unknown),
+			"unknown(bool, not null)",
+		},
+		{
+			"one that is provably no member",
+			tenon.Contains(known, atLeastFive),
+			"false",
+		},
+		// A set that is not there to look through leaves it open.
+		{"an unknown set", tenon.Contains(tenon.Unknown(tenon.Set(num)), n(1)), "unknown(bool, not null)"},
+		{"a pending set", tenon.Contains(tenon.Pending(tenon.SetOf(tenon.Any())), n(1)), "unknown(bool, not null)"},
+	} {
+		if got := tt.got.String(); got != tt.want {
+			t.Errorf("%s: membership is %s, want %s", tt.name, got, tt.want)
+		}
+	}
+	// The first operand is a set, and nothing else.
+	for _, v := range []tenon.Value{tenon.ListVal(num), tenon.String("a"), n(1)} {
+		mustPanicUsage(t, "does not satisfy set_of(any)", func() { tenon.Contains(v, n(1)) })
+	}
+	null := tenon.Contains(tenon.NullVal(tenon.Set(str)), tenon.String("a"))
+	if !null.IsError() || null.Diagnostics()[0].Code != tenon.CodeOperationNullOperand {
+		t.Errorf("membership of null is %v, want a null-operand error value", null)
+	}
+	bad := tenon.Contains(known, tenon.String("\xff"))
+	if !bad.IsError() || bad.Diagnostics()[0].Code != tenon.CodeStringInvalidUTF8 {
+		t.Errorf("membership of an error value is %v, want its diagnostics", bad)
+	}
+}

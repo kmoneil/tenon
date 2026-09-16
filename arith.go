@@ -36,36 +36,36 @@ func Mod(a, b Value) Value { return modOp.apply(a, b) }
 
 var (
 	addOp = &op{
-		name:    "Add",
-		operand: numberOperand,
-		result:  fixedResult(Type{numberType}),
-		known:   func(args []Value) Value { return arithmetic(decOf(args[0]).Add(decOf(args[1]))) },
-		narrow:  addBounds,
+		name:     "Add",
+		operands: alike(2, numberOperand, false),
+		result:   fixedResult(Type{numberType}),
+		known:    func(args []Value) Value { return arithmetic(decOf(args[0]).Add(decOf(args[1]))) },
+		narrow:   addBounds,
 	}
 	subOp = &op{
-		name:    "Sub",
-		operand: numberOperand,
-		result:  fixedResult(Type{numberType}),
-		known:   func(args []Value) Value { return arithmetic(decOf(args[0]).Sub(decOf(args[1]))) },
-		narrow:  subBounds,
+		name:     "Sub",
+		operands: alike(2, numberOperand, false),
+		result:   fixedResult(Type{numberType}),
+		known:    func(args []Value) Value { return arithmetic(decOf(args[0]).Sub(decOf(args[1]))) },
+		narrow:   subBounds,
 	}
 	mulOp = &op{
-		name:    "Mul",
-		operand: numberOperand,
-		result:  fixedResult(Type{numberType}),
-		known:   func(args []Value) Value { return arithmetic(decOf(args[0]).Mul(decOf(args[1]))) },
+		name:     "Mul",
+		operands: alike(2, numberOperand, false),
+		result:   fixedResult(Type{numberType}),
+		known:    func(args []Value) Value { return arithmetic(decOf(args[0]).Mul(decOf(args[1]))) },
 	}
 	divOp = &op{
-		name:    "Div",
-		operand: numberOperand,
-		result:  fixedResult(Type{numberType}),
-		known:   func(args []Value) Value { return arithmetic(decOf(args[0]).Div(decOf(args[1]))) },
+		name:     "Div",
+		operands: alike(2, numberOperand, false),
+		result:   fixedResult(Type{numberType}),
+		known:    func(args []Value) Value { return arithmetic(decOf(args[0]).Div(decOf(args[1]))) },
 	}
 	modOp = &op{
-		name:    "Mod",
-		operand: numberOperand,
-		result:  fixedResult(Type{numberType}),
-		known:   func(args []Value) Value { return arithmetic(decOf(args[0]).Mod(decOf(args[1]))) },
+		name:     "Mod",
+		operands: alike(2, numberOperand, false),
+		result:   fixedResult(Type{numberType}),
+		known:    func(args []Value) Value { return arithmetic(decOf(args[0]).Mod(decOf(args[1]))) },
 	}
 )
 
