@@ -69,6 +69,9 @@ type node struct {
 	// fact in its range instead, where the other narrowings are.
 	null nullness
 	typ  Type // the type of a resolved value
+	// marks is the set of marks on the value: nil when there are none, so a
+	// value that is never marked pays a nil pointer and nothing else.
+	marks *markSet
 	// data is the []Diagnostic of an error value, the Constraint of a pending
 	// value, the *rangeData of an unknown value, or nil for a null value. For
 	// a known value it is the content that the kind of its type calls for: a
@@ -221,11 +224,11 @@ func Resolve(v Value, t Type) Value {
 	}
 	switch n.null {
 	case nullOnly:
-		return NullVal(t)
+		return carryMarks(v, NullVal(t))
 	case nullNo:
-		return Narrow(Unknown(t), NotNull())
+		return carryMarks(v, Narrow(Unknown(t), NotNull()))
 	}
-	return Unknown(t)
+	return carryMarks(v, Unknown(t))
 }
 
 // Unknown returns the unknown value of type t: the value that could still be

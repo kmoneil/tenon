@@ -74,9 +74,24 @@ func fixedResult(t Type) func([]Type) Constraint {
 	return func([]Type) Constraint { return c }
 }
 
-// apply runs the operation over args, settling what the operands are before the
-// operation itself is asked anything.
+// apply runs the operation over args and puts the union of the operands'
+// Propagate marks on the result, so an operation says what its result is
+// and inherits how marks travel. An error result is left as it is: what
+// marks an error value carries is settled where its diagnostics are built.
 func (o *op) apply(args ...Value) Value {
+	r := o.applyValue(args)
+	if r.n.state == stateError {
+		return r
+	}
+	if ms := propagated(args); len(ms) != 0 {
+		r = WithMarks(r, ms...)
+	}
+	return r
+}
+
+// applyValue runs the operation over args, settling what the operands are
+// before the operation itself is asked anything.
+func (o *op) applyValue(args []Value) Value {
 	if len(args) != len(o.operands) {
 		internalPanic("%s: %d operands were given to an operation that takes %d",
 			o.name, len(args), len(o.operands))

@@ -489,10 +489,18 @@ func (n *node) length() int64 {
 // code CodeRangeContradiction rather than an empty range. Narrowing an error
 // value returns an error value carrying its diagnostics.
 //
+// Narrow refines the value it is given rather than deriving a new one, so
+// the result carries the marks of v, the Isolate ones included.
+//
 // Narrow panics on a pending value, which has no type to narrow against, and
 // if a narrowing does not apply to the type of v, such as a length bound on a
 // Number value.
 func Narrow(v Value, ns ...Narrowing) Value {
+	return carryMarks(v, narrowValue(v, ns))
+}
+
+// narrowValue is Narrow before marks are carried over.
+func narrowValue(v Value, ns []Narrowing) Value {
 	if e, ok := propagate(v); ok {
 		return e
 	}

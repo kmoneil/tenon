@@ -10,11 +10,14 @@
 # covered when a test that called conformance.Covers with its identifier
 # passed during the run.
 #
-# MK is not here yet at all.
+# The MK rules arrive one task at a time.
 
 BO
 EQ
 ER
+MK-001
+MK-002
+MK-003
 NU
 ST
 TY

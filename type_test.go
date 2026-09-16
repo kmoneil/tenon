@@ -303,6 +303,12 @@ func sourceFiles(t *testing.T) []string {
 	return files
 }
 
+// unmarked returns just the value half of Unmark.
+func unmarked(v tenon.Value) tenon.Value {
+	u, _ := tenon.Unmark(v)
+	return u
+}
+
 // concrete walks ty and fails unless every type in it, at any depth, is one of
 // the kinds a value can have.
 func concrete(t *testing.T, name string, ty tenon.Type) {
@@ -358,6 +364,8 @@ func TestConformance_TY001_EveryValueHasOneConcreteType(t *testing.T) {
 		"Mul":            tenon.Mul(one, one),
 		"Div":            tenon.Div(one, one),
 		"Mod":            tenon.Mod(one, one),
+		"WithMarks":      tenon.WithMarks(one, stamp{id: "m"}),
+		"Unmark":         unmarked(tenon.WithMarks(one, stamp{id: "m"})),
 	}
 	want := map[string]tenon.Type{
 		"Bool": bl, "NumberFromInt": num, "NumberFromText": num, "String": str,
@@ -367,6 +375,7 @@ func TestConformance_TY001_EveryValueHasOneConcreteType(t *testing.T) {
 		"Narrow": num, "Resolve": str, "And": bl, "Or": bl, "Not": bl, "IsNull": bl,
 		"Equals": bl, "LessThan": bl, "Length": num, "Contains": bl,
 		"Add": num, "Sub": num, "Mul": num, "Div": num, "Mod": num,
+		"WithMarks": num, "Unmark": num,
 	}
 	// A value with no type is the other half of the rule.
 	untyped := map[string]tenon.Value{
