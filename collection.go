@@ -92,7 +92,11 @@ func sequenceValue(t Type, fn string, elems []Value) Value {
 	if v, ok := errs.value(); ok {
 		return v
 	}
-	return Value{&node{state: stateKnown, partial: anyPartial(elems), typ: t, data: slices.Clone(elems)}}
+	members := slices.Clone(elems)
+	if t.t.kind == KindSet {
+		members = distinctMembers(members)
+	}
+	return Value{&node{state: stateKnown, partial: anyPartial(members), typ: t, data: members}}
 }
 
 // TupleVal returns the tuple with the given elements, in order, whose type is
@@ -141,6 +145,42 @@ func ObjectVal(attrs map[string]Value) Value {
 		return v
 	}
 	return Value{&node{state: stateKnown, partial: anyPartial(vals), typ: Object(types), data: vals}}
+}
+
+// distinctMembers returns the members of a set: members that equality reports
+// the same are one member, and the first of them is the one kept. Known members
+// are looked up by hash, and the rest are compared against everything kept,
+// which is what the rule asks for and costs little, since equality settles that
+// two members are the same only where both are known.
+func distinctMembers(members []Value) []Value {
+	var kept []Value
+	var buckets map[uint64][]Value
+	for _, m := range members {
+		if !m.n.isKnown() {
+			if !sameAsSome(kept, m) {
+				kept = append(kept, m)
+			}
+			continue
+		}
+		if buckets == nil {
+			buckets = map[uint64][]Value{}
+		}
+		h := hashNode(m.n)
+		if sameAsSome(buckets[h], m) {
+			continue
+		}
+		buckets[h] = append(buckets[h], m)
+		kept = append(kept, m)
+	}
+	return kept
+}
+
+// sameAsSome reports whether equality settles that m is one of these members.
+func sameAsSome(members []Value, m Value) bool {
+	return slices.ContainsFunc(members, func(k Value) bool {
+		eq, settled := equality(k.n, m.n)
+		return settled && eq
+	})
 }
 
 // anyPartial reports whether a container holding these members has a range
