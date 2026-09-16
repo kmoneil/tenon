@@ -79,9 +79,9 @@ func compareContent(a, b *node) int {
 	case KindList, KindTuple:
 		return slices.CompareFunc(a.data.([]Value), b.data.([]Value), compareValues)
 	case KindSet:
-		// A set is its members, so the members go in order and the ones that
-		// sort together are taken once, whatever the set was built from.
-		return slices.CompareFunc(setMembers(a), setMembers(b), compareValues)
+		// A set holds its members in this very order, and holds each of them
+		// once, so there is nothing to do here but walk them.
+		return slices.CompareFunc(a.data.([]Value), b.data.([]Value), compareValues)
 	case KindMap:
 		return slices.CompareFunc(a.data.([]mapEntry), b.data.([]mapEntry), func(x, y mapEntry) int {
 			if c := strings.Compare(x.key, y.key); c != 0 {
@@ -107,14 +107,6 @@ func boolOrder(b bool) int {
 		return 1
 	}
 	return 0
-}
-
-// setMembers returns the members of a set in order, with those that sort
-// together taken once.
-func setMembers(n *node) []Value {
-	members := slices.Clone(n.data.([]Value))
-	slices.SortFunc(members, compareValues)
-	return slices.CompactFunc(members, func(x, y Value) bool { return compareValues(x, y) == 0 })
 }
 
 // compareAttributes orders two objects by attribute, name before value, which

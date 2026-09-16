@@ -131,7 +131,9 @@ func TestContainerValues(t *testing.T) {
 	if empty := tenon.ListVal(num); empty.Type() != tenon.List(num) || empty.Len() != 0 || len(empty.Elements()) != 0 {
 		t.Errorf("an empty ListVal gave %v", empty)
 	}
-	if set := tenon.SetVal(str, b, a); set.Type() != tenon.Set(str) || !slices.Equal(set.Elements(), []tenon.Value{b, a}) {
+	// A set holds its members in the order it iterates them in, which is not
+	// the order they were given in.
+	if set := tenon.SetVal(str, b, a); set.Type() != tenon.Set(str) || !slices.Equal(set.Elements(), []tenon.Value{a, b}) {
 		t.Errorf("SetVal gave %v", set)
 	}
 	tuple := tenon.TupleVal(a, one, tenon.Bool(true))

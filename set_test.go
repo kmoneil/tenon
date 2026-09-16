@@ -224,3 +224,74 @@ func TestConformance_EQ043_MembershipOfASetHoldingUnknowns(t *testing.T) {
 		t.Errorf("membership of an error value is %v, want its diagnostics", bad)
 	}
 }
+
+func TestConformance_EQ044_SetIterationOrder(t *testing.T) {
+	conformance.Covers(t, "EQ-044")
+	num := tenon.NumberType()
+	n := func(i int64) tenon.Value { return tenon.NumberFromInt(i) }
+	// Known members come in canonical order, whatever order they were given.
+	given := []tenon.Value{n(3), n(1), n(2), tenon.NullVal(num), n(1)}
+	want := "set(number)[null, 1, 2, 3]"
+	for _, order := range [][]int{{0, 1, 2, 3, 4}, {4, 3, 2, 1, 0}, {2, 0, 4, 1, 3}, {3, 1, 4, 0, 2}} {
+		members := make([]tenon.Value, len(order))
+		for i, at := range order {
+			members[i] = given[at]
+		}
+		if got := tenon.SetVal(num, members...).String(); got != want {
+			t.Errorf("built in order %v the set reads %s, want %s", order, got, want)
+		}
+	}
+	// Members that are not known come after the known ones, and their place
+	// follows from the member rather than from where it was given: two sets
+	// with the same members are one value and iterate one way.
+	unknown := tenon.Unknown(num)
+	atLeastFive := tenon.Narrow(tenon.Unknown(num), tenon.NumberMin(n(5), true))
+	notNull := tenon.Narrow(tenon.Unknown(num), tenon.NotNull())
+	first := tenon.SetVal(num, unknown, n(2), atLeastFive, notNull, n(1))
+	for _, members := range [][]tenon.Value{
+		{n(1), n(2), unknown, atLeastFive, notNull},
+		{atLeastFive, notNull, unknown, n(2), n(1)},
+		{notNull, n(1), atLeastFive, n(2), unknown},
+	} {
+		again := tenon.SetVal(num, members...)
+		if !tenon.Identical(first, again) {
+			t.Fatalf("%v and %v are not one set to begin with", first, again)
+		}
+		if got, want := again.String(), first.String(); got != want {
+			t.Errorf("one set built two ways iterates %s and %s", want, got)
+		}
+	}
+	// The known members really do come first, and in canonical order.
+	elems := first.Elements()
+	if got, want := len(elems), 5; got != want {
+		t.Fatalf("the set has %d members, want %d", got, want)
+	}
+	for i, e := range elems {
+		if known := e.IsKnown(); known != (i < 2) {
+			t.Errorf("member %d of %v is known: %t", i, first, known)
+		}
+	}
+	if got := tenon.CanonicalCompare(elems[0], elems[1]); got >= 0 {
+		t.Errorf("the known members are not in canonical order: %d", got)
+	}
+	// Iterating again gives the same order, in this run and in the next.
+	for range 50 {
+		if !slicesEqualValues(first.Elements(), elems) {
+			t.Fatal("iterating the same set twice gave two orders")
+		}
+	}
+}
+
+// slicesEqualValues reports whether two slices hold the same values in the
+// same places.
+func slicesEqualValues(a, b []tenon.Value) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if !tenon.Identical(a[i], b[i]) {
+			return false
+		}
+	}
+	return true
+}

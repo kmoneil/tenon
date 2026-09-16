@@ -94,7 +94,7 @@ func sequenceValue(t Type, fn string, elems []Value) Value {
 	}
 	members := slices.Clone(elems)
 	if t.t.kind == KindSet {
-		members = distinctMembers(members)
+		members = orderMembers(distinctMembers(members))
 	}
 	return Value{&node{state: stateKnown, partial: anyPartial(members), typ: t, data: members}}
 }
@@ -173,6 +173,38 @@ func distinctMembers(members []Value) []Value {
 		kept = append(kept, m)
 	}
 	return kept
+}
+
+// orderMembers puts the members of a set in the order it iterates in, which is
+// the order it holds them in: the known ones in canonical order, and then the
+// ones that are not known, ordered by how they read.
+//
+// A member's place has to follow from the member, since two sets with the same
+// members are one value and one value iterates one way. Reading a value is a
+// rendering of everything it says about itself, which is the same from one run
+// to the next, and is all there is to go on for a member that is not known.
+// Where it tells two of them apart no further, which takes a capsule value
+// inside one of them whose type declares no order, they stay as they came.
+func orderMembers(members []Value) []Value {
+	reading := map[*node]string{}
+	for _, m := range members {
+		if !m.n.isKnown() {
+			reading[m.n] = m.String()
+		}
+	}
+	slices.SortStableFunc(members, func(a, b Value) int {
+		known, other := a.n.isKnown(), b.n.isKnown()
+		switch {
+		case known && other:
+			return compareValues(a, b)
+		case known:
+			return -1
+		case other:
+			return 1
+		}
+		return strings.Compare(reading[a.n], reading[b.n])
+	})
+	return members
 }
 
 // sameAsSome reports whether equality settles that m is one of these members.
