@@ -10,9 +10,14 @@
 # covered when a test that called conformance.Covers with its identifier
 # passed during the run.
 #
-# EQ and MK are not here yet: equality, sets and marks are still to come.
+# The EQ rules arrive one task at a time; MK is not here yet at all.
 
 BO
+EQ-001
+EQ-002
+EQ-003
+EQ-004
+EQ-005
 ER
 NU
 ST

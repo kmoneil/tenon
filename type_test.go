@@ -346,6 +346,7 @@ func TestConformance_TY001_EveryValueHasOneConcreteType(t *testing.T) {
 		"Narrow":         tenon.Narrow(tenon.Unknown(num), tenon.NotNull()),
 		"Resolve":        tenon.Resolve(tenon.Pending(tenon.Any()), str),
 		"And":            tenon.And(tr, tenon.Bool(false)),
+		"Equals":         tenon.Equals(one, one),
 		"Or":             tenon.Or(tr, tenon.Bool(false)),
 		"Not":            tenon.Not(tr),
 		"IsNull":         tenon.IsNull(one),
@@ -361,7 +362,8 @@ func TestConformance_TY001_EveryValueHasOneConcreteType(t *testing.T) {
 		"ListVal": tenon.List(str), "SetVal": tenon.Set(str), "MapVal": tenon.Map(str),
 		"TupleVal": tenon.Tuple(num, bl), "ObjectVal": tenon.Object(map[string]tenon.Type{"a": num}),
 		"Narrow": num, "Resolve": str, "And": bl, "Or": bl, "Not": bl, "IsNull": bl,
-		"Add": num, "Sub": num, "Mul": num, "Div": num, "Mod": num,
+		"Equals": bl,
+		"Add":    num, "Sub": num, "Mul": num, "Div": num, "Mod": num,
 	}
 	// A value with no type is the other half of the rule.
 	untyped := map[string]tenon.Value{

@@ -123,6 +123,36 @@ func (b bound) write(w *strings.Builder, lower bool) {
 	w.WriteString(b.v.String())
 }
 
+// holdsLower reports whether d is at or above b, which bounds nothing when it
+// is unset.
+func (b bound) holdsLower(d decimal.Dec) bool {
+	if !b.set {
+		return true
+	}
+	c := d.Cmp(b.v)
+	return c > 0 || (c == 0 && b.incl)
+}
+
+// holdsUpper reports whether d is at or below b, which bounds nothing when it
+// is unset.
+func (b bound) holdsUpper(d decimal.Dec) bool {
+	if !b.set {
+		return true
+	}
+	c := d.Cmp(b.v)
+	return c < 0 || (c == 0 && b.incl)
+}
+
+// crosses reports whether a lower bound lies above an upper bound, so that no
+// number meets both. Either bound being unset leaves them uncrossed.
+func crosses(lo, hi bound) bool {
+	if !lo.set || !hi.set {
+		return false
+	}
+	c := lo.v.Cmp(hi.v)
+	return c > 0 || (c == 0 && !(lo.incl && hi.incl))
+}
+
 // text renders b as the narrowing that produced it.
 func (b bound) text(lower bool) string {
 	var w strings.Builder
@@ -347,11 +377,9 @@ func (nw Narrowing) holdsFor(n *node) bool {
 	case narrowNull:
 		return false
 	case narrowNumberMin:
-		c := n.data.(decimal.Dec).Cmp(nw.num)
-		return c > 0 || (c == 0 && nw.incl)
+		return bound{v: nw.num, incl: nw.incl, set: true}.holdsLower(n.data.(decimal.Dec))
 	case narrowNumberMax:
-		c := n.data.(decimal.Dec).Cmp(nw.num)
-		return c < 0 || (c == 0 && nw.incl)
+		return bound{v: nw.num, incl: nw.incl, set: true}.holdsUpper(n.data.(decimal.Dec))
 	case narrowPrefix:
 		return strings.HasPrefix(n.data.(string), nw.str)
 	case narrowLengthMin:
@@ -623,13 +651,7 @@ func (r *rangeData) implyLength() {
 }
 
 // numberOK reports whether some number meets both bounds of r.
-func (r *rangeData) numberOK() bool {
-	if !r.lo.set || !r.hi.set {
-		return true
-	}
-	c := r.lo.v.Cmp(r.hi.v)
-	return c < 0 || (c == 0 && r.lo.incl && r.hi.incl)
-}
+func (r *rangeData) numberOK() bool { return !crosses(r.lo, r.hi) }
 
 // lengthOK reports whether some length meets both length bounds of r.
 func (r *rangeData) lengthOK() bool {
