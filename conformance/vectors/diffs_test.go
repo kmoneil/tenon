@@ -181,6 +181,7 @@ func TestConformance_DI037_DiffCorpus(t *testing.T) {
 		want.WriteByte('\n')
 	}
 	want.WriteString("  ]\n}\n")
+	conformance.Emit(t, "diffs.json", want.Bytes())
 
 	if os.Getenv("TENON_UPDATE_VECTORS") == "1" {
 		if err := os.WriteFile("diffs.json", want.Bytes(), 0o644); err != nil {

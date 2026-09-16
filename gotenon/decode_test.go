@@ -6,6 +6,7 @@ import (
 	"math/big"
 	"math/rand"
 	"reflect"
+	"strings"
 	"testing"
 
 	"tenon"
@@ -391,13 +392,16 @@ func sameGo(a, b reflect.Value) bool {
 func TestConformance_GO004_RoundTrip(t *testing.T) {
 	conformance.Covers(t, "GO-004")
 	r := rand.New(rand.NewSource(11))
-	for i := 0; i < 3000; i++ {
+	var emitted strings.Builder
+	defer func() { conformance.Emit(t, "encoded.txt", []byte(emitted.String())) }()
+	for range conformance.Iterations(t, 3000) {
 		var x roundTripped
 		genValue(r, reflect.ValueOf(&x).Elem(), 4)
 		v, err := gotenon.Encode(x)
 		if err != nil {
 			t.Fatalf("Encode(%+v) failed: %v", x, err)
 		}
+		emitted.WriteString(v.String() + "\n")
 		for _, p := range []tenon.Policy{safe, uns} {
 			got, err := gotenon.Decode[roundTripped](v, p)
 			if err != nil {

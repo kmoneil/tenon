@@ -293,7 +293,7 @@ func TestConformance_EQ003_EqualsWithAnOperandThatIsNotKnown(t *testing.T) {
 	// are walked, even beside a member that is not known. Objects and maps
 	// built from Go maps are walked in no fixed order, so each pair is built
 	// afresh many times, and the answer is false every time.
-	for i := range 200 {
+	for i := range conformance.Iterations(t, 200) {
 		for _, pair := range [][2]tenon.Value{
 			{
 				tenon.ObjectVal(map[string]tenon.Value{"a": tenon.Unknown(str), "b": tenon.String("z")}),

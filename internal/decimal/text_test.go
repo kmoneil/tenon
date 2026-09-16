@@ -54,7 +54,7 @@ func TestConformance_NU020_CanonicalText(t *testing.T) {
 
 	// Every canonical text has the shape its adjusted exponent calls for.
 	rng := rand.New(rand.NewPCG(20, 20))
-	for range 3000 {
+	for range conformance.Iterations(t, 3000) {
 		d := randomNumber(t, rng)
 		text := d.String()
 		adj := d.exp + int64(len(d.coefficientDigits())) - 1
@@ -105,7 +105,7 @@ func TestConformance_NU021_Parsing(t *testing.T) {
 	// numbers exactly when they match the grammar.
 	const alphabet = "0123456789.eE+-_, x"
 	rng := rand.New(rand.NewPCG(21, 21))
-	for range 20000 {
+	for range conformance.Iterations(t, 20000) {
 		var b strings.Builder
 		for range rng.IntN(9) {
 			b.WriteByte(alphabet[rng.IntN(len(alphabet))])
@@ -159,7 +159,7 @@ func TestConformance_NU023_ExactParsing(t *testing.T) {
 	// Canonical text parses back to the same number, and is its own
 	// canonical text.
 	rng := rand.New(rand.NewPCG(23, 23))
-	for range 3000 {
+	for range conformance.Iterations(t, 3000) {
 		d := randomNumber(t, rng)
 		if back := mustParse(t, d.String()); !back.Equal(d) || back.String() != d.String() {
 			t.Fatalf("%s parsed back as %s", d, back)

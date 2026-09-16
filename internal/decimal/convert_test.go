@@ -5,6 +5,8 @@ import (
 	"math/big"
 	"math/rand/v2"
 	"testing"
+
+	"tenon/conformance"
 )
 
 func TestRat(t *testing.T) {
@@ -12,7 +14,7 @@ func TestRat(t *testing.T) {
 		t.Errorf("zero as a rational is %s", r.RatString())
 	}
 	rng := rand.New(rand.NewPCG(26, 26))
-	for range 2000 {
+	for range conformance.Iterations(t, 2000) {
 		d := randomNumber(t, rng)
 		got, want := d.Rat(), toRat(d)
 		if got.Cmp(want) != 0 {

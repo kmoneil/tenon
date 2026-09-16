@@ -4,6 +4,8 @@ import (
 	"math/big"
 	"math/rand/v2"
 	"testing"
+
+	"tenon/conformance"
 )
 
 // TestLog10Pow2 holds the fixed-point floor of b times log10(2) to the exact
@@ -41,7 +43,7 @@ func TestDigitCountWithoutText(t *testing.T) {
 		cases = append(cases, new(big.Int).Sub(p, one), p, new(big.Int).Add(p, one))
 	}
 	rng := rand.New(rand.NewPCG(8, 8))
-	for range 2000 {
+	for range conformance.Iterations(t, 2000) {
 		bitLen := 1 + rng.IntN(4000)
 		buf := make([]byte, (bitLen+7)/8)
 		for i := range buf {

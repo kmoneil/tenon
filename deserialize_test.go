@@ -2,6 +2,7 @@ package tenon_test
 
 import (
 	"bytes"
+	"fmt"
 	"math/rand"
 	"runtime"
 	"strings"
@@ -194,12 +195,15 @@ func (g generator) top() tenon.Value {
 func TestConformance_SE003_RoundTrip(t *testing.T) {
 	conformance.Covers(t, "SE-003", "SE-002", "SE-043")
 	g := generator{rand.New(rand.NewSource(20260916))}
-	for i := 0; i < 10000; i++ {
+	var emitted bytes.Buffer
+	defer func() { conformance.Emit(t, "encodings.txt", emitted.Bytes()) }()
+	for range conformance.Iterations(t, 10000) {
 		v := g.top()
 		b, failure, ok := tenon.Serialize(v)
 		if !ok {
 			t.Fatalf("Serialize(%v) failed: %v", v, failure)
 		}
+		fmt.Fprintf(&emitted, "%x\n", b)
 		got, failure, ok := tenon.Deserialize(b, decoders)
 		switch {
 		case !ok:
@@ -337,7 +341,7 @@ func TestConformance_SE005_DecodingIsBounded(t *testing.T) {
 	// are, and never panic.
 	g := generator{rand.New(rand.NewSource(7))}
 	r := rand.New(rand.NewSource(8))
-	for i := 0; i < 400; i++ {
+	for range conformance.Iterations(t, 400) {
 		b, _, _ := tenon.Serialize(g.top())
 		for j := 0; j < 25; j++ {
 			m := mutate(r, b)

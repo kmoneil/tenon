@@ -427,6 +427,7 @@ func TestConformance_SE001_Vectors(t *testing.T) {
 	}
 
 	want := render(t, f)
+	conformance.Emit(t, "vectors.json", want)
 	if os.Getenv("TENON_UPDATE_VECTORS") == "1" {
 		if err := os.WriteFile("vectors.json", want, 0o644); err != nil {
 			t.Fatal(err)

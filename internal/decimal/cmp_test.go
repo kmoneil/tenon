@@ -7,6 +7,8 @@ import (
 	"math/big"
 	"math/rand/v2"
 	"testing"
+
+	"tenon/conformance"
 )
 
 // hashOf returns the hash under seed of the numbers written in turn.
@@ -39,7 +41,7 @@ func TestCmp(t *testing.T) {
 
 	// Random pairs, some of them equal, agree with big.Rat.
 	rng := rand.New(rand.NewPCG(24, 24))
-	for range 5000 {
+	for range conformance.Iterations(t, 5000) {
 		a, b := randomNumber(t, rng), randomNumber(t, rng)
 		if rng.IntN(5) == 0 {
 			b = mustParse(t, a.String())
@@ -78,7 +80,7 @@ func TestHashFollowsTheNumber(t *testing.T) {
 	// hash differently.
 	rng := rand.New(rand.NewPCG(25, 25))
 	seen := map[uint64]Dec{}
-	for range 10000 {
+	for range conformance.Iterations(t, 10000) {
 		a, b := randomNumber(t, rng), randomNumber(t, rng)
 		if back := get(get(a.Add(b)).Sub(b)); hashOf(seed, back) != hashOf(seed, a) {
 			t.Fatalf("%s + %s - %s hashes differently from %s", a, b, b, a)

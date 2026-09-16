@@ -150,7 +150,7 @@ func TestConformance_NU003_RepresentationNotObservable(t *testing.T) {
 func TestConformance_NU003_RandomConstructions(t *testing.T) {
 	conformance.Covers(t, "NU-003")
 	rng := rand.New(rand.NewPCG(3, 3))
-	for range 2000 {
+	for range conformance.Iterations(t, 2000) {
 		var digits strings.Builder
 		digits.WriteByte(byte('1' + rng.IntN(9)))
 		for range rng.IntN(60) {

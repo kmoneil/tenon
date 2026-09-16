@@ -145,7 +145,7 @@ func TestConformance_NU010_ExactArithmetic(t *testing.T) {
 	}
 
 	rng := rand.New(rand.NewPCG(10, 10))
-	for range 2000 {
+	for range conformance.Iterations(t, 2000) {
 		a, b := randomNumber(t, rng), randomNumber(t, rng)
 		ra, rb := toRat(a), toRat(b)
 		for _, op := range []struct {
@@ -197,7 +197,7 @@ func TestConformance_NU011_ExactDivision(t *testing.T) {
 
 	// A product divided by one of its factors gives back the other exactly.
 	rng := rand.New(rand.NewPCG(11, 11))
-	for range 1000 {
+	for range conformance.Iterations(t, 1000) {
 		a, b := randomNumber(t, rng), randomNumber(t, rng)
 		if back := get(get(a.Mul(b)).Div(b)); !back.Equal(a) {
 			t.Fatalf("(%s * %s) / %s = %s", a, b, b, back)
@@ -229,7 +229,7 @@ func TestConformance_NU012_RoundedDivision(t *testing.T) {
 
 	rng := rand.New(rand.NewPCG(12, 12))
 	checked := 0
-	for range 2000 {
+	for range conformance.Iterations(t, 2000) {
 		a, b := randomNumber(t, rng), randomNumber(t, rng)
 		exact := new(big.Rat).Quo(toRat(a), toRat(b))
 		got := get(a.Div(b))
@@ -411,7 +411,7 @@ func TestConformance_NU017_Remainder(t *testing.T) {
 	// dividend, and leaves a whole multiple of the divisor. Those properties
 	// determine it.
 	rng := rand.New(rand.NewPCG(17, 17))
-	for range 2000 {
+	for range conformance.Iterations(t, 2000) {
 		a, b := randomNumber(t, rng), randomNumber(t, rng)
 		r := get(a.Mod(b))
 		ra, rb, rr := toRat(a), toRat(b), toRat(r)

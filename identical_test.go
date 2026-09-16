@@ -168,7 +168,7 @@ func TestConformance_EQ012_IdenticalDoesNotDependOnMapOrder(t *testing.T) {
 	differs["f"] = tenon.Narrow(tenon.Unknown(num), tenon.NotNull())
 	// Objects and maps are built by walking a Go map, whose order changes from
 	// one walk to the next. The answer does not.
-	for i := range 500 {
+	for i := range conformance.Iterations(t, 500) {
 		if !tenon.Identical(tenon.ObjectVal(attrs), tenon.ObjectVal(attrs)) {
 			t.Fatalf("pass %d: two objects built from one map are not identical", i)
 		}

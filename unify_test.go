@@ -383,7 +383,7 @@ func TestConformance_CV041_UnificationIsOrderIndependent(t *testing.T) {
 	r := rand.New(rand.NewSource(20260916))
 	capsule := tenon.Capsule("cap", tenon.CapsuleOps[celsius]{})
 	succeeded, failed := 0, 0
-	for i := 0; i < 1500; i++ {
+	for i := range conformance.Iterations(t, 1500) {
 		base := randomConstraint(r, 3, capsule)
 		cs := []tenon.Constraint{base, related(r, base, capsule), related(r, base, capsule)}
 		if i%4 == 0 {

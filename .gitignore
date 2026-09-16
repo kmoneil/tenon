@@ -30,6 +30,11 @@ CLAUDE.md
 # IDE
 .vscode/
 
-# Local make settings and conformance coverage records (see Makefile)
+# Local make settings, conformance coverage records and the determinism
+# harness's outputs (see Makefile)
 local.mk
 .rulecov/
+.emit/
+
+# Commands built in the module root
+/rulecheck
