@@ -268,7 +268,7 @@ func TestConformance_SE040_Capsules(t *testing.T) {
 }
 
 func TestConformance_SE042_UnencodableMarks(t *testing.T) {
-	conformance.Covers(t, "SE-042", "SE-050", "SE-051")
+	conformance.Covers(t, "SE-042", "SE-050", "SE-051", "MK-009")
 	plain := stamp{id: "plain"}
 	wantSerializeFailure(t, "marks without encodings, located", obj(map[string]tenon.Value{
 		"a": tenon.WithMarks(n(1), plain),

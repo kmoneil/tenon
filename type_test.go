@@ -392,6 +392,7 @@ func TestConformance_TY001_EveryValueHasOneConcreteType(t *testing.T) {
 		"Unify":       unifyFailure(),
 		"Serialize":   serializeFailure(),
 		"Deserialize": deserializeFailure(),
+		"ProjectJSON": projectFailure(),
 	}
 	// Between them these are every function that makes a value, so one added
 	// later has to be accounted for here before this test passes again.
@@ -576,5 +577,11 @@ func serializeFailure() tenon.Value {
 // deserializeFailure returns the error value of input that is not a document.
 func deserializeFailure() tenon.Value {
 	_, failure, _ := tenon.Deserialize(nil, tenon.Decoders{})
+	return failure
+}
+
+// projectFailure returns the error value of a value that cannot be projected.
+func projectFailure() tenon.Value {
+	_, failure, _ := tenon.ProjectJSON(tenon.Unknown(tenon.NumberType()))
 	return failure
 }
