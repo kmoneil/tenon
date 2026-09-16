@@ -14,7 +14,10 @@ import (
 //
 // Where an operand is not known, the answer is known false if the two cannot
 // meet whatever they turn out to be, known true if both are the same known
-// value, and an unknown Bool otherwise. An error operand gives an error value.
+// value, and an unknown Bool otherwise. A pending operand counts for what it
+// already says: one known to be null never equals a value that cannot be
+// null, and one whose constraint rules out the other operand's type never
+// equals it. An error operand gives an error value.
 //
 // Equals compares what values are rather than how they are held: a number
 // written two ways is one number, and a string is compared in the normalized
@@ -46,21 +49,49 @@ var equalsOp = &op{
 // equality says whether a and b are the same value, and whether that is
 // settled. It answers only where the answer cannot change: what it leaves open
 // is reported as an unknown Bool.
+//
+// A pending operand has no type yet, but it may already say enough. Null
+// equals null and nothing else, so a value known to be null differs from one
+// that cannot be null whatever types the two turn out to have; and a
+// constraint that the other operand's type does not satisfy means the two
+// will never have one type.
 func equality(a, b *node) (eq, settled bool) {
+	if a.state == stateError || b.state == stateError {
+		// An error value has no type and no value, and settles nothing.
+		return false, false
+	}
+	nullA, nullB := knownNull(a), knownNull(b)
+	if nullA && !mayBeNull(b) || nullB && !mayBeNull(a) {
+		return false, true
+	}
 	ta, oka := settledType(a)
 	tb, okb := settledType(b)
 	switch {
-	case !oka || !okb:
-		// An operand that could still be of any type settles nothing.
+	case !oka && !okb:
+		// Neither type is settled, so either could still be the other's.
 		return false, false
+	case !oka:
+		return false, !Satisfies(a.data.(Constraint), tb)
+	case !okb:
+		return false, !Satisfies(b.data.(Constraint), ta)
 	case ta != tb:
 		return false, true
+	case nullA && nullB:
+		// Two nulls of one type are one value, whether or not either has
+		// resolved to it yet.
+		return true, true
 	case a.isKnown() && b.isKnown():
 		return sameValue(a, b), true
 	case disjoint(a, b):
 		return false, true
 	}
 	return false, false
+}
+
+// knownNull reports whether n is known to be null: the null value of a type,
+// or a pending value whose nullness fact says it will be one.
+func knownNull(n *node) bool {
+	return n.state == stateNull || n.state == statePending && n.null == nullOnly
 }
 
 // settledType returns the type that a value has or will have, and whether it
@@ -162,10 +193,12 @@ func disjoint(a, b *node) bool {
 		return !ra.holds(b)
 	case okb && a.isKnown():
 		return !rb.holds(a)
-	case oka || okb:
-		// One carries a range while the other is a container holding a member
-		// that is not known, or is pending. Nothing lines up to compare.
-		return false
+	case oka:
+		// The other is a container holding a member that is not known, or is
+		// pending, which has no members to compare.
+		return b.state == stateKnown && ra.excludesPartial(b)
+	case okb:
+		return a.state == stateKnown && rb.excludesPartial(a)
 	}
 	return membersDisjoint(a, b)
 }
@@ -226,6 +259,42 @@ func (r *rangeData) holds(n *node) bool {
 	return true
 }
 
+// excludesPartial reports whether r rules out the container n, which holds a
+// member that is not known: every length n could have lies outside the
+// lengths r allows, or r records a member that n provably does not hold. A
+// range says nothing about the members of a tuple or an object that a member
+// could contradict.
+func (r *rangeData) excludesPartial(n *node) bool {
+	var lo, hi int
+	switch n.typ.t.kind {
+	case KindList:
+		lo = len(n.data.([]Value))
+		hi = lo
+	case KindMap:
+		lo = len(n.data.([]mapEntry))
+		hi = lo
+	case KindSet:
+		lo, hi = setLengthBounds(n.data.([]Value))
+	default:
+		return false
+	}
+	if int64(hi) < r.lenLo || r.lenHi.set && int64(lo) > r.lenHi.n {
+		return true
+	}
+	return lacksSome(n, r.members)
+}
+
+// lacksSome reports whether some of these values is provably not a member of
+// the set.
+func lacksSome(set *node, values []Value) bool {
+	for _, v := range values {
+		if found, settled := membership(set, v); settled && !found {
+			return true
+		}
+	}
+	return false
+}
+
 // rangesDisjoint reports whether no value at all is in both ranges.
 func rangesDisjoint(a, b *rangeData) bool {
 	switch {
@@ -246,10 +315,9 @@ func rangesDisjoint(a, b *rangeData) bool {
 
 // membersDisjoint reports whether two containers cannot be the same value
 // because of what their members already say: a different number of them, or a
-// pair that cannot be equal.
-//
-// Sets are left out until the members that equal one another are dropped: two
-// sets of different lengths may still be the same set.
+// pair that cannot be equal. A set holding members that are not known has a
+// length that is a range, and two sets differ where those ranges cannot meet
+// or where a member of one is provably no member of the other.
 func membersDisjoint(a, b *node) bool {
 	if a.state != stateKnown || b.state != stateKnown {
 		return false // A pending value has no members to compare.
@@ -261,6 +329,11 @@ func membersDisjoint(a, b *node) bool {
 	case KindTuple, KindObject:
 		// The type fixes how many there are and what order they are in.
 		return anyDisjoint(a.data.([]Value), b.data.([]Value))
+	case KindSet:
+		x, y := a.data.([]Value), b.data.([]Value)
+		xlo, xhi := setLengthBounds(x)
+		ylo, yhi := setLengthBounds(y)
+		return xhi < ylo || yhi < xlo || lacksSome(b, x) || lacksSome(a, y)
 	case KindMap:
 		x, y := a.data.([]mapEntry), b.data.([]mapEntry)
 		if len(x) != len(y) {

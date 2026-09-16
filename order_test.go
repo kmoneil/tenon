@@ -90,6 +90,28 @@ func TestConformance_EQ020_Ordering(t *testing.T) {
 	if !mismatch.IsError() || mismatch.Diagnostics()[0].Code != tenon.CodeOperationWrongType {
 		t.Errorf("a pending string against a number gave %v, want a wrong-type error value", mismatch)
 	}
+	// The message says what each pending operand's type will be, rather than
+	// only that it is pending.
+	for _, tt := range []struct {
+		name string
+		got  tenon.Value
+		want string
+	}{
+		{
+			"a pending string against a number",
+			mismatch,
+			"the first operand of LessThan is pending with constraint exactly(string) and the second operand is a value of type number, and LessThan takes operands of one type",
+		},
+		{
+			"two pending operands of different types",
+			tenon.LessThan(tenon.Pending(tenon.Exactly(num)), tenon.Pending(tenon.Exactly(str))),
+			"the first operand of LessThan is pending with constraint exactly(number) and the second operand is pending with constraint exactly(string), and LessThan takes operands of one type",
+		},
+	} {
+		if ds := tt.got.Diagnostics(); len(ds) != 1 || ds[0].Message != tt.want {
+			t.Errorf("%s: the diagnostics are %v, want the message %q", tt.name, ds, tt.want)
+		}
+	}
 	// A constraint that rules nothing out leaves the answer open instead.
 	if got := tenon.LessThan(tenon.Pending(tenon.Any()), n("1")).String(); got != "unknown(bool, not null)" {
 		t.Errorf("a pending operand of no settled type gave %s, want an unknown Bool", got)

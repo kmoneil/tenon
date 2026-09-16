@@ -171,6 +171,7 @@ func TestConformance_EQ043_MembershipOfASetHoldingUnknowns(t *testing.T) {
 	atLeastFive := tenon.Narrow(tenon.Unknown(num), tenon.NumberMin(n(5), true))
 	known := tenon.SetVal(num, n(1), n(2))
 	open := tenon.SetVal(num, n(1), unknown)
+	untypedNull := tenon.Narrow(tenon.Pending(tenon.Any()), tenon.Null())
 	for _, tt := range []struct {
 		name string
 		got  tenon.Value
@@ -201,6 +202,21 @@ func TestConformance_EQ043_MembershipOfASetHoldingUnknowns(t *testing.T) {
 		{
 			"one that is provably no member",
 			tenon.Contains(known, atLeastFive),
+			"false",
+		},
+		// A null whose type is not known yet is a null all the same: it is no
+		// member of a set whose members cannot be null, and it could be one of a
+		// set holding null.
+		{"a null of no known type, in a set of values", tenon.Contains(known, untypedNull), "false"},
+		{"a null of no known type, in the empty set", tenon.Contains(tenon.SetVal(num), untypedNull), "false"},
+		{
+			"a null of no known type, in a set holding null",
+			tenon.Contains(tenon.SetVal(num, tenon.NullVal(num)), untypedNull),
+			"unknown(bool, not null)",
+		},
+		{
+			"a null of a type the set's members cannot have",
+			tenon.Contains(tenon.SetVal(num, tenon.NullVal(num)), tenon.Narrow(tenon.Pending(tenon.Exactly(str)), tenon.Null())),
 			"false",
 		},
 		// A set that is not there to look through leaves it open.

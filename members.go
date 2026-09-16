@@ -19,7 +19,9 @@ func Length(v Value) Value { return lengthOp.apply(v) }
 // Contains returns whether v is a member of a set, as a Bool value. It is known
 // true where a member is provably v, known false where every member is provably
 // not v, and unknown in between, which is what a set holding members that are
-// not known leaves.
+// not known leaves. Membership is equality, so v may be pending and still
+// settle it: a pending value known to be null is no member of a set whose
+// members cannot be null.
 //
 // An unknown set answers from its range: a member recorded there by the
 // Members narrowing settles containment as a held member would, once the

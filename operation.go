@@ -253,10 +253,20 @@ func (o *op) disagreement(args []Value, i, j int) Diagnostic {
 	n := len(args)
 	return Diagnostic{
 		Code: CodeOperationWrongType,
-		Message: operandName(i, n) + " of " + o.name + " is " + args[i].n.describe() +
-			" and " + operandName(j, n) + " is " + args[j].n.describe() +
+		Message: operandName(i, n) + " of " + o.name + " is " + operandText(args[i].n) +
+			" and " + operandName(j, n) + " is " + operandText(args[j].n) +
 			", and " + o.name + " takes operands of one type",
 	}
+}
+
+// operandText describes an operand for a diagnostic: a pending operand by the
+// constraint its type will satisfy, since that is what rules it out, and any
+// other operand as describe names it.
+func operandText(n *node) string {
+	if n.state == statePending {
+		return "pending with constraint " + n.data.(Constraint).String()
+	}
+	return n.describe()
 }
 
 // couldSatisfy reports whether some type satisfying c satisfies the operand
