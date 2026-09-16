@@ -2,10 +2,22 @@
 
 tenon is a Go library providing a dynamic type and value system for
 applications that must represent user-supplied data whose types are not known
-at compile time. Its primary intended use is as the value layer of a
-configuration language, but it is not tied to any particular syntax.
+at compile time. It is built as the value layer of a configuration language,
+and is not tied to any particular syntax. The same guarantees serve other
+programs that hold such values:
 
-tenon is under active development and not yet ready for use.
+- **Plan and diff engines** carry values that are not known yet through a
+  plan, each with a range of what it may turn out to be, and show what changes
+  without showing what is secret.
+- **Plugin protocols** pass values, unknown and marked ones included, across a
+  process boundary in one canonical encoding.
+- **Validation layers** check values against constraints, and report every
+  failure with a stable code and the path to it.
+
+Version 0.1.0 implements version 0.1.0 of the tenon specification and
+satisfies every one of its rules, as `CONFORMANCE.md` reports; `CHANGELOG.md`
+says what it holds. It is not yet published: it has no license, and its module
+path is not final.
 
 # Why this exists
 
