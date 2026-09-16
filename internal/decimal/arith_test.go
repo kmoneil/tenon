@@ -332,7 +332,24 @@ func TestConformance_NU016_ArithmeticRange(t *testing.T) {
 		{"1e-999999 / 10", func() (Dec, error) { return n("1e-999999").Div(n("10")) }},
 		{"1e999999 / 0.1", func() (Dec, error) { return n("1e999999").Div(n("0.1")) }},
 		{"1e-999999 / 3", func() (Dec, error) { return n("1e-999999").Div(n("3")) }},
-		{"1.5e-999999 mod 1e-999999", func() (Dec, error) { return n("1.5e-999999").Mod(n("1e-999999")) }},
+		// A result whose leading digit is in range can still have a last digit
+		// below the window.
+		{"2.5e-999998 * 0.1", func() (Dec, error) { return n("2.5e-999998").Mul(n("0.1")) }},
+		{"1e-999999 * 1.5", func() (Dec, error) { return n("1e-999999").Mul(n("1.5")) }},
+		{"3e-999999 / 2", func() (Dec, error) { return n("3e-999999").Div(n("2")) }},
+		// The same below the window with coefficients too long for an int64:
+		// an exact quotient, and one rounded to its precision.
+		{"1.23456789012345678901e-999979 / 4", func() (Dec, error) { return n("1.23456789012345678901e-999979").Div(n("4")) }},
+		{"1e-999950 / 3", func() (Dec, error) { return n("1e-999950").Div(n("3")) }},
+		// Squaring a number whose digits span the window doubles the span, so a
+		// few multiplications cannot grow a coefficient without limit.
+		{"(1 + 1e-999999) squared", func() (Dec, error) {
+			x, err := n("1").Add(n("1e-999999"))
+			if err != nil {
+				t.Fatalf("1 + 1e-999999: %v", err)
+			}
+			return x.Mul(x)
+		}},
 	} {
 		if d, err := tt.got(); err != ErrOutOfRange {
 			t.Errorf("%s = %v, %v; want ErrOutOfRange", tt.name, d, err)
@@ -349,6 +366,16 @@ func TestConformance_NU016_ArithmeticRange(t *testing.T) {
 		{get(n("5e-999999").Add(n("5e-999999"))), "1e-999998"},
 		{get(n("1e999999").Div(n("10"))), "1e999998"},
 		{get(n("2.5e-999998").Mod(n("1e-999998"))), "5e-999999"},
+		// Trailing zeros of a product raise its last digit back into the window.
+		{get(n("5e-999999").Mul(n("0.2"))), "1e-999999"},
+		{get(n("2.5e-999998").Mul(n("0.4"))), "1e-999998"},
+		// And with coefficients too long for an int64: 2^70 times 5^70 is
+		// 10^70, whose seventy zeros bring the last digit up into the window.
+		{get(n("1180591620717411303424e-999999").Mul(n("8470329472543003390683225006796419620513916015625e-70"))), "1e-999999"},
+		{get(n("3e-999998").Div(n("2"))), "1.5e-999998"},
+		// A remainder never has a digit below the lower of its operands' last
+		// digits, so it never leaves the window.
+		{get(n("1.2e-999998").Mod(n("7e-999999"))), "5e-999999"},
 	} {
 		if !tt.got.Equal(n(tt.want)) {
 			t.Errorf("got %s, want %s", tt.got, tt.want)

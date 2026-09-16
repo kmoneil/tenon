@@ -8,9 +8,12 @@ import (
 	"strings"
 )
 
-// MaxAdjustedExponent bounds the adjusted exponent of every non-zero number,
-// which lies in [-MaxAdjustedExponent, MaxAdjustedExponent]. The adjusted
-// exponent of a number is the power of ten of its leading digit.
+// MaxAdjustedExponent bounds the places of the digits of every non-zero
+// number, which lie in a window from 10^MaxAdjustedExponent down to
+// 10^-MaxAdjustedExponent: the leading digit no higher, which bounds the
+// adjusted exponent, the power of ten of that digit, and the last digit no
+// lower. A coefficient therefore has fewer digits than twice
+// MaxAdjustedExponent, however a number was made.
 const MaxAdjustedExponent = 999999
 
 // Error is an error reported by this package. Its values are constants, which
@@ -20,7 +23,7 @@ type Error uint8
 const (
 	// ErrSyntax reports text that is not the text of a number.
 	ErrSyntax Error = iota + 1
-	// ErrOutOfRange reports a number whose adjusted exponent is out of range.
+	// ErrOutOfRange reports a number with a digit outside the window.
 	ErrOutOfRange
 	// ErrDivideByZero reports a division by zero.
 	ErrDivideByZero
@@ -49,8 +52,8 @@ func (e Error) Error() string {
 //   - the coefficient has no trailing zero digit, and zero has exponent 0;
 //   - the coefficient is held in small when it fits in an int64, and in big
 //     only when it does not;
-//   - the adjusted exponent of a non-zero number is within
-//     MaxAdjustedExponent.
+//   - every digit of a non-zero number lies within the window that
+//     MaxAdjustedExponent bounds.
 //
 // The zero Dec is the number 0. A Dec is an immutable value.
 type Dec struct {
@@ -94,12 +97,23 @@ func fromBig(c *big.Int, exp int64) (Dec, error) {
 	if c.IsInt64() {
 		return fromSmall(c.Int64(), exp)
 	}
-	// A coefficient of b bits has more than (b-1)·1233/4096 digits, because
-	// 1233/4096 is less than log10(2). Stripping trailing zeros leaves the
-	// adjusted exponent unchanged, so this bound rejects a hopelessly large
-	// number before the costly conversion to text.
-	if lower := int64(c.BitLen()-1)*1233>>12 + 1; exp+lower-1 > MaxAdjustedExponent {
+	// The bit length of c brackets its digit count. Stripping trailing zeros
+	// leaves the leading digit where it is, so the bracket rejects a number
+	// whose leading digit is above the window, or whose every digit is below
+	// it, before anything costly.
+	lo, hi := digitBounds(c)
+	if exp+lo-1 > MaxAdjustedExponent || exp+hi-1 < -MaxAdjustedExponent {
 		return Dec{}, ErrOutOfRange
+	}
+	// A coefficient that is odd, or no multiple of ten, has no trailing zero to
+	// strip, so exp is already its last digit's place. Most coefficients are
+	// like that, and they need no conversion to text; the digits are counted
+	// only when the leading digit could be at the top edge of the window.
+	if !multipleOfTen(c) {
+		if exp < -MaxAdjustedExponent || exp+hi-1 > MaxAdjustedExponent && exp+digitCount(c)-1 > MaxAdjustedExponent {
+			return Dec{}, ErrOutOfRange
+		}
+		return Dec{big: c, exp: exp}, nil
 	}
 	digits := c.Text(10)
 	if c.Sign() < 0 {
@@ -120,11 +134,12 @@ func fromBig(c *big.Int, exp int64) (Dec, error) {
 	return Dec{big: c, exp: exp}, nil
 }
 
-// inRange reports whether a non-zero number with the given exponent and count
-// of coefficient digits has an adjusted exponent within range.
+// inRange reports whether a non-zero number whose coefficient has the given
+// count of digits, and no trailing zero, and whose exponent is exp, has every
+// digit within the window: the last digit at the 10^exp place, and the leading
+// digit at the place of the adjusted exponent.
 func inRange(exp, digits int64) bool {
-	adj := exp + digits - 1
-	return -MaxAdjustedExponent <= adj && adj <= MaxAdjustedExponent
+	return exp >= -MaxAdjustedExponent && exp+digits-1 <= MaxAdjustedExponent
 }
 
 // digits64 returns the number of decimal digits of c, which is not zero.

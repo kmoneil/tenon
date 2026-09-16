@@ -72,6 +72,16 @@ func (d Dec) Mul(e Dec) (Dec, error) {
 			return fromSmall(p, d.exp+e.exp)
 		}
 	}
+	// The product's last digit is at the sum of its operands' last places,
+	// raised only by trailing zeros, each of which takes a factor of two that
+	// one operand or the other brings; its leading digit is at least the sum
+	// of theirs. Either bound can refuse a product outside the window before
+	// computing it, which keeps a chain of multiplications cheap to refuse.
+	dlo, _ := d.adjustedBounds()
+	elo, _ := e.adjustedBounds()
+	if d.exp+e.exp+d.twos()+e.twos() < -MaxAdjustedExponent || dlo+elo > MaxAdjustedExponent {
+		return Dec{}, ErrOutOfRange
+	}
 	x := d.scaledCoefficient(0)
 	return fromBig(x.Mul(x, e.scaledCoefficient(0)), d.exp+e.exp)
 }

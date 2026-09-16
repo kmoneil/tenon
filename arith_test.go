@@ -36,6 +36,10 @@ func TestArithmeticAgreesWithTheDecimalItWraps(t *testing.T) {
 func TestArithmeticThatHasNoAnswer(t *testing.T) {
 	one, zero := tenon.NumberFromInt(1), tenon.NumberFromInt(0)
 	huge := tenon.NumberFromText("1e999999")
+	wide := tenon.Add(one, tenon.NumberFromText("1e-999999"))
+	if !wide.IsKnown() {
+		t.Fatalf("1 + 1e-999999 gave %v, want a known number", wide)
+	}
 	for _, tt := range []struct {
 		name string
 		got  tenon.Value
@@ -44,6 +48,11 @@ func TestArithmeticThatHasNoAnswer(t *testing.T) {
 		{"divide by zero", tenon.Div(one, zero), tenon.CodeNumberDivideByZero},
 		{"modulo by zero", tenon.Mod(one, zero), tenon.CodeNumberModuloByZero},
 		{"out of range", tenon.Mul(huge, huge), tenon.CodeNumberOutOfRange},
+		// A number whose digits span the whole window squares to one whose
+		// digits cannot fit it, so repeated multiplication cannot grow a
+		// number's digits without bound.
+		{"a wide number squared", tenon.Mul(wide, wide), tenon.CodeNumberOutOfRange},
+		{"a digit below the window", tenon.Mul(tenon.NumberFromText("1e-999999"), tenon.NumberFromText("1.5")), tenon.CodeNumberOutOfRange},
 		{"a null operand", tenon.Add(tenon.NullVal(tenon.NumberType()), one), tenon.CodeOperationNullOperand},
 	} {
 		if !tt.got.IsError() {

@@ -17,12 +17,20 @@ func (d Dec) Cmp(e Dec) int {
 		return 0
 	}
 	// Both numbers have the same sign. A larger adjusted exponent means a
-	// larger magnitude.
-	if da, ea := d.adjusted(), e.adjusted(); da != ea {
-		return cmp.Compare(da, ea) * ds
+	// larger magnitude, and bounds on the adjusted exponents, which the bit
+	// lengths of the coefficients give without counting a digit, settle most
+	// comparisons.
+	dlo, dhi := d.adjustedBounds()
+	elo, ehi := e.adjustedBounds()
+	switch {
+	case dhi < elo:
+		return -ds
+	case ehi < dlo:
+		return ds
 	}
-	// With equal adjusted exponents, the exponents differ by less than the
-	// longer coefficient's digit count, so aligning the coefficients is cheap.
+	// Otherwise the adjusted exponents are within two of each other, so the
+	// exponents differ by little more than the longer coefficient's digit
+	// count, and aligning the coefficients is cheap.
 	exp := min(d.exp, e.exp)
 	if d.big == nil && e.big == nil {
 		if x, ok := scaleSmall(d.small, d.exp-exp); ok {
@@ -34,12 +42,17 @@ func (d Dec) Cmp(e Dec) int {
 	return d.scaledCoefficient(d.exp - exp).Cmp(e.scaledCoefficient(e.exp - exp))
 }
 
-// adjusted returns the adjusted exponent of d, which must not be zero.
-func (d Dec) adjusted() int64 {
+// adjustedBounds returns the least and the greatest adjusted exponent that d,
+// which must not be zero, can have for the bit length of its coefficient: the
+// adjusted exponent itself for a coefficient that fits in an int64, and two
+// neighbours at most for a big one.
+func (d Dec) adjustedBounds() (lo, hi int64) {
 	if d.big == nil {
-		return d.exp + digits64(d.small) - 1
+		adj := d.exp + digits64(d.small) - 1
+		return adj, adj
 	}
-	return d.exp + int64(len(d.coefficientDigits())) - 1
+	dlo, dhi := digitBounds(d.big)
+	return d.exp + dlo - 1, d.exp + dhi - 1
 }
 
 // WriteHash writes d to h. It writes the canonical form, which every

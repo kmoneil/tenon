@@ -196,9 +196,12 @@ func TestConformance_NU003_RandomConstructions(t *testing.T) {
 
 func TestConformance_NU016_MagnitudeLimit(t *testing.T) {
 	conformance.Covers(t, "NU-016")
+	// Every digit of a number lies in the window from the 10^999999 place down
+	// to the 10^-999999 place: the leading digit no higher, and the last one
+	// no lower.
 	for _, s := range []string{
 		"1e999999", "-1e999999", "9.999999e999999", "123e999997", "0.0001e1000003",
-		"1e-999999", "-9.5e-999999",
+		"1e-999999", "-9e-999999", "1.2e-999998", "-12.34e-999997",
 		"0e99999999999999999999999", "-0.000e-99999999999999999999",
 	} {
 		checkCanonical(t, mustParse(t, s))
@@ -206,6 +209,7 @@ func TestConformance_NU016_MagnitudeLimit(t *testing.T) {
 	for _, s := range []string{
 		"1e1000000", "-1e1000000", "10e999999", "123e999998",
 		"1e-1000000", "0.1e-999999",
+		"-9.5e-999999", "1.2e-999999", "12.34e-999998", "0.000123e-999995",
 		"1e99999999999999999999999999", "1e-99999999999999999999999999",
 	} {
 		if d, err := Parse(s); err != ErrOutOfRange {
