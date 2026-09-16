@@ -1,0 +1,2 @@
+go test fuzz v1
+string("½½½ý¨½½ý½½½ý½")

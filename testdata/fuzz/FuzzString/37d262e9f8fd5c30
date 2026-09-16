@@ -1,0 +1,2 @@
+go test fuzz v1
+string("Ҡ⠣Ҡ⠠⠣\u2d75⢹ⵠ⢹⠵⢹ⵠ⠨")

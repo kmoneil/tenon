@@ -1,0 +1,2 @@
+go test fuzz v1
+string("졀ᅟ타졡셡졀ᅡ졟ᅡ셡졀ᅡ셡졀ᅡ")

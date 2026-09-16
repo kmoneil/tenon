@@ -1,0 +1,2 @@
+go test fuzz v1
+string("\x1c\x1c\x1c\x1c\x1c\x1c\b\f\f\f\f\f\f\f\f\f\f\f\f\f\f\f\f\f\f\f\f\f\f\f\f\f\f")
