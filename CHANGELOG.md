@@ -4,7 +4,8 @@
 
 The first release: a reference implementation of version 0.1.0 of the tenon
 specification, satisfying all 192 of its normative rules, as
-`CONFORMANCE.md` reports.
+`CONFORMANCE.md` reports. The module is `github.com/kmoneil/tenon`, licensed
+under the Apache License, Version 2.0.
 
 ### Types and values
 

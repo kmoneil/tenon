@@ -16,8 +16,9 @@ programs that hold such values:
 
 Version 0.1.0 implements version 0.1.0 of the tenon specification and
 satisfies every one of its rules, as `CONFORMANCE.md` reports; `CHANGELOG.md`
-says what it holds. It is not yet published: it has no license, and its module
-path is not final.
+says what it holds.
+
+    go get github.com/kmoneil/tenon@v0.1.0
 
 # Why this exists
 
@@ -41,3 +42,7 @@ The other targets:
 | `make fuzz` | Runs each fuzz target (the number parser, string construction, and decoding) for `FUZZTIME`, 30 minutes by default. An input that fails is saved under the package's `testdata/fuzz`, where it runs with the tests from then on. |
 | `make report` | Runs the tests, recording the rules they cover, and regenerates `CONFORMANCE.md`. |
 | `make rules`, `make codes` | Regenerate `conformance/rules.json` and the specification's appendix of diagnostic codes from the specification that `TENON_SPEC` names. |
+
+# License
+
+tenon is licensed under the Apache License, Version 2.0. See `LICENSE`.
