@@ -1,6 +1,7 @@
 package tenon_test
 
 import (
+	"slices"
 	"testing"
 
 	"tenon"
@@ -180,5 +181,131 @@ func TestConformance_MK003_ResultMarksAreTheUnion(t *testing.T) {
 	un := tenon.Equals(tenon.WithMarks(tenon.Unknown(num), a), tenon.NumberFromInt(3))
 	if un.IsKnown() || !tenon.HasMark(un, a) {
 		t.Errorf("the unknown result %v does not carry the operand's mark", un)
+	}
+}
+
+func TestConformance_MK004_EqualsIgnoresMarksIdenticalDoesNot(t *testing.T) {
+	conformance.Covers(t, "MK-004")
+	num := tenon.NumberType()
+	m1, m2 := stamp{id: "a"}, stamp{id: "b"}
+	one := tenon.NumberFromInt(1)
+	mOne := tenon.WithMarks(one, m1)
+
+	// Equals compares values, not what is attached to them: a marked value,
+	// its unmarked twin, and a differently marked one are all one value, at
+	// the top level and inside a container.
+	for name, pair := range map[string][2]tenon.Value{
+		"marked and unmarked":  {mOne, one},
+		"differently marked":   {mOne, tenon.WithMarks(one, m2)},
+		"marked list members":  {tenon.ListVal(num, mOne), tenon.ListVal(num, one)},
+		"marked null and null": {tenon.WithMarks(tenon.NullVal(num), m1), tenon.NullVal(num)},
+		"marked error operand": {tenon.WithMarks(tenon.Bool(true), m1), tenon.Bool(true)},
+	} {
+		if got := tenon.Equals(pair[0], pair[1]).String(); got != "true" {
+			t.Errorf("%s: Equals is %s, want true", name, got)
+		}
+	}
+
+	// Identical holds everything the value system holds, marks included.
+	if tenon.Identical(mOne, one) {
+		t.Error("a marked value is identical to its unmarked twin")
+	}
+	if tenon.Identical(mOne, tenon.WithMarks(one, m2)) {
+		t.Error("values carrying different marks are identical")
+	}
+	if !tenon.Identical(mOne, tenon.WithMarks(one, m1)) {
+		t.Error("values carrying one mark are not identical")
+	}
+	// The marks are a set: attachment order is not part of identity.
+	if !tenon.Identical(tenon.WithMarks(one, m1, m2), tenon.WithMarks(tenon.WithMarks(one, m2), m1)) {
+		t.Error("attachment order is part of identity, but a set has no order")
+	}
+	// A mark deep inside a container is part of the container's identity.
+	if tenon.Identical(tenon.ListVal(num, mOne), tenon.ListVal(num, one)) {
+		t.Error("a list holding a marked member is identical to one holding it unmarked")
+	}
+	// Error values carry marks too, and Identical sees them.
+	e := tenon.ErrorVal(tenon.Diagnostic{Code: "app.x", Message: "m"})
+	if tenon.Identical(tenon.WithMarks(e, m1), e) {
+		t.Error("a marked error value is identical to its unmarked twin")
+	}
+}
+
+func TestConformance_MK005_MarksDoNotAffectResults(t *testing.T) {
+	conformance.Covers(t, "MK-005")
+	num, bl, str := tenon.NumberType(), tenon.BoolType(), tenon.StringType()
+	m := stamp{id: "m"}
+	one, two, zero := tenon.NumberFromInt(1), tenon.NumberFromInt(2), tenon.NumberFromInt(0)
+	tr, fa := tenon.Bool(true), tenon.Bool(false)
+	unNum, unBool := tenon.Unknown(num), tenon.Unknown(bl)
+	nullNum, nullBool := tenon.NullVal(num), tenon.NullVal(bl)
+	errV := tenon.ErrorVal(tenon.Diagnostic{Code: "app.x", Message: "m"})
+	pendNum := tenon.Pending(tenon.Exactly(num))
+	list := tenon.ListVal(str, tenon.String("a"), tenon.String("b"))
+	set1 := tenon.SetVal(num, one)
+	setPartial := tenon.SetVal(num, unNum)
+	unSet := tenon.Narrow(tenon.Unknown(tenon.Set(num)), tenon.NotNull(), tenon.Members(one))
+	nullSet := tenon.NullVal(tenon.Set(num))
+
+	un := func(f func(tenon.Value) tenon.Value) func([]tenon.Value) tenon.Value {
+		return func(vs []tenon.Value) tenon.Value { return f(vs[0]) }
+	}
+	bin := func(f func(a, b tenon.Value) tenon.Value) func([]tenon.Value) tenon.Value {
+		return func(vs []tenon.Value) tenon.Value { return f(vs[0], vs[1]) }
+	}
+
+	// Every operation, over operands in every state it accepts: the result
+	// with marked operands, unmarked, is the result without them. The
+	// operand matrix will assert this over the operation registry; until it
+	// exists this table is the registry, and a new operation belongs here.
+	for _, row := range []struct {
+		name string
+		call func([]tenon.Value) tenon.Value
+		args [][]tenon.Value
+	}{
+		{"And", bin(tenon.And), [][]tenon.Value{{tr, fa}, {fa, unBool}, {tr, nullBool}, {errV, tr}}},
+		{"Or", bin(tenon.Or), [][]tenon.Value{{tr, fa}, {fa, unBool}}},
+		{"Not", un(tenon.Not), [][]tenon.Value{{tr}, {unBool}, {nullBool}}},
+		{"IsNull", un(tenon.IsNull), [][]tenon.Value{{one}, {nullNum}, {unNum}, {pendNum}}},
+		{"Equals", bin(tenon.Equals), [][]tenon.Value{{one, one}, {one, two}, {one, unNum}, {nullNum, one}, {errV, one}, {pendNum, one}}},
+		{"LessThan", bin(tenon.LessThan), [][]tenon.Value{{one, two}, {one, unNum}, {nullNum, one}}},
+		{"Add", bin(tenon.Add), [][]tenon.Value{{one, two}, {one, unNum}, {one, nullNum}, {errV, two}}},
+		{"Sub", bin(tenon.Sub), [][]tenon.Value{{one, two}, {one, unNum}}},
+		{"Mul", bin(tenon.Mul), [][]tenon.Value{{one, two}}},
+		{"Div", bin(tenon.Div), [][]tenon.Value{{one, two}, {one, zero}}},
+		{"Mod", bin(tenon.Mod), [][]tenon.Value{{one, two}}},
+		{"Length", un(tenon.Length), [][]tenon.Value{{list}, {setPartial}, {unSet}, {tenon.NullVal(tenon.List(str))}}},
+		{"Contains", bin(tenon.Contains), [][]tenon.Value{{set1, one}, {set1, two}, {unSet, one}, {nullSet, one}}},
+	} {
+		for _, args := range row.args {
+			want := row.call(args)
+			// Each operand marked alone, then every operand marked.
+			for which := -1; which < len(args); which++ {
+				marked := slices.Clone(args)
+				for i := range marked {
+					if which < 0 || which == i {
+						marked[i] = tenon.WithMarks(marked[i], m)
+					}
+				}
+				got, _ := tenon.Unmark(row.call(marked))
+				if !tenon.Identical(got, want) {
+					t.Errorf("%s over %v with operand %d marked: %v, want %v",
+						row.name, args, which, got, want)
+				}
+			}
+		}
+	}
+
+	// Narrowing and resolving are as transparent: the marks carry, the
+	// value does not change.
+	nWant := tenon.Narrow(unNum, tenon.NotNull(), tenon.NumberMin(one, true))
+	nGot, _ := tenon.Unmark(tenon.Narrow(tenon.WithMarks(unNum, m), tenon.NotNull(), tenon.NumberMin(one, true)))
+	if !tenon.Identical(nGot, nWant) {
+		t.Errorf("narrowing a marked value produced %v, want %v", nGot, nWant)
+	}
+	rWant := tenon.Resolve(pendNum, num)
+	rGot, _ := tenon.Unmark(tenon.Resolve(tenon.WithMarks(pendNum, m), num))
+	if !tenon.Identical(rGot, rWant) {
+		t.Errorf("resolving a marked value produced %v, want %v", rGot, rWant)
 	}
 }

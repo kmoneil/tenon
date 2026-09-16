@@ -4,10 +4,11 @@ import "slices"
 
 // Identical reports whether a and b are the same value in every respect the
 // value system holds: the same state, the same type, the same range, the same
-// diagnostics. It is the host language's comparison, not the language's own:
-// it answers with a plain bool, never unknown and never an error, and two
-// unknown values with the same range are identical though comparing them with
-// Equals cannot say.
+// diagnostics, the same marks. It is the host language's comparison, not the
+// language's own: it answers with a plain bool, never unknown and never an
+// error, and two unknown values with the same range are identical though
+// comparing them with Equals cannot say. Equals ignores marks; Identical
+// does not, so a marked value and its unmarked twin are two things here.
 //
 // It compares values rather than representations, so a number written two ways
 // is identical to itself, a string is compared in the normalized form every
@@ -21,7 +22,7 @@ func Identical(a, b Value) bool {
 		// One node is the same value as itself, which saves the walk.
 		return true
 	}
-	if na.state != nb.state {
+	if na.state != nb.state || !sameMarks(na, nb) {
 		return false
 	}
 	switch na.state {
@@ -64,6 +65,21 @@ func identicalContent(a, b *node) bool {
 	// A scalar and a capsule are the same value or they are not, and for a
 	// capsule that is what the capsule type says it is.
 	return sameValue(a, b)
+}
+
+// sameMarks reports whether two values carry the same marks. Marks are a
+// set: what is there matters, the order it was attached in does not.
+func sameMarks(a, b *node) bool {
+	x, y := a.markList(), b.markList()
+	if len(x) != len(y) {
+		return false
+	}
+	for _, m := range x {
+		if !slices.Contains(y, m) {
+			return false
+		}
+	}
+	return true
 }
 
 // equal reports whether two constraints are the same constraint. Constraints
