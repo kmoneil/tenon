@@ -387,10 +387,11 @@ func TestConformance_TY001_EveryValueHasOneConcreteType(t *testing.T) {
 	}
 	// A value with no type is the other half of the rule.
 	untyped := map[string]tenon.Value{
-		"ErrorVal":  tenon.ErrorVal(tenon.Diagnostic{Code: "app.failed", Message: "it failed"}),
-		"Pending":   tenon.Pending(tenon.Any()),
-		"Unify":     unifyFailure(),
-		"Serialize": serializeFailure(),
+		"ErrorVal":    tenon.ErrorVal(tenon.Diagnostic{Code: "app.failed", Message: "it failed"}),
+		"Pending":     tenon.Pending(tenon.Any()),
+		"Unify":       unifyFailure(),
+		"Serialize":   serializeFailure(),
+		"Deserialize": deserializeFailure(),
 	}
 	// Between them these are every function that makes a value, so one added
 	// later has to be accounted for here before this test passes again.
@@ -569,5 +570,11 @@ func unifyFailure() tenon.Value {
 // serialized.
 func serializeFailure() tenon.Value {
 	_, failure, _ := tenon.Serialize(tenon.WithMarks(tenon.Bool(true), stamp{id: "plain"}))
+	return failure
+}
+
+// deserializeFailure returns the error value of input that is not a document.
+func deserializeFailure() tenon.Value {
+	_, failure, _ := tenon.Deserialize(nil, tenon.Decoders{})
 	return failure
 }

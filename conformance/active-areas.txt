@@ -18,7 +18,10 @@ MK
 defer MK-009 marks are serialized in M10, which specifies the encoding a mark declares
 NU
 SE-001
+SE-002
+SE-003
 SE-004
+SE-005
 SE-010
 SE-011
 SE-020
@@ -31,6 +34,7 @@ SE-034
 SE-040
 SE-041
 SE-042
+SE-043
 SE-050
 SE-051
 ST
