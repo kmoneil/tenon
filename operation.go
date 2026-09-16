@@ -70,6 +70,35 @@ type op struct {
 	// registered is set by register, and apply refuses an operation without
 	// it, so that no operation escapes the operand matrix.
 	registered bool
+	// bind is set on an operation that takes parameters besides its operands,
+	// as a conversion takes the constraint it converts to and a policy. The
+	// registered operation is a template, which apply refuses; with makes a
+	// copy of it for one choice of parameters, and bind installs in that copy
+	// whatever depends on them.
+	bind func(o *op, param opParam)
+	// samples are the choices of parameters that the operand matrix checks a
+	// template with.
+	samples []opParam
+	// param is the choice of parameters a copy made by with was bound to.
+	param opParam
+}
+
+// opParam is a choice of parameters for an operation that takes them.
+type opParam interface {
+	// String describes the choice for messages, as in (list_of(any), safe).
+	String() string
+}
+
+// with returns the template o bound to one choice of parameters.
+func (o *op) with(param opParam) *op {
+	if o.bind == nil {
+		internalPanic("%s takes no parameters", o.name)
+	}
+	b := *o
+	b.bind, b.samples, b.param = nil, nil, param
+	b.operands = slices.Clone(o.operands)
+	o.bind(&b, param)
+	return &b
 }
 
 // operations holds every registered operation, in the order they were
@@ -99,6 +128,9 @@ func fixedResult(t Type) func([]Type) Constraint {
 func (o *op) apply(args ...Value) Value {
 	if !o.registered {
 		internalPanic("%s is not registered, so the operand matrix does not check it", o.name)
+	}
+	if o.bind != nil {
+		internalPanic("%s takes parameters, and was applied without them", o.name)
 	}
 	r := o.applyValue(args)
 	if ms := o.propagated(args); len(ms) != 0 {

@@ -370,6 +370,7 @@ func TestConformance_TY001_EveryValueHasOneConcreteType(t *testing.T) {
 		"Mul":            tenon.Mul(one, one),
 		"Div":            tenon.Div(one, one),
 		"Mod":            tenon.Mod(one, one),
+		"Convert":        tenon.Convert(one, tenon.Exactly(str), tenon.Unsafe),
 		"WithMarks":      tenon.WithMarks(one, stamp{id: "m"}),
 		"Unmark":         unmarked(tenon.WithMarks(one, stamp{id: "m"})),
 		"UnmarkDeep":     unmarkedDeep(tenon.ListVal(num, tenon.WithMarks(one, stamp{id: "m"}))),
@@ -381,7 +382,7 @@ func TestConformance_TY001_EveryValueHasOneConcreteType(t *testing.T) {
 		"TupleVal": tenon.Tuple(num, bl), "ObjectVal": tenon.Object(map[string]tenon.Type{"a": num}),
 		"Narrow": num, "Resolve": str, "And": bl, "Or": bl, "Not": bl, "IsNull": bl,
 		"Equals": bl, "LessThan": bl, "Length": num, "Contains": bl,
-		"Add": num, "Sub": num, "Mul": num, "Div": num, "Mod": num,
+		"Add": num, "Sub": num, "Mul": num, "Div": num, "Mod": num, "Convert": str,
 		"WithMarks": num, "Unmark": num, "UnmarkDeep": tenon.List(num),
 	}
 	// A value with no type is the other half of the rule.
@@ -457,6 +458,12 @@ func TestConformance_TY002_NoWildcardInATypeAtAnyDepth(t *testing.T) {
 func TestConformance_TY003_AcceptanceIsExpressedAsConstraints(t *testing.T) {
 	conformance.Covers(t, "TY-003")
 	str := tenon.StringType()
+	// A conversion target is a constraint: a value converts to whatever type
+	// the constraint accepts, and an optional attribute may stay absent.
+	target := tenon.ObjectWith(map[string]tenon.Field{"tags": tenon.Optional(tenon.ListOf(tenon.Exactly(str)))}, true)
+	if got := tenon.Convert(tenon.ObjectVal(nil), target, tenon.Safe); !tenon.Identical(got, tenon.ObjectVal(nil)) {
+		t.Errorf("converting an empty object to %v gave %v", target, got)
+	}
 	// A schema is a constraint, which is what lets it accept a set of types
 	// rather than naming one, and an optional attribute be expressible at all.
 	schema := tenon.ObjectWith(map[string]tenon.Field{
@@ -477,10 +484,14 @@ func TestConformance_TY003_AcceptanceIsExpressedAsConstraints(t *testing.T) {
 		}
 	}
 	// What an operation accepts is a parameter declaration, so every operation
-	// states it as a constraint. Conversion targets are the third surface the
-	// rule names, and arrive with conversion itself.
+	// states it as a constraint. An operation that takes parameters, as a
+	// conversion does, binds what depends on them for each choice instead.
 	for _, lit := range operationLiterals(t) {
-		for _, field := range []string{"name", "operands", "result", "known"} {
+		fields := []string{"name", "operands", "result", "known"}
+		if lit.keys["bind"] {
+			fields = []string{"name", "operands", "bind", "samples"}
+		}
+		for _, field := range fields {
 			if !lit.keys[field] {
 				t.Errorf("%s: an operation literal does not set %s", lit.where, field)
 			}

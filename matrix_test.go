@@ -14,7 +14,7 @@ import (
 func registered() []matrix.Operation {
 	var ops []matrix.Operation
 	for _, r := range tenon.RegisteredOperations() {
-		op := matrix.Operation{Name: r.Name, Agree: r.Agree, Fixed: r.Fixed, Call: r.Call}
+		op := matrix.Operation{Name: r.Name + r.Params, Agree: r.Agree, Fixed: r.Fixed, Call: r.Call}
 		for i, c := range r.Constraints {
 			op.Operands = append(op.Operands, matrix.Operand{Constraint: c, Nulls: r.Nulls[i], Within: r.Within[i]})
 		}

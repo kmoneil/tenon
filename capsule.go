@@ -22,6 +22,21 @@ type CapsuleOps[E any] struct {
 
 	// Display returns the display form of an encapsulated value.
 	Display func(v *E) string
+
+	// ConvertTo declares conversions from the capsule type to other types.
+	// Given a type, it returns the function that converts an encapsulated
+	// value to a value of that type, and whether the conversion is safe; or a
+	// nil function, where the capsule type declares no conversion to that
+	// type. It must give the same answer for a type every time it is asked.
+	// The function returns a known value of the type, or an error value where
+	// the value it is given does not convert.
+	ConvertTo func(t Type) (convert func(v *E) Value, safe bool)
+
+	// ConvertFrom declares conversions to the capsule type from other types,
+	// as ConvertTo does in the other direction. The function is given a known
+	// value of the type, which is not null, and returns a known value of the
+	// capsule type, or an error value.
+	ConvertFrom func(t Type) (convert func(v Value) Value, safe bool)
 }
 
 // capsuleData is what a capsule type declares, with its operations adapted to
@@ -33,6 +48,10 @@ type capsuleData struct {
 	hash    func(v any) uint64  // nil if not declared
 	compare func(a, b any) int  // nil if not declared
 	display func(v any) string  // nil if not declared
+	// convertTo and convertFrom return a declared conversion and whether it is
+	// safe, or a nil function; each is nil if not declared.
+	convertTo   func(t Type) (func(v any) Value, bool)
+	convertFrom func(t Type) (func(v Value) Value, bool)
 }
 
 // Capsule returns a new capsule type, whose values carry pointers of type *E
@@ -62,6 +81,24 @@ func Capsule[E any](name string, ops CapsuleOps[E]) Type {
 	if f := ops.Display; f != nil {
 		d.display = func(v any) string { return f(v.(*E)) }
 	}
+	if f := ops.ConvertTo; f != nil {
+		d.convertTo = func(t Type) (func(any) Value, bool) {
+			conv, safe := f(t)
+			if conv == nil {
+				return nil, false
+			}
+			return func(v any) Value { return conv(v.(*E)) }, safe
+		}
+	}
+	if f := ops.ConvertFrom; f != nil {
+		d.convertFrom = func(t Type) (func(Value) Value, bool) {
+			conv, safe := f(t)
+			if conv == nil {
+				return nil, false
+			}
+			return conv, safe
+		}
+	}
 	return Type{&typeData{id: newTypeID(), kind: KindCapsule, capsule: d}}
 }
 
@@ -90,4 +127,22 @@ func (d *capsuleData) writeHash(h *maphash.Hash, v any) {
 // capsule type.
 func (t Type) CapsuleName() string {
 	return t.mustKind(KindCapsule, "CapsuleName").capsule.name
+}
+
+// capsuleConversion returns the conversion from t to s that a capsule type
+// declares, where either is a capsule type: the source type's conversion to s,
+// and failing that the target type's conversion from t. Exactly one of the two
+// functions is set when there is one, and safe says whether it is safe.
+func capsuleConversion(t, s Type) (to func(any) Value, from func(Value) Value, safe, ok bool) {
+	if d := t.t.capsule; d != nil && d.convertTo != nil {
+		if f, safe := d.convertTo(s); f != nil {
+			return f, nil, safe, true
+		}
+	}
+	if d := s.t.capsule; d != nil && d.convertFrom != nil {
+		if f, safe := d.convertFrom(t); f != nil {
+			return nil, f, safe, true
+		}
+	}
+	return nil, nil, false, false
 }

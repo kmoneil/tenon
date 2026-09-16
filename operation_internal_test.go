@@ -102,3 +102,23 @@ func TestConformance_UN023_PendingWithNoSettledResultType(t *testing.T) {
 		t.Errorf("same of an unknown number gave %s", got)
 	}
 }
+
+// TestParameterizedOperationsAreBound holds an operation that takes parameters
+// to its template: applying the template itself is a defect in the package,
+// and so is binding parameters to an operation that takes none.
+func TestParameterizedOperationsAreBound(t *testing.T) {
+	mustPanicInternal(t, "Convert takes parameters, and was applied without them", func() {
+		convertOp.apply(NumberFromInt(1))
+	})
+	mustPanicInternal(t, "Not takes no parameters", func() {
+		notOp.with(conversion{Any(), Safe})
+	})
+	// Binding leaves the template as it was.
+	b := convertOp.with(conversion{SetOf(Any()), Unsafe})
+	if !b.operands[0].within || convertOp.operands[0].within || convertOp.known != nil {
+		t.Error("binding a conversion changed the registered template")
+	}
+	if len(convertOp.samples) == 0 {
+		t.Error("Convert names no parameters for the operand matrix to check it with")
+	}
+}

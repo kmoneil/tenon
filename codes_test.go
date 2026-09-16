@@ -22,6 +22,13 @@ var codePattern = regexp.MustCompile(`^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$`)
 // specCodes are the diagnostic codes that the specification names, in sorted
 // order. The registry holds these and nothing else.
 var specCodes = []string{
+	"bool.invalid_syntax",
+	"convert.length_mismatch",
+	"convert.missing_attribute",
+	"convert.no_common_type",
+	"convert.no_conversion",
+	"convert.unexpected_attribute",
+	"convert.unsafe",
 	"map.duplicate_key",
 	"number.divide_by_zero",
 	"number.invalid_syntax",
