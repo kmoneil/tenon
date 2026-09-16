@@ -24,9 +24,9 @@ import (
 // form every string value has.
 func Equals(a, b Value) Value { return equalsOp.apply(a, b) }
 
-var equalsOp = &op{
+var equalsOp = register(&op{
 	name:     "Equals",
-	operands: alike(2, Any(), true),
+	operands: reading(alike(2, Any(), true)),
 	result:   fixedResult(Type{boolType}),
 	known: func(args []Value) Value {
 		eq, settled := equality(args[0].n, args[1].n)
@@ -44,7 +44,7 @@ var equalsOp = &op{
 		}
 		return Value{}, false
 	},
-}
+})
 
 // equality says whether a and b are the same value, and whether that is
 // settled. It answers only where the answer cannot change: what it leaves open

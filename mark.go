@@ -398,16 +398,35 @@ func HasMark(v Value, m Mark) bool {
 	return slices.Contains(v.data().markList(), m)
 }
 
-// propagated returns the marks that the result of an operation over these
-// operands carries: the union of the operands' Propagate marks.
-func propagated(args []Value) []Mark {
+// propagated returns the marks that the result of the operation over these
+// operands carries: the union of the operands' Propagate marks, and of the
+// Propagate marks of the values within an operand that the operation reads,
+// which it consumes along with the operand.
+func (o *op) propagated(args []Value) []Mark {
 	var ms []Mark
-	for _, a := range args {
-		for _, m := range a.data().markList() {
+	var add func(n *node, within bool)
+	add = func(n *node, within bool) {
+		for _, m := range n.markList() {
 			if m.Propagation() == Propagate && !slices.Contains(ms, m) {
 				ms = append(ms, m)
 			}
 		}
+		if !within || !n.markedWithin {
+			return
+		}
+		switch data := n.data.(type) {
+		case []Value:
+			for _, member := range data {
+				add(member.n, true)
+			}
+		case []mapEntry:
+			for _, e := range data {
+				add(e.val.n, true)
+			}
+		}
+	}
+	for i, a := range args {
+		add(a.data(), o.operands[i].within)
 	}
 	return ms
 }

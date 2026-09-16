@@ -206,6 +206,32 @@ func TestConformance_MK003_ResultMarksAreTheUnion(t *testing.T) {
 	if !tenon.HasMark(looser, a) || !tenon.HasMark(looser, b) {
 		t.Errorf("narrowing by a marked bound that changes nothing gave %v, without its marks", looser)
 	}
+
+	// An operation that reads the values within an operand consumes them too,
+	// so their Propagate marks reach the result: equality reads the members of
+	// what it compares, and membership reads the value it looks for. One that
+	// reads only an operand's shape does not: a length counts members without
+	// reading them, and a list is not null whatever it holds.
+	held := tenon.ListVal(num, tenon.WithMarks(tenon.NumberFromInt(1), a, iso))
+	plain := tenon.ListVal(num, tenon.NumberFromInt(1))
+	for _, tt := range []struct {
+		name string
+		r    tenon.Value
+		want bool
+	}{
+		{"Equals", tenon.Equals(held, plain), true},
+		{"Equals the other way about", tenon.Equals(plain, held), true},
+		{"Contains", tenon.Contains(tenon.SetVal(tenon.List(num), plain), held), true},
+		{"Length", tenon.Length(held), false},
+		{"IsNull", tenon.IsNull(held), false},
+	} {
+		if got := tenon.HasMark(tt.r, a); got != tt.want {
+			t.Errorf("%s over a list holding a marked member: the result carries its mark: %t, want %t", tt.name, got, tt.want)
+		}
+		if tenon.HasMark(tt.r, iso) {
+			t.Errorf("%s: an Isolate mark held within an operand reached the result", tt.name)
+		}
+	}
 }
 
 func TestConformance_MK004_EqualsIgnoresMarksIdenticalDoesNot(t *testing.T) {
@@ -279,9 +305,10 @@ func TestConformance_MK005_MarksDoNotAffectResults(t *testing.T) {
 	}
 
 	// Every operation, over operands in every state it accepts: the result
-	// with marked operands, unmarked, is the result without them. The
-	// operand matrix will assert this over the operation registry; until it
-	// exists this table is the registry, and a new operation belongs here.
+	// with marked operands, unmarked, is the result without them. The operand
+	// matrix asserts this of every registered operation; this table keeps the
+	// cases readable, and covers Narrow and Resolve, which refine rather than
+	// operate and are outside the matrix.
 	for _, row := range []struct {
 		name string
 		call func([]tenon.Value) tenon.Value

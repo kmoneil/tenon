@@ -67,6 +67,21 @@ type op struct {
 	// narrow narrows the unknown result r by what the operand ranges say. It is
 	// optional, and what it returns must still hold every possible outcome.
 	narrow func(args []Value, r Value) Value
+	// registered is set by register, and apply refuses an operation without
+	// it, so that no operation escapes the operand matrix.
+	registered bool
+}
+
+// operations holds every registered operation, in the order they were
+// declared, for the operand matrix that checks what must hold of all of them.
+var operations []*op
+
+// register records o among the operations and returns it. Every operation is
+// declared through it: apply panics on one that is not.
+func register(o *op) *op {
+	o.registered = true
+	operations = append(operations, o)
+	return o
 }
 
 // fixedResult returns the result function of an operation whose result type
@@ -82,8 +97,11 @@ func fixedResult(t Type) func([]Type) Constraint {
 // does: it stands where the result would have, the marks of an error operand
 // survive into it, and what it says may come from any operand.
 func (o *op) apply(args ...Value) Value {
+	if !o.registered {
+		internalPanic("%s is not registered, so the operand matrix does not check it", o.name)
+	}
 	r := o.applyValue(args)
-	if ms := propagated(args); len(ms) != 0 {
+	if ms := o.propagated(args); len(ms) != 0 {
 		r = WithMarks(r, ms...)
 	}
 	return r
@@ -190,6 +208,11 @@ func (o *op) applyValue(args []Value) Value {
 type operand struct {
 	constraint Constraint
 	nulls      bool
+	// within says the operation reads the values within the operand, as
+	// equality reads the members of what it compares, rather than only its
+	// shape, as a length does. A value it reads is consumed along with the
+	// operand, so its Propagate marks reach the result.
+	within bool
 }
 
 // alike returns the operands of an operation that takes n of them on the same
@@ -200,6 +223,14 @@ func alike(n int, c Constraint, nulls bool) []operand {
 		list[i] = operand{constraint: c, nulls: nulls}
 	}
 	return list
+}
+
+// reading returns operands that the operation reads within.
+func reading(operands []operand) []operand {
+	for i := range operands {
+		operands[i].within = true
+	}
+	return operands
 }
 
 // operandName names operand i of n for a message.
@@ -327,7 +358,7 @@ func Or(a, b Value) Value { return orOp.apply(a, b) }
 func Not(a Value) Value { return notOp.apply(a) }
 
 var (
-	andOp = &op{
+	andOp = register(&op{
 		name:     "And",
 		operands: alike(2, boolOperand, false),
 		result:   fixedResult(Type{boolType}),
@@ -335,8 +366,8 @@ var (
 			return Bool(args[0].n.data.(bool) && args[1].n.data.(bool))
 		},
 		decided: func(args []Value) (Value, bool) { return decidedBy(args, false) },
-	}
-	orOp = &op{
+	})
+	orOp = register(&op{
 		name:     "Or",
 		operands: alike(2, boolOperand, false),
 		result:   fixedResult(Type{boolType}),
@@ -344,13 +375,13 @@ var (
 			return Bool(args[0].n.data.(bool) || args[1].n.data.(bool))
 		},
 		decided: func(args []Value) (Value, bool) { return decidedBy(args, true) },
-	}
-	notOp = &op{
+	})
+	notOp = register(&op{
 		name:     "Not",
 		operands: alike(1, boolOperand, false),
 		result:   fixedResult(Type{boolType}),
 		known:    func(args []Value) Value { return Bool(!args[0].n.data.(bool)) },
-	}
+	})
 )
 
 // decidedBy answers with b when an operand is already known to be b, which
@@ -373,7 +404,7 @@ func decidedBy(args []Value, b bool) (Value, bool) {
 // IsNull returns an error value if v is one.
 func IsNull(v Value) Value { return isNullOp.apply(v) }
 
-var isNullOp = &op{
+var isNullOp = register(&op{
 	name:     "IsNull",
 	operands: alike(1, Any(), true),
 	result:   fixedResult(Type{boolType}),
@@ -395,4 +426,4 @@ var isNullOp = &op{
 		}
 		return Value{}, false
 	},
-}
+})

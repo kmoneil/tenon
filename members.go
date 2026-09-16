@@ -42,7 +42,7 @@ var lengthOperand = OneOf(
 	MapOf(Any()),
 )
 
-var lengthOp = &op{
+var lengthOp = register(&op{
 	name:     "Length",
 	operands: alike(1, lengthOperand, false),
 	result:   fixedResult(Type{numberType}),
@@ -78,7 +78,7 @@ var lengthOp = &op{
 		}
 		return Narrow(r, ns...)
 	},
-}
+})
 
 // setLengthBounds returns how few and how many members a set could turn out to
 // have: the members that are provably distinct from every member counted before
@@ -111,11 +111,11 @@ func distinctFromAll(members []Value, m Value) bool {
 	return true
 }
 
-var containsOp = &op{
+var containsOp = register(&op{
 	name: "Contains",
 	operands: []operand{
 		{constraint: SetOf(Any())},
-		{constraint: Any(), nulls: true},
+		{constraint: Any(), nulls: true, within: true},
 	},
 	result: fixedResult(Type{boolType}),
 	known: func(args []Value) Value {
@@ -148,7 +148,7 @@ var containsOp = &op{
 		}
 		return Value{}, false
 	},
-}
+})
 
 // membership says whether v is a member of the set, and whether that is
 // settled: a member that is provably v settles it, and so does every member

@@ -19,7 +19,7 @@ import "tenon/internal/decimal"
 // differ, because there is no order between them.
 func LessThan(a, b Value) Value { return lessThanOp.apply(a, b) }
 
-var lessThanOp = &op{
+var lessThanOp = register(&op{
 	name:     "LessThan",
 	operands: alike(2, OneOf(Exactly(Type{numberType}), Exactly(Type{stringType})), false),
 	agree:    true,
@@ -33,4 +33,4 @@ var lessThanOp = &op{
 		// values, because UTF-8 keeps them in order.
 		return Bool(a.data.(string) < b.data.(string))
 	},
-}
+})

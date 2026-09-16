@@ -35,38 +35,38 @@ func Div(a, b Value) Value { return divOp.apply(a, b) }
 func Mod(a, b Value) Value { return modOp.apply(a, b) }
 
 var (
-	addOp = &op{
+	addOp = register(&op{
 		name:     "Add",
 		operands: alike(2, numberOperand, false),
 		result:   fixedResult(Type{numberType}),
 		known:    func(args []Value) Value { return arithmetic(decOf(args[0]).Add(decOf(args[1]))) },
 		narrow:   addBounds,
-	}
-	subOp = &op{
+	})
+	subOp = register(&op{
 		name:     "Sub",
 		operands: alike(2, numberOperand, false),
 		result:   fixedResult(Type{numberType}),
 		known:    func(args []Value) Value { return arithmetic(decOf(args[0]).Sub(decOf(args[1]))) },
 		narrow:   subBounds,
-	}
-	mulOp = &op{
+	})
+	mulOp = register(&op{
 		name:     "Mul",
 		operands: alike(2, numberOperand, false),
 		result:   fixedResult(Type{numberType}),
 		known:    func(args []Value) Value { return arithmetic(decOf(args[0]).Mul(decOf(args[1]))) },
-	}
-	divOp = &op{
+	})
+	divOp = register(&op{
 		name:     "Div",
 		operands: alike(2, numberOperand, false),
 		result:   fixedResult(Type{numberType}),
 		known:    func(args []Value) Value { return arithmetic(decOf(args[0]).Div(decOf(args[1]))) },
-	}
-	modOp = &op{
+	})
+	modOp = register(&op{
 		name:     "Mod",
 		operands: alike(2, numberOperand, false),
 		result:   fixedResult(Type{numberType}),
 		known:    func(args []Value) Value { return arithmetic(decOf(args[0]).Mod(decOf(args[1]))) },
-	}
+	})
 )
 
 // numberOperand is what the arithmetic operations accept.

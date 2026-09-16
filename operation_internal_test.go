@@ -38,11 +38,14 @@ func TestConformance_UN008_KnownOperandsAnswerOrFail(t *testing.T) {
 	}
 	// One that breaks it is caught where it breaks it, rather than downstream
 	// where an unknown value would turn up with nothing to explain it.
+	// These operations exist only here, so they are marked registered rather
+	// than registered: the operand matrix runs over the package's own.
 	broken := &op{
-		name:     "broken",
-		operands: alike(1, boolOperand, false),
-		result:   fixedResult(Type{boolType}),
-		known:    func([]Value) Value { return Unknown(Type{boolType}) },
+		name:       "broken",
+		operands:   alike(1, boolOperand, false),
+		result:     fixedResult(Type{boolType}),
+		known:      func([]Value) Value { return Unknown(Type{boolType}) },
+		registered: true,
 	}
 	mustPanicInternal(t, "broken: every operand was known, but the result is an unknown value of type bool", func() {
 		broken.apply(Bool(true))
@@ -55,6 +58,7 @@ func TestConformance_UN008_KnownOperandsAnswerOrFail(t *testing.T) {
 		known: func([]Value) Value {
 			return errorValue(Diagnostic{Code: "app.failed", Message: "it failed"})
 		},
+		registered: true,
 	}
 	if got := failing.apply(Bool(true)); !got.IsError() {
 		t.Errorf("an operation that failed gave %v, want an error value", got)
@@ -75,7 +79,8 @@ func TestConformance_UN023_PendingWithNoSettledResultType(t *testing.T) {
 			}
 			return Exactly(types[0])
 		},
-		known: func(args []Value) Value { return args[0] },
+		known:      func(args []Value) Value { return args[0] },
+		registered: true,
 	}
 	// A pending operand whose constraint names one type settles the result
 	// type, so the answer is an unknown of that type and not another pending.

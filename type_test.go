@@ -490,8 +490,9 @@ func TestConformance_TY003_AcceptanceIsExpressedAsConstraints(t *testing.T) {
 
 // operationLiteral is one &op{...} in the package's source.
 type operationLiteral struct {
-	where string
-	keys  map[string]bool
+	where      string
+	keys       map[string]bool
+	registered bool // the literal is the argument of register
 }
 
 // operationLiterals returns every operation the package defines.
@@ -504,7 +505,17 @@ func operationLiterals(t *testing.T) []operationLiteral {
 		if err != nil {
 			t.Fatal(err)
 		}
+		// register(&op{...}) is visited before the literal inside it.
+		registered := map[token.Pos]bool{}
 		ast.Inspect(file, func(n ast.Node) bool {
+			if call, ok := n.(*ast.CallExpr); ok {
+				if id, ok := call.Fun.(*ast.Ident); ok && id.Name == "register" && len(call.Args) == 1 {
+					if ref, ok := call.Args[0].(*ast.UnaryExpr); ok && ref.Op == token.AND {
+						registered[ref.X.Pos()] = true
+					}
+				}
+				return true
+			}
 			lit, ok := n.(*ast.CompositeLit)
 			if !ok {
 				return true
@@ -520,7 +531,11 @@ func operationLiterals(t *testing.T) []operationLiteral {
 					}
 				}
 			}
-			lits = append(lits, operationLiteral{where: fset.Position(lit.Pos()).String(), keys: keys})
+			lits = append(lits, operationLiteral{
+				where:      fset.Position(lit.Pos()).String(),
+				keys:       keys,
+				registered: registered[lit.Pos()],
+			})
 			return true
 		})
 	}
