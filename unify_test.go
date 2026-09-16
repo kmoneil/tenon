@@ -348,6 +348,38 @@ func TestConformance_CV041_UnificationIsOrderIndependent(t *testing.T) {
 	wantUnified(t, safe, tenon.Any())
 	wantUnified(t, safe, tenon.OneOf(is(num), is(str)), tenon.OneOf(is(str), is(num)))
 
+	// OneOf() unifies with Any alone, whichever side it is on, a OneOf holding
+	// Any included. These are the triples make check-slow first found giving
+	// one answer in one order and another in another.
+	nothing := tenon.OneOf()
+	withAny := tenon.OneOf(tenon.Any(), is(tenon.Object(map[string]tenon.Type{"a": num})))
+	for _, cs := range [][]tenon.Constraint{
+		{withAny, tenon.OneOf(tenon.Any()), tenon.MapOf(nothing)},
+		{tenon.OneOf(tenon.Any(), is(num), tenon.SetOf(is(str))), tenon.OneOf(tenon.Any(), is(num), tenon.Any()), nothing},
+		{
+			tenon.OneOf(tenon.OneOf(tenon.Any(), tenon.SetOf(tenon.Any())), tenon.ListOf(nothing)),
+			tenon.OneOf(nothing, tenon.TupleOf(nothing)),
+			tenon.OneOf(tenon.OneOf(tenon.Any(), tenon.ListOf(tenon.Any()))),
+		},
+	} {
+		for _, p := range []tenon.Policy{safe, uns} {
+			whole := unify(t, p, cs...)
+			for _, perm := range permutations(3) {
+				if got := unify(t, p, cs[perm[0]], cs[perm[1]], cs[perm[2]]); !got.same(whole) {
+					t.Errorf("Unify(%s, %v) = %v, but in the order %v it is %v", p, cs, whole, perm, got)
+				}
+			}
+		}
+	}
+	for _, pair := range [][2]tenon.Constraint{{withAny, nothing}, {nothing, withAny}, {is(num), nothing}} {
+		if u := unify(t, safe, pair[0], pair[1]); u.ok {
+			t.Errorf("Unify(%v, %v) = %v, want a failure", pair[0], pair[1], u)
+		}
+	}
+	if u := unify(t, safe, tenon.Any(), nothing); !u.ok || !u.c.Equal(nothing) {
+		t.Errorf("Unify(any, one_of([])) = %v, want one_of([])", u)
+	}
+
 	r := rand.New(rand.NewSource(20260916))
 	capsule := tenon.Capsule("cap", tenon.CapsuleOps[celsius]{})
 	succeeded, failed := 0, 0

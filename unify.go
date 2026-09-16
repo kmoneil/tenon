@@ -183,13 +183,24 @@ func unifyPair(a, b Constraint, p Policy) (Constraint, bool) {
 	case b.c.kind == ConstraintAny:
 		return a, true
 	case a.c.kind == ConstraintOneOf || b.c.kind == ConstraintOneOf:
-		if a.c.kind != ConstraintOneOf {
-			a, b = b, a
+		// Each member of one unifies with each member of the other, a
+		// constraint that is no OneOf being its own one member. Taking the
+		// members of only one side would make OneOf() fail or not by which
+		// side it is on, since a member Any unifies with it and nothing else
+		// does.
+		xs, ys := []Constraint{a}, []Constraint{b}
+		if a.c.kind == ConstraintOneOf {
+			xs = a.c.members
+		}
+		if b.c.kind == ConstraintOneOf {
+			ys = b.c.members
 		}
 		var out []Constraint
-		for _, m := range a.c.members {
-			if u, ok := unifyPair(m, b, p); ok {
-				out = append(out, u)
+		for _, x := range xs {
+			for _, y := range ys {
+				if u, ok := unifyPair(x, y, p); ok {
+					out = append(out, u)
+				}
 			}
 		}
 		if len(out) == 0 {
