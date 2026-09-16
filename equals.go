@@ -67,7 +67,11 @@ func equality(a, b *node) (eq, settled bool) {
 // settledType returns the type that a value has or will have, and whether it
 // has one. A pending value has one only where its constraint names it.
 func settledType(n *node) (Type, bool) {
-	if n.state == statePending {
+	switch n.state {
+	case stateError:
+		// An error value has no type and never will have one.
+		return Type{}, false
+	case statePending:
 		if c := n.data.(Constraint); c.Kind() == ConstraintExactly {
 			return c.Type(), true
 		}

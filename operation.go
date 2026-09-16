@@ -48,6 +48,10 @@ type op struct {
 	// wildcard in it or a zero value standing in for one.
 	operand Constraint
 	nulls   bool // whether the operation has an answer for a null operand
+	// agree requires the operands to have one type between them. Equality
+	// takes two of different types and answers false; ordering does not, and
+	// says so rather than inventing an order across types.
+	agree bool
 	// result describes what the operation produces, given the type of each
 	// operand, or the zero Type for an operand that is pending and whose
 	// constraint names no single type. Exactly(T) settles the result type; any
@@ -87,6 +91,13 @@ func (o *op) apply(args ...Value) Value {
 				o.name, operandName(i, len(args)), n.describe(), o.operand)
 		}
 	}
+	if o.agree {
+		if i, j, ok := disagreeing(args, false); ok {
+			usagePanic("%s: %s is %s and %s is %s, but %s takes operands of one type",
+				o.name, operandName(i, len(args)), args[i].n.describe(),
+				operandName(j, len(args)), args[j].n.describe(), o.name)
+		}
+	}
 	if e, ok := propagate(args...); ok {
 		return e
 	}
@@ -117,6 +128,16 @@ func (o *op) apply(args ...Value) Value {
 		default:
 			types[i] = n.typ
 			known = known && n.isKnown()
+		}
+	}
+	if o.agree && len(diags) == 0 {
+		// A pending operand whose constraint puts it at a type another operand
+		// rules out is bad data and not a bad call: nothing was wrong with the
+		// call when it was made, and the type it will have is what rules it
+		// out. It is only worth saying when nothing else about the operands
+		// was wrong already.
+		if i, j, ok := disagreeing(args, true); ok {
+			diags = append(diags, o.disagreement(args, i, j))
 		}
 	}
 	if len(diags) > 0 {
@@ -167,17 +188,58 @@ func (o *op) nullOperand(i, n int) Diagnostic {
 	}
 }
 
+// disagreeing returns two operands whose types differ, and whether there are
+// any. An operand whose type nothing has settled agrees with everything, since
+// nothing it could turn out to be is ruled out yet. A pending operand counts
+// only when pending is true: the type it will have follows from its constraint
+// rather than being in hand, so a disagreement there is a different thing from
+// one between two values.
+func disagreeing(args []Value, pending bool) (int, int, bool) {
+	first, at := Type{}, 0
+	for i, a := range args {
+		if !pending && a.n.state == statePending {
+			continue
+		}
+		t, ok := settledType(a.n)
+		switch {
+		case !ok:
+		case first.t == nil:
+			first, at = t, i
+		case t != first:
+			return at, i, true
+		}
+	}
+	return 0, 0, false
+}
+
+// disagreement returns the diagnostic for operands whose types will not agree.
+func (o *op) disagreement(args []Value, i, j int) Diagnostic {
+	n := len(args)
+	return Diagnostic{
+		Code: CodeOperationWrongType,
+		Message: operandName(i, n) + " of " + o.name + " is " + args[i].n.describe() +
+			" and " + operandName(j, n) + " is " + args[j].n.describe() +
+			", and " + o.name + " takes operands of one type",
+	}
+}
+
 // couldSatisfy reports whether some type satisfying c satisfies the operand
 // constraint too, so that the operation could still apply once the type of a
-// pending value is settled.
-//
-// Every operation states Any or Exactly, which is what the TY-003 test holds
-// them to. Deciding a richer operand constraint would mean comparing two
-// constraints, which nothing needs yet; assuming it could apply leaves the
-// answer to the value rather than inventing one here.
+// pending value is settled. It decides the constraints that operations state:
+// one type, one of several, or any at all. Anything else would mean comparing
+// two constraints in general, which nothing needs yet, and assuming it could
+// apply leaves the answer to the value rather than inventing one here.
 func couldSatisfy(c, operand Constraint) bool {
-	if operand.Kind() == ConstraintExactly {
+	switch operand.Kind() {
+	case ConstraintExactly:
 		return Satisfies(c, operand.Type())
+	case ConstraintOneOf:
+		for _, m := range operand.Members() {
+			if couldSatisfy(c, m) {
+				return true
+			}
+		}
+		return false
 	}
 	return true
 }
