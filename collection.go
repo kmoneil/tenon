@@ -18,25 +18,40 @@ type mapEntry struct {
 
 // containerErrors collects the diagnostics of the error members of a container
 // under construction, each located within the container, with exact duplicates
-// dropped.
+// dropped, and the Propagate marks of those members, which survive into the
+// error value that takes the container's place. Members that are not errors
+// keep their marks to themselves: building a container is not an operation
+// over its members, and the error value says nothing of them.
 type containerErrors struct {
 	diags []Diagnostic
+	marks []Mark
 }
 
 // add records the diagnostics of an error member that step locates within the
-// container.
+// container, and its marks.
 func (c *containerErrors) add(step Step, member Value) {
 	for _, d := range member.n.data.([]Diagnostic) {
 		d.Path = d.Path.prepend(step)
 		c.addDiagnostic(d)
 	}
+	c.addMarks(member)
 }
 
 // addUnlocated records the diagnostics of an error member that the container
-// cannot locate, leaving their paths as they are.
+// cannot locate, leaving their paths as they are, and its marks.
 func (c *containerErrors) addUnlocated(member Value) {
 	for _, d := range member.n.data.([]Diagnostic) {
 		c.addDiagnostic(d)
+	}
+	c.addMarks(member)
+}
+
+// addMarks records the Propagate marks of an error member.
+func (c *containerErrors) addMarks(member Value) {
+	for _, m := range member.n.markList() {
+		if m.Propagation() == Propagate && !slices.Contains(c.marks, m) {
+			c.marks = append(c.marks, m)
+		}
 	}
 }
 
@@ -53,7 +68,7 @@ func (c *containerErrors) value() (Value, bool) {
 	if len(c.diags) == 0 {
 		return Value{}, false
 	}
-	return errorValue(c.diags...), true
+	return WithMarks(errorValue(c.diags...), c.marks...), true
 }
 
 // isError reports whether v is an error value, for constructors sorting their
@@ -64,9 +79,9 @@ func isError(v Value) bool { return v.data().state == stateError }
 // order. ListVal does not retain the slice.
 //
 // If an element is an error value the result is an error value carrying the
-// diagnostics of every such element, each located by its index. ListVal panics
-// if elem is the zero Type, or an element is neither an error value nor a
-// resolved value of type elem.
+// diagnostics of every such element, each located by its index, and the
+// Propagate marks of those elements. ListVal panics if elem is the zero Type,
+// or an element is neither an error value nor a resolved value of type elem.
 func ListVal(elem Type, elems ...Value) Value {
 	return sequenceValue(List(elem), "ListVal", elems)
 }
@@ -151,9 +166,10 @@ func TupleVal(elems ...Value) Value {
 // Object. ObjectVal does not retain the map.
 //
 // If an attribute is an error value the result is an error value carrying the
-// diagnostics of every such attribute, each located by its name. ObjectVal
-// panics if a name is empty or not valid UTF-8, if two names are the same name,
-// or if an attribute is neither an error value nor a resolved value.
+// diagnostics of every such attribute, each located by its name, and the
+// Propagate marks of those attributes. ObjectVal panics if a name is empty or
+// not valid UTF-8, if two names are the same name, or if an attribute is
+// neither an error value nor a resolved value.
 func ObjectVal(attrs map[string]Value) Value {
 	entries := attributeEntries(attrs, "object attribute")
 	var errs containerErrors
@@ -270,9 +286,10 @@ func anyMarked(vals []Value) bool {
 // the same key after normalization, or if an element is an error value, with a
 // diagnostic for each problem: code CodeStringInvalidUTF8 for each such key and
 // the diagnostics of each error element, in key order, then code
-// CodeMapDuplicateKey for each group of keys that normalize alike. MapVal
-// panics if elem is the zero Type, or an element is neither an error value nor
-// a resolved value of type elem.
+// CodeMapDuplicateKey for each group of keys that normalize alike. The error
+// value carries the Propagate marks of the error elements. MapVal panics if
+// elem is the zero Type, or an element is neither an error value nor a
+// resolved value of type elem.
 func MapVal(elem Type, entries map[string]Value) Value {
 	t := Map(elem)
 	type keyed struct {

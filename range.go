@@ -51,7 +51,9 @@ func (r Range) AllowsNull() bool {
 
 // String describes r for messages, as in 5, "text" or
 // string, not null, prefix "ab". The text is canonical: ranges recording the
-// same narrowings render alike. It is not a format for parsing.
+// same narrowings render alike. It is not a format for parsing. The range of
+// a value carrying a redacting mark reads as that value does, as a
+// placeholder.
 func (r Range) String() string {
 	if r.v.n == nil {
 		return "<zero Range>"
@@ -65,6 +67,10 @@ func (r Range) write(b *strings.Builder) {
 	n := r.v.n
 	if n.state != stateUnknown {
 		r.v.write(b) // a singleton range is the value itself
+		return
+	}
+	if ms := n.redactingMarks(); ms != nil {
+		writeRedacted(b, ms)
 		return
 	}
 	n.typ.write(b)
@@ -111,6 +117,13 @@ func (b *bound) tighten(v decimal.Dec, incl, lower bool) {
 }
 
 func (b bound) write(w *strings.Builder, lower bool) {
+	b.writeOperator(w, lower)
+	w.WriteString(b.v.String())
+}
+
+// writeOperator writes the comparison that b makes, as in >= or <, and the
+// space after it.
+func (b bound) writeOperator(w *strings.Builder, lower bool) {
 	switch {
 	case lower && b.incl:
 		w.WriteString(">= ")
@@ -121,7 +134,6 @@ func (b bound) write(w *strings.Builder, lower bool) {
 	default:
 		w.WriteString("< ")
 	}
-	w.WriteString(b.v.String())
 }
 
 // holdsLower reports whether d is at or above b, which bounds nothing when it
@@ -265,6 +277,7 @@ type Narrowing struct {
 	str     string
 	n       int64
 	members []Value
+	marks   []Mark // the marks of the value a bound was taken from
 }
 
 // NotNull returns the narrowing that excludes null. It applies to every type.
@@ -279,15 +292,22 @@ func Null() Narrowing { return Narrowing{kind: narrowNull} }
 // NumberMin returns the narrowing that bounds a Number value from below by v,
 // which is itself in the range when inclusive is true. It panics if v is not a
 // known Number value.
+//
+// The narrowing keeps the marks of v. A value narrowed by it carries the
+// Propagate ones, as the result of an operation over v would, since its range
+// holds v's number from then on; and where the narrowing is described, a
+// redacting mark of v puts a placeholder in place of the number.
 func NumberMin(v Value, inclusive bool) Narrowing {
-	return Narrowing{kind: narrowNumberMin, num: numberBound("NumberMin", v), incl: inclusive}
+	num := numberBound("NumberMin", v)
+	return Narrowing{kind: narrowNumberMin, num: num, incl: inclusive, marks: v.n.markList()}
 }
 
 // NumberMax returns the narrowing that bounds a Number value from above by v,
 // which is itself in the range when inclusive is true. It panics if v is not a
-// known Number value.
+// known Number value, and keeps the marks of v as NumberMin does.
 func NumberMax(v Value, inclusive bool) Narrowing {
-	return Narrowing{kind: narrowNumberMax, num: numberBound("NumberMax", v), incl: inclusive}
+	num := numberBound("NumberMax", v)
+	return Narrowing{kind: narrowNumberMax, num: num, incl: inclusive, marks: v.n.markList()}
 }
 
 // StringPrefix returns the narrowing that requires a String value to begin with
@@ -382,10 +402,10 @@ func (nw Narrowing) String() string {
 		return "not null"
 	case narrowNull:
 		return "null"
-	case narrowNumberMin:
-		return bound{v: nw.num, incl: nw.incl, set: true}.text(true)
-	case narrowNumberMax:
-		return bound{v: nw.num, incl: nw.incl, set: true}.text(false)
+	case narrowNumberMin, narrowNumberMax:
+		var b strings.Builder
+		nw.writeBound(&b)
+		return b.String()
 	case narrowPrefix:
 		return "prefix " + strconv.Quote(nw.str)
 	case narrowLengthMin:
@@ -398,6 +418,18 @@ func (nw Narrowing) String() string {
 		return b.String()
 	}
 	return "<zero Narrowing>"
+}
+
+// writeBound writes a number narrowing, with a placeholder in place of the
+// number when the value it was taken from carries a redacting mark.
+func (nw Narrowing) writeBound(w *strings.Builder) {
+	b, lower := bound{v: nw.num, incl: nw.incl, set: true}, nw.kind == narrowNumberMin
+	if ms := redactingOf(nw.marks); ms != nil {
+		b.writeOperator(w, lower)
+		writeRedacted(w, ms)
+		return
+	}
+	b.write(w, lower)
 }
 
 // message renders nw for a diagnostic, shortening text that is long.
@@ -497,13 +529,34 @@ func (n *node) length() int64 {
 // value returns an error value carrying its diagnostics.
 //
 // Narrow refines the value it is given rather than deriving a new one, so
-// the result carries the marks of v, the Isolate ones included.
+// the result carries the marks of v, the Isolate ones included, an error
+// result as much as any. A narrowing taken from a value, as NumberMin and
+// NumberMax are, adds that value's Propagate marks, as an operand adds its
+// marks to the result of an operation.
 //
 // Narrow panics on a pending value, which has no type to narrow against, and
 // if a narrowing does not apply to the type of v, such as a length bound on a
 // Number value.
 func Narrow(v Value, ns ...Narrowing) Value {
-	return carryMarks(v, narrowValue(v, ns))
+	r := carryMarks(v, narrowValue(v, ns))
+	if ms := boundMarks(ns); ms != nil {
+		r = WithMarks(r, ms...)
+	}
+	return r
+}
+
+// boundMarks returns the Propagate marks of the values that narrowings were
+// taken from, each once, or nil when there are none.
+func boundMarks(ns []Narrowing) []Mark {
+	var ms []Mark
+	for _, nw := range ns {
+		for _, m := range nw.marks {
+			if m.Propagation() == Propagate && !slices.Contains(ms, m) {
+				ms = append(ms, m)
+			}
+		}
+	}
+	return ms
 }
 
 // narrowValue is Narrow before marks are carried over.
@@ -541,10 +594,20 @@ func narrowValue(v Value, ns []Narrowing) Value {
 	}
 	old := n.data.(*rangeData)
 	r := *old
+	// A fact already in force is what the value says about itself, or what a
+	// narrowing given before this one said, so a message withholds it when
+	// either carries a redacting mark.
+	withheld := n.redactingMarks()
 	for _, nw := range ns {
 		clash, ok := r.apply(nw)
 		if !ok {
+			if withheld != nil {
+				clash = redactedText(withheld)
+			}
 			return contradiction("no value of type " + n.typ.String() + " satisfies both " + clash + " and " + nw.message())
+		}
+		if ms := redactingOf(nw.marks); ms != nil {
+			withheld, _ = mergeMarks(withheld, ms)
 		}
 	}
 	if sole, ok := r.singleton(n.typ); ok {
@@ -668,6 +731,8 @@ func contradiction(message string) Value {
 }
 
 // valueText renders v for a diagnostic message, shortening it if it is long.
+// It renders through String, so it withholds what redacting marks protect,
+// within v as well as on it.
 func valueText(v Value) string {
 	return shortened(v.String(), func(s string) string { return s })
 }

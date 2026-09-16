@@ -8,7 +8,9 @@ import (
 // propagate returns the error value that an operation with these operands
 // produces, and whether any operand was an error value. The diagnostics of
 // every error operand appear in operand order, with exact duplicates dropped,
-// so that one pass over a configuration reports every mistake, each once.
+// so that one pass over a configuration reports every mistake, each once. The
+// error value carries no marks yet: the caller puts on it the marks its own
+// rules call for.
 //
 // Propagation never short-circuits: an operation fails even when its other
 // operands would have decided the answer, because an error means the caller
@@ -76,13 +78,11 @@ func fixedResult(t Type) func([]Type) Constraint {
 
 // apply runs the operation over args and puts the union of the operands'
 // Propagate marks on the result, so an operation says what its result is
-// and inherits how marks travel. An error result is left as it is: what
-// marks an error value carries is settled where its diagnostics are built.
+// and inherits how marks travel. An error result carries them as any result
+// does: it stands where the result would have, the marks of an error operand
+// survive into it, and what it says may come from any operand.
 func (o *op) apply(args ...Value) Value {
 	r := o.applyValue(args)
-	if r.n.state == stateError {
-		return r
-	}
 	if ms := propagated(args); len(ms) != 0 {
 		r = WithMarks(r, ms...)
 	}

@@ -213,12 +213,15 @@ func Pending(c Constraint) Value {
 // is how a null read before its type is known keeps the one thing that was said
 // about it.
 //
+// Resolving refines the value it is given, so the result carries every mark
+// of v, the Isolate ones included.
+//
 // Resolve returns an error value if v is one. It panics if v is not a pending
 // value, or if t does not satisfy the constraint that v carries, which is a
 // mistake in the caller rather than in any data: the caller chose both.
 func Resolve(v Value, t Type) Value {
 	if e, ok := propagate(v); ok {
-		return e
+		return carryMarks(v, e)
 	}
 	n := v.data()
 	if n.state != statePending {
@@ -371,6 +374,13 @@ func (v Value) AsInt64() (int64, bool) {
 
 // String describes v for messages, as in "text", list(number)[1, 2.5] or
 // error(string.invalid_utf8: ...). It is not a format for parsing.
+//
+// A value carrying a redacting mark is described by a placeholder naming its
+// redacting marks, as in redacted("secret"), wherever it appears, alone or
+// within another value: what it holds, what its range says, and whether it is
+// null are all withheld. An error value is described by its diagnostics,
+// which withheld what they had to when they were made. To show what a
+// redacting mark withholds, unmark the value first.
 func (v Value) String() string {
 	if v.n == nil {
 		return "<zero Value>"
@@ -382,6 +392,12 @@ func (v Value) String() string {
 
 func (v Value) write(b *strings.Builder) {
 	n := v.n
+	if n.state != stateError {
+		if ms := n.redactingMarks(); ms != nil {
+			writeRedacted(b, ms)
+			return
+		}
+	}
 	switch n.state {
 	case stateError:
 		b.WriteString("error(")

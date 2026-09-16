@@ -29,8 +29,10 @@ type Mark interface {
 	MarkID() string
 	// Propagation returns how the mark moves through operations.
 	Propagation() Propagation
-	// Redacting reports whether diagnostics must hide the contents of a
-	// value carrying the mark.
+	// Redacting reports whether the contents of a value carrying the mark
+	// are withheld wherever the value is described: in the messages of
+	// diagnostics, and in String, which puts a placeholder naming the mark
+	// in their place.
 	Redacting() bool
 }
 
@@ -412,11 +414,10 @@ func propagated(args []Value) []Mark {
 
 // carryMarks returns r carrying every mark of v. A narrowing or a resolution
 // refines the value it was given rather than deriving a new one, so the
-// marks stay, the Isolate ones included. An error result is returned as it
-// is: what marks an error value carries is settled where its diagnostics
-// are built, not here.
+// marks stay, the Isolate ones included, whether the result is a value or an
+// error.
 func carryMarks(v, r Value) Value {
-	if v.n.marks == nil || r.n == v.n || r.n.state == stateError {
+	if v.n.marks == nil || r.n == v.n {
 		return r
 	}
 	return WithMarks(r, v.n.marks.list...)

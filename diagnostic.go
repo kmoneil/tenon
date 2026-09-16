@@ -22,6 +22,10 @@ func (d Diagnostic) Equal(e Diagnostic) bool {
 // an error value like this one rather than a panic, and operations on it carry
 // its diagnostics forward.
 //
+// A message is shown to people, so it must not show what a redacting mark
+// withholds. Build a message from a value's String, which puts a placeholder
+// in place of such contents, rather than from what the value holds.
+//
 // ErrorVal panics if diags is empty, if a diagnostic has no message, or if a
 // code is not an area and a name of lowercase letters, digits and underscores,
 // joined by dots.

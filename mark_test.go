@@ -2,6 +2,7 @@ package tenon_test
 
 import (
 	"slices"
+	"strings"
 	"testing"
 
 	"tenon"
@@ -193,6 +194,18 @@ func TestConformance_MK003_ResultMarksAreTheUnion(t *testing.T) {
 	if un.IsKnown() || !tenon.HasMark(un, a) {
 		t.Errorf("the unknown result %v does not carry the operand's mark", un)
 	}
+
+	// A narrowing built from a value, as a bound is, passes that value's
+	// Propagate marks on to the result as an operand would, whether or not the
+	// bound changes the range.
+	bounded := tenon.Narrow(tenon.Unknown(num), tenon.NumberMin(tenon.WithMarks(tenon.NumberFromInt(1), a, iso), true))
+	if !tenon.HasMark(bounded, a) || tenon.HasMark(bounded, iso) {
+		t.Errorf("narrowing by a marked bound gave %v, with the wrong marks", bounded)
+	}
+	looser := tenon.Narrow(bounded, tenon.NumberMin(tenon.WithMarks(tenon.NumberFromInt(0), b), true))
+	if !tenon.HasMark(looser, a) || !tenon.HasMark(looser, b) {
+		t.Errorf("narrowing by a marked bound that changes nothing gave %v, without its marks", looser)
+	}
 }
 
 func TestConformance_MK004_EqualsIgnoresMarksIdenticalDoesNot(t *testing.T) {
@@ -318,6 +331,22 @@ func TestConformance_MK005_MarksDoNotAffectResults(t *testing.T) {
 	rGot, _ := tenon.Unmark(tenon.Resolve(tenon.WithMarks(pendNum, m), num))
 	if !tenon.Identical(rGot, rWant) {
 		t.Errorf("resolving a marked value produced %v, want %v", rGot, rWant)
+	}
+	bWant := tenon.Narrow(unNum, tenon.NumberMin(one, true))
+	bGot, _ := tenon.Unmark(tenon.Narrow(unNum, tenon.NumberMin(tenon.WithMarks(one, m), true)))
+	if !tenon.Identical(bGot, bWant) {
+		t.Errorf("narrowing by a marked bound produced %v, want %v", bGot, bWant)
+	}
+
+	// A redacting mark changes one thing besides the marks: the message of a
+	// diagnostic that would otherwise show what the mark withholds. The codes
+	// and the paths stay as they are.
+	secret := stamp{id: "secret", redact: true}
+	shown := tenon.Narrow(tenon.String("hunter2"), tenon.StringPrefix("ab-")).Diagnostics()
+	withheld := tenon.Narrow(tenon.WithMarks(tenon.String("hunter2"), secret), tenon.StringPrefix("ab-")).Diagnostics()
+	if len(shown) != 1 || len(withheld) != 1 || shown[0].Code != withheld[0].Code ||
+		!shown[0].Path.Equal(withheld[0].Path) || shown[0].Message == withheld[0].Message {
+		t.Errorf("redaction changed more than the message, or not the message: %v and %v", shown, withheld)
 	}
 
 	// An operand is marked when a value it holds carries a mark, and that is
@@ -684,6 +713,118 @@ func TestConformance_MK008_DeepMarks(t *testing.T) {
 			if !tenon.HasMark(r, deep) {
 				t.Errorf("%v, read out of %v, does not carry the deep mark", r, dv)
 			}
+		}
+	}
+}
+
+func TestConformance_MK010_ErrorValuesCarryMarks(t *testing.T) {
+	conformance.Covers(t, "MK-010")
+	num, str, bl := tenon.NumberType(), tenon.StringType(), tenon.BoolType()
+	p, q := stamp{id: "p"}, stamp{id: "q"}
+	iso := stamp{id: "iso", policy: tenon.Isolate}
+	one, five := tenon.NumberFromInt(1), tenon.NumberFromInt(5)
+	failed := tenon.ErrorVal(tenon.Diagnostic{Code: "app.failed", Message: "it failed"})
+	other := tenon.ErrorVal(tenon.Diagnostic{Code: "app.other", Message: "and again"})
+	for _, tt := range []struct {
+		name  string
+		got   tenon.Value
+		diags string   // each diagnostic's code and path
+		marks []string // the identifiers of the marks carried, in order
+	}{
+		// A failed operation carries the Propagate marks of every operand, and
+		// an Isolate mark stays behind.
+		{
+			"a division by zero",
+			tenon.Div(tenon.WithMarks(one, p, iso), tenon.WithMarks(tenon.NumberFromInt(0), q)),
+			"number.divide_by_zero", []string{"p", "q"},
+		},
+		{
+			"a null operand",
+			tenon.And(tenon.WithMarks(tenon.NullVal(bl), p), tenon.Bool(true)),
+			"operation.null_operand", []string{"p"},
+		},
+		{
+			"a pending operand whose type cannot fit",
+			tenon.Add(tenon.WithMarks(tenon.Pending(tenon.Exactly(str)), p), one),
+			"operation.wrong_type", []string{"p"},
+		},
+		// The Propagate marks of an error operand survive the hoisting of its
+		// diagnostics into the error value of the operation.
+		{
+			"an error operand",
+			tenon.Add(tenon.WithMarks(failed, p, iso), tenon.WithMarks(one, q)),
+			"app.failed", []string{"p", "q"},
+		},
+		{
+			"two error operands",
+			tenon.Add(tenon.WithMarks(failed, p), tenon.WithMarks(other, q)),
+			"app.failed; app.other", []string{"p", "q"},
+		},
+		// And the hoisting of its diagnostics into the error value of a
+		// container, at any depth. Building a container is not an operation
+		// over its elements: an element that is not an error keeps its marks
+		// to itself.
+		{
+			"an error element",
+			tenon.ListVal(num, tenon.WithMarks(one, q), tenon.WithMarks(failed, p, iso)),
+			"app.failed at [1]", []string{"p"},
+		},
+		{
+			"an error hoisted twice",
+			tenon.TupleVal(tenon.ObjectVal(map[string]tenon.Value{"a": tenon.WithMarks(failed, p)})),
+			"app.failed at [0].a", []string{"p"},
+		},
+		{
+			"an error entry of a map",
+			tenon.MapVal(num, map[string]tenon.Value{"k": tenon.WithMarks(failed, p)}),
+			`app.failed at ["k"]`, []string{"p"},
+		},
+		{
+			"an error member of a set",
+			tenon.SetVal(num, tenon.WithMarks(failed, p)),
+			"app.failed at [0]", []string{"p"},
+		},
+		// Narrowing and resolving refine the value they are given, so an error
+		// keeps every mark it carries, and a contradiction carries every mark
+		// of the value it contradicts beside the Propagate marks of a bound.
+		{
+			"narrowing an error",
+			tenon.Narrow(tenon.WithMarks(failed, p, iso), tenon.NotNull()),
+			"app.failed", []string{"iso", "p"},
+		},
+		{
+			"resolving an error",
+			tenon.Resolve(tenon.WithMarks(failed, iso), num),
+			"app.failed", []string{"iso"},
+		},
+		{
+			"a contradiction",
+			tenon.Narrow(tenon.WithMarks(one, iso), tenon.NumberMin(tenon.WithMarks(five, q), true)),
+			"range.contradiction", []string{"iso", "q"},
+		},
+	} {
+		if !tt.got.IsError() {
+			t.Errorf("%s: %v is not an error value", tt.name, tt.got)
+			continue
+		}
+		var diags []string
+		for _, d := range tt.got.Diagnostics() {
+			text := string(d.Code)
+			if d.Path.Len() > 0 {
+				text += " at " + d.Path.String()
+			}
+			diags = append(diags, text)
+		}
+		if got := strings.Join(diags, "; "); got != tt.diags {
+			t.Errorf("%s: the diagnostics are %s, want %s", tt.name, got, tt.diags)
+		}
+		var ids []string
+		_, ms := tenon.Unmark(tt.got)
+		for _, m := range ms {
+			ids = append(ids, m.MarkID())
+		}
+		if !slices.Equal(ids, tt.marks) {
+			t.Errorf("%s: the error value carries %v, want %v", tt.name, ids, tt.marks)
 		}
 	}
 }

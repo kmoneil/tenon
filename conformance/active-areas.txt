@@ -9,20 +9,12 @@
 # Only rules that are neither outline nor withdrawn are enforced. A rule is
 # covered when a test that called conformance.Covers with its identifier
 # passed during the run.
-#
-# The MK rules arrive one task at a time.
 
 BO
 EQ
 ER
-MK-001
-MK-002
-MK-003
-MK-004
-MK-005
-MK-006
-MK-007
-MK-008
+MK
+defer MK-009 marks are serialized in M10, which specifies the encoding a mark declares
 NU
 ST
 TY
