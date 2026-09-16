@@ -84,6 +84,10 @@ func (d *goDecoder) decode(m *goMapping, dst reflect.Value, v Value, p Path, opt
 		d.failWith(p, n.data.([]Diagnostic))
 		return
 	}
+	if m.unmarshal {
+		d.unmarshal(dst, v, p)
+		return
+	}
 	// The conversion keeps every mark on what it converts, so that a mark the
 	// decoding must refuse is not dropped by the conversion unseen.
 	c := converter{policy: d.policy, keepMarks: true}.value(v, m.constraint)
@@ -103,6 +107,10 @@ func (d *goDecoder) build(m *goMapping, dst reflect.Value, v Value, p Path, opti
 	n := v.n
 	if m.kind == goValue {
 		dst.Set(reflect.ValueOf(v))
+		return
+	}
+	if m.unmarshal {
+		d.unmarshal(dst, v, p)
 		return
 	}
 	nilable := m.kind == goPointer || m.kind == goSlice || m.kind == goMap
@@ -168,6 +176,15 @@ func (d *goDecoder) build(m *goMapping, dst reflect.Value, v Value, p Path, opti
 		ptr := reflect.New(m.elem.rt)
 		d.build(m.elem, ptr.Elem(), v, p, false)
 		dst.Set(ptr)
+	}
+}
+
+// unmarshal decodes v into dst by the UnmarshalValue method of dst's pointer,
+// giving it v as it is.
+func (d *goDecoder) unmarshal(dst reflect.Value, v Value, p Path) {
+	u := dst.Addr().Interface().(ValueUnmarshaler)
+	if err := u.UnmarshalValue(v); err != nil {
+		failWithError(&d.errs, p, CodeDecodeUnmarshalFailed, err)
 	}
 }
 

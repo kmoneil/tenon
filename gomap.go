@@ -28,7 +28,27 @@ const (
 	goStruct
 	goPointer
 	goValue
+	goCustom // a type that marshals and unmarshals itself, which needs no other mapping
 )
+
+// ValueMarshaler is implemented by a Go type that encodes itself: Encode gives
+// the value MarshalValue returns in place of the Go value's own mapping. The
+// type may implement it itself or through its pointer.
+type ValueMarshaler interface {
+	// MarshalValue returns the value the Go value encodes as, or an error.
+	// An error that is a *DiagnosticError contributes its diagnostics.
+	MarshalValue() (Value, error)
+}
+
+// ValueUnmarshaler is implemented by a pointer to a Go type that decodes
+// itself: Decode gives UnmarshalValue the value, unconverted and as it is,
+// null, unknown and marked values included, in place of the Go type's own
+// mapping.
+type ValueUnmarshaler interface {
+	// UnmarshalValue sets the Go value from v, or returns an error. An error
+	// that is a *DiagnosticError contributes its diagnostics.
+	UnmarshalValue(v Value) error
+}
 
 // goMapping is how a Go type maps to tenon: the type its values encode as,
 // where it maps to one, and the constraint that decoding converts to.
@@ -42,6 +62,9 @@ type goMapping struct {
 	constraint Constraint
 	elem       *goMapping // the element of a slice, array, map or pointer
 	fields     []goField  // the mapped fields of a struct, in field order
+	// marshal and unmarshal say the Go type encodes or decodes itself, in
+	// place of its mapping in that direction.
+	marshal, unmarshal bool
 }
 
 // goField is a struct field that maps to an attribute.
@@ -57,6 +80,9 @@ var (
 	bigIntGoType   = reflect.TypeFor[big.Int]()
 	bigFloatGoType = reflect.TypeFor[big.Float]()
 	bigRatGoType   = reflect.TypeFor[big.Rat]()
+
+	marshalerGoType   = reflect.TypeFor[ValueMarshaler]()
+	unmarshalerGoType = reflect.TypeFor[ValueUnmarshaler]()
 )
 
 // goMappings caches the mapping of every Go type met so far.
@@ -85,6 +111,15 @@ func buildMapping(rt reflect.Type, building map[reflect.Type]bool) *goMapping {
 	defer delete(building, rt)
 
 	m := &goMapping{rt: rt}
+	if k := rt.Kind(); k != reflect.Interface && k != reflect.Pointer {
+		m.marshal = rt.Implements(marshalerGoType) || reflect.PointerTo(rt).Implements(marshalerGoType)
+		m.unmarshal = reflect.PointerTo(rt).Implements(unmarshalerGoType)
+	}
+	if m.marshal && m.unmarshal {
+		m.kind, m.constraint = goCustom, Any()
+		actual, _ := goMappings.LoadOrStore(rt, m)
+		return actual.(*goMapping)
+	}
 	number := Exactly(Type{numberType})
 	switch rt {
 	case valueGoType:
@@ -142,6 +177,14 @@ func buildMapping(rt reflect.Type, building map[reflect.Type]bool) *goMapping {
 		default:
 			usagePanic("the Go type %s is of kind %s, which does not map to tenon", rt, rt.Kind())
 		}
+	}
+	// A type that encodes or decodes itself maps to no type, or to Any, in
+	// that direction, and by its own kind in the other.
+	if m.marshal {
+		m.typ = Type{}
+	}
+	if m.unmarshal {
+		m.constraint = Any()
 	}
 	actual, _ := goMappings.LoadOrStore(rt, m)
 	return actual.(*goMapping)

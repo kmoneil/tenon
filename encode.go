@@ -1,6 +1,7 @@
 package tenon
 
 import (
+	"errors"
 	"math"
 	"math/big"
 	"reflect"
@@ -88,6 +89,9 @@ func (e *goEncoder) fail(p Path, code Code, message string) {
 // encode encodes rv, which maps as m and which p locates, reporting whether it
 // could.
 func (e *goEncoder) encode(m *goMapping, rv reflect.Value, p Path) (Value, bool) {
+	if m.marshal {
+		return e.marshal(m, rv, p)
+	}
 	switch m.kind {
 	case goValue:
 		v := rv.Interface().(Value)
@@ -133,6 +137,51 @@ func (e *goEncoder) encode(m *goMapping, rv reflect.Value, p Path) (Value, bool)
 		return NullVal(nullType(m.elem)), true
 	}
 	return e.encode(m.elem, rv.Elem(), p)
+}
+
+// marshal encodes rv by its MarshalValue method, which the Go type has itself or
+// through its pointer.
+func (e *goEncoder) marshal(m *goMapping, rv reflect.Value, p Path) (Value, bool) {
+	var mv ValueMarshaler
+	if rv.Type().Implements(marshalerGoType) {
+		mv = rv.Interface().(ValueMarshaler)
+	} else {
+		ptr := reflect.New(rv.Type())
+		ptr.Elem().Set(rv)
+		mv = ptr.Interface().(ValueMarshaler)
+	}
+	v, err := mv.MarshalValue()
+	if err != nil {
+		failWithError(&e.errs, p, CodeEncodeMarshalFailed, err)
+		return Value{}, false
+	}
+	if v.n == nil {
+		usagePanic("the MarshalValue method of %s returned the zero Value, which is not a value", m.rt)
+	}
+	return v, true
+}
+
+// failWithError records err, which a marshaler or unmarshaler returned, for
+// the part at p: the diagnostics of a *DiagnosticError located within the
+// part, and otherwise a diagnostic of code whose message is the error's text.
+func failWithError(errs *containerErrors, p Path, code Code, err error) {
+	var de *DiagnosticError
+	if errors.As(err, &de) && de.Value.n != nil && de.Value.n.state == stateError {
+		for _, d := range de.Value.n.data.([]Diagnostic) {
+			at := p
+			for _, s := range d.Path.Steps() {
+				at = at.extend(s)
+			}
+			d.Path = at
+			errs.addDiagnostic(d)
+		}
+		return
+	}
+	message := strings.ToValidUTF8(err.Error(), "\U0000FFFD")
+	if message == "" {
+		message = "the method returned an error with no text"
+	}
+	errs.addDiagnostic(Diagnostic{Code: code, Message: message, Path: p})
 }
 
 // nullType returns the type whose null a nil of the Go type that m maps
