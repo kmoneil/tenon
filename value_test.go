@@ -211,10 +211,10 @@ func TestValueString(t *testing.T) {
 		{tenon.NumberFromText("-2.50"), "-2.5"},
 		{tenon.String(`say "hi"`), `"say \"hi\""`},
 		{tenon.Pending(tenon.SetOf(tenon.Any())), "pending(set_of(any))"},
-		{tenon.NumberFromText("x"), `error(number.invalid_syntax: "x" is not a number)`},
+		{tenon.NumberFromText("x"), `error(number.invalid_syntax: "\"x\" is not a number")`},
 		{
 			tenon.NumberFromText(strings.Repeat("7", 40) + "!"),
-			`error(number.invalid_syntax: "` + strings.Repeat("7", 32) + `"... is not a number)`,
+			`error(number.invalid_syntax: "\"` + strings.Repeat("7", 32) + `\"... is not a number")`,
 		},
 		{tenon.Value{}, "<zero Value>"},
 	} {

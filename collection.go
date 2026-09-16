@@ -484,7 +484,7 @@ func (n *node) writeContainer(b *strings.Builder) {
 			if i > 0 {
 				b.WriteString(", ")
 			}
-			b.WriteString(strconv.Quote(e.key))
+			writeQuoted(b, e.key)
 			b.WriteString(": ")
 			e.val.write(b)
 		}
@@ -495,7 +495,7 @@ func (n *node) writeContainer(b *strings.Builder) {
 			if i > 0 {
 				b.WriteString(", ")
 			}
-			b.WriteString(strconv.Quote(n.typ.t.attrs[i].name))
+			writeQuoted(b, n.typ.t.attrs[i].name)
 			b.WriteString(": ")
 			val.write(b)
 		}

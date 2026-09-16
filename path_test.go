@@ -2,7 +2,6 @@ package tenon_test
 
 import (
 	"slices"
-	"strconv"
 	"testing"
 
 	"tenon"
@@ -12,7 +11,7 @@ import (
 func TestConformance_VA020_PathSteps(t *testing.T) {
 	conformance.Covers(t, "VA-020")
 	var root tenon.Path
-	if root.Len() != 0 || len(root.Steps()) != 0 || root.String() != "" {
+	if root.Len() != 0 || len(root.Steps()) != 0 || root.String() != "." {
 		t.Errorf("the zero Path is not the empty path: %d steps, %q", root.Len(), root.String())
 	}
 
@@ -32,13 +31,13 @@ func TestConformance_VA020_PathSteps(t *testing.T) {
 		t.Errorf("String() = %s, want %s", got, want)
 	}
 
-	// Attribute names follow the rules for object attributes, and an
-	// unidentifier-like name is shown quoted.
+	// Attribute names follow the rules for object attributes, and a name that
+	// is not an identifier is shown quoted.
 	composed, decomposed := "caf\u00e9", "cafe\u0301"
-	if got, want := root.Attribute(decomposed).String(), "["+strconv.Quote(composed)+"]"; got != want {
+	if got, want := root.Attribute(decomposed).String(), ".\""+composed+"\""; got != want {
 		t.Errorf("String() = %s, want %s", got, want)
 	}
-	if got := root.Attribute("has space").String(); got != `["has space"]` {
+	if got := root.Attribute("has space").String(); got != `."has space"` {
 		t.Errorf("String() = %s", got)
 	}
 	mustPanicUsage(t, "must not be empty", func() { root.Attribute("") })

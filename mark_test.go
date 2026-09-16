@@ -185,7 +185,7 @@ func TestConformance_MK003_ResultMarksAreTheUnion(t *testing.T) {
 	// A result decided by one operand still carries the union: consuming is
 	// what propagates, not deciding.
 	f := tenon.And(tenon.WithMarks(tenon.Bool(false), a), tenon.WithMarks(tenon.Bool(true), b))
-	if f.String() != "false" || !tenon.HasMark(f, a) || !tenon.HasMark(f, b) {
+	if unmarked(f).String() != "false" || !tenon.HasMark(f, a) || !tenon.HasMark(f, b) {
 		t.Errorf("And decided by false is %v with the wrong marks", f)
 	}
 
@@ -251,7 +251,7 @@ func TestConformance_MK004_EqualsIgnoresMarksIdenticalDoesNot(t *testing.T) {
 		"marked null and null": {tenon.WithMarks(tenon.NullVal(num), m1), tenon.NullVal(num)},
 		"marked error operand": {tenon.WithMarks(tenon.Bool(true), m1), tenon.Bool(true)},
 	} {
-		if got := tenon.Equals(pair[0], pair[1]).String(); got != "true" {
+		if got := unmarked(tenon.Equals(pair[0], pair[1])).String(); got != "true" {
 			t.Errorf("%s: Equals is %s, want true", name, got)
 		}
 	}
@@ -429,15 +429,15 @@ func TestConformance_MK006_MarkedValuesHaveNoHashAndNoPlaceInASet(t *testing.T) 
 		f    func()
 	}{
 		{"Hash called on a value of type number that carries marks", func() { tenon.Hash(marked) }},
-		{"that holds a marked value at [0][1]", func() { tenon.Hash(holding) }},
-		{"that holds a marked value at [1], and", func() { tenon.Hash(tenon.ListVal(num, two, marked, marked)) }},
+		{"that holds a marked value at .[0][1]", func() { tenon.Hash(holding) }},
+		{"that holds a marked value at .[1], and", func() { tenon.Hash(tenon.ListVal(num, two, marked, marked)) }},
 		{"hash the value UnmarkDeep returns", func() { tenon.Hash(holding) }},
 		{"CanonicalCompare called on a value of type number that carries marks", func() { tenon.CanonicalCompare(marked, one) }},
-		{"that holds a marked value at [0][1]", func() { tenon.CanonicalCompare(one, holding) }},
+		{"that holds a marked value at .[0][1]", func() { tenon.CanonicalCompare(one, holding) }},
 		{"compare the values UnmarkDeep returns", func() { tenon.CanonicalCompare(one, holding) }},
 		{"SetVal: element 1 is a value of type number that carries marks", func() { tenon.SetVal(num, two, marked) }},
 		{
-			"SetVal: element 0 is a value of type list(number) that holds a marked value at [1]",
+			"SetVal: element 0 is a value of type list(number) that holds a marked value at .[1]",
 			func() { tenon.SetVal(lists, holding.Index(0)) },
 		},
 		{"an unknown value of type number that carries marks", func() { tenon.SetVal(num, tenon.WithMarks(tenon.Unknown(num), m)) }},
@@ -467,7 +467,7 @@ func TestConformance_MK006_MarkedValuesHaveNoHashAndNoPlaceInASet(t *testing.T) 
 	if l := tenon.ListVal(num, marked); !tenon.HasMark(l.Index(0), m) {
 		t.Errorf("the list %v lost its member's mark", l)
 	}
-	if got := tenon.Contains(tenon.SetVal(num, one), marked); got.String() != "true" || !tenon.HasMark(got, m) {
+	if got := tenon.Contains(tenon.SetVal(num, one), marked); unmarked(got).String() != "true" || !tenon.HasMark(got, m) {
 		t.Errorf("asking whether a set holds a marked member gave %v", got)
 	}
 
@@ -497,7 +497,7 @@ func TestConformance_MK006_MarkedValuesHaveNoHashAndNoPlaceInASet(t *testing.T) 
 	// Unmark takes only the value's own marks, so what it leaves can still be
 	// marked.
 	top, _ := tenon.Unmark(tenon.WithMarks(holding, iso))
-	mustPanicUsage(t, "that holds a marked value at [0][1]", func() { tenon.Hash(top) })
+	mustPanicUsage(t, "that holds a marked value at .[0][1]", func() { tenon.Hash(top) })
 
 	// The pattern: unmark each member, build the set, and reapply the marks to
 	// the set. The marks of two equal members all survive, so the set is the
@@ -525,7 +525,7 @@ func TestConformance_MK006_MarkedValuesHaveNoHashAndNoPlaceInASet(t *testing.T) 
 	// set that is narrowed.
 	listed, listedMarks := tenon.UnmarkDeep(marked)
 	r := tenon.Narrow(tenon.WithMarks(tenon.Unknown(tenon.Set(num)), listedMarks...), tenon.NotNull(), tenon.Members(listed))
-	if got := tenon.Contains(r, one); got.String() != "true" || !tenon.HasMark(got, m) {
+	if got := tenon.Contains(r, one); unmarked(got).String() != "true" || !tenon.HasMark(got, m) {
 		t.Errorf("membership of the listed value gave %v", got)
 	}
 
@@ -794,22 +794,22 @@ func TestConformance_MK010_ErrorValuesCarryMarks(t *testing.T) {
 		{
 			"an error element",
 			tenon.ListVal(num, tenon.WithMarks(one, q), tenon.WithMarks(failed, p, iso)),
-			"app.failed at [1]", []string{"p"},
+			"app.failed at .[1]", []string{"p"},
 		},
 		{
 			"an error hoisted twice",
 			tenon.TupleVal(tenon.ObjectVal(map[string]tenon.Value{"a": tenon.WithMarks(failed, p)})),
-			"app.failed at [0].a", []string{"p"},
+			"app.failed at .[0].a", []string{"p"},
 		},
 		{
 			"an error entry of a map",
 			tenon.MapVal(num, map[string]tenon.Value{"k": tenon.WithMarks(failed, p)}),
-			`app.failed at ["k"]`, []string{"p"},
+			`app.failed at .["k"]`, []string{"p"},
 		},
 		{
 			"an error member of a set",
 			tenon.SetVal(num, tenon.WithMarks(failed, p)),
-			"app.failed at [0]", []string{"p"},
+			"app.failed at .[0]", []string{"p"},
 		},
 		// Narrowing and resolving refine the value they are given, so an error
 		// keeps every mark it carries, and a contradiction carries every mark

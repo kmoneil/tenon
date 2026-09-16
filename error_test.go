@@ -72,8 +72,8 @@ func TestConformance_ER003_ErrorValuesCarryDiagnostics(t *testing.T) {
 
 	// The display of an error value shows the code, message and path of each
 	// diagnostic.
-	want := "error(string.invalid_utf8: the text is not well-formed UTF-8 at .servers[0]; " +
-		"app.unknown_setting: there is no such setting)"
+	want := `error(string.invalid_utf8: "the text is not well-formed UTF-8" at .servers[0]; ` +
+		`app.unknown_setting: "there is no such setting")`
 	if got := v.String(); got != want {
 		t.Errorf("String() = %s, want %s", got, want)
 	}

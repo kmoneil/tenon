@@ -94,7 +94,7 @@ func TestConformance_EQ045_CanonicalOrder(t *testing.T) {
 	mustPanicUsage(t, "that carries marks", func() {
 		tenon.CanonicalCompare(tenon.WithMarks(n(1), m), n(1))
 	})
-	mustPanicUsage(t, "that holds a marked value at [0]", func() {
+	mustPanicUsage(t, "that holds a marked value at .[0]", func() {
 		tenon.CanonicalCompare(n(1), tenon.ListVal(num, tenon.WithMarks(n(1), m)))
 	})
 }

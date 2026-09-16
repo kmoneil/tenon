@@ -201,7 +201,7 @@ func TestContainersHoldMembersThatAreNotKnown(t *testing.T) {
 	if l.Type() != tenon.List(str) {
 		t.Errorf("the list has type %v, want %v", l.Type(), tenon.List(str))
 	}
-	if want := `list(string)[unknown(string), null, "x"]`; l.String() != want {
+	if want := `list(string)[unknown(string), null(string), "x"]`; l.String() != want {
 		t.Errorf("the list reads as %s, want %s", l, want)
 	}
 	// A tuple and an object take their type from members that are not known,

@@ -1,9 +1,6 @@
 package tenon
 
-import (
-	"strconv"
-	"strings"
-)
+import "strings"
 
 // redactingOf returns the redacting marks among ms, in the order given, or nil
 // when there are none.
@@ -23,22 +20,10 @@ func redactingOf(ms []Mark) []Mark {
 func (n *node) redactingMarks() []Mark { return redactingOf(n.markList()) }
 
 // writeRedacted writes the placeholder that stands in for what redacting marks
-// withhold: the identifiers of the marks, as in redacted("secret"). ms must be
-// sorted by identifier, so that an identifier two marks share is written once.
+// withhold: the identifiers of the marks, as in redacted("secret").
 func writeRedacted(b *strings.Builder, ms []Mark) {
 	b.WriteString("redacted(")
-	last := ""
-	for i, m := range ms {
-		id := m.MarkID()
-		if i > 0 {
-			if id == last {
-				continue
-			}
-			b.WriteString(", ")
-		}
-		b.WriteString(strconv.Quote(id))
-		last = id
-	}
+	writeIdentifiers(b, ms)
 	b.WriteByte(')')
 }
 

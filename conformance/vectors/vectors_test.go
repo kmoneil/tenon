@@ -361,7 +361,7 @@ func TestConformance_SE001_Vectors(t *testing.T) {
 	conformance.Covers(t, "SE-001", "SE-002", "SE-003", "SE-031", "SE-033")
 	f := file{
 		Format: 1,
-		About: "Each valid vector is the one encoding of the value named, rendered in value for reading: a decoder " +
+		About: "Each valid vector is the one encoding of the value named, whose display form (DI-010) is given in value: a decoder " +
 			"accepts it, and encoding what it decodes gives it back. Each invalid vector is input that encodes no " +
 			"value, and a decoder refuses it with the code given. The capsules and marks listed are what the vectors " +
 			"use, and a decoder is supplied with them.",

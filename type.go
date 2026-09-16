@@ -304,7 +304,7 @@ func (t Type) Equals(u Type) bool {
 	return t.data() == u.data()
 }
 
-// String describes t for messages, as in
+// String returns the display form of t (DI-014), as in
 // object({"name": string, "tags": list(string)}). It is not a format for
 // parsing.
 func (t Type) String() string {
@@ -332,7 +332,7 @@ func (t Type) write(b *strings.Builder) {
 			if i > 0 {
 				b.WriteString(", ")
 			}
-			b.WriteString(strconv.Quote(a.name))
+			writeQuoted(b, a.name)
 			b.WriteString(": ")
 			a.typ.write(b)
 		}
@@ -348,7 +348,7 @@ func (t Type) write(b *strings.Builder) {
 		b.WriteString("])")
 	case KindCapsule:
 		b.WriteString("capsule(")
-		b.WriteString(strconv.Quote(d.capsule.name))
+		writeQuoted(b, d.capsule.name)
 		b.WriteByte(')')
 	}
 }

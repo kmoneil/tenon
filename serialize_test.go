@@ -240,11 +240,11 @@ func TestConformance_SE040_Capsules(t *testing.T) {
 
 	opaque := tenon.Capsule("opaque", tenon.CapsuleOps[celsius]{})
 	wantSerializeFailure(t, "a list of undeclared capsules", tenon.ListVal(opaque, tenon.CapsuleVal(opaque, &celsius{}), tenon.CapsuleVal(opaque, &celsius{})),
-		wantDiag{tenon.CodeSerializeUnencodableCapsule, ""},
-		wantDiag{tenon.CodeSerializeUnencodableCapsule, "[0]"},
-		wantDiag{tenon.CodeSerializeUnencodableCapsule, "[1]"})
+		wantDiag{tenon.CodeSerializeUnencodableCapsule, "."},
+		wantDiag{tenon.CodeSerializeUnencodableCapsule, ".[0]"},
+		wantDiag{tenon.CodeSerializeUnencodableCapsule, ".[1]"})
 	wantSerializeFailure(t, "a pending value naming one", tenon.Pending(tenon.ListOf(is(opaque))),
-		wantDiag{tenon.CodeSerializeUnencodableCapsule, ""})
+		wantDiag{tenon.CodeSerializeUnencodableCapsule, "."})
 	twin := tenon.Capsule("degrees", tenon.CapsuleOps[celsius]{Encoding: &tenon.CapsuleEncoding[celsius]{
 		ID: "t/c", Type: num,
 		Encode: func(v *celsius) tenon.Value { return n(v.degrees) },
@@ -252,7 +252,7 @@ func TestConformance_SE040_Capsules(t *testing.T) {
 	}})
 	wantSerializeFailure(t, "two types of one identifier", obj(map[string]tenon.Value{
 		"a": tenon.CapsuleVal(degrees, &celsius{1}), "b": tenon.CapsuleVal(twin, &celsius{1}),
-	}), wantDiag{tenon.CodeSerializeUnencodableCapsule, ""})
+	}), wantDiag{tenon.CodeSerializeUnencodableCapsule, "."})
 
 	mustPanicUsage(t, "declares an encoding with no identifier", func() {
 		tenon.Capsule("x", tenon.CapsuleOps[celsius]{Encoding: &tenon.CapsuleEncoding[celsius]{Type: num}})
@@ -277,7 +277,7 @@ func TestConformance_SE042_UnencodableMarks(t *testing.T) {
 		wantDiag{tenon.CodeSerializeUnencodableMark, ".a"},
 		wantDiag{tenon.CodeSerializeUnencodableMark, ".b[1]"})
 	wantSerializeFailure(t, "on an error value", tenon.WithMarks(tenon.ErrorVal(tenon.Diagnostic{Code: "app.x", Message: "x"}), plain),
-		wantDiag{tenon.CodeSerializeUnencodableMark, ""})
+		wantDiag{tenon.CodeSerializeUnencodableMark, "."})
 	mustPanicUsage(t, "serialize alike", func() {
 		tenon.Serialize(tenon.WithMarks(n(1), note{"p", "v"}, twinNote{"p", "v"}))
 	})

@@ -71,7 +71,7 @@ func TestMarkedValuesAreThere(t *testing.T) {
 			carries["error"] = true
 		case len(own) > 0 && v.IsPending():
 			carries["pending"] = true
-		case len(own) > 0 && tenon.IsNull(v).String() == "true":
+		case len(own) > 0 && v.IsKnown() && !v.HasContent():
 			carries["null"] = true
 		case len(own) > 0 && !v.IsKnown():
 			carries["unknown"] = true

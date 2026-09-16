@@ -153,9 +153,9 @@ func TestConformance_GO012_ValuesOfManyTypes(t *testing.T) {
 	wantValue(t, "a map of values", encoded(t, map[string]tenon.Value{"a": n(1), "b": s("x")}),
 		obj(map[string]tenon.Value{"a": n(1), "b": s("x")}))
 	wantEncodeFailure(t, "an empty key", map[string]tenon.Value{"": n(1)},
-		wantDiag{tenon.CodeConvertUnexpectedAttribute, `[""]`})
+		wantDiag{tenon.CodeConvertUnexpectedAttribute, `.[""]`})
 	wantEncodeFailure(t, "keys that are one", map[string]tenon.Value{"caf\U000000e9": n(1), "cafe\U00000301": n(2)},
-		wantDiag{tenon.CodeMapDuplicateKey, ""})
+		wantDiag{tenon.CodeMapDuplicateKey, "."})
 
 	// Nil encodes as the null of the type, and empty as empty.
 	var nilInts []int

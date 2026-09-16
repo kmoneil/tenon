@@ -72,7 +72,7 @@ func TestConformance_EQ030_IdenticalValuesHashAlike(t *testing.T) {
 	// member's.
 	m := stamp{id: "m"}
 	mustPanicUsage(t, "that carries marks", func() { tenon.Hash(tenon.WithMarks(tenon.String("a"), m)) })
-	mustPanicUsage(t, "that holds a marked value at [0]", func() {
+	mustPanicUsage(t, "that holds a marked value at .[0]", func() {
 		tenon.Hash(tenon.ListVal(str, tenon.WithMarks(tenon.String("a"), m)))
 	})
 }

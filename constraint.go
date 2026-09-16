@@ -281,7 +281,7 @@ func (c Constraint) Members() []Constraint {
 	return slices.Clone(c.mustKind("Members", ConstraintTupleOf, ConstraintOneOf).members)
 }
 
-// String describes c for messages, as in
+// String returns the display form of c (DI-014), as in
 // object_with({"name": exactly(string), "tags"?: list_of(any)}, closed), where
 // ? marks an optional field. It is not a format for parsing.
 func (c Constraint) String() string {
@@ -319,7 +319,7 @@ func (c Constraint) write(b *strings.Builder) {
 			if i > 0 {
 				b.WriteString(", ")
 			}
-			b.WriteString(strconv.Quote(f.name))
+			writeQuoted(b, f.name)
 			if !f.Required {
 				b.WriteByte('?')
 			}

@@ -154,8 +154,9 @@ func invalidUTF8At(s string) int {
 	return len(s)
 }
 
-// quoted quotes text for a diagnostic message, shortening it if it is long.
-func quoted(s string) string { return shortened(s, strconv.Quote) }
+// quoted quotes text for a diagnostic message as a display form does,
+// shortening it if it is long.
+func quoted(s string) string { return shortened(s, quotedText) }
 
 // quotedASCII quotes text for a diagnostic message in ASCII, so that spellings
 // that normalize alike stay distinguishable, shortening it if it is long.
@@ -397,15 +398,21 @@ func (v Value) AsBigInt() (*big.Int, bool) {
 	return v.known(KindNumber, "AsBigInt").data.(decimal.Dec).BigInt()
 }
 
-// String describes v for messages, as in "text", list(number)[1, 2.5] or
-// error(string.invalid_utf8: ...). It is not a format for parsing.
+// String returns the display form of v (DI-010), as in "text",
+// list(number)[1, 2.5], null(string), unknown(number, >= 5),
+// marked(true, "audited") or error(number.divide_by_zero: "division by zero").
+// It describes v for people, and is not a format for parsing. Values that are
+// not identical display differently, except where the display withholds what
+// a redacting mark withholds or names a mark, a capsule type or a capsule value
+// by what they declare.
 //
 // A value carrying a redacting mark is described by a placeholder naming its
 // redacting marks, as in redacted("secret"), wherever it appears, alone or
-// within another value: what it holds, what its range says, and whether it is
-// null are all withheld. An error value is described by its diagnostics,
-// which withheld what they had to when they were made. To show what a
-// redacting mark withholds, unmark the value first.
+// within another value: what it holds, what its range says, whether it is
+// null, and its other marks are all withheld. An error value is described by
+// its diagnostics, which withheld what they had to when they were made, and by
+// all its marks. To show what a redacting mark withholds, unmark the value
+// first.
 func (v Value) String() string {
 	if v.n == nil {
 		return "<zero Value>"
@@ -417,12 +424,27 @@ func (v Value) String() string {
 
 func (v Value) write(b *strings.Builder) {
 	n := v.n
+	ms := n.markList()
 	if n.state != stateError {
-		if ms := n.redactingMarks(); ms != nil {
-			writeRedacted(b, ms)
+		if rs := redactingOf(ms); rs != nil {
+			writeRedacted(b, rs)
 			return
 		}
 	}
+	if ms != nil {
+		b.WriteString("marked(")
+		v.writeUnmarked(b)
+		b.WriteString(", ")
+		writeIdentifiers(b, ms)
+		b.WriteByte(')')
+		return
+	}
+	v.writeUnmarked(b)
+}
+
+// writeUnmarked writes the display form v would have without its marks.
+func (v Value) writeUnmarked(b *strings.Builder) {
+	n := v.n
 	switch n.state {
 	case stateError:
 		b.WriteString("error(")
@@ -432,10 +454,10 @@ func (v Value) write(b *strings.Builder) {
 			}
 			b.WriteString(string(d.Code))
 			b.WriteString(": ")
-			b.WriteString(d.Message)
+			writeQuoted(b, d.Message)
 			if d.Path.Len() > 0 {
 				b.WriteString(" at ")
-				b.WriteString(d.Path.String())
+				d.Path.write(b)
 			}
 		}
 		b.WriteByte(')')
@@ -452,11 +474,14 @@ func (v Value) write(b *strings.Builder) {
 		b.WriteByte(')')
 		return
 	case stateNull:
-		b.WriteString("null")
+		b.WriteString("null(")
+		n.typ.write(b)
+		b.WriteByte(')')
 		return
 	case stateUnknown:
 		b.WriteString("unknown(")
-		Range{v}.write(b)
+		n.typ.write(b)
+		n.data.(*rangeData).write(b)
 		b.WriteByte(')')
 		return
 	}
@@ -466,9 +491,16 @@ func (v Value) write(b *strings.Builder) {
 	case KindNumber:
 		b.WriteString(n.data.(decimal.Dec).String())
 	case KindString:
-		b.WriteString(strconv.Quote(n.data.(string)))
+		writeQuoted(b, n.data.(string))
 	case KindCapsule:
-		n.typ.write(b)
+		c := n.typ.t.capsule
+		b.WriteString("capsule(")
+		writeQuoted(b, c.name)
+		if c.display != nil {
+			b.WriteString(", ")
+			writeQuoted(b, c.display(n.data))
+		}
+		b.WriteByte(')')
 	default:
 		n.writeContainer(b)
 	}

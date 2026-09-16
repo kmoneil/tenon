@@ -90,17 +90,17 @@ func TestConformance_SE063_ProjectedStrings(t *testing.T) {
 func TestConformance_SE061_WhatDoesNotProject(t *testing.T) {
 	conformance.Covers(t, "SE-061", "SE-060", "SE-051")
 	secret := stamp{id: "secret", redact: true}
-	wantProjectionFailure(t, "an unknown", tenon.Unknown(num), wantDiag{tenon.CodeSerializeNotKnown, ""})
-	wantProjectionFailure(t, "a pending value", tenon.Pending(tenon.Any()), wantDiag{tenon.CodeSerializeNotKnown, ""})
+	wantProjectionFailure(t, "an unknown", tenon.Unknown(num), wantDiag{tenon.CodeSerializeNotKnown, "."})
+	wantProjectionFailure(t, "a pending value", tenon.Pending(tenon.Any()), wantDiag{tenon.CodeSerializeNotKnown, "."})
 	wantProjectionFailure(t, "unknown members, each located", obj(map[string]tenon.Value{
 		"a": tenon.ListVal(num, n(1), tenon.Unknown(num)),
 		"b": tenon.Unknown(str),
 	}), wantDiag{tenon.CodeSerializeNotKnown, ".a[1]"}, wantDiag{tenon.CodeSerializeNotKnown, ".b"})
 	// A redacted value is refused whole: what it holds is not looked at.
 	wantProjectionFailure(t, "a redacted list holding an unknown", tenon.WithMarks(tenon.ListVal(num, tenon.Unknown(num)), secret),
-		wantDiag{tenon.CodeSerializeRedacted, ""})
+		wantDiag{tenon.CodeSerializeRedacted, "."})
 	wantProjectionFailure(t, "a redacted member", tenon.MapVal(str, map[string]tenon.Value{"password": tenon.WithMarks(s("hunter2"), secret)}),
-		wantDiag{tenon.CodeSerializeRedacted, `["password"]`})
+		wantDiag{tenon.CodeSerializeRedacted, `.["password"]`})
 	_, failure, _ := tenon.ProjectJSON(tenon.WithMarks(s("hunter2"), secret))
 	if strings.Contains(failure.String(), "hunter2") {
 		t.Errorf("the failure shows what the mark withholds: %v", failure)
@@ -111,7 +111,7 @@ func TestConformance_SE061_WhatDoesNotProject(t *testing.T) {
 
 	opaque := tenon.Capsule("opaque", tenon.CapsuleOps[celsius]{})
 	wantProjectionFailure(t, "a capsule with no display form", tenon.ListVal(opaque, tenon.CapsuleVal(opaque, &celsius{})),
-		wantDiag{tenon.CodeSerializeUnencodableCapsule, "[0]"})
+		wantDiag{tenon.CodeSerializeUnencodableCapsule, ".[0]"})
 	failed := tenon.ErrorVal(tenon.Diagnostic{Code: "app.failed", Message: "it failed"})
 	if _, got, ok := tenon.ProjectJSON(failed); ok || !tenon.Identical(got, failed) {
 		t.Errorf("projecting an error value gave %v", got)

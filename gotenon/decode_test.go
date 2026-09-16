@@ -42,8 +42,8 @@ func TestConformance_GO002_DecodingIsConversion(t *testing.T) {
 	if got := decoded[int](t, s("42"), uns); got != 42 {
 		t.Errorf("decoding \"42\" unsafely gave %d", got)
 	}
-	wantDecodeFailures[int](t, "a string, safely", s("42"), safe, wantDiag{tenon.CodeConvertUnsafe, ""})
-	wantDecodeFailures[int](t, "not a number", s("x"), uns, wantDiag{tenon.CodeNumberInvalidSyntax, ""})
+	wantDecodeFailures[int](t, "a string, safely", s("42"), safe, wantDiag{tenon.CodeConvertUnsafe, "."})
+	wantDecodeFailures[int](t, "not a number", s("x"), uns, wantDiag{tenon.CodeNumberInvalidSyntax, "."})
 	if got := decoded[[]string](t, tenon.TupleVal(s("a"), s("b")), safe); !reflect.DeepEqual(got, []string{"a", "b"}) {
 		t.Errorf("a tuple decoded into %v", got)
 	}
@@ -66,7 +66,7 @@ func TestConformance_GO002_DecodingIsConversion(t *testing.T) {
 	if got := decoded[address](t, m, uns); got.Street != "Main" || got.Unit != nil {
 		t.Errorf("a map decoded into %+v", got)
 	}
-	wantDecodeFailures[address](t, "a map into a struct, safely", m, safe, wantDiag{tenon.CodeConvertUnsafe, ""})
+	wantDecodeFailures[address](t, "a map into a struct, safely", m, safe, wantDiag{tenon.CodeConvertUnsafe, "."})
 }
 
 func TestConformance_GO032_NumbersDecode(t *testing.T) {
@@ -136,7 +136,7 @@ func TestConformance_GO041_TheBoundaryRefusesWhatGoCannotHold(t *testing.T) {
 		wantDiag{tenon.CodeDecodeMarked, ".tags[0]"})
 
 	wantDecodeFailures[int](t, "a pending value", tenon.Narrow(tenon.Pending(tenon.Any()), tenon.NotNull()), safe,
-		wantDiag{tenon.CodeDecodeNotKnown, ""})
+		wantDiag{tenon.CodeDecodeNotKnown, "."})
 
 	// A tenon.Value takes what it is given, error values included.
 	failed := tenon.ErrorVal(tenon.Diagnostic{Code: "app.failed", Message: "it failed"})
@@ -148,7 +148,7 @@ func TestConformance_GO041_TheBoundaryRefusesWhatGoCannotHold(t *testing.T) {
 		t.Errorf("a tenon.Value field took %v", got.Extra)
 	}
 	// Anywhere else an error value gives its diagnostics.
-	wantDecodeFailures[int](t, "an error value", failed, safe, wantDiag{"app.failed", ""})
+	wantDecodeFailures[int](t, "an error value", failed, safe, wantDiag{"app.failed", "."})
 
 	// Null is nil where Go has nil, and the zero value where optional.
 	type nullable struct {
@@ -165,13 +165,13 @@ func TestConformance_GO041_TheBoundaryRefusesWhatGoCannotHold(t *testing.T) {
 	if got.P != nil || got.S != nil || got.M != nil || got.O != 0 || got.Gone != "" {
 		t.Errorf("nulls decoded as %+v", got)
 	}
-	wantDecodeFailures[int](t, "a null int", nullNum, safe, wantDiag{tenon.CodeDecodeNull, ""})
+	wantDecodeFailures[int](t, "a null int", nullNum, safe, wantDiag{tenon.CodeDecodeNull, "."})
 	// A pending value known to be null is a null as well.
 	pendingNull := tenon.Narrow(tenon.Pending(tenon.Any()), tenon.Null())
 	if got := decoded[map[string]int](t, pendingNull, safe); got != nil {
 		t.Errorf("a pending null decoded into %v", got)
 	}
-	wantDecodeFailures[int](t, "a pending null int", pendingNull, safe, wantDiag{tenon.CodeDecodeNull, ""})
+	wantDecodeFailures[int](t, "a pending null int", pendingNull, safe, wantDiag{tenon.CodeDecodeNull, "."})
 }
 
 func TestMarksAreRefusedWhereTheConversionPutsThem(t *testing.T) {
@@ -189,7 +189,7 @@ func TestMarksAreRefusedWhereTheConversionPutsThem(t *testing.T) {
 	wantDecodeFailures[pair](t, "a map with a marked element", m, uns, wantDiag{tenon.CodeDecodeMarked, ".a"})
 	o := obj(map[string]tenon.Value{"a": tenon.WithMarks(s("x"), iso), "b b": tenon.WithMarks(s("y"), prop)})
 	wantDecodeFailures[map[string]string](t, "an object with marked attributes", o, safe,
-		wantDiag{tenon.CodeDecodeMarked, `["a"]`}, wantDiag{tenon.CodeDecodeMarked, `["b b"]`})
+		wantDiag{tenon.CodeDecodeMarked, `.["a"]`}, wantDiag{tenon.CodeDecodeMarked, `.["b b"]`})
 
 	// A member decoded by its own conversion is refused once, in member order
 	// among the other failures.
@@ -198,16 +198,16 @@ func TestMarksAreRefusedWhereTheConversionPutsThem(t *testing.T) {
 		obj(map[string]tenon.Value{"name": tenon.Unknown(str)}),
 		tenon.WithMarks(obj(map[string]tenon.Value{"name": s("c")}), prop))
 	wantDecodeFailures[[]holder](t, "a slice of holders", members, safe,
-		wantDiag{tenon.CodeDecodeMarked, "[0].name"},
-		wantDiag{tenon.CodeDecodeNotKnown, "[1].name"},
-		wantDiag{tenon.CodeDecodeMarked, "[2]"})
+		wantDiag{tenon.CodeDecodeMarked, ".[0].name"},
+		wantDiag{tenon.CodeDecodeNotKnown, ".[1].name"},
+		wantDiag{tenon.CodeDecodeMarked, ".[2]"})
 
 	// What the conversion refuses is refused whole, marks and all, and so is
 	// a list too long for its array.
 	wantDecodeFailures[[]pair](t, "a list of the wrong type", tenon.ListVal(str, tenon.WithMarks(s("x"), iso)), safe,
-		wantDiag{tenon.CodeConvertNoConversion, "[0]"})
+		wantDiag{tenon.CodeConvertNoConversion, ".[0]"})
 	wantDecodeFailures[[2]string](t, "a long list", tenon.ListVal(str, s("a"), tenon.WithMarks(s("b"), iso), s("c")), safe,
-		wantDiag{tenon.CodeDecodeLengthMismatch, ""})
+		wantDiag{tenon.CodeDecodeLengthMismatch, "."})
 }
 
 func TestDecodingValuesOfManyTypes(t *testing.T) {
@@ -218,7 +218,7 @@ func TestDecodingValuesOfManyTypes(t *testing.T) {
 		t.Errorf("a tuple decoded into %v", got)
 	}
 	wantDecodeFailures[[]tenon.Value](t, "a map into a slice of values", tenon.MapVal(num, nil), safe,
-		wantDiag{tenon.CodeConvertNoConversion, ""})
+		wantDiag{tenon.CodeConvertNoConversion, "."})
 	// A slice of structs holding values converts each member on its own.
 	holders := decoded[[]holder](t, tenon.TupleVal(
 		obj(map[string]tenon.Value{"name": s("a")}),
@@ -226,7 +226,7 @@ func TestDecodingValuesOfManyTypes(t *testing.T) {
 	if len(holders) != 2 || holders[0].Extra != (tenon.Value{}) || !tenon.Identical(holders[1].Extra, n(2)) {
 		t.Errorf("holders decoded as %+v", holders)
 	}
-	wantDecodeFailures[[3]int](t, "a short array", tenon.ListVal(num, n(1)), safe, wantDiag{tenon.CodeDecodeLengthMismatch, ""})
+	wantDecodeFailures[[3]int](t, "a short array", tenon.ListVal(num, n(1)), safe, wantDiag{tenon.CodeDecodeLengthMismatch, "."})
 	if got := decoded[map[string]tenon.Value](t, obj(map[string]tenon.Value{"a": n(1)}), safe); !tenon.Identical(got["a"], n(1)) {
 		t.Errorf("an object decoded into %v", got)
 	}

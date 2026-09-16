@@ -41,16 +41,16 @@ func TestConformance_ER008_ContainersHoistErrors(t *testing.T) {
 		got  tenon.Value
 		want []string
 	}{
-		{"list", tenon.ListVal(str, a, first), []string{"first at [1]"}},
-		{"set", tenon.SetVal(str, first), []string{"first at [0]"}},
-		{"tuple", tenon.TupleVal(a, first, second), []string{"first at [1]", "second at [2]"}},
+		{"list", tenon.ListVal(str, a, first), []string{"first at .[1]"}},
+		{"set", tenon.SetVal(str, first), []string{"first at .[0]"}},
+		{"tuple", tenon.TupleVal(a, first, second), []string{"first at .[1]", "second at .[2]"}},
 		{
 			"object",
 			tenon.ObjectVal(map[string]tenon.Value{"name": first, "count": second}),
 			[]string{"second at .count", "first at .name"},
 		},
-		{"map", tenon.MapVal(str, map[string]tenon.Value{"k": first}), []string{`first at ["k"]`}},
-		{"several, in element order", tenon.ListVal(str, first, a, second), []string{"first at [0]", "second at [2]"}},
+		{"map", tenon.MapVal(str, map[string]tenon.Value{"k": first}), []string{`first at .["k"]`}},
+		{"several, in element order", tenon.ListVal(str, first, a, second), []string{"first at .[0]", "second at .[2]"}},
 	} {
 		if !tt.got.IsError() || tt.got.IsResolved() {
 			t.Errorf("%s: %v is not an error value", tt.name, tt.got)
@@ -65,11 +65,11 @@ func TestConformance_ER008_ContainersHoistErrors(t *testing.T) {
 	// through.
 	inner := tenon.ObjectVal(map[string]tenon.Value{"name": failed("deep")})
 	outer := tenon.ListVal(tenon.Object(map[string]tenon.Type{"name": str}), inner)
-	if got := located(outer); !slices.Equal(got, []string{"deep at [0].name"}) {
+	if got := located(outer); !slices.Equal(got, []string{"deep at .[0].name"}) {
 		t.Errorf("an error two levels deep gave %q", got)
 	}
 	deeper := tenon.MapVal(tenon.List(str), map[string]tenon.Value{"list": tenon.ListVal(str, a, failed("leaf"))})
-	if got := located(deeper); !slices.Equal(got, []string{`leaf at ["list"][1]`}) {
+	if got := located(deeper); !slices.Equal(got, []string{`leaf at .["list"][1]`}) {
 		t.Errorf("an error three levels deep gave %q", got)
 	}
 
@@ -79,10 +79,10 @@ func TestConformance_ER008_ContainersHoistErrors(t *testing.T) {
 		tenon.Diagnostic{Code: "app.failed", Message: "twice"},
 		tenon.Diagnostic{Code: "app.failed", Message: "twice"},
 	)
-	if got := located(tenon.ListVal(str, twice)); !slices.Equal(got, []string{"twice at [0]"}) {
+	if got := located(tenon.ListVal(str, twice)); !slices.Equal(got, []string{"twice at .[0]"}) {
 		t.Errorf("a repeated diagnostic gave %q", got)
 	}
-	if got := located(tenon.ListVal(str, first, first)); !slices.Equal(got, []string{"first at [0]", "first at [1]"}) {
+	if got := located(tenon.ListVal(str, first, first)); !slices.Equal(got, []string{"first at .[0]", "first at .[1]"}) {
 		t.Errorf("one message at two positions gave %q", got)
 	}
 
@@ -91,7 +91,7 @@ func TestConformance_ER008_ContainersHoistErrors(t *testing.T) {
 	mixed := tenon.MapVal(str, map[string]tenon.Value{"a\xff": failed("under a bad key"), "k": first})
 	if d := mixed.Diagnostics(); len(d) != 3 || d[0].Code != tenon.CodeStringInvalidUTF8 {
 		t.Errorf("a map with a bad key and error elements gave %v", d)
-	} else if got := located(mixed)[1:]; !slices.Equal(got, []string{"under a bad key", `first at ["k"]`}) {
+	} else if got := located(mixed)[1:]; !slices.Equal(got, []string{"under a bad key", `first at .["k"]`}) {
 		t.Errorf("diagnostics %q", got)
 	}
 

@@ -62,7 +62,7 @@ func TestConformance_CV001_ConversionUnderAPolicy(t *testing.T) {
 	conformance.Covers(t, "CV-001")
 	// The caller chooses the policy, and the answer follows it.
 	wantValue(t, `Convert("5", number, unsafe)`, tenon.Convert(s("5"), is(num), uns), n(5))
-	wantErrors(t, `Convert("5", number, safe)`, tenon.Convert(s("5"), is(num), safe), wantDiag{tenon.CodeConvertUnsafe, ""})
+	wantErrors(t, `Convert("5", number, safe)`, tenon.Convert(s("5"), is(num), safe), wantDiag{tenon.CodeConvertUnsafe, "."})
 
 	// The result satisfies the constraint.
 	for _, c := range []tenon.Constraint{is(str), tenon.Any(), tenon.OneOf(is(boo), is(str))} {
@@ -216,7 +216,7 @@ func TestConformance_CV010_ConversionTable(t *testing.T) {
 	} {
 		for _, p := range []tenon.Policy{safe, uns} {
 			wantErrors(t, "Convert("+tt.v.String()+", "+tt.to.String()+")", tenon.Convert(tt.v, is(tt.to), p),
-				wantDiag{tenon.CodeConvertNoConversion, ""})
+				wantDiag{tenon.CodeConvertNoConversion, "."})
 		}
 	}
 }
@@ -257,15 +257,15 @@ func TestConformance_CV011_CapsuleConversions(t *testing.T) {
 
 	wantValue(t, "Convert(21C, number, safe)", tenon.Convert(warm, is(num), safe), n(21))
 	wantValue(t, "Convert(21C, string, unsafe)", tenon.Convert(warm, is(str), uns), s("21C"))
-	wantErrors(t, "Convert(21C, string, safe)", tenon.Convert(warm, is(str), safe), wantDiag{tenon.CodeConvertUnsafe, ""})
-	wantErrors(t, "Convert(21C, bool)", tenon.Convert(warm, is(boo), uns), wantDiag{tenon.CodeConvertNoConversion, ""})
+	wantErrors(t, "Convert(21C, string, safe)", tenon.Convert(warm, is(str), safe), wantDiag{tenon.CodeConvertUnsafe, "."})
+	wantErrors(t, "Convert(21C, bool)", tenon.Convert(warm, is(boo), uns), wantDiag{tenon.CodeConvertNoConversion, "."})
 
 	back := tenon.Convert(n(7), is(temp), uns)
 	if back.IsError() || back.Type() != temp || tenon.CapsuleValue[celsius](back).degrees != 7 {
 		t.Errorf("Convert(7, celsius) = %v", back)
 	}
-	wantErrors(t, "Convert(7, celsius, safe)", tenon.Convert(n(7), is(temp), safe), wantDiag{tenon.CodeConvertUnsafe, ""})
-	wantErrors(t, "Convert(7.5, celsius)", tenon.Convert(tenon.NumberFromText("7.5"), is(temp), uns), wantDiag{"app.fractional", ""})
+	wantErrors(t, "Convert(7, celsius, safe)", tenon.Convert(n(7), is(temp), safe), wantDiag{tenon.CodeConvertUnsafe, "."})
+	wantErrors(t, "Convert(7.5, celsius)", tenon.Convert(tenon.NumberFromText("7.5"), is(temp), uns), wantDiag{"app.fractional", "."})
 
 	// Null and unknown values convert by what the type declares, without the
 	// declared function, which has no value to take.
@@ -314,15 +314,15 @@ func TestConformance_CV012_ConversionsDoNotCompose(t *testing.T) {
 	conformance.Covers(t, "CV-012")
 	// A number converts to a string, and "1" converts to a bool no better than
 	// a number does: there is no chain from number to bool through string.
-	wantErrors(t, "Convert(1, bool)", tenon.Convert(n(1), is(boo), uns), wantDiag{tenon.CodeConvertNoConversion, ""})
-	wantErrors(t, "Convert(true, number)", tenon.Convert(tenon.Bool(true), is(num), uns), wantDiag{tenon.CodeConvertNoConversion, ""})
+	wantErrors(t, "Convert(1, bool)", tenon.Convert(n(1), is(boo), uns), wantDiag{tenon.CodeConvertNoConversion, "."})
+	wantErrors(t, "Convert(true, number)", tenon.Convert(tenon.Bool(true), is(num), uns), wantDiag{tenon.CodeConvertNoConversion, "."})
 	// A tuple becomes a list, and a list a set, but a map does not become a
 	// list by way of an object.
 	m := tenon.MapVal(num, map[string]tenon.Value{"a": n(1)})
-	wantErrors(t, "Convert(map, list)", tenon.Convert(m, tenon.ListOf(tenon.Any()), uns), wantDiag{tenon.CodeConvertNoConversion, ""})
+	wantErrors(t, "Convert(map, list)", tenon.Convert(m, tenon.ListOf(tenon.Any()), uns), wantDiag{tenon.CodeConvertNoConversion, "."})
 	// Within a container each member takes one conversion too.
 	wantErrors(t, "Convert([1], list(bool))", tenon.Convert(tenon.ListVal(num, n(1)), is(tenon.List(boo)), uns),
-		wantDiag{tenon.CodeConvertNoConversion, "[0]"})
+		wantDiag{tenon.CodeConvertNoConversion, ".[0]"})
 }
 
 func TestConformance_CV020_ConvertingToExactly(t *testing.T) {
@@ -332,10 +332,10 @@ func TestConformance_CV020_ConvertingToExactly(t *testing.T) {
 		tenon.ListVal(str, s("a"), s("b")))
 	// The policy decides whether an unsafe conversion applies.
 	wantErrors(t, "Convert(true, exactly(string), safe)", tenon.Convert(tenon.Bool(true), is(str), safe),
-		wantDiag{tenon.CodeConvertUnsafe, ""})
+		wantDiag{tenon.CodeConvertUnsafe, "."})
 	// The one conversion for the pair, and nothing else.
 	wantErrors(t, "Convert([1, 2], exactly(tuple(number)))", tenon.Convert(tenon.ListVal(num, n(1), n(2)), is(tenon.Tuple(num)), uns),
-		wantDiag{tenon.CodeConvertLengthMismatch, ""})
+		wantDiag{tenon.CodeConvertLengthMismatch, "."})
 }
 
 func TestConformance_CV021_ConvertingToCollections(t *testing.T) {
@@ -349,13 +349,13 @@ func TestConformance_CV021_ConvertingToCollections(t *testing.T) {
 	wantValue(t, "mixed tuple to list_of(any), unsafe", tenon.Convert(tenon.TupleVal(n(1), tenon.Bool(true)), tenon.ListOf(tenon.Any()), uns),
 		tenon.ListVal(str, s("1"), s("true")))
 	wantErrors(t, "mixed tuple to list_of(any), safe", tenon.Convert(tenon.TupleVal(n(1), tenon.Bool(true)), tenon.ListOf(tenon.Any()), safe),
-		wantDiag{tenon.CodeConvertNoCommonType, ""})
+		wantDiag{tenon.CodeConvertNoCommonType, "."})
 
 	// An empty list keeps the type its element type converts to; an empty
 	// tuple has none, unless the constraint names one.
 	wantValue(t, "empty list to list_of(any)", tenon.Convert(tenon.ListVal(num), tenon.SetOf(tenon.Any()), uns), tenon.SetVal(num))
 	wantErrors(t, "empty tuple to list_of(any)", tenon.Convert(tenon.TupleVal(), tenon.ListOf(tenon.Any()), safe),
-		wantDiag{tenon.CodeConvertNoCommonType, ""})
+		wantDiag{tenon.CodeConvertNoCommonType, "."})
 	wantValue(t, "empty tuple to list_of(string)", tenon.Convert(tenon.TupleVal(), tenon.ListOf(is(str)), safe), tenon.ListVal(str))
 
 	// Objects that differ in the optional attributes they have share one
@@ -390,18 +390,18 @@ func TestConformance_CV021_ConvertingToCollections(t *testing.T) {
 	choice := tenon.OneOf(tenon.ListOf(is(num)), tenon.TupleOf(is(str)))
 	wantErrors(t, "no element type satisfying the constraint",
 		tenon.Convert(tenon.TupleVal(tenon.TupleVal(n(1)), tenon.TupleVal(s("x"))), tenon.ListOf(choice), uns),
-		wantDiag{tenon.CodeConvertNoCommonType, ""})
+		wantDiag{tenon.CodeConvertNoCommonType, "."})
 
 	// SetOf merges members by equality, and takes a list or a tuple only
 	// unsafely.
 	wantValue(t, "list to set_of", tenon.Convert(tenon.ListVal(num, n(2), n(1), n(2)), tenon.SetOf(is(str)), uns), tenon.SetVal(str, s("1"), s("2")))
-	wantErrors(t, "list to set_of, safe", tenon.Convert(tenon.ListVal(num, n(2)), tenon.SetOf(is(num)), safe), wantDiag{tenon.CodeConvertUnsafe, ""})
+	wantErrors(t, "list to set_of, safe", tenon.Convert(tenon.ListVal(num, n(2)), tenon.SetOf(is(num)), safe), wantDiag{tenon.CodeConvertUnsafe, "."})
 	wantValue(t, "set to set_of, safe", tenon.Convert(tenon.SetVal(num, n(2)), tenon.SetOf(tenon.Any()), safe), tenon.SetVal(num, n(2)))
 
 	// MapOf takes a map or an object.
 	wantValue(t, "object to map_of", tenon.Convert(obj(map[string]tenon.Value{"a": n(1), "b": tenon.Bool(false)}), tenon.MapOf(tenon.Any()), uns),
 		tenon.MapVal(str, map[string]tenon.Value{"a": s("1"), "b": s("false")}))
-	wantErrors(t, "list to map_of", tenon.Convert(tenon.ListVal(num), tenon.MapOf(tenon.Any()), uns), wantDiag{tenon.CodeConvertNoConversion, ""})
+	wantErrors(t, "list to map_of", tenon.Convert(tenon.ListVal(num), tenon.MapOf(tenon.Any()), uns), wantDiag{tenon.CodeConvertNoConversion, "."})
 }
 
 func TestConformance_CV022_ConvertingToTuples(t *testing.T) {
@@ -410,11 +410,11 @@ func TestConformance_CV022_ConvertingToTuples(t *testing.T) {
 	wantValue(t, "tuple", tenon.Convert(tenon.TupleVal(n(1), n(2)), pair, uns), tenon.TupleVal(s("1"), n(2)))
 	wantValue(t, "list", tenon.Convert(tenon.ListVal(num, n(1), n(2)), pair, uns), tenon.TupleVal(s("1"), n(2)))
 	wantValue(t, "set", tenon.Convert(tenon.SetVal(num, n(2), n(1)), pair, uns), tenon.TupleVal(s("1"), n(2)))
-	wantErrors(t, "list, safe", tenon.Convert(tenon.ListVal(str, s("1"), s("2")), pair, safe), wantDiag{tenon.CodeConvertUnsafe, ""})
-	wantErrors(t, "short list", tenon.Convert(tenon.ListVal(num, n(1)), pair, uns), wantDiag{tenon.CodeConvertLengthMismatch, ""})
-	wantErrors(t, "long set", tenon.Convert(tenon.SetVal(num, n(1), n(2), n(3)), pair, uns), wantDiag{tenon.CodeConvertLengthMismatch, ""})
-	wantErrors(t, "short tuple", tenon.Convert(tenon.TupleVal(n(1)), pair, uns), wantDiag{tenon.CodeConvertNoConversion, ""})
-	wantErrors(t, "map", tenon.Convert(tenon.MapVal(num, nil), pair, uns), wantDiag{tenon.CodeConvertNoConversion, ""})
+	wantErrors(t, "list, safe", tenon.Convert(tenon.ListVal(str, s("1"), s("2")), pair, safe), wantDiag{tenon.CodeConvertUnsafe, "."})
+	wantErrors(t, "short list", tenon.Convert(tenon.ListVal(num, n(1)), pair, uns), wantDiag{tenon.CodeConvertLengthMismatch, "."})
+	wantErrors(t, "long set", tenon.Convert(tenon.SetVal(num, n(1), n(2), n(3)), pair, uns), wantDiag{tenon.CodeConvertLengthMismatch, "."})
+	wantErrors(t, "short tuple", tenon.Convert(tenon.TupleVal(n(1)), pair, uns), wantDiag{tenon.CodeConvertNoConversion, "."})
+	wantErrors(t, "map", tenon.Convert(tenon.MapVal(num, nil), pair, uns), wantDiag{tenon.CodeConvertNoConversion, "."})
 }
 
 func TestConformance_CV023_ConvertingToObjects(t *testing.T) {
@@ -433,7 +433,7 @@ func TestConformance_CV023_ConvertingToObjects(t *testing.T) {
 		obj(map[string]tenon.Value{"name": s("a"), "port": n(80)}))
 
 	// A required attribute that is absent fails, located at the object.
-	wantErrors(t, "no name", tenon.Convert(obj(map[string]tenon.Value{"port": n(80)}), closed, uns), wantDiag{tenon.CodeConvertMissingAttribute, ""})
+	wantErrors(t, "no name", tenon.Convert(obj(map[string]tenon.Value{"port": n(80)}), closed, uns), wantDiag{tenon.CodeConvertMissingAttribute, "."})
 
 	// An attribute no field names is carried unchanged where the constraint is
 	// open, marks and all, and fails where it is closed.
@@ -448,17 +448,17 @@ func TestConformance_CV023_ConvertingToObjects(t *testing.T) {
 	m := tenon.MapVal(str, map[string]tenon.Value{"name": s("a"), "port": s("80")})
 	wantValue(t, "map", tenon.Convert(m, closed, uns), obj(map[string]tenon.Value{"name": s("a"), "port": n(80)}))
 	wantErrors(t, "map, safe", tenon.Convert(tenon.MapVal(str, map[string]tenon.Value{"name": s("a")}), closed, safe),
-		wantDiag{tenon.CodeConvertUnsafe, ""})
+		wantDiag{tenon.CodeConvertUnsafe, "."})
 	// A member that fails is reported first, where it fails.
-	wantErrors(t, "map with a member to convert, safe", tenon.Convert(m, closed, safe), wantDiag{tenon.CodeConvertUnsafe, `["port"]`})
+	wantErrors(t, "map with a member to convert, safe", tenon.Convert(m, closed, safe), wantDiag{tenon.CodeConvertUnsafe, `.["port"]`})
 	wantErrors(t, "map, extra key", tenon.Convert(tenon.MapVal(str, map[string]tenon.Value{"name": s("a"), "x": s("1")}), closed, uns),
-		wantDiag{tenon.CodeConvertUnexpectedAttribute, `["x"]`})
+		wantDiag{tenon.CodeConvertUnexpectedAttribute, `.["x"]`})
 	// No attribute can be named by the empty key, open or closed.
 	for _, c := range []tenon.Constraint{closed, open} {
 		wantErrors(t, "map, empty key", tenon.Convert(tenon.MapVal(str, map[string]tenon.Value{"name": s("a"), "": s("1")}), c, uns),
-			wantDiag{tenon.CodeConvertUnexpectedAttribute, `[""]`})
+			wantDiag{tenon.CodeConvertUnexpectedAttribute, `.[""]`})
 	}
-	wantErrors(t, "number", tenon.Convert(n(1), open, uns), wantDiag{tenon.CodeConvertNoConversion, ""})
+	wantErrors(t, "number", tenon.Convert(n(1), open, uns), wantDiag{tenon.CodeConvertNoConversion, "."})
 }
 
 func TestConformance_CV024_ConvertingToOneOf(t *testing.T) {
@@ -473,15 +473,15 @@ func TestConformance_CV024_ConvertingToOneOf(t *testing.T) {
 	wantValue(t, "string to list or number", tenon.Convert(s("2"), listOrNum, uns), n(2))
 	// A failure for the value does not move on to a later member.
 	strOrBool := tenon.OneOf(is(num), is(boo))
-	wantErrors(t, "string failing as a number", tenon.Convert(s("true"), strOrBool, uns), wantDiag{tenon.CodeNumberInvalidSyntax, ""})
+	wantErrors(t, "string failing as a number", tenon.Convert(s("true"), strOrBool, uns), wantDiag{tenon.CodeNumberInvalidSyntax, "."})
 	// A member whose conversion does not exist for the type is passed over.
 	missing := tenon.ObjectWith(map[string]tenon.Field{"b": tenon.Required(tenon.Any())}, true)
 	wantValue(t, "object past a member it lacks attributes for", tenon.Convert(obj(map[string]tenon.Value{"a": n(1)}), tenon.OneOf(missing, tenon.MapOf(tenon.Any())), safe),
 		tenon.MapVal(num, map[string]tenon.Value{"a": n(1)}))
 	// Where no member has a conversion, the conversion does not exist.
-	wantErrors(t, "string, safe", tenon.Convert(s("2"), numOrList, safe), wantDiag{tenon.CodeConvertUnsafe, ""})
-	wantErrors(t, "bool", tenon.Convert(tenon.Bool(true), numOrList, uns), wantDiag{tenon.CodeConvertNoConversion, ""})
-	wantErrors(t, "none", tenon.Convert(n(1), tenon.OneOf(), uns), wantDiag{tenon.CodeConvertNoConversion, ""})
+	wantErrors(t, "string, safe", tenon.Convert(s("2"), numOrList, safe), wantDiag{tenon.CodeConvertUnsafe, "."})
+	wantErrors(t, "bool", tenon.Convert(tenon.Bool(true), numOrList, uns), wantDiag{tenon.CodeConvertNoConversion, "."})
+	wantErrors(t, "none", tenon.Convert(n(1), tenon.OneOf(), uns), wantDiag{tenon.CodeConvertNoConversion, "."})
 }
 
 func TestConformance_CV025_ConvertingToAny(t *testing.T) {
@@ -524,11 +524,11 @@ func TestConformance_CV030_NullsConvertToNulls(t *testing.T) {
 	conformance.Covers(t, "CV-030")
 	wantValue(t, "null number to string", tenon.Convert(tenon.NullVal(num), is(str), uns), tenon.NullVal(str))
 	wantValue(t, "null list to set_of", tenon.Convert(tenon.NullVal(tenon.List(num)), tenon.SetOf(is(str)), uns), tenon.NullVal(tenon.Set(str)))
-	wantErrors(t, "null bool to number", tenon.Convert(tenon.NullVal(boo), is(num), uns), wantDiag{tenon.CodeConvertNoConversion, ""})
-	wantErrors(t, "null number to string, safe", tenon.Convert(tenon.NullVal(num), is(str), safe), wantDiag{tenon.CodeConvertUnsafe, ""})
+	wantErrors(t, "null bool to number", tenon.Convert(tenon.NullVal(boo), is(num), uns), wantDiag{tenon.CodeConvertNoConversion, "."})
+	wantErrors(t, "null number to string, safe", tenon.Convert(tenon.NullVal(num), is(str), safe), wantDiag{tenon.CodeConvertUnsafe, "."})
 	// A null empty tuple has no element type to give a list either.
 	wantErrors(t, "null tuple to list_of(any)", tenon.Convert(tenon.NullVal(tenon.Tuple()), tenon.ListOf(tenon.Any()), safe),
-		wantDiag{tenon.CodeConvertNoCommonType, ""})
+		wantDiag{tenon.CodeConvertNoCommonType, "."})
 
 	// A null map has no keys, so it becomes the null of the object type that
 	// holds the required attributes, at any depth.
@@ -548,7 +548,7 @@ func TestConformance_CV030_NullsConvertToNulls(t *testing.T) {
 		"name": tenon.Required(is(str)), "port": tenon.Optional(is(num)),
 	}, false), uns), tenon.NullVal(tenon.Object(map[string]tenon.Type{"name": str, "port": num})))
 	wantErrors(t, "null map whose element cannot fill a required field", tenon.Convert(tenon.NullVal(tenon.Map(boo)),
-		tenon.ObjectWith(map[string]tenon.Field{"a": tenon.Required(is(num))}, false), uns), wantDiag{tenon.CodeConvertNoConversion, ""})
+		tenon.ObjectWith(map[string]tenon.Field{"a": tenon.Required(is(num))}, false), uns), wantDiag{tenon.CodeConvertNoConversion, "."})
 }
 
 func TestConformance_CV031_UnknownsConvertToUnknowns(t *testing.T) {
@@ -564,7 +564,7 @@ func TestConformance_CV031_UnknownsConvertToUnknowns(t *testing.T) {
 		tenon.Narrow(tenon.Unknown(tenon.List(str)), tenon.LengthMin(1), tenon.LengthMax(3)))
 	wantValue(t, "unknown tuple to list", tenon.Convert(tenon.Unknown(tenon.Tuple(num, boo)), tenon.ListOf(tenon.Any()), uns),
 		tenon.Narrow(tenon.Unknown(tenon.List(str)), tenon.LengthMin(2), tenon.LengthMax(2)))
-	wantErrors(t, "unknown bool to number", tenon.Convert(tenon.Unknown(boo), is(num), uns), wantDiag{tenon.CodeConvertNoConversion, ""})
+	wantErrors(t, "unknown bool to number", tenon.Convert(tenon.Unknown(boo), is(num), uns), wantDiag{tenon.CodeConvertNoConversion, "."})
 
 	// A container converts member by member.
 	wantValue(t, "list holding an unknown", tenon.Convert(tenon.ListVal(num, n(1), unknownNum), tenon.ListOf(is(str)), uns),
@@ -576,7 +576,7 @@ func TestConformance_CV031_UnknownsConvertToUnknowns(t *testing.T) {
 	wantValue(t, "set holding an unknown to tuple_of", tenon.Convert(partial, tenon.TupleOf(tenon.Any(), is(str)), uns),
 		tenon.Narrow(tenon.Unknown(tenon.Tuple(num, str)), tenon.NotNull()))
 	wantErrors(t, "set holding an unknown to a longer tuple", tenon.Convert(partial, tenon.TupleOf(tenon.Any(), tenon.Any(), tenon.Any()), uns),
-		wantDiag{tenon.CodeConvertLengthMismatch, ""})
+		wantDiag{tenon.CodeConvertLengthMismatch, "."})
 
 	// An unknown map converted to an object has no keys to settle its type.
 	open := tenon.ObjectWith(nil, false)
@@ -595,8 +595,8 @@ func TestConformance_CV032_PendingValuesConvert(t *testing.T) {
 	pendingBool := tenon.Pending(is(boo))
 	pendingNum := tenon.Pending(is(num))
 	// No type the constraint admits converts.
-	wantErrors(t, "pending bool to number", tenon.Convert(pendingBool, is(num), uns), wantDiag{tenon.CodeOperationWrongType, ""})
-	wantErrors(t, "pending number to string, safe", tenon.Convert(pendingNum, is(str), safe), wantDiag{tenon.CodeOperationWrongType, ""})
+	wantErrors(t, "pending bool to number", tenon.Convert(pendingBool, is(num), uns), wantDiag{tenon.CodeOperationWrongType, "."})
+	wantErrors(t, "pending number to string, safe", tenon.Convert(pendingNum, is(str), safe), wantDiag{tenon.CodeOperationWrongType, "."})
 	// One result type: the unknown of it, carrying the nullness fact.
 	wantValue(t, "pending number to string", tenon.Convert(pendingNum, is(str), uns), tenon.Unknown(str))
 	wantValue(t, "pending null number", tenon.Convert(tenon.Narrow(pendingNum, tenon.Null()), is(str), uns), tenon.NullVal(str))
@@ -704,7 +704,7 @@ func TestConformance_CV044_TypesUnify(t *testing.T) {
 		{objA, obj(map[string]tenon.Value{"a": s("x")})},
 		{tenon.CapsuleVal(tenon.Capsule("a", tenon.CapsuleOps[celsius]{}), &celsius{}), tenon.CapsuleVal(tenon.Capsule("a", tenon.CapsuleOps[celsius]{}), &celsius{})},
 	} {
-		wantErrors(t, "no common type", tenon.Convert(tenon.TupleVal(elems...), list, safe), wantDiag{tenon.CodeConvertNoCommonType, ""})
+		wantErrors(t, "no common type", tenon.Convert(tenon.TupleVal(elems...), list, safe), wantDiag{tenon.CodeConvertNoCommonType, "."})
 	}
 
 	// The order of the members does not change the element type.
@@ -746,19 +746,19 @@ func TestConformance_CV050_DiagnosticsPerMember(t *testing.T) {
 	conformance.Covers(t, "CV-050")
 	// One diagnostic for each member that fails, in member order.
 	wantErrors(t, "list", tenon.Convert(tenon.ListVal(str, s("x"), s("1"), s("y")), tenon.ListOf(is(num)), uns),
-		wantDiag{tenon.CodeNumberInvalidSyntax, "[0]"}, wantDiag{tenon.CodeNumberInvalidSyntax, "[2]"})
+		wantDiag{tenon.CodeNumberInvalidSyntax, ".[0]"}, wantDiag{tenon.CodeNumberInvalidSyntax, ".[2]"})
 	// In attribute name order for an object, where an absent attribute is
 	// located at the object that lacks it.
 	fields := tenon.ObjectWith(map[string]tenon.Field{
 		"a": tenon.Required(is(num)), "c": tenon.Required(is(num)), "d": tenon.Required(tenon.Any()),
 	}, true)
 	wantErrors(t, "object", tenon.Convert(obj(map[string]tenon.Value{"c": s("x"), "b": n(1)}), fields, uns),
-		wantDiag{tenon.CodeConvertMissingAttribute, ""},
+		wantDiag{tenon.CodeConvertMissingAttribute, "."},
 		wantDiag{tenon.CodeConvertUnexpectedAttribute, ".b"},
 		wantDiag{tenon.CodeNumberInvalidSyntax, ".c"},
-		wantDiag{tenon.CodeConvertMissingAttribute, ""})
+		wantDiag{tenon.CodeConvertMissingAttribute, "."})
 	// A conversion that fails as a whole has one diagnostic, at the empty path.
-	wantErrors(t, "whole", tenon.Convert(n(1), tenon.ListOf(tenon.Any()), uns), wantDiag{tenon.CodeConvertNoConversion, ""})
+	wantErrors(t, "whole", tenon.Convert(n(1), tenon.ListOf(tenon.Any()), uns), wantDiag{tenon.CodeConvertNoConversion, "."})
 	// Exact duplicates are removed.
 	var twice tenon.Type
 	twice = tenon.Capsule("twice", tenon.CapsuleOps[celsius]{
@@ -770,7 +770,7 @@ func TestConformance_CV050_DiagnosticsPerMember(t *testing.T) {
 		},
 	})
 	wantErrors(t, "duplicates", tenon.Convert(tenon.ListVal(twice, tenon.CapsuleVal(twice, &celsius{})), tenon.ListOf(is(num)), safe),
-		wantDiag{"app.twice", "[0]"})
+		wantDiag{"app.twice", ".[0]"})
 }
 
 func TestConformance_CV051_InnermostFailure(t *testing.T) {
@@ -786,7 +786,7 @@ func TestConformance_CV051_InnermostFailure(t *testing.T) {
 		obj(map[string]tenon.Value{"name": s("b")}),
 	)
 	got := tenon.Convert(input, schema, uns)
-	wantErrors(t, "nested", got, wantDiag{tenon.CodeNumberInvalidSyntax, "[0].tags[1]"})
+	wantErrors(t, "nested", got, wantDiag{tenon.CodeNumberInvalidSyntax, ".[0].tags[1]"})
 	if msg := got.Diagnostics()[0].Message; !strings.Contains(msg, `"two"`) {
 		t.Errorf("the message %q does not say what failed", msg)
 	}
@@ -915,11 +915,11 @@ func TestConformance_CV032_TypesHoldingMapsFailWhereEveryValueFails(t *testing.T
 	open := tenon.ObjectWith(nil, false)
 	target := tenon.ListOf(tenon.OneOf(is(num), open))
 	pair := tenon.Tuple(num, tenon.Map(num))
-	wantErrors(t, "pending", tenon.Convert(tenon.Pending(is(pair)), target, uns), wantDiag{tenon.CodeOperationWrongType, ""})
-	wantErrors(t, "unknown", tenon.Convert(tenon.Unknown(pair), target, uns), wantDiag{tenon.CodeConvertNoCommonType, ""})
+	wantErrors(t, "pending", tenon.Convert(tenon.Pending(is(pair)), target, uns), wantDiag{tenon.CodeOperationWrongType, "."})
+	wantErrors(t, "unknown", tenon.Convert(tenon.Unknown(pair), target, uns), wantDiag{tenon.CodeConvertNoCommonType, "."})
 	wantErrors(t, "tuple holding an unknown map", tenon.Convert(tenon.TupleVal(n(1), tenon.Unknown(tenon.Map(num))), target, uns),
-		wantDiag{tenon.CodeConvertNoCommonType, ""})
-	wantErrors(t, "null", tenon.Convert(tenon.NullVal(pair), target, uns), wantDiag{tenon.CodeConvertNoCommonType, ""})
+		wantDiag{tenon.CodeConvertNoCommonType, "."})
+	wantErrors(t, "null", tenon.Convert(tenon.NullVal(pair), target, uns), wantDiag{tenon.CodeConvertNoCommonType, "."})
 	// Where some keys could succeed, the result is pending.
 	maps := tenon.TupleVal(obj(map[string]tenon.Value{"a": n(1)}), tenon.Unknown(tenon.Map(num)))
 	listOfOpen := tenon.ListOf(open)
@@ -939,7 +939,7 @@ func TestConformance_CV026_OneTypeWrittenAnyWay(t *testing.T) {
 	strings2 := tenon.ListVal(str, s("1"), s("2"))
 	for _, c := range []tenon.Constraint{is(tenon.List(num)), tenon.ListOf(is(num)), tenon.OneOf(tenon.ListOf(is(num))), tenon.OneOf(tenon.OneOf(), is(tenon.List(num)))} {
 		wantErrors(t, "Convert(strings, "+c.String()+", safe)", tenon.Convert(strings2, c, safe),
-			wantDiag{tenon.CodeConvertUnsafe, "[0]"}, wantDiag{tenon.CodeConvertUnsafe, "[1]"})
+			wantDiag{tenon.CodeConvertUnsafe, ".[0]"}, wantDiag{tenon.CodeConvertUnsafe, ".[1]"})
 	}
 	// A field that can never be present leaves one type.
 	one := tenon.ObjectWith(map[string]tenon.Field{"a": tenon.Required(is(num)), "b": tenon.Optional(tenon.OneOf())}, true)

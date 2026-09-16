@@ -80,7 +80,7 @@ func TestConformance_MK011_DiagnosticsWithholdRedactedContents(t *testing.T) {
 		{
 			"a mark that does not redact",
 			tenon.Narrow(tenon.WithMarks(hunter, plain), tenon.StringPrefix("ab-")),
-			`the value "hunter2" does not satisfy prefix "ab-"`,
+			`the value marked("hunter2", "plain") does not satisfy prefix "ab-"`,
 		},
 	} {
 		if !tt.got.IsError() {
@@ -133,12 +133,12 @@ func TestConformance_MK011_DiagnosticsWithholdRedactedContents(t *testing.T) {
 		{
 			"a path through a secret key",
 			tenon.Path{}.Index(tenon.WithMarks(tenon.String("k"), secret)).String(),
-			`[redacted("secret")]`,
+			`.[redacted("secret")]`,
 		},
 		{
 			"an error value",
 			tenon.WithMarks(tenon.ErrorVal(tenon.Diagnostic{Code: "app.failed", Message: "it failed"}), secret).String(),
-			"error(app.failed: it failed)",
+			`marked(error(app.failed: "it failed"), "secret")`,
 		},
 		{"a value unmarked on purpose", unmarkedDeep(sealed).String(), `set(string)["hunter2"]`},
 	} {

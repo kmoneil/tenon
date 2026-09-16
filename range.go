@@ -210,6 +210,7 @@ func (r *rangeData) equal(s *rangeData) bool {
 		sameMembersFunc(r.members, s.members, Identical)
 }
 
+// write writes the facts r records, each after a comma, in the order of DI-017.
 func (r *rangeData) write(b *strings.Builder) {
 	if r.null == nullNo {
 		b.WriteString(", not null")
@@ -224,11 +225,7 @@ func (r *rangeData) write(b *strings.Builder) {
 	}
 	if r.pfx != "" {
 		b.WriteString(", prefix ")
-		b.WriteString(strconv.Quote(r.pfx))
-	}
-	if len(r.members) > 0 {
-		b.WriteString(", ")
-		writeMembers(b, r.members)
+		writeQuoted(b, r.pfx)
 	}
 	if r.lenLo > 0 {
 		b.WriteString(", length >= ")
@@ -237,6 +234,10 @@ func (r *rangeData) write(b *strings.Builder) {
 	if r.lenHi.set {
 		b.WriteString(", length <= ")
 		b.WriteString(strconv.FormatInt(r.lenHi.n, 10))
+	}
+	if len(r.members) > 0 {
+		b.WriteString(", ")
+		writeMembers(b, r.members)
 	}
 }
 
@@ -407,7 +408,7 @@ func (nw Narrowing) String() string {
 		nw.writeBound(&b)
 		return b.String()
 	case narrowPrefix:
-		return "prefix " + strconv.Quote(nw.str)
+		return "prefix " + quotedText(nw.str)
 	case narrowLengthMin:
 		return "length >= " + strconv.FormatInt(nw.n, 10)
 	case narrowLengthMax:

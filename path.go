@@ -60,18 +60,30 @@ func (s Step) Key() Value {
 	return s.key
 }
 
-// String describes the step, as in .name, ["a name"] or [0].
+// String returns the display form of the step (DI-013), as in .name,
+// ."a name", [0] or ["key"].
 func (s Step) String() string {
+	var b strings.Builder
+	s.write(&b)
+	return b.String()
+}
+
+func (s Step) write(b *strings.Builder) {
 	switch s.kind {
 	case StepAttribute:
+		b.WriteByte('.')
 		if isIdentifier(s.name) {
-			return "." + s.name
+			b.WriteString(s.name)
+		} else {
+			writeQuoted(b, s.name)
 		}
-		return "[" + strconv.Quote(s.name) + "]"
 	case StepIndex:
-		return "[" + s.key.String() + "]"
+		b.WriteByte('[')
+		s.key.write(b)
+		b.WriteByte(']')
+	default:
+		b.WriteString("<zero Step>")
 	}
-	return "<zero Step>"
 }
 
 // equal reports whether s and t are the same step.
@@ -189,13 +201,23 @@ func (p Path) Equal(q Path) bool {
 	return true
 }
 
-// String describes p, as in .name[0]["key"]. The empty path is "".
+// String returns the display form of p (DI-013), as in .name[0]["key"] or
+// .[0].name: its steps, with a . before a first step that is an index. The
+// empty path is ".".
 func (p Path) String() string {
 	var b strings.Builder
-	for _, s := range p.Steps() {
-		b.WriteString(s.String())
-	}
+	p.write(&b)
 	return b.String()
+}
+
+func (p Path) write(b *strings.Builder) {
+	steps := p.Steps()
+	if len(steps) == 0 || steps[0].kind == StepIndex {
+		b.WriteByte('.')
+	}
+	for _, s := range steps {
+		s.write(b)
+	}
 }
 
 // prepend returns the path of what p locates, seen from one step further out:

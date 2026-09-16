@@ -63,8 +63,8 @@ func TestConformance_EQ040_SetMembersAreToldApartByEquality(t *testing.T) {
 	if !bad.IsError() {
 		t.Fatalf("a set with an error member is %v, want an error value", bad)
 	}
-	if got := bad.Diagnostics()[0].Path.String(); got != "[2]" {
-		t.Errorf("the error member is located at %s, want [2], where it was given", got)
+	if got := bad.Diagnostics()[0].Path.String(); got != ".[2]" {
+		t.Errorf("the error member is located at %s, want .[2], where it was given", got)
 	}
 }
 
@@ -247,7 +247,7 @@ func TestConformance_EQ044_SetIterationOrder(t *testing.T) {
 	n := func(i int64) tenon.Value { return tenon.NumberFromInt(i) }
 	// Known members come in canonical order, whatever order they were given.
 	given := []tenon.Value{n(3), n(1), n(2), tenon.NullVal(num), n(1)}
-	want := "set(number)[null, 1, 2, 3]"
+	want := "set(number)[null(number), 1, 2, 3]"
 	for _, order := range [][]int{{0, 1, 2, 3, 4}, {4, 3, 2, 1, 0}, {2, 0, 4, 1, 3}, {3, 1, 4, 0, 2}} {
 		members := make([]tenon.Value, len(order))
 		for i, at := range order {

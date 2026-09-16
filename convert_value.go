@@ -310,9 +310,9 @@ func (x converter) capsule(v Value, s Type) Value {
 // and s.
 func capsuleName(t, s Type) string {
 	if t.t.kind == KindCapsule {
-		return strconv.Quote(t.t.capsule.name)
+		return quotedText(t.t.capsule.name)
 	}
-	return strconv.Quote(s.t.capsule.name)
+	return quotedText(s.t.capsule.name)
 }
 
 // held is the members of a container, in the order a conversion takes them,
