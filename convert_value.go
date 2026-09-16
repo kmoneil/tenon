@@ -14,6 +14,19 @@ type converter struct {
 	// being converted. What a value holds is part of what those marks
 	// withhold, so a message about it shows a placeholder instead.
 	withheld []Mark
+	// keepMarks has a converted member keep every mark it carries, Isolate
+	// ones included, for decoding into Go, which refuses a marked part rather
+	// than let a conversion drop its marks unseen.
+	keepMarks bool
+}
+
+// carried returns the marks that a converted member of n carries: its
+// Propagate marks, or every mark where the converter keeps them.
+func (x converter) carried(n *node) []Mark {
+	if x.keepMarks {
+		return n.markList()
+	}
+	return propagateMarks(n)
 }
 
 // within returns the converter for the members of n.
@@ -87,7 +100,7 @@ func (x converter) value(v Value, c Constraint) Value {
 // marks, as an error result does.
 func (x converter) member(m Value, c Constraint) Value {
 	r := x.value(m, c)
-	if ms := propagateMarks(m.n); ms != nil {
+	if ms := x.carried(m.n); ms != nil {
 		r = WithMarks(r, ms...)
 	}
 	return r
@@ -626,7 +639,7 @@ func (x converter) fit(m Value, e Type) Value {
 	default:
 		r = x.fitKnown(m, e)
 	}
-	if ms := propagateMarks(n); ms != nil {
+	if ms := x.carried(n); ms != nil {
 		r = WithMarks(r, ms...)
 	}
 	return r

@@ -171,7 +171,8 @@ func TestConformance_GO012_ValuesOfManyTypes(t *testing.T) {
 		{"a nil map", encoded(t, nilMap), tenon.NullVal(tenon.Map(boo))},
 		{"a nil pointer", encoded(t, nilPtr), tenon.NullVal(tenon.Object(map[string]tenon.Type{"street": str, "unit": num}))},
 		{"a nil slice of values", encoded(t, nilValues), tenon.NullVal(tenon.Tuple())},
-		{"a nil pointer to a type of no type", encoded(t, nilHolder), tenon.Narrow(tenon.Pending(tenon.Any()), tenon.Null())},
+		{"a nil pointer to a type of no type", encoded(t, nilHolder), tenon.NullVal(tenon.Object(map[string]tenon.Type{"name": str}))},
+		{"a nil pointer to a slice of values", encoded(t, &nilValues), tenon.NullVal(tenon.Tuple())},
 	} {
 		wantValue(t, tt.name, tt.got, tt.want)
 	}

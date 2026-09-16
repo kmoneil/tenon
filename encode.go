@@ -130,9 +130,36 @@ func (e *goEncoder) encode(m *goMapping, rv reflect.Value, p Path) (Value, bool)
 		if m.typ.t != nil {
 			return NullVal(m.typ), true
 		}
-		return Narrow(Pending(Any()), Null()), true
+		return NullVal(nullType(m.elem)), true
 	}
 	return e.encode(m.elem, rv.Elem(), p)
+}
+
+// nullType returns the type whose null a nil of the Go type that m maps
+// encodes as: the type m maps to, and for a Go type that maps to no type, the
+// least type that converts to the constraint it maps to, so that decoding reads
+// the null back as nil. That is the empty tuple for a slice or an array, the
+// object of the required fields for a struct, and the empty object for anything
+// else.
+func nullType(m *goMapping) Type {
+	if m.typ.t != nil {
+		return m.typ
+	}
+	switch m.kind {
+	case goPointer:
+		return nullType(m.elem)
+	case goSlice, goArray:
+		return Tuple()
+	case goStruct:
+		attrs := map[string]Type{}
+		for _, f := range m.fields {
+			if !f.optional {
+				attrs[f.name] = nullType(f.m)
+			}
+		}
+		return Object(attrs)
+	}
+	return Object(nil)
 }
 
 // bigNumber encodes a big.Int, a big.Float or a big.Rat exactly.
@@ -246,7 +273,7 @@ func (e *goEncoder) sequence(m *goMapping, rv reflect.Value, p Path) (Value, boo
 		if m.typ.t != nil {
 			return NullVal(m.typ), true
 		}
-		return NullVal(Tuple()), true
+		return NullVal(nullType(m)), true
 	}
 	members := make([]Value, rv.Len())
 	ok := true
@@ -269,7 +296,7 @@ func (e *goEncoder) mapping(m *goMapping, rv reflect.Value, p Path) (Value, bool
 		if m.typ.t != nil {
 			return NullVal(m.typ), true
 		}
-		return NullVal(Object(nil)), true
+		return NullVal(nullType(m)), true
 	}
 	keys := make([]string, 0, rv.Len())
 	for _, k := range rv.MapKeys() {
