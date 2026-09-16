@@ -29,9 +29,9 @@ func TestRangesAreCanonical(t *testing.T) {
 			Narrow(Unknown(str), LengthMax(5), LengthMin(2), StringPrefix("ab")),
 		},
 		{
-			"a narrowing that null already satisfies leaves no trace",
-			Narrow(Unknown(num), Null()),
-			Narrow(Unknown(num), Null(), NumberMin(one, true), NumberMax(one, true)),
+			"the tighter of two bounds at the same value",
+			Narrow(Unknown(num), NumberMin(one, false)),
+			Narrow(Unknown(num), NumberMin(one, true), NumberMin(one, false)),
 		},
 		{
 			"the same bound written two ways",

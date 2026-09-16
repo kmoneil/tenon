@@ -77,6 +77,9 @@ const (
 	nullOnly                  // null is all that is left
 )
 
+// nullOnly lives only while narrowings are being applied: a range that comes
+// down to null is a range of one value, so it becomes the null value itself.
+
 // bound is one end of the Number interval of a range.
 type bound struct {
 	v    decimal.Dec
@@ -156,11 +159,8 @@ func (r *rangeData) equal(s *rangeData) bool {
 }
 
 func (r *rangeData) write(b *strings.Builder) {
-	switch r.null {
-	case nullNo:
+	if r.null == nullNo {
 		b.WriteString(", not null")
-	case nullOnly:
-		b.WriteString(", null")
 	}
 	if r.lo.set {
 		b.WriteString(", ")
@@ -369,6 +369,9 @@ func (n *node) length() int64 {
 // result describes no value that v did not, and narrowing a known value either
 // returns it or contradicts it.
 //
+// A narrowing that brings a range down to a single value produces that value,
+// known: an unknown that nothing more could ever say is not unknown.
+//
 // Apart from Null and NotNull, a narrowing says what a value is when it is not
 // null, so a range that still holds null keeps it: NotNull alone excludes
 // null, and narrowing the null value by a bound, a prefix or a length returns
@@ -412,10 +415,88 @@ func Narrow(v Value, ns ...Narrowing) Value {
 			return contradiction("no value of type " + n.typ.String() + " satisfies both " + clash + " and " + nw.message())
 		}
 	}
+	if sole, ok := r.singleton(n.typ); ok {
+		return sole
+	}
 	if r.equal(old) {
 		return v
 	}
 	return Value{&node{state: stateUnknown, typ: n.typ, data: &r}}
+}
+
+// singleton returns the one value that r describes, and whether it describes
+// exactly one. A range that has come down to a single value is that value: an
+// unknown that nothing more could ever say is a known value. t is the type of
+// the value whose range r is.
+func (r *rangeData) singleton(t Type) (Value, bool) {
+	if r.null == nullOnly {
+		return NullVal(t), true
+	}
+	if r.null != nullNo {
+		// Null is still possible, so the range holds it and at least one more.
+		return Value{}, false
+	}
+	switch t.t.kind {
+	case KindNumber:
+		// An empty range is never built, so bounds that meet are inclusive.
+		if r.lo.set && r.hi.set && r.lo.v.Equal(r.hi.v) {
+			return numberValue(r.lo.v), true
+		}
+	case KindString:
+		if r.emptyOnly() {
+			return String(""), true
+		}
+	case KindList:
+		if r.emptyOnly() {
+			return ListVal(t.t.elem), true
+		}
+	case KindSet:
+		if r.emptyOnly() {
+			return SetVal(t.t.elem), true
+		}
+	case KindMap:
+		if r.emptyOnly() {
+			return MapVal(t.t.elem, nil), true
+		}
+	case KindTuple, KindObject:
+		return soleValue(t)
+	}
+	return Value{}, false
+}
+
+// emptyOnly reports whether the length bounds of r leave only length zero.
+func (r *rangeData) emptyOnly() bool { return r.lenHi.set && r.lenHi.n == 0 }
+
+// soleValue returns the only value of type t other than null, and whether t
+// has only one: the empty tuple and the empty object have no room to differ,
+// and neither do tuples and objects built from types with the same property.
+// Every other kind has at least two values, so no narrowing but Null and none
+// of the length bounds can pin one down.
+func soleValue(t Type) (Value, bool) {
+	d := t.t
+	switch d.kind {
+	case KindTuple:
+		elems := make([]Value, len(d.elems))
+		for i, e := range d.elems {
+			v, ok := soleValue(e)
+			if !ok {
+				return Value{}, false
+			}
+			elems[i] = v
+		}
+		return TupleVal(elems...), true
+	case KindObject:
+		attrs := make(map[string]Value, len(d.attrs))
+		for _, a := range d.attrs {
+			v, ok := soleValue(a.typ)
+			if !ok {
+				return Value{}, false
+			}
+			attrs[a.name] = v
+		}
+		return ObjectVal(attrs), true
+	}
+	return Value{}, false
 }
 
 // contradiction returns the error value for a narrowing that leaves no value

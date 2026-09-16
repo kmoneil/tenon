@@ -363,3 +363,104 @@ func TestNarrowAnErrorValue(t *testing.T) {
 		t.Errorf("narrowing an error value produced %v, want its own diagnostic", got)
 	}
 }
+
+func TestConformance_UN005_NarrowingToOneValue(t *testing.T) {
+	conformance.Covers(t, "UN-005")
+	one, five := tenon.NumberFromInt(1), tenon.NumberFromInt(5)
+	str, num := tenon.StringType(), tenon.NumberType()
+	lst, set, mp := tenon.List(str), tenon.Set(str), tenon.Map(str)
+	empty := tenon.Tuple()
+	// A range that comes down to one value is that value, known.
+	for _, tt := range []struct {
+		name string
+		v    tenon.Value
+		ns   []tenon.Narrowing
+		want tenon.Value
+	}{
+		{
+			"bounds that meet", tenon.Unknown(num),
+			[]tenon.Narrowing{tenon.NumberMin(five, true), tenon.NumberMax(five, true), tenon.NotNull()},
+			five,
+		},
+		{
+			"a string of no length", tenon.Unknown(str),
+			[]tenon.Narrowing{tenon.NotNull(), tenon.LengthMax(0)},
+			tenon.String(""),
+		},
+		{
+			"a list of no length", tenon.Unknown(lst),
+			[]tenon.Narrowing{tenon.NotNull(), tenon.LengthMax(0)},
+			tenon.ListVal(str),
+		},
+		{
+			"a set of no length", tenon.Unknown(set),
+			[]tenon.Narrowing{tenon.NotNull(), tenon.LengthMax(0)},
+			tenon.SetVal(str),
+		},
+		{
+			"a map of no length", tenon.Unknown(mp),
+			[]tenon.Narrowing{tenon.NotNull(), tenon.LengthMax(0)},
+			tenon.MapVal(str, nil),
+		},
+		{"null on a number", tenon.Unknown(num), []tenon.Narrowing{tenon.Null()}, tenon.NullVal(num)},
+		{"null on a list", tenon.Unknown(lst), []tenon.Narrowing{tenon.Null()}, tenon.NullVal(lst)},
+		{
+			"a type with one value", tenon.Unknown(empty),
+			[]tenon.Narrowing{tenon.NotNull()},
+			tenon.TupleVal(),
+		},
+		{
+			"a type whose members have one value", tenon.Unknown(tenon.Tuple(empty, empty)),
+			[]tenon.Narrowing{tenon.NotNull()},
+			tenon.TupleVal(tenon.TupleVal(), tenon.TupleVal()),
+		},
+		{
+			"an object with no attributes", tenon.Unknown(tenon.Object(nil)),
+			[]tenon.Narrowing{tenon.NotNull()},
+			tenon.ObjectVal(nil),
+		},
+	} {
+		got := tenon.Narrow(tt.v, tt.ns...)
+		if !got.IsKnown() {
+			t.Errorf("%s: narrowed to %v, which is not a known value", tt.name, got)
+			continue
+		}
+		if got.Type() != tt.want.Type() || got.String() != tt.want.String() {
+			t.Errorf("%s: narrowed to %v, want %v", tt.name, got, tt.want)
+		}
+	}
+	// A range that still holds more than one value stays unknown.
+	for _, tt := range []struct {
+		name string
+		v    tenon.Value
+		ns   []tenon.Narrowing
+	}{
+		{
+			"bounds that do not meet", tenon.Unknown(num),
+			[]tenon.Narrowing{tenon.NumberMin(one, true), tenon.NumberMax(five, true), tenon.NotNull()},
+		},
+		{
+			"a length that leaves room", tenon.Unknown(lst),
+			[]tenon.Narrowing{tenon.NotNull(), tenon.LengthMax(1)},
+		},
+		{
+			"no length, but null is still possible", tenon.Unknown(str),
+			[]tenon.Narrowing{tenon.LengthMax(0)},
+		},
+		{
+			"a member with more than one value", tenon.Unknown(tenon.Tuple(tenon.BoolType())),
+			[]tenon.Narrowing{tenon.NotNull()},
+		},
+		{
+			// A list of exactly three empty tuples holds one value too, but
+			// finding that out means building a value as large as the bounds
+			// allow, which the rule permits an implementation to decline.
+			"a length that pins a collection", tenon.Unknown(tenon.List(empty)),
+			[]tenon.Narrowing{tenon.NotNull(), tenon.LengthMin(3), tenon.LengthMax(3)},
+		},
+	} {
+		if got := tenon.Narrow(tt.v, tt.ns...); got.IsKnown() {
+			t.Errorf("%s: narrowed to the known value %v", tt.name, got)
+		}
+	}
+}
