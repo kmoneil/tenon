@@ -6,8 +6,6 @@ package uni
 import (
 	"strconv"
 	"unicode/utf8"
-
-	"golang.org/x/text/unicode/norm"
 )
 
 // UnicodeVersion is the version of the Unicode Standard whose data tenon's
@@ -39,11 +37,11 @@ func Canonical(s string) (string, error) {
 	if !utf8.ValidString(s) {
 		return "", ErrInvalidUTF8
 	}
-	return norm.NFC.String(s), nil
+	return nfc(s), nil
 }
 
 // NFC returns s in Unicode Normalization Form C. The caller must ensure that s
 // is well-formed UTF-8.
 func NFC(s string) string {
-	return norm.NFC.String(s)
+	return nfc(s)
 }

@@ -7,8 +7,6 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"golang.org/x/text/unicode/norm"
-
 	"github.com/kmoneil/tenon"
 )
 
@@ -38,19 +36,10 @@ func FuzzString(f *testing.F) {
 			t.Fatalf("String(%q) = %v, want a String", s, v)
 		}
 		content := v.AsString()
-		if !norm.NFC.IsNormalString(content) {
-			t.Fatalf("String(%q) holds %q, which is not in Normalization Form C", s, content)
-		}
 		if again := tenon.String(content); !tenon.Identical(again, v) {
 			t.Fatalf("String(%q) = %v, but its content constructs %v", s, v, again)
 		}
-		for _, form := range []norm.Form{norm.NFD, norm.NFKC} {
-			other := tenon.String(form.String(s))
-			eq := tenon.Equals(v, other)
-			if want := form == norm.NFD || norm.NFC.String(form.String(s)) == content; !eq.IsKnown() || eq.AsBool() != want {
-				t.Fatalf("Equals(%v, %v) = %v, want %t", v, other, eq, want)
-			}
-		}
+		checkAgainstXText(t, s, v, content)
 		if n, ok := tenon.Length(v).AsInt64(); !ok || n < 0 || n > int64(utf8.RuneCountInString(content)) || (n == 0) != (content == "") {
 			t.Fatalf("Length(%v) = %v", v, tenon.Length(v))
 		}
