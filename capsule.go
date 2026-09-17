@@ -164,7 +164,9 @@ func Capsule[E any](name string, ops CapsuleOps[E]) Type {
 			return conv, safe
 		}
 	}
-	return Type{&typeData{id: newTypeID(), kind: KindCapsule, capsule: d}}
+	t := &typeData{id: newTypeID(), kind: KindCapsule, capsule: d}
+	t.shape = shapeOf(t)
+	return Type{t}
 }
 
 // equal reports whether two values encapsulated by the capsule type are equal:

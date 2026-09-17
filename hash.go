@@ -47,11 +47,50 @@ func hashNode(n *node) uint64 {
 	return h.Sum64()
 }
 
+// shapeOf returns a hash of a type's structure: its kind, the shapes of its
+// component types, and the names of an object's attributes.
+//
+// A value hashes by the shape of its type and not by its id. An id belongs to
+// one interned type, and a type that nothing references is collected, so a
+// type built again afterwards has a new id. A hash keyed on the id would
+// therefore change within a run, whenever the collector happened to run, which
+// [EQ-032] forbids and which makes a table keyed by hash forget its entries.
+//
+// The shape is set once, before the type is shared, and never written again.
+func shapeOf(d *typeData) uint64 {
+	var h maphash.Hash
+	h.SetSeed(hashSeed)
+	h.WriteByte(byte(d.kind))
+	switch d.kind {
+	case KindList, KindSet, KindMap:
+		writeUint(&h, d.elem.t.shape)
+	case KindTuple:
+		writeUint(&h, uint64(len(d.elems)))
+		for _, e := range d.elems {
+			writeUint(&h, e.t.shape)
+		}
+	case KindObject:
+		writeUint(&h, uint64(len(d.attrs)))
+		for _, a := range d.attrs {
+			writeUint(&h, uint64(len(a.name)))
+			h.WriteString(a.name)
+			writeUint(&h, a.typ.t.shape)
+		}
+	case KindCapsule:
+		// Every Capsule call makes a type of its own, however alike two of
+		// them look, so the id is what tells capsule types apart. A capsule
+		// type is not interned, and is never rebuilt after collection into
+		// something that ought to hash as it did.
+		writeUint(&h, d.id)
+	}
+	return h.Sum64()
+}
+
 // writeHash writes a known value into h. The type goes first, so values of
 // different types rarely collide, and everything of unknown length says how
 // long it is, so a sequence of values cannot be mistaken for another sequence.
 func writeHash(h *maphash.Hash, n *node) {
-	writeUint(h, n.typ.t.id)
+	writeUint(h, n.typ.t.shape)
 	if n.state == stateNull {
 		h.WriteByte(0)
 		return

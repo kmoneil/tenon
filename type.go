@@ -62,6 +62,7 @@ type Type struct {
 // typeData is the immutable description that a Type refers to.
 type typeData struct {
 	id      uint64       // unique among the types in the process (see intern)
+	shape   uint64       // a hash of the structure (see shapeOf)
 	kind    Kind         // the kind of the type
 	elem    Type         // the element type of a List, Set or Map
 	attrs   []attribute  // the attributes of an Object, sorted by name
@@ -76,10 +77,19 @@ type attribute struct {
 }
 
 var (
-	boolType   = &typeData{id: 1, kind: KindBool}
-	numberType = &typeData{id: 2, kind: KindNumber}
-	stringType = &typeData{id: 3, kind: KindString}
+	boolType   = primitiveType(1, KindBool)
+	numberType = primitiveType(2, KindNumber)
+	stringType = primitiveType(3, KindString)
 )
+
+// primitiveType returns the data of a primitive type. There is one of each and
+// it lives as long as the process, so it is not interned, and its shape is set
+// here rather than in intern.
+func primitiveType(id uint64, k Kind) *typeData {
+	d := &typeData{id: id, kind: k}
+	d.shape = shapeOf(d)
+	return d
+}
 
 // BoolType returns the type Bool.
 func BoolType() Type { return Type{boolType} }

@@ -39,6 +39,9 @@ func intern(d *typeData) Type {
 		}
 	}
 	d.id = newTypeID()
+	// Set before the type is published, and never written again, so every
+	// reader of a shared type sees a shape that was there all along.
+	d.shape = shapeOf(d)
 	registry.types[key] = weak.Make(d)
 	runtime.AddCleanup(d, forgetType, key)
 	return Type{d}

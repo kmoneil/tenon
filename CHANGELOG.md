@@ -48,6 +48,15 @@
   `serialize.unencodable_capsule` as it does for a single mark. Two unequal
   marks whose payloads do encode alike still panic as a usage error.
 
+- `Hash` is stable within a run, as `[EQ-032]` requires. Composite types are
+  interned, and a type nothing references is collected; building it again gives
+  a type with a new id. Every hash began with that id, so a value's hash
+  changed whenever the collector happened to run: a table keyed by hash forgot
+  its entries, and two values `Identical` reports the same could hash
+  differently in one run, against `[EQ-030]`. A value now hashes by the
+  structure of its type, which does not change, rather than by its id. Hashes
+  remain meaningless outside the run that produced them.
+
 ## 0.1.0 (2026-09-16)
 
 The first release: a reference implementation of version 0.1.0 of the tenon
