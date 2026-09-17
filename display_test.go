@@ -3,12 +3,10 @@ package tenon_test
 import (
 	"strings"
 	"testing"
-	"unicode"
 
 	"github.com/kmoneil/tenon"
 	"github.com/kmoneil/tenon/conformance"
 	"github.com/kmoneil/tenon/conformance/values"
-	"github.com/kmoneil/tenon/internal/uni"
 )
 
 // esc returns the display escape of the code point written in hex, as in
@@ -131,10 +129,9 @@ func TestConformance_DI011_DisplayTellsValuesApart(t *testing.T) {
 
 func TestConformance_DI012_QuotedText(t *testing.T) {
 	conformance.Covers(t, "DI-012")
-	// The categories are those of the pinned Unicode version.
-	if unicode.Version != uni.UnicodeVersion {
-		t.Fatalf("Go's Unicode tables are version %s, and the display form needs %s", unicode.Version, uni.UnicodeVersion)
-	}
+	// The categories are those of the pinned Unicode version, which
+	// internal/uni holds; they are not Go's, which follow the toolchain.
+	// internal/uni cross-checks the two where the toolchain still agrees.
 	for _, tt := range []struct {
 		name, in, want string
 	}{

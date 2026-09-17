@@ -148,6 +148,16 @@ var valid = []vector{
 	{"string/ascii", func(*rand.Rand) tenon.Value { return s("tenon") }},
 	{"string/composed", func(r *rand.Rand) tenon.Value { return s("caf" + composed(r)) }},
 	{"string/astral", func(*rand.Rand) tenon.Value { return s("\U0001F600") }},
+	// Two code points that Unicode 15.0.0 leaves apart and later versions
+	// compose into one. An implementation normalizing by another version
+	// encodes this differently, and refuses this vector as not canonical.
+	{"string/composed later", func(*rand.Rand) tenon.Value { return s("\U00011382\U000113C9") }},
+	// A run of more than thirty non-starters, which the Stream-Safe Text
+	// Process would break up with U+034F and plain UAX #15 normalization
+	// leaves alone.
+	{"string/long run of marks", func(*rand.Rand) tenon.Value {
+		return s("a" + strings.Repeat("́", 31))
+	}},
 	{"string/controls", func(*rand.Rand) tenon.Value { return s("\x00\t\n\x7f") }},
 	{"string/24 bytes", func(*rand.Rand) tenon.Value { return s(strings.Repeat("a", 24)) }},
 	{"string/300 bytes", func(*rand.Rand) tenon.Value { return s(strings.Repeat("ab", 150)) }},

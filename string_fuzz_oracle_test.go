@@ -5,6 +5,7 @@ package tenon_test
 import (
 	"strings"
 	"testing"
+	"unicode"
 
 	"golang.org/x/text/unicode/norm"
 
@@ -40,6 +41,18 @@ func checkAgainstXText(t *testing.T, s string, v tenon.Value, content string) {
 		eq := tenon.Equals(v, other)
 		if want := form == norm.NFD || norm.NFC.String(written) == content; !eq.IsKnown() || eq.AsBool() != want {
 			t.Fatalf("Equals(%v, %v) = %v, want %t", v, other, eq, want)
+		}
+	}
+}
+
+// checkDisplayedCategories holds the display form to Go's general categories,
+// which below go1.27 are the version tenon states. Above it they are not, and
+// the other half of this pair checks nothing.
+func checkDisplayedCategories(t *testing.T, v tenon.Value) {
+	t.Helper()
+	for _, r := range v.String() {
+		if r != ' ' && !unicode.In(r, unicode.L, unicode.M, unicode.N, unicode.P, unicode.S) {
+			t.Fatalf("%v displays U+%04X as itself", v, r)
 		}
 	}
 }

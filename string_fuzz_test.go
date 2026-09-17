@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"testing"
-	"unicode"
 	"unicode/utf8"
 
 	"github.com/kmoneil/tenon"
@@ -43,11 +42,7 @@ func FuzzString(f *testing.F) {
 		if n, ok := tenon.Length(v).AsInt64(); !ok || n < 0 || n > int64(utf8.RuneCountInString(content)) || (n == 0) != (content == "") {
 			t.Fatalf("Length(%v) = %v", v, tenon.Length(v))
 		}
-		for _, r := range v.String() {
-			if r != ' ' && !unicode.In(r, unicode.L, unicode.M, unicode.N, unicode.P, unicode.S) {
-				t.Fatalf("%v displays U+%04X as itself", v, r)
-			}
-		}
+		checkDisplayedCategories(t, v)
 		b, failure, ok := tenon.Serialize(v)
 		if !ok {
 			t.Fatalf("Serialize(%v) failed: %v", v, failure)

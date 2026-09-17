@@ -23,6 +23,7 @@ import (
 	"os"
 	"slices"
 	"strings"
+	"unicode"
 
 	"golang.org/x/text/unicode/norm"
 )
@@ -45,6 +46,11 @@ func main() {
 		fmt.Fprintf(os.Stderr, "unigen: x/text normalizes by Unicode %s, and these tables are for %s.\n"+
 			"Build with a Go toolchain below go1.27, which selects x/text's %s tables.\n",
 			norm.Version, version, version)
+		os.Exit(1)
+	}
+	if unicode.Version != version {
+		fmt.Fprintf(os.Stderr, "unigen: Go's general categories are Unicode %s, and these tables are for %s.\n",
+			unicode.Version, version)
 		os.Exit(1)
 	}
 
@@ -237,6 +243,27 @@ func main() {
 	for _, r := range slices.Sorted(maps(composing)) {
 		fmt.Fprintf(&b, "0x%X,\n", r)
 	}
+	fmt.Fprintf(&b, "}\n\n")
+
+	// The general categories the display form asks about, as the ranges of
+	// what it does not escape.
+	fmt.Fprintf(&b, "// assigned holds the ranges of code points whose general category is a\n"+
+		"// letter, mark, number, punctuation or symbol: everything that is not a\n"+
+		"// separator or an other. Each range is a first and a last code point, and the\n"+
+		"// ranges are in order and do not touch.\nvar assigned = [...][2]rune{\n")
+	ranges := 0
+	for r := rune(0); r <= 0x10FFFF; r++ {
+		if !inDisplayCategories(r) {
+			continue
+		}
+		last := r
+		for last+1 <= 0x10FFFF && inDisplayCategories(last+1) {
+			last++
+		}
+		fmt.Fprintf(&b, "{0x%X, 0x%X},\n", r, last)
+		ranges++
+		r = last
+	}
 	fmt.Fprintf(&b, "}\n")
 
 	out, err := format.Source(b.Bytes())
@@ -249,8 +276,15 @@ func main() {
 		os.Exit(1)
 	}
 	fmt.Fprintf(os.Stderr, "unigen: Unicode %s: %d combining classes, %d decompositions, %d primary composites, "+
-		"%d rewritten, %d composing\n",
-		version, len(ccc), len(decomposable), len(composed), len(rewritten), len(composing))
+		"%d rewritten, %d composing, %d category ranges\n",
+		version, len(ccc), len(decomposable), len(composed), len(rewritten), len(composing), ranges)
+}
+
+// inDisplayCategories reports whether the general category of r is a letter,
+// mark, number, punctuation or symbol, which is what the display form leaves
+// as it is.
+func inDisplayCategories(r rune) bool {
+	return unicode.In(r, unicode.L, unicode.M, unicode.N, unicode.P, unicode.S)
 }
 
 // maps returns the keys of m, which slices.Sorted then orders.

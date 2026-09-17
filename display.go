@@ -4,7 +4,8 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"unicode"
+
+	"github.com/kmoneil/tenon/internal/uni"
 )
 
 // writeQuoted writes s quoted as a display form quotes text (DI-012): in
@@ -40,8 +41,9 @@ func writeQuoted(b *strings.Builder, s string) {
 
 // escapedInDisplay reports whether a display form writes r by its code point:
 // whether its general category is a separator (Z) other than the space, or
-// other (C), unassigned included. The categories are Go's, whose Unicode
-// version a test holds to uni.UnicodeVersion.
+// other (C), unassigned included. The categories are those of
+// uni.UnicodeVersion, which internal/uni holds rather than reading from the
+// toolchain.
 func escapedInDisplay(r rune) bool {
 	switch {
 	case r == ' ':
@@ -49,7 +51,7 @@ func escapedInDisplay(r rune) bool {
 	case r < 0x80:
 		return r < 0x20 || r == 0x7F
 	}
-	return !unicode.In(r, unicode.L, unicode.M, unicode.N, unicode.P, unicode.S)
+	return uni.IsSeparatorOrOther(r)
 }
 
 // quotedText returns s quoted as a display form quotes text.

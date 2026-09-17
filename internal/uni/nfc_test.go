@@ -78,3 +78,23 @@ func TestConformance_ST002_PlainNormalizationOfLongRuns(t *testing.T) {
 		t.Error("a run of 31 non-starters and its stream-safe form normalize alike")
 	}
 }
+
+// TestNormalizationLeavesIllFormedTextAlone checks the one thing nfc does with
+// text that is not well-formed UTF-8, which Canonical refuses and every other
+// caller has already refused: it returns it as it is. Decomposing would write
+// the replacement character over the bytes, and a normalizer that quietly
+// rewrote its input would be worse than one that did nothing.
+func TestNormalizationLeavesIllFormedTextAlone(t *testing.T) {
+	for _, s := range []string{
+		"\xff",
+		"a\xffb",
+		"café\xff",    // a sequence that would otherwise compose
+		"\xffé",       // and one with the bad byte first
+		"\xed\xa0\x80", // a surrogate half
+		"á\xff́́b",    // marks on both sides of it
+	} {
+		if got := NFC(s); got != s {
+			t.Errorf("NFC(%q) = %q, want it unchanged", s, got)
+		}
+	}
+}

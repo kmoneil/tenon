@@ -3,6 +3,7 @@ package uni
 import (
 	"cmp"
 	"slices"
+	"unicode/utf8"
 )
 
 // Normalization Form C, as UAX #15 sets it out: decompose canonically, put the
@@ -34,6 +35,14 @@ const (
 // nfc returns s in Normalization Form C.
 func nfc(s string) string {
 	if isNormalized(s) {
+		return s
+	}
+	if !utf8.ValidString(s) {
+		// Text that is not well-formed, which every caller is to have refused
+		// already. Decomposing would write the replacement character over the
+		// bytes; returning them is the one answer that loses nothing. The
+		// check is here rather than in isNormalized, which stops at the first
+		// code point it cannot vouch for and so may never reach the bytes.
 		return s
 	}
 	rs := decompose(make([]rune, 0, len(s)), s)
