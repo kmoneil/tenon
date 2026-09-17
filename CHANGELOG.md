@@ -39,6 +39,15 @@
   admitting more than one type, such as a tuple of maps under
   `ListOf(ListOf(ObjectWith(...)))`.
 
+- `Serialize` no longer panics when two marks on one value have payloads that
+  fail to encode. A payload that does not encode leaves a placeholder where
+  its bytes would be, and every such placeholder is alike, so the `[SE-041]`
+  check for two unequal marks sharing one encoding blamed the mark type for a
+  failure `[SE-042]` had already recorded as data. Such marks are now left out
+  of that check, which is about encodings, and serializing gives
+  `serialize.unencodable_capsule` as it does for a single mark. Two unequal
+  marks whose payloads do encode alike still panic as a usage error.
+
 ## 0.1.0 (2026-09-16)
 
 The first release: a reference implementation of version 0.1.0 of the tenon

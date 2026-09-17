@@ -287,12 +287,43 @@ func TestConformance_SE042_UnencodableMarks(t *testing.T) {
 		wantDiag{tenon.CodeSerializeUnencodableMark, ".b[1]"})
 	wantSerializeFailure(t, "on an error value", tenon.WithMarks(tenon.ErrorVal(tenon.Diagnostic{Code: "app.x", Message: "x"}), plain),
 		wantDiag{tenon.CodeSerializeUnencodableMark, "."})
+	// Marks whose payloads do not encode leave a placeholder where an encoding
+	// would be, and every such placeholder is the same bytes. They are left
+	// out of the SE-041 duplicate check, which is about encodings, so the
+	// failure SE-042 already recorded is what comes back. Three of them, not
+	// two: the second and later failures are identical diagnostics, which are
+	// recorded once, so counting diagnostics would have missed them.
+	held := pinned{&celsius{1}}
+	wantSerializeFailure(t, "one mark whose payload does not encode", tenon.WithMarks(n(1), held),
+		wantDiag{tenon.CodeSerializeUnencodableCapsule, "."})
+	two := tenon.Add(tenon.WithMarks(n(1), held), tenon.WithMarks(n(2), pinned{&celsius{2}}))
+	wantSerializeFailure(t, "two marks whose payloads do not encode", two,
+		wantDiag{tenon.CodeSerializeUnencodableCapsule, "."})
+	wantSerializeFailure(t, "three marks whose payloads do not encode",
+		tenon.Add(two, tenon.WithMarks(n(3), pinned{&celsius{3}})),
+		wantDiag{tenon.CodeSerializeUnencodableCapsule, "."})
+	// A payload that does encode still holds the mark to SE-041.
 	mustPanicUsage(t, "serialize alike", func() {
 		tenon.Serialize(tenon.WithMarks(n(1), note{"p", "v"}, twinNote{"p", "v"}))
 	})
 	// A mark's payload is not a null, going out or coming in.
 	mustPanicUsage(t, "other than a null", func() { tenon.Serialize(tenon.WithMarks(n(1), nullNote{})) })
 	wantDecodeFailure(t, "a mark serialized with a null", document+"83 00 01 da74656e02 82 f5 81 83 6170 03 f6", tenon.CodeSerializeMalformed)
+}
+
+// unencodable is a capsule type that declares no encoding, so a value of it
+// fails to serialize as data under [SE-042].
+var unencodable = tenon.Capsule("unencodable", tenon.CapsuleOps[celsius]{})
+
+// pinned is a mark whose payload is a value of that type. Two pinned marks
+// holding different degrees are two marks, and neither payload encodes.
+type pinned struct{ c *celsius }
+
+func (pinned) MarkID() string                 { return "pinned" }
+func (pinned) Propagation() tenon.Propagation { return tenon.Propagate }
+func (pinned) Redacting() bool                { return false }
+func (m pinned) MarkPayload() (tenon.Value, bool) {
+	return tenon.CapsuleVal(unencodable, m.c), true
 }
 
 // nullNote is a mark whose payload is a null, which breaks the contract of an

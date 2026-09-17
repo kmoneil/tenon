@@ -64,10 +64,15 @@ type encoder struct {
 	errs containerErrors
 	// ids holds the capsule identifiers met so far, and the type using each.
 	ids map[string]Type
+	// failures counts the calls to fail. It is not len(errs.diags), which
+	// records one diagnostic however many times an identical one arrives, and
+	// payloads that fail alike fail with the same message at the same path.
+	failures int
 }
 
 // fail records a diagnostic for what is at path p.
 func (e *encoder) fail(p Path, code Code, message string) {
+	e.failures++
 	e.errs.addDiagnostic(Diagnostic{Code: code, Message: message, Path: p})
 }
 
@@ -365,6 +370,12 @@ func (e *encoder) rng(b []byte, r *rangeData, p Path) []byte {
 }
 
 // marks appends a list of marks, in the bytewise order of their encodings.
+//
+// A payload that does not encode has already been recorded as a failure, and
+// what its bytes hold is a placeholder rather than an encoding. Two such marks
+// leave the same placeholder, so they are left out of the duplicate check
+// below: what [SE-041] forbids is two unequal marks with one encoding, and
+// these have none.
 func (e *encoder) marks(b []byte, marks []Mark, p Path) []byte {
 	encoded := make([][]byte, 0, len(marks))
 	for _, m := range marks {
@@ -386,10 +397,14 @@ func (e *encoder) marks(b []byte, marks []Mark, p Path) []byte {
 			if payload.n == nil || !payload.n.isKnown() || payload.n.state == stateNull || payload.n.isMarked() {
 				usagePanic("the mark %q serialized with %s, not a known, unmarked value other than a null", id, payload)
 			}
+			before := e.failures
 			enc = cbor.AppendArray(enc, 3)
 			enc = cbor.AppendText(enc, id)
 			enc = e.typ(enc, payload.n.typ, p)
 			enc = e.content(enc, payload, p, nil)
+			if e.failures > before {
+				continue
+			}
 		}
 		encoded = append(encoded, enc)
 	}
