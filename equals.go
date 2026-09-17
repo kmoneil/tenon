@@ -55,6 +55,10 @@ var equalsOp = register(&op{
 // that cannot be null whatever types the two turn out to have; and a
 // constraint that the other operand's type does not satisfy means the two
 // will never have one type.
+//
+// Null is decided here and nowhere else. Two operands that could both still
+// be null could both turn out to be null, which is one value, so nothing they
+// say about the values they hold otherwise can settle the answer.
 func equality(a, b *node) (eq, settled bool) {
 	if a.state == stateError || b.state == stateError {
 		// An error value has no type and no value, and settles nothing.
@@ -82,6 +86,10 @@ func equality(a, b *node) (eq, settled bool) {
 		return true, true
 	case a.isKnown() && b.isKnown():
 		return sameValue(a, b), true
+	case mayBeNull(a) && mayBeNull(b):
+		// Both could still be null, and two nulls of one type are the same
+		// value. What the two say about anything else rules nothing out.
+		return false, false
 	case disjoint(a, b):
 		return false, true
 	}
@@ -174,16 +182,12 @@ func sameEntries(x, y []mapEntry) bool {
 // disjoint reports whether nothing in the range of a is in the range of b, so
 // that the two cannot be the same value however they settle. It answers false
 // whenever it cannot tell.
+//
+// Null is settled before this is called: equality, its only caller, has
+// already answered both the operands that could each still be null and the
+// null operand facing one that cannot be null. So neither operand here is
+// null, and at most one of them could still become it.
 func disjoint(a, b *node) bool {
-	// Null is a value like any other: either the other could be null too, or
-	// the two can never meet.
-	if a.state == stateNull || b.state == stateNull {
-		other := b
-		if b.state == stateNull {
-			other = a
-		}
-		return !mayBeNull(other)
-	}
 	ra, oka := unknownRange(a)
 	rb, okb := unknownRange(b)
 	switch {
@@ -308,8 +312,9 @@ func rangesDisjoint(a, b *rangeData) bool {
 		// Lengths that do not overlap.
 		return true
 	}
-	// Null is no help here: a range that holds it and a range that does not can
-	// still meet anywhere else.
+	// At most one of these ranges still holds null, since equality settles two
+	// that both do. That one can meet the other anywhere else, so null rules
+	// nothing out here.
 	return false
 }
 

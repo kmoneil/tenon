@@ -156,21 +156,32 @@ func TestConformance_EQ003_EqualsWithAnOperandThatIsNotKnown(t *testing.T) {
 	between := func(lo, hi int64) tenon.Value {
 		return tenon.Narrow(tenon.Unknown(num), tenon.NumberMin(n(lo), true), tenon.NumberMax(n(hi), true))
 	}
+	notNull := func(v tenon.Value) tenon.Value { return tenon.Narrow(v, tenon.NotNull()) }
 	for _, tt := range []struct {
 		name string
 		a, b tenon.Value
 		want string
 	}{
-		// Ranges that cannot meet settle the answer.
-		{"bounds that do not overlap", between(1, 2), between(3, 4), "false"},
+		// Ranges that cannot meet settle the answer, once neither of them can
+		// be null. Two that could each still be null could each turn out to
+		// be null, which is one value, whatever their numbers cannot do.
+		{"bounds that do not overlap", notNull(between(1, 2)), notNull(between(3, 4)), "false"},
+		{"bounds that do not overlap, but both could be null", between(1, 2), between(3, 4), "unknown(bool, not null)"},
+		{"bounds that do not overlap, and one cannot be null", notNull(between(1, 2)), between(3, 4), "false"},
 		{"bounds that do overlap", between(1, 3), between(2, 4), "unknown(bool, not null)"},
 		{"a value below the bounds", between(3, 4), n(1), "false"},
 		{"a value inside the bounds", between(1, 4), n(2), "unknown(bool, not null)"},
 		{
 			"prefixes that diverge",
+			tenon.Narrow(tenon.Unknown(str), tenon.NotNull(), tenon.StringPrefix("ab-")),
+			tenon.Narrow(tenon.Unknown(str), tenon.NotNull(), tenon.StringPrefix("ax-")),
+			"false",
+		},
+		{
+			"prefixes that diverge, but both could be null",
 			tenon.Narrow(tenon.Unknown(str), tenon.StringPrefix("ab-")),
 			tenon.Narrow(tenon.Unknown(str), tenon.StringPrefix("ax-")),
-			"false",
+			"unknown(bool, not null)",
 		},
 		{
 			"a prefix against a value that does not begin with it",
@@ -186,9 +197,15 @@ func TestConformance_EQ003_EqualsWithAnOperandThatIsNotKnown(t *testing.T) {
 		},
 		{
 			"lengths that do not overlap",
+			tenon.Narrow(tenon.Unknown(str), tenon.NotNull(), tenon.LengthMax(2)),
+			tenon.Narrow(tenon.Unknown(str), tenon.NotNull(), tenon.LengthMin(5)),
+			"false",
+		},
+		{
+			"lengths that do not overlap, but both could be null",
 			tenon.Narrow(tenon.Unknown(str), tenon.LengthMax(2)),
 			tenon.Narrow(tenon.Unknown(str), tenon.LengthMin(5)),
-			"false",
+			"unknown(bool, not null)",
 		},
 		{
 			"a length against a value that is too long",
@@ -308,6 +325,63 @@ func TestConformance_EQ003_EqualsWithAnOperandThatIsNotKnown(t *testing.T) {
 				t.Fatalf("pass %d: %v equals %v is %s, want false", i, pair[0], pair[1], got)
 			}
 		}
+	}
+}
+
+// Every answer that rests on two ranges being disjoint rests on both of them
+// having ruled out null first. A range that has not is a range that still
+// holds one value in common with every other range of its type.
+func TestConformance_EQ003_NullIsDecidedBeforeRangesAreCompared(t *testing.T) {
+	conformance.Covers(t, "EQ-003", "EQ-004", "EQ-042", "EQ-043", "UN-002", "UN-007")
+	num, set, lst := tenon.NumberType(), tenon.Set(tenon.NumberType()), tenon.List(tenon.NumberType())
+	n := func(i int64) tenon.Value { return tenon.NumberFromInt(i) }
+	// a and b hold no number in common, and each still holds null.
+	a := tenon.Narrow(tenon.Unknown(num), tenon.NumberMin(n(5), true))
+	b := tenon.Narrow(tenon.Unknown(num), tenon.NumberMax(n(3), true))
+	if got, want := tenon.Equals(a, b).String(), "unknown(bool, not null)"; got != want {
+		t.Errorf("two ranges that could both be null are %s equal, want %s", got, want)
+	}
+	if got, want := tenon.Equals(b, a).String(), "unknown(bool, not null)"; got != want {
+		t.Errorf("the other way about is %s, want %s", got, want)
+	}
+	// A set of the two holds one member if both are null, and two otherwise.
+	if got, want := tenon.Length(tenon.SetVal(num, a, b)).String(), "unknown(number, not null, >= 1, <= 2)"; got != want {
+		t.Errorf("the length of a set of the two is %s, want %s", got, want)
+	}
+	if got := tenon.Contains(tenon.SetVal(num, a), b); got.IsKnown() {
+		t.Errorf("membership of one in a set of the other is %v, want an unknown Bool", got)
+	}
+	// The set {null} satisfies a listing of the two at a length of one, so the
+	// listing is no contradiction.
+	if got := tenon.Narrow(tenon.Unknown(set), tenon.Members(a, b), tenon.LengthMax(1)); got.IsError() {
+		t.Errorf("listing two members that could be one member is %v, want a range", got)
+	}
+	// A set that could hold one member converts to a tuple of one.
+	if got := tenon.Convert(tenon.SetVal(num, a, b), tenon.TupleOf(tenon.Any()), tenon.Unsafe); got.IsError() {
+		t.Errorf("converting a set of the two to a tuple of one is %v, want a value", got)
+	}
+	// Lengths that cannot meet say no more than bounds that cannot, since the
+	// null list has no length to disagree about.
+	tooLong := tenon.Narrow(tenon.Unknown(lst), tenon.LengthMin(3))
+	tooShort := tenon.Narrow(tenon.Unknown(lst), tenon.LengthMax(1))
+	if got, want := tenon.Equals(tooLong, tooShort).String(), "unknown(bool, not null)"; got != want {
+		t.Errorf("two lists whose lengths cannot meet are %s equal, want %s", got, want)
+	}
+
+	// Null is the whole of what left those answers open: ruling it out on
+	// either side settles them again.
+	an, bn := tenon.Narrow(a, tenon.NotNull()), tenon.Narrow(b, tenon.NotNull())
+	if got, want := tenon.Equals(an, bn).String(), "false"; got != want {
+		t.Errorf("two disjoint ranges that cannot be null are %s equal, want %s", got, want)
+	}
+	if got, want := tenon.Equals(an, b).String(), "false"; got != want {
+		t.Errorf("a disjoint range against one that could be null is %s equal, want %s", got, want)
+	}
+	if got, want := tenon.Length(tenon.SetVal(num, an, bn)).String(), "2"; got != want {
+		t.Errorf("the length of a set of two that cannot be null is %s, want %s", got, want)
+	}
+	if got := tenon.Narrow(tenon.Unknown(set), tenon.Members(an, bn), tenon.LengthMax(1)); !got.IsError() {
+		t.Errorf("listing two members that cannot be one is %v, want a contradiction", got)
 	}
 }
 
@@ -438,6 +512,7 @@ func TestConformance_UN023_EqualsWithAPendingOperand(t *testing.T) {
 // operands against the values they can resolve to, and sets holding bounded
 // unknowns, and unknown sets, against every set they could turn out to be.
 func TestEqualsDecidesOnlyWhatCannotChange(t *testing.T) {
+	conformance.Covers(t, "EQ-003", "EQ-042", "EQ-043", "UN-007")
 	bl, num, str := tenon.BoolType(), tenon.NumberType(), tenon.StringType()
 	n := func(i int64) tenon.Value { return tenon.NumberFromInt(i) }
 	settledAnswer := func(v tenon.Value) (string, bool) {
@@ -490,8 +565,19 @@ func TestEqualsDecidesOnlyWhatCannotChange(t *testing.T) {
 	// each other: a settled answer must hold for every way of choosing the
 	// unknowns. Integers suffice: two sets equal for some choice of decimals
 	// are equal for a choice of integers too.
-	type member struct{ lo, hi int64 } // lo == hi for a known member
-	kinds := []member{{0, 0}, {1, 1}, {2, 2}, {0, 1}, {1, 2}, {0, 2}}
+	// A member is a known number where lo == hi, and otherwise an unknown
+	// bounded within [lo, hi]. One that has not ruled null out can turn out to
+	// be null as readily as it can turn out to be a number, so null is one of
+	// the values it is checked against.
+	type member struct {
+		lo, hi int64
+		null   bool
+	}
+	kinds := []member{
+		{lo: 0, hi: 0}, {lo: 1, hi: 1}, {lo: 2, hi: 2},
+		{lo: 0, hi: 1}, {lo: 1, hi: 2}, {lo: 0, hi: 2},
+		{lo: 0, hi: 1, null: true}, {lo: 2, hi: 3, null: true},
+	}
 	var specs [][]member
 	specs = append(specs, nil)
 	for i, a := range kinds {
@@ -503,31 +589,42 @@ func TestEqualsDecidesOnlyWhatCannotChange(t *testing.T) {
 	build := func(spec []member) tenon.Value {
 		elems := make([]tenon.Value, len(spec))
 		for i, m := range spec {
-			if m.lo == m.hi {
+			switch {
+			case m.lo == m.hi:
 				elems[i] = n(m.lo)
-			} else {
+			case m.null:
+				elems[i] = tenon.Narrow(tenon.Unknown(num), tenon.NumberMin(n(m.lo), true), tenon.NumberMax(n(m.hi), true))
+			default:
 				elems[i] = tenon.Narrow(tenon.Unknown(num), tenon.NotNull(), tenon.NumberMin(n(m.lo), true), tenon.NumberMax(n(m.hi), true))
 			}
 		}
 		return tenon.SetVal(num, elems...)
 	}
-	// choices returns every set spec can turn out to be.
-	choices := func(spec []member) []tenon.Value {
-		var out []tenon.Value
-		var walk func(i int, picked []tenon.Value)
-		walk = func(i int, picked []tenon.Value) {
+	// choices returns every set spec can turn out to be, each marked with
+	// whether some member of it was chosen null.
+	type choice struct {
+		v    tenon.Value
+		null bool
+	}
+	choices := func(spec []member) []choice {
+		var out []choice
+		var walk func(i int, picked []tenon.Value, sawNull bool)
+		walk = func(i int, picked []tenon.Value, sawNull bool) {
 			if i == len(spec) {
-				out = append(out, tenon.SetVal(num, picked...))
+				out = append(out, choice{tenon.SetVal(num, picked...), sawNull})
 				return
 			}
+			if spec[i].null {
+				walk(i+1, append(slices.Clone(picked), tenon.NullVal(num)), true)
+			}
 			for v := spec[i].lo; v <= spec[i].hi; v++ {
-				walk(i+1, append(slices.Clone(picked), n(v)))
+				walk(i+1, append(slices.Clone(picked), n(v)), sawNull)
 			}
 		}
-		walk(0, nil)
+		walk(0, nil, false)
 		return out
 	}
-	settledSets := 0
+	settledSets, nullMembers := 0, 0
 	for _, a := range specs {
 		for _, b := range specs {
 			want, ok := settledAnswer(tenon.Equals(build(a), build(b)))
@@ -537,8 +634,11 @@ func TestEqualsDecidesOnlyWhatCannotChange(t *testing.T) {
 			settledSets++
 			for _, ca := range choices(a) {
 				for _, cb := range choices(b) {
-					if got := tenon.Equals(ca, cb).String(); got != want {
-						t.Errorf("%v equals %v is %s, but %v equals %v is %s", build(a), build(b), want, ca, cb, got)
+					if ca.null || cb.null {
+						nullMembers++
+					}
+					if got := tenon.Equals(ca.v, cb.v).String(); got != want {
+						t.Errorf("%v equals %v is %s, but %v equals %v is %s", build(a), build(b), want, ca.v, cb.v, got)
 					}
 				}
 			}
@@ -547,23 +647,32 @@ func TestEqualsDecidesOnlyWhatCannotChange(t *testing.T) {
 
 	// Unknown sets narrowed by lengths and listed members, against those sets:
 	// where Equals settles false, no set the other could be satisfies the
-	// narrowings.
+	// narrowings. Every listing is generated both with and without NotNull,
+	// since a range that has not ruled null out still holds the null set, and
+	// a narrowing other than Null and NotNull says nothing about null.
 	var ranges [][]tenon.Narrowing
 	for lo := int64(0); lo <= 3; lo++ {
 		for hi := int64(-1); hi <= 3; hi++ {
 			for _, listed := range [][]tenon.Value{nil, {n(0)}, {n(1)}, {n(0), n(1)}} {
-				ns := []tenon.Narrowing{tenon.NotNull(), tenon.LengthMin(lo)}
-				if hi >= 0 {
-					ns = append(ns, tenon.LengthMax(hi))
+				for _, nullable := range []bool{false, true} {
+					var ns []tenon.Narrowing
+					if !nullable {
+						ns = append(ns, tenon.NotNull())
+					}
+					ns = append(ns, tenon.LengthMin(lo))
+					if hi >= 0 {
+						ns = append(ns, tenon.LengthMax(hi))
+					}
+					if listed != nil {
+						ns = append(ns, tenon.Members(listed...))
+					}
+					ranges = append(ranges, ns)
 				}
-				if listed != nil {
-					ns = append(ns, tenon.Members(listed...))
-				}
-				ranges = append(ranges, ns)
 			}
 		}
 	}
-	settledRanges := 0
+	nullSet := tenon.NullVal(tenon.Set(num))
+	settledRanges, nullRanges := 0, 0
 	for _, ns := range ranges {
 		r := tenon.Narrow(tenon.Unknown(tenon.Set(num)), ns...)
 		if r.IsError() || r.IsKnown() {
@@ -576,14 +685,28 @@ func TestEqualsDecidesOnlyWhatCannotChange(t *testing.T) {
 			}
 			settledRanges++
 			for _, c := range choices(spec) {
-				if narrowed := tenon.Narrow(c, ns...); !narrowed.IsError() {
-					t.Errorf("%v equals %v is false, but %v satisfies its narrowings", r, build(spec), c)
+				if narrowed := tenon.Narrow(c.v, ns...); !narrowed.IsError() {
+					t.Errorf("%v equals %v is false, but %v satisfies its narrowings", r, build(spec), c.v)
 				}
 			}
 		}
+		// The null set is one of the sets the range could be, and it satisfies
+		// every listing that has not ruled null out.
+		nullRanges++
+		if want, ok := settledAnswer(tenon.Equals(r, nullSet)); ok && want == "false" {
+			if narrowed := tenon.Narrow(nullSet, ns...); !narrowed.IsError() {
+				t.Errorf("%v equals the null set is false, but the null set satisfies its narrowings", r)
+			}
+		}
 	}
-	// A property checked over nothing proves nothing.
+	// A property checked over nothing proves nothing, and one that never chose
+	// null would have passed while Equals settled two nullable ranges unequal.
 	if checked < 50 || settledSets < 50 || settledRanges < 50 {
-		t.Errorf("too few settled answers to say much: %d pending, %d sets, %d ranges", checked, settledSets, settledRanges)
+		t.Errorf("too few settled answers to say much: %d pending, %d sets, %d ranges",
+			checked, settledSets, settledRanges)
+	}
+	if nullMembers < 50 || nullRanges < 50 {
+		t.Errorf("too few null choices to say much: %d members chosen null, %d ranges against the null set",
+			nullMembers, nullRanges)
 	}
 }

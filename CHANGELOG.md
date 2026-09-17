@@ -1,5 +1,32 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- `Equals` no longer settles two operands unequal while both could still be
+  null. A narrowing other than `Null` and `NotNull` says nothing about null
+  (`[UN-002]`), so two ranges holding no other value in common still hold null
+  in common, and two nulls of one type are equal (`[EQ-004]`). 0.1.0 compared
+  what such ranges said about their other values and answered a known `false`,
+  overstating `[EQ-003]`, `[EQ-042]`, `[EQ-043]` and `[UN-007]`; the answer is
+  now unknown until null is ruled out on one side.
+
+  Answers that rested on it move with it. Where two members of a set could
+  each be null, the length of the set is now a range rather than the member
+  count, membership is unknown rather than known `false`, a listing of the two
+  no longer contradicts a `LengthMax` of one, and converting such a set to a
+  tuple no longer fails as `convert.length_mismatch`. Ruling null out on
+  either side settles all of them again, as before.
+
+  A document 0.1.0 wrote is still read as it was written. The length of a
+  listed set is recorded in the encoding, so a 0.1.0 document listing two
+  members that could each be null decodes with the `length >= 2` it recorded,
+  and re-encodes to the same bytes, although this release would derive
+  `length >= 1` for the same listing. The length of a set value is not
+  recorded but computed from its members, so such a set decodes unchanged and
+  answers `>= 1, <= 2` where 0.1.0 answered `2`.
+
 ## 0.1.0 (2026-09-16)
 
 The first release: a reference implementation of version 0.1.0 of the tenon

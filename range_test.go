@@ -524,10 +524,13 @@ func TestConformance_UN002_MembersNarrowing(t *testing.T) {
 	set := tenon.Set(num)
 	n := func(i int64) tenon.Value { return tenon.NumberFromInt(i) }
 	one, two, three := n(1), n(2), n(3)
+	// Listed members that cannot be null. Null is the one value every nullable
+	// range of a type still holds, so two of them are never provably distinct
+	// however far apart their numbers are; the case below lists two that are.
 	atLeast := func(i int64) tenon.Value {
-		return tenon.Narrow(tenon.Unknown(num), tenon.NumberMin(n(i), true))
+		return tenon.Narrow(tenon.Unknown(num), tenon.NotNull(), tenon.NumberMin(n(i), true))
 	}
-	atMostZero := tenon.Narrow(tenon.Unknown(num), tenon.NumberMax(n(0), true))
+	atMostZero := tenon.Narrow(tenon.Unknown(num), tenon.NotNull(), tenon.NumberMax(n(0), true))
 
 	// The recorded members are canonical: values that are one member appear
 	// once, the order is the order a set iterates in, and the least length
@@ -576,17 +579,26 @@ func TestConformance_UN002_MembersNarrowing(t *testing.T) {
 	// distinct, and a pair with identical ranges is recorded once.
 	distinct := tenon.Narrow(tenon.Unknown(set), tenon.Members(atLeast(5), atMostZero))
 	if got, want := distinct.String(),
-		"unknown(set(number), length >= 2, members {unknown(number, <= 0), unknown(number, >= 5)})"; got != want {
+		"unknown(set(number), length >= 2, members {unknown(number, not null, <= 0), unknown(number, not null, >= 5)})"; got != want {
 		t.Errorf("provably distinct members render as %s, want %s", got, want)
+	}
+	// The same two ranges while each still holds null are not provably
+	// distinct: both could turn out to be null, which is one member.
+	nullable := tenon.Narrow(tenon.Unknown(set), tenon.Members(
+		tenon.Narrow(tenon.Unknown(num), tenon.NumberMin(n(5), true)),
+		tenon.Narrow(tenon.Unknown(num), tenon.NumberMax(n(0), true))))
+	if got, want := nullable.String(),
+		"unknown(set(number), length >= 1, members {unknown(number, <= 0), unknown(number, >= 5)})"; got != want {
+		t.Errorf("members that could each be null render as %s, want %s", got, want)
 	}
 	overlap := tenon.Narrow(tenon.Unknown(set), tenon.Members(atLeast(5), atLeast(6)))
 	if got, want := overlap.String(),
-		"unknown(set(number), length >= 1, members {unknown(number, >= 5), unknown(number, >= 6)})"; got != want {
+		"unknown(set(number), length >= 1, members {unknown(number, not null, >= 5), unknown(number, not null, >= 6)})"; got != want {
 		t.Errorf("possibly-equal members render as %s, want %s", got, want)
 	}
 	twice := tenon.Narrow(tenon.Unknown(set), tenon.Members(atLeast(5), atLeast(5)))
 	if got, want := twice.String(),
-		"unknown(set(number), length >= 1, members {unknown(number, >= 5)})"; got != want {
+		"unknown(set(number), length >= 1, members {unknown(number, not null, >= 5)})"; got != want {
 		t.Errorf("identical listed values render as %s, want %s", got, want)
 	}
 
@@ -631,7 +643,7 @@ func TestConformance_UN002_MembersNarrowing(t *testing.T) {
 	loose := tenon.Narrow(tenon.Unknown(set), tenon.NotNull(),
 		tenon.Members(atLeast(5), atLeast(6)), tenon.LengthMax(2))
 	if got, want := loose.String(),
-		"unknown(set(number), not null, length >= 1, length <= 2, members {unknown(number, >= 5), unknown(number, >= 6)})"; got != want {
+		"unknown(set(number), not null, length >= 1, length <= 2, members {unknown(number, not null, >= 5), unknown(number, not null, >= 6)})"; got != want {
 		t.Errorf("members that could be one render as %s, want %s", got, want)
 	}
 
