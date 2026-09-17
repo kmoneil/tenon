@@ -27,6 +27,18 @@
   recorded but computed from its members, so such a set decodes unchanged and
   answers `>= 1, <= 2` where 0.1.0 answered `2`.
 
+- `Convert` no longer panics with a nil pointer dereference on data
+  (`[ER-002]`). A container member that converts to a pending value
+  contributes the type it would have with no keys in hand, as the least type
+  it can have. Where that no-keys conversion itself failed, 0.1.0 dropped the
+  failure and unified the zero `Type` that came with it. The member now
+  contributes nothing instead, and a collection with nothing left to unify is
+  pending (`[CV-031]`), since keys it has yet to see can still give it
+  attributes that convert. Reaching the panic took a container holding a
+  member whose own members convert to an object with a required field
+  admitting more than one type, such as a tuple of maps under
+  `ListOf(ListOf(ObjectWith(...)))`.
+
 ## 0.1.0 (2026-09-16)
 
 The first release: a reference implementation of version 0.1.0 of the tenon

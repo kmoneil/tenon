@@ -152,13 +152,22 @@ func collectionTypeConvert(t Type, c Constraint, p Policy, k keys) typeOutcome {
 	}
 	results := make([]Type, 0, len(members)+1)
 	var least []Type
+	pending := false
 	for _, m := range members {
 		out := typeConvert(m, d.elem, p, k)
 		switch {
 		case out.fail != nil:
 			return out
 		case out.pending:
-			least = append(least, typeConvert(m, d.elem, p, keysNone).typ)
+			pending = true
+			// The type the member would have with no keys in hand is the
+			// least it can have. Where even that does not convert, the member
+			// says nothing about the element type: keys it has yet to see can
+			// still give it attributes that convert, so the failure is not
+			// one every value shares, and the rest decide.
+			if none := typeConvert(m, d.elem, p, keysNone); none.fail == nil {
+				least = append(least, none.typ)
+			}
 		default:
 			results = append(results, out.typ)
 		}
@@ -166,7 +175,7 @@ func collectionTypeConvert(t Type, c Constraint, p Policy, k keys) typeOutcome {
 	if unsafe && p == Safe {
 		return failed(unsafeConversion(t, c))
 	}
-	if least != nil {
+	if pending {
 		return pendingElements(results, least, d.elem, p, false)
 	}
 	elem, f := elementType(results, d.elem, p, false)
@@ -220,6 +229,11 @@ func pendingElements(settled, least []Type, c Constraint, p Policy, withhold boo
 	types := append(append([]Type{}, settled...), least...)
 	if s, ok := resultType(c); ok {
 		types = append(types, s)
+	}
+	if len(types) == 0 {
+		// Nothing is left to unify: every member waits on keys not in hand,
+		// and the constraint names no type either. Nothing can fail here.
+		return typeOutcome{pending: true}
 	}
 	if _, ok := unifyTypes(types, p); !ok {
 		f := &failure{CodeConvertNoCommonType, "the members have no common type"}

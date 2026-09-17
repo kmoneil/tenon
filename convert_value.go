@@ -400,7 +400,12 @@ func (x converter) collection(v Value, c Constraint) Value {
 	var least []Type
 	for i, r := range converted {
 		if r.n.state == statePending {
-			least = append(least, typeConvert(h.vals[i].n.typ, d.elem, x.policy, keysNone).typ)
+			// As in collectionTypeConvert: a member whose no-keys conversion
+			// fails settles no element type, and is left out rather than
+			// contributing the zero Type.
+			if none := typeConvert(h.vals[i].n.typ, d.elem, x.policy, keysNone); none.fail == nil {
+				least = append(least, none.typ)
+			}
 			continue
 		}
 		types = append(types, r.n.typ)

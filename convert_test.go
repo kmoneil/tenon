@@ -24,6 +24,14 @@ var (
 // is returns Exactly(t).
 func is(t tenon.Type) tenon.Constraint { return tenon.Exactly(t) }
 
+// oneFieldOfTwoTypes is an open object with one required field admitting
+// either of two types. Converting to it is pending while the keys that would
+// settle the field are not in hand, and the type a member would have with no
+// keys at all need not convert to it, which is the pair that C3 turned on.
+var oneFieldOfTwoTypes = tenon.ObjectWith(map[string]tenon.Field{
+	"a": tenon.Required(tenon.OneOf(is(num), is(boo))),
+}, false)
+
 // obj returns an object value.
 func obj(attrs map[string]tenon.Value) tenon.Value { return tenon.ObjectVal(attrs) }
 
@@ -551,6 +559,40 @@ func TestConformance_CV030_NullsConvertToNulls(t *testing.T) {
 		tenon.ObjectWith(map[string]tenon.Field{"a": tenon.Required(is(num))}, false), uns), wantDiag{tenon.CodeConvertNoConversion, "."})
 }
 
+// A member of a container can convert to a pending value: the keys that would
+// settle its type are not in hand yet. Such a member contributes the type it
+// would have with no keys at all, as the least it can have. Where even that
+// does not convert, there is no type to contribute, and dropping the failure
+// while keeping its zero Type was a nil dereference on data.
+func TestConformance_CV031_PendingMembersWhoseLeastTypeDoesNotConvert(t *testing.T) {
+	conformance.Covers(t, "CV-031", "ER-002")
+	maps := tenon.Tuple(tenon.Map(num), tenon.Map(boo))
+	nested := tenon.Tuple(maps, tenon.List(tenon.Map(num)))
+	target := tenon.ListOf(tenon.ListOf(oneFieldOfTwoTypes))
+	for _, tt := range []struct {
+		name string
+		v    tenon.Value
+	}{
+		{
+			"a tuple holding an unknown tuple of maps",
+			tenon.TupleVal(
+				tenon.ListVal(tenon.Object(map[string]tenon.Type{"a": num}), obj(map[string]tenon.Value{"a": n(1)})),
+				tenon.Unknown(maps)),
+		},
+		{"an unknown of the nesting", tenon.Unknown(nested)},
+		{"a pending of the nesting", tenon.Pending(is(nested))},
+	} {
+		got := tenon.Convert(tt.v, target, uns)
+		if got.IsError() {
+			t.Errorf("%s: converting %v is %v, want a value", tt.name, tt.v, got)
+			continue
+		}
+		if !got.IsPending() {
+			t.Errorf("%s: converting %v is %v, want a pending value", tt.name, tt.v, got)
+		}
+	}
+}
+
 func TestConformance_CV031_UnknownsConvertToUnknowns(t *testing.T) {
 	conformance.Covers(t, "CV-031")
 	unknownNum := tenon.Unknown(num)
@@ -813,9 +855,28 @@ func TestConformance_CV001_EveryResultSatisfiesItsTarget(t *testing.T) {
 		tenon.ObjectWith(map[string]tenon.Field{"k": tenon.Required(is(str))}, true),
 		tenon.ListOf(tenon.ObjectWith(map[string]tenon.Field{"k": tenon.Optional(anyC)}, false)),
 		tenon.OneOf(is(num), tenon.ListOf(anyC)), tenon.OneOf(tenon.MapOf(is(boo)), tenon.ObjectWith(nil, false)), tenon.OneOf(),
+		// Nested collections of an object whose one field admits either of two
+		// types. A member converting to it is pending until the keys are in
+		// hand, and the type it would have with none of them may not convert
+		// at all, which is the shape that dropped a failure and unified a
+		// zero Type.
+		tenon.ListOf(tenon.ListOf(oneFieldOfTwoTypes)),
+	}
+	// The generator holds nothing nested deeply enough to reach a member that
+	// converts to a pending value whose no-keys type does not convert, so the
+	// shapes that dropped such a failure are swept here beside it.
+	maps := tenon.Tuple(tenon.Map(num), tenon.Map(boo))
+	nested := tenon.Tuple(maps, tenon.List(tenon.Map(num)))
+	deep := []tenon.Value{
+		tenon.TupleVal(
+			tenon.ListVal(tenon.Object(map[string]tenon.Type{"a": num}), obj(map[string]tenon.Value{"a": n(1)})),
+			tenon.Unknown(maps)),
+		tenon.Unknown(nested),
+		tenon.Pending(is(nested)),
+		tenon.Unknown(maps),
 	}
 	checked := 0
-	for _, v := range values.All() {
+	for _, v := range append(values.All(), deep...) {
 		for _, c := range targets {
 			for _, p := range []tenon.Policy{safe, uns} {
 				r := tenon.Convert(v, c, p)
