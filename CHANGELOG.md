@@ -136,3 +136,14 @@ under the Apache License, Version 2.0.
   their corpora; property tests at twenty times their cases in
   `make check-slow`; and `make determinism`, which runs the tests twice and
   compares their canonical output.
+
+### Known issues
+
+- The Unicode version is not held inside the module. Normalization and display
+  escaping read tables that follow the toolchain a consumer builds with, so a
+  build with Go 1.27 or later applies Unicode 17.0.0 to both, while grapheme
+  cluster lengths stay at 15.0.0: one build mixes two versions, against
+  `[ST-003]`. Some sequences normalize differently between them, so a value
+  built under one version can serialize to bytes a build under the other
+  refuses as `serialize.not_canonical`. Build with Go 1.26 for the version
+  this release states.

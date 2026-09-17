@@ -20,6 +20,22 @@ says what it holds.
 
     go get github.com/kmoneil/tenon@v0.1.0
 
+# Unicode
+
+tenon holds strings in Normalization Form C and measures their length in
+grapheme clusters, both under Unicode 15.0.0, and its display form escapes
+text by the same version. Which Unicode version is in use decides which
+strings are equal and how long they are, so changing it is a breaking change.
+
+**Known issue in 0.1.0.** The version is not held inside the module.
+Normalization and display escaping read tables that follow the toolchain you
+build with, so a build with Go 1.27 or later applies Unicode 17.0.0 to both,
+while grapheme cluster lengths stay at 15.0.0: one build mixes two versions.
+Some sequences normalize differently between them, so a value built under one
+version can serialize to bytes that a build under the other refuses as
+`serialize.not_canonical`. Build with Go 1.26 for the version this module
+states.
+
 # Why this exists
 
 When I need something that I need and don't want to modify an existing library, I usually write it myself. If you find
