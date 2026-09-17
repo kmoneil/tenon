@@ -23,6 +23,16 @@ var Compared = tenon.Capsule("compared", tenon.CapsuleOps[point]{
 	Hash:   func(v *point) uint64 { return uint64(v.x)<<32 | uint64(v.y) },
 })
 
+// Colliding is a capsule type that declares equality and a hash that is the
+// same for every value, which a hash is allowed to be, and no order. Two of
+// its values are equal exactly when they encapsulate equal points, and nothing
+// it declares tells two unequal ones apart, so the canonical order falls back
+// to numbering them.
+var Colliding = tenon.Capsule("colliding", tenon.CapsuleOps[point]{
+	Equals: func(a, b *point) bool { return *a == *b },
+	Hash:   func(*point) uint64 { return 7 },
+})
+
 var shared = &point{1, 2}
 
 // label is a mark the generator attaches. Marks are told apart by Go equality,
@@ -128,6 +138,9 @@ func All() []tenon.Value {
 		tenon.CapsuleVal(Opaque, &point{1, 2}),
 		tenon.CapsuleVal(Compared, shared),
 		tenon.CapsuleVal(Compared, &point{1, 2}),
+		tenon.CapsuleVal(Colliding, shared),
+		tenon.CapsuleVal(Colliding, &point{1, 2}),
+		tenon.CapsuleVal(Colliding, &point{3, 4}),
 
 		// Collections, including ones holding a member that is not known.
 		tenon.ListVal(str),

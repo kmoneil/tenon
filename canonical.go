@@ -166,16 +166,41 @@ func compareTypes(a, b Type) int {
 }
 
 // capsuleOrder numbers the capsule values that are compared without their type
-// declaring an order. A value keeps its number for the rest of the run, so any
-// two of them sort the same way however often they are compared, and a run
-// that sorts the same values again gets the same answer.
+// declaring an order. A number is kept for the rest of the run, so any two
+// values sort the same way however often they are compared, and a run that
+// sorts the same values again gets the same answer.
+//
+// A number belongs to an equality class and not to a pointer. Values the type
+// reports equal are one value, so an order that gave them two numbers could
+// sort a third value between them, and [EQ-045] would not hold. A type that
+// declares no equality has none to ask, and every pointer is a class of its
+// own.
 //
 // The numbers are held until the process ends. A capsule type whose values are
 // sorted often, or held in sets, should declare Compare and avoid this.
 var capsuleOrder struct {
-	mu     sync.Mutex
-	number map[any]uint64
-	next   uint64
+	mu sync.Mutex
+	// byPointer numbers the values of types that declare no equality.
+	byPointer map[any]uint64
+	// byClass numbers the equality classes of types that do, one list per type
+	// and declared hash.
+	byClass map[capsuleClassKey][]capsuleClass
+	next    uint64
+}
+
+// capsuleClassKey is a capsule type together with one of its declared hashes.
+// Values whose hashes differ are told apart by the hash before the numbering
+// is reached, so only a collision brings two of them into one list.
+type capsuleClassKey struct {
+	d    *capsuleData
+	hash uint64
+}
+
+// capsuleClass is one equality class: a value standing for it, and the number
+// the class was given.
+type capsuleClass struct {
+	rep any
+	n   uint64
 }
 
 // order orders two values of one capsule type: by the declared order where
@@ -199,21 +224,59 @@ func (d *capsuleData) order(a, b any) int {
 			return c
 		}
 	}
-	return cmp.Compare(capsuleNumber(a), capsuleNumber(b))
+	return cmp.Compare(d.number(a), d.number(b))
 }
 
-// capsuleNumber returns the number this run has given an encapsulated value,
-// giving it one if this is the first time it has been asked for.
-func capsuleNumber(v any) uint64 {
-	capsuleOrder.mu.Lock()
-	defer capsuleOrder.mu.Unlock()
-	if n, ok := capsuleOrder.number[v]; ok {
-		return n
+// number returns the number this run has given the equality class that v
+// belongs to under d, giving the class one if this is the first time it has
+// been asked for.
+//
+// The type's equality is asked outside the lock. It is the caller's code and
+// may do anything, comparing capsule values among it, which under the lock
+// would deadlock. The insertion then reads the list again and compares against
+// whatever arrived while the lock was down, so one class is never given two
+// numbers.
+func (d *capsuleData) number(v any) uint64 {
+	if d.equals == nil {
+		// Equality is the pointer, so every pointer is a class of its own.
+		capsuleOrder.mu.Lock()
+		defer capsuleOrder.mu.Unlock()
+		if n, ok := capsuleOrder.byPointer[v]; ok {
+			return n
+		}
+		if capsuleOrder.byPointer == nil {
+			capsuleOrder.byPointer = map[any]uint64{}
+		}
+		capsuleOrder.next++
+		capsuleOrder.byPointer[v] = capsuleOrder.next
+		return capsuleOrder.next
 	}
-	if capsuleOrder.number == nil {
-		capsuleOrder.number = map[any]uint64{}
+	// A type declaring equality declares a hash too, which Capsule requires,
+	// so the list holds just the values whose hashes collide with v's.
+	key := capsuleClassKey{d, d.hash(v)}
+	scanned := 0
+	for {
+		capsuleOrder.mu.Lock()
+		list := capsuleOrder.byClass[key]
+		capsuleOrder.mu.Unlock()
+		for _, c := range list[scanned:] {
+			if d.equals(c.rep, v) {
+				return c.n
+			}
+		}
+		scanned = len(list)
+		capsuleOrder.mu.Lock()
+		if len(capsuleOrder.byClass[key]) == scanned {
+			if capsuleOrder.byClass == nil {
+				capsuleOrder.byClass = map[capsuleClassKey][]capsuleClass{}
+			}
+			capsuleOrder.next++
+			n := capsuleOrder.next
+			capsuleOrder.byClass[key] = append(capsuleOrder.byClass[key], capsuleClass{v, n})
+			capsuleOrder.mu.Unlock()
+			return n
+		}
+		capsuleOrder.mu.Unlock()
+		// Classes arrived while the lock was down; ask about those too.
 	}
-	capsuleOrder.next++
-	capsuleOrder.number[v] = capsuleOrder.next
-	return capsuleOrder.next
 }

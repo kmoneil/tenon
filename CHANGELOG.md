@@ -57,6 +57,25 @@
   structure of its type, which does not change, rather than by its id. Hashes
   remain meaningless outside the run that produced them.
 
+- The canonical order places capsule values a type reports equal together, as
+  `[EQ-045]` requires. Where a capsule type declares equality and a hash but no
+  order, values whose hashes collide are told apart by a number this run gives
+  them. That number was per pointer, so two equal values reached through
+  different pointers got two numbers, and an unequal value could sort between
+  them. The number now belongs to the equality class the type reports, so a
+  value that is one value sorts as one value: a set holding such values
+  iterates one way whatever order it was built in (`[EQ-044]`), two identical
+  such sets compare equal and their diff is empty (`[DI-031]`), and one value
+  has one encoding (`[SE-001]`). A type declaring no equality is unchanged:
+  every pointer is its own class.
+
+### Added
+
+- `conformance/values.Colliding`, a capsule type declaring equality and a hash
+  that is the same for every value, with values of it in `values.All`. No test
+  reached a hash collision before, which is why the ordering defect above
+  passed the gate.
+
 ## 0.1.0 (2026-09-16)
 
 The first release: a reference implementation of version 0.1.0 of the tenon

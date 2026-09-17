@@ -99,6 +99,80 @@ func TestConformance_EQ045_CanonicalOrder(t *testing.T) {
 	})
 }
 
+// A capsule type may declare equality and a hash that collides, and no order.
+// The fallback then numbers what is left, and the numbers must belong to the
+// type's equality classes: two values it reports equal are one value, so a
+// numbering per pointer lets a third value sort between them, and a value that
+// is one value iterates two ways.
+func TestConformance_EQ045_CapsuleFallbackOrdersByEqualityClass(t *testing.T) {
+	conformance.Covers(t, "EQ-045", "EQ-044", "DI-031", "SE-001")
+	cv := func(x, y int) tenon.Value { return tenon.CapsuleVal(colliding, &point{x, y}) }
+	// p and q are one value; r is another. They are numbered in the order they
+	// are first compared, which is p, r, q.
+	p, q, r := cv(1, 1), cv(1, 1), cv(2, 2)
+	if got := tenon.CanonicalCompare(p, r); got == 0 {
+		t.Fatal("two values the type reports unequal sort together")
+	}
+	_ = tenon.CanonicalCompare(r, q)
+	if got := tenon.CanonicalCompare(p, q); got != 0 {
+		t.Errorf("two values the type reports equal sort %d apart", got)
+	}
+	// A preorder: over every triple, ties are exactly the type's equality and
+	// the order is transitive.
+	all := []tenon.Value{p, q, r}
+	for _, a := range all {
+		for _, b := range all {
+			eq := tenon.Equals(a, b).String() == "true"
+			if tie := tenon.CanonicalCompare(a, b) == 0; tie != eq {
+				t.Errorf("%v and %v: sort together is %v, Equals is %v", a, b, tie, eq)
+			}
+			if got, back := tenon.CanonicalCompare(a, b), tenon.CanonicalCompare(b, a); got != -back {
+				t.Errorf("%v against %v is %d, and the other way about %d", a, b, got, back)
+			}
+			for _, c := range all {
+				ab, bc, ac := tenon.CanonicalCompare(a, b), tenon.CanonicalCompare(b, c), tenon.CanonicalCompare(a, c)
+				if ab <= 0 && bc <= 0 && ac > 0 {
+					t.Errorf("%v <= %v <= %v, yet %v sorts after %v", a, b, c, a, c)
+				}
+			}
+		}
+	}
+	// A set of tuples built from them iterates one way, whatever order it was
+	// built in, and two such sets are identical with an empty diff.
+	n := func(i int64) tenon.Value { return tenon.NumberFromInt(i) }
+	A, B, C := tenon.TupleVal(p, n(2)), tenon.TupleVal(r, n(0)), tenon.TupleVal(q, n(1))
+	order := func(s tenon.Value) []string {
+		var out []string
+		for _, e := range s.Elements() {
+			out = append(out, e.Index(1).String())
+		}
+		return out
+	}
+	first := tenon.SetVal(A.Type(), A, B, C)
+	second := tenon.SetVal(A.Type(), C, B, A)
+	if got, want := order(second), order(first); !slices.Equal(got, want) {
+		t.Errorf("one set built two ways iterates %v and %v", want, got)
+	}
+	if !tenon.Identical(first, second) {
+		t.Fatalf("%v and %v are one set built two ways, but are not identical", first, second)
+	}
+	if got := tenon.CanonicalCompare(first, second); got != 0 {
+		t.Errorf("two identical sets sort %d apart", got)
+	}
+	if got := tenon.Diff(first, second); len(got) != 0 {
+		t.Errorf("two identical sets differ: %s", got)
+	}
+}
+
+// colliding declares equality and a hash that is the same for every value,
+// which a hash is allowed to be, and no order. It is declared here as well as
+// in conformance/values because that package's point type is unexported, so
+// values of values.Colliding cannot be built from outside it.
+var colliding = tenon.Capsule("colliding_in_canonical_test", tenon.CapsuleOps[point]{
+	Equals: func(a, b *point) bool { return *a == *b },
+	Hash:   func(*point) uint64 { return 7 },
+})
+
 func TestConformance_EQ046_TheOrderIsTheHostsAndNotTheLanguages(t *testing.T) {
 	conformance.Covers(t, "EQ-046")
 	num := tenon.NumberType()
