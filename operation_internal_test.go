@@ -122,3 +122,30 @@ func TestParameterizedOperationsAreBound(t *testing.T) {
 		t.Error("Convert names no parameters for the operand matrix to check it with")
 	}
 }
+
+// TestMakesSetLooksThroughOneOf holds makesSet, which tells the operand matrix
+// where a conversion gives the marks within its operand to the result, to its
+// doc: a OneOf makes a set when every member that admits a type does, and a
+// constraint that admits no type makes nothing.
+func TestMakesSetLooksThroughOneOf(t *testing.T) {
+	num := NumberType()
+	for _, tt := range []struct {
+		c    Constraint
+		want bool
+	}{
+		{SetOf(Any()), true},
+		{Exactly(Set(num)), true},
+		{ListOf(Any()), false},
+		{Any(), false},
+		{OneOf(SetOf(Any()), SetOf(Exactly(num))), true},
+		{OneOf(SetOf(Any()), OneOf()), true},
+		{OneOf(SetOf(Any()), ListOf(Any())), false},
+		{OneOf(OneOf(SetOf(Any())), Exactly(Set(num))), true},
+		{OneOf(), false},
+		{SetOf(OneOf()), false},
+	} {
+		if got := makesSet(tt.c); got != tt.want {
+			t.Errorf("makesSet(%s) = %t, want %t", tt.c, got, tt.want)
+		}
+	}
+}

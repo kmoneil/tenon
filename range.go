@@ -718,9 +718,9 @@ func contradiction(message string) Value {
 
 // valueText renders v for a diagnostic message, shortening it if it is long.
 // It renders through String, so it withholds what redacting marks protect,
-// within v as well as on it.
+// within v as well as on it, and it leaves every other mark out.
 func valueText(v Value) string {
-	return shortened(v.String(), func(s string) string { return s })
+	return shortened(Value{v.n.plain()}.String(), func(s string) string { return s })
 }
 
 // apply narrows r by nw. It reports whether anything is left, and names the

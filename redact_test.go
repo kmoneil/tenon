@@ -76,11 +76,32 @@ func TestConformance_MK011_DiagnosticsWithholdRedactedContents(t *testing.T) {
 			tenon.Narrow(tenon.WithMarks(hunter, secret, pii), tenon.StringPrefix("ab-")),
 			`the value redacted("pii", "secret") does not satisfy prefix "ab-"`,
 		},
-		// A mark that does not redact withholds nothing.
+		// A mark that does not redact withholds nothing, and it does not show
+		// either, since it cannot change a message (MK-005).
 		{
 			"a mark that does not redact",
 			tenon.Narrow(tenon.WithMarks(hunter, plain), tenon.StringPrefix("ab-")),
-			`the value marked("hunter2", "plain") does not satisfy prefix "ab-"`,
+			`the value "hunter2" does not satisfy prefix "ab-"`,
+		},
+		{
+			"a mark that does not redact beside one that does",
+			tenon.Narrow(tenon.WithMarks(hunter, secret, plain), tenon.StringPrefix("ab-")),
+			`the value redacted("secret") does not satisfy prefix "ab-"`,
+		},
+		{
+			"values within a value, one redacted and one not",
+			tenon.Narrow(tenon.ListVal(num, tenon.WithMarks(tenon.NumberFromInt(7), plain), tenon.WithMarks(fortyTwo, pii)), tenon.LengthMax(1)),
+			`the value list(number)[7, redacted("pii")] does not satisfy length <= 1`,
+		},
+		{
+			"a string that is not a number",
+			tenon.Convert(tenon.WithMarks(hunter, plain), tenon.Exactly(num), tenon.Unsafe),
+			`"hunter2" is not a number`,
+		},
+		{
+			"a string that is not a number, redacted",
+			tenon.Convert(tenon.WithMarks(hunter, secret, plain), tenon.Exactly(num), tenon.Unsafe),
+			`redacted("secret") is not a number`,
 		},
 	} {
 		if !tt.got.IsError() {

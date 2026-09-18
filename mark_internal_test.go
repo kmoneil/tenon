@@ -9,15 +9,16 @@ import (
 	"github.com/kmoneil/tenon/conformance"
 )
 
-// probe is a Mark for the internal tests, deep or not.
+// probe is a Mark for the internal tests, deep or not, redacting or not.
 type probe struct {
-	id   string
-	deep bool
+	id     string
+	deep   bool
+	redact bool
 }
 
 func (m probe) MarkID() string           { return m.id }
 func (m probe) Propagation() Propagation { return Propagate }
-func (m probe) Redacting() bool          { return false }
+func (m probe) Redacting() bool          { return m.redact }
 func (m probe) Deep() bool               { return m.deep }
 
 func TestConformance_MK007_UnmarkedValuesPayNothing(t *testing.T) {
@@ -136,6 +137,36 @@ func checkMarkedWithin(t *testing.T, v Value) {
 	}
 	if v.n.markedWithin != want {
 		t.Errorf("%v says it holds a marked member: %t, want %t", v, v.n.markedWithin, want)
+	}
+}
+
+// TestPlainWritesOutNoMark holds plain to its doc, including in a state no
+// message renders today: an error value shows no marks at all, as a value
+// that is not an error and carries no redacting mark does. What plain copies
+// says truly whether it holds a marked value, and a value with no mark comes
+// back as itself.
+func TestPlainWritesOutNoMark(t *testing.T) {
+	secret, origin := probe{id: "secret", redact: true}, probe{id: "origin"}
+	e := ErrorVal(Diagnostic{Code: "app.x", Message: "m"})
+	a, b := String("a"), String("b")
+	for _, tt := range []struct {
+		v    Value
+		want string
+	}{
+		{WithMarks(e, secret, origin), `error(app.x: "m")`},
+		{WithMarks(a, secret, origin), `redacted("secret")`},
+		{WithMarks(a, origin), `"a"`},
+		{WithMarks(ListVal(StringType(), WithMarks(a, origin)), origin), `list(string)["a"]`},
+		{ListVal(StringType(), WithMarks(a, secret), WithMarks(b, origin)), `list(string)[redacted("secret"), "b"]`},
+	} {
+		p := Value{tt.v.n.plain()}
+		if got := p.String(); got != tt.want {
+			t.Errorf("%v reads %s, want %s", tt.v, got, tt.want)
+		}
+		checkMarkedWithin(t, p)
+	}
+	if a.n.plain() != a.n {
+		t.Error("a value with no mark was copied")
 	}
 }
 

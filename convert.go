@@ -115,15 +115,24 @@ var convertOp = register(&op{
 })
 
 // conversionSamples returns the conversions that the operand matrix checks
-// Convert with: one of each kind of target, under each policy, and targets
-// whose result type is fixed as well as ones where it is not.
+// Convert with: one of each kind of target, under each policy, targets whose
+// result type is fixed as well as ones where it is not, and conversions that
+// parse a string, whose failures render it in their messages.
+//
+// The matrix expects the marks within an operand to reach the result for
+// every operand or for none, as makesSet says, so no sample converts to a
+// OneOf that gives a set for some values and not for others, nor to a set
+// under Safe, which a list fails to convert to before it reads a member.
 func conversionSamples() []opParam {
 	str, num := Type{stringType}, Type{numberType}
 	return []opParam{
 		conversion{Exactly(str), Unsafe},
 		conversion{Exactly(num), Safe},
+		conversion{Exactly(num), Unsafe},
+		conversion{Exactly(Type{boolType}), Unsafe},
 		conversion{ListOf(Any()), Safe},
 		conversion{SetOf(Any()), Unsafe},
+		conversion{OneOf(SetOf(Any()), SetOf(Exactly(num))), Unsafe},
 		conversion{MapOf(Exactly(num)), Safe},
 		conversion{TupleOf(Any()), Unsafe},
 		conversion{ObjectWith(map[string]Field{"a": Optional(Exactly(num))}, false), Unsafe},
@@ -134,12 +143,28 @@ func conversionSamples() []opParam {
 	}
 }
 
-// makesSet reports whether every conversion to c that succeeds gives a set.
+// makesSet reports whether c admits a type, and every conversion to c that
+// succeeds gives a set. A OneOf does when every member that admits a type
+// does.
 func makesSet(c Constraint) bool {
+	if admitsNone(c) {
+		return false
+	}
 	if t, ok := resultType(c); ok {
 		return t.t.kind == KindSet
 	}
-	return c.c.kind == ConstraintSetOf
+	switch c.c.kind {
+	case ConstraintSetOf:
+		return true
+	case ConstraintOneOf:
+		for _, m := range c.c.members {
+			if !admitsNone(m) && !makesSet(m) {
+				return false
+			}
+		}
+		return true
+	}
+	return false
 }
 
 // soleType returns the type that c admits, and whether it admits exactly one.

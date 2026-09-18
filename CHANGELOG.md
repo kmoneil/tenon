@@ -33,6 +33,15 @@
   refused by every operation, since none can apply to it whatever it turns
   out to be.
 
+- A mark that does not redact no longer changes a diagnostic's message, as
+  `[MK-005]` requires. A message that rendered a value rendered its marks too,
+  at any depth: `Convert` of a marked string that does not parse gave
+  `marked("a", "origin") is not a number`, and `Narrow` of a marked known
+  value that a narrowing rules out gave `the value marked(1, "origin") does
+  not satisfy >= 5`, so the error value differed from the one the same call
+  gave unmarked. Only a redacting mark changes a message now, by the
+  placeholder that stands in for what it withholds (`[MK-011]`).
+
 ### Changed
 
 - `conformance/matrix` reports a `UN-023` violation where an operation answers

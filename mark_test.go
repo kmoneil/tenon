@@ -376,6 +376,63 @@ func TestConformance_MK005_MarksDoNotAffectResults(t *testing.T) {
 		t.Errorf("redaction changed more than the message, or not the message: %v and %v", shown, withheld)
 	}
 
+	// A mark that does not redact changes no message at all. A failure that
+	// renders what it failed on renders it as it reads unmarked, whether the
+	// mark is on that value or on a value within it, Propagate, Isolate or
+	// deep, and beside a redacting mark, whose placeholder names the
+	// redacting marks alone.
+	origin, apart, deep := stamp{id: "origin"}, stamp{id: "apart", policy: tenon.Isolate}, stamp{id: "deep", deep: true}
+	both := func(v tenon.Value) tenon.Value { return tenon.WithMarks(v, origin, apart) }
+	a, b, yes, huge := tenon.String("a"), tenon.String("b"), tenon.String("yes"), tenon.String("1e1000000")
+	toNum := func(v tenon.Value) tenon.Value { return tenon.Convert(v, tenon.Exactly(num), tenon.Unsafe) }
+	toNums := func(v tenon.Value) tenon.Value {
+		return tenon.Convert(v, tenon.ListOf(tenon.Exactly(num)), tenon.Unsafe)
+	}
+	for _, tt := range []struct {
+		name          string
+		marked, plain tenon.Value
+	}{
+		{"a string that is not a number", toNum(both(a)), toNum(a)},
+		{"a string that is not a bool",
+			tenon.Convert(both(yes), tenon.Exactly(bl), tenon.Unsafe), tenon.Convert(yes, tenon.Exactly(bl), tenon.Unsafe)},
+		{"a string outside the range of numbers", toNum(both(huge)), toNum(huge)},
+		{"a list member", toNums(tenon.ListVal(str, b, both(a))), toNums(tenon.ListVal(str, b, a))},
+		{"a list under a deep mark", toNums(tenon.WithMarks(tenon.ListVal(str, a), deep)), toNums(tenon.ListVal(str, a))},
+		{"an attribute",
+			tenon.Convert(tenon.ObjectVal(map[string]tenon.Value{"x": both(a)}),
+				tenon.ObjectWith(map[string]tenon.Field{"x": tenon.Required(tenon.Exactly(num))}, true), tenon.Unsafe),
+			tenon.Convert(tenon.ObjectVal(map[string]tenon.Value{"x": a}),
+				tenon.ObjectWith(map[string]tenon.Field{"x": tenon.Required(tenon.Exactly(num))}, true), tenon.Unsafe)},
+		{"a map element",
+			tenon.Convert(tenon.MapVal(str, map[string]tenon.Value{"k": both(a)}), tenon.MapOf(tenon.Exactly(num)), tenon.Unsafe),
+			tenon.Convert(tenon.MapVal(str, map[string]tenon.Value{"k": a}), tenon.MapOf(tenon.Exactly(num)), tenon.Unsafe)},
+		{"a member beside a redacting mark",
+			toNum(tenon.WithMarks(a, secret, origin, apart)), toNum(tenon.WithMarks(a, secret))},
+		{"a member of a redacted list",
+			toNums(tenon.WithMarks(tenon.ListVal(str, both(a)), secret)), toNums(tenon.WithMarks(tenon.ListVal(str, a), secret))},
+		{"a known value narrowed", tenon.Narrow(both(one), tenon.NumberMin(two, true)), tenon.Narrow(one, tenon.NumberMin(two, true))},
+		{"a value within a known value narrowed",
+			tenon.Narrow(tenon.ListVal(str, both(a), b), tenon.LengthMax(1)), tenon.Narrow(tenon.ListVal(str, a, b), tenon.LengthMax(1))},
+		{"an element of a map narrowed",
+			tenon.Narrow(tenon.MapVal(str, map[string]tenon.Value{"k": both(a)}), tenon.LengthMax(0)),
+			tenon.Narrow(tenon.MapVal(str, map[string]tenon.Value{"k": a}), tenon.LengthMax(0))},
+		{"a value under a deep mark narrowed",
+			tenon.Narrow(tenon.WithMarks(tenon.ListVal(str, a, b), deep), tenon.LengthMax(1)), tenon.Narrow(tenon.ListVal(str, a, b), tenon.LengthMax(1))},
+		// A long rendering is cut short, so the marked value comes first.
+		{"beside a redacted value within a value narrowed",
+			tenon.Narrow(tenon.ListVal(str, both(b), tenon.WithMarks(a, secret)), tenon.LengthMax(1)),
+			tenon.Narrow(tenon.ListVal(str, b, tenon.WithMarks(a, secret)), tenon.LengthMax(1))},
+	} {
+		want, _ := tenon.UnmarkDeep(tt.plain)
+		if !want.IsError() {
+			t.Errorf("%s: %v is not an error value", tt.name, want)
+			continue
+		}
+		if got, _ := tenon.UnmarkDeep(tt.marked); !tenon.Identical(got, want) {
+			t.Errorf("%s: %v, want %v", tt.name, got, want)
+		}
+	}
+
 	// An operand is marked when a value it holds carries a mark, and that is
 	// as transparent as a mark on the operand itself.
 	within := func(v tenon.Value) tenon.Value { return tenon.WithMarks(v, m) }
