@@ -162,7 +162,8 @@ func lengthNarrowings(from, to Type, rd *rangeData) []Narrowing {
 
 // pending converts a pending value to c: as the one type its constraint
 // admits would convert, where it admits one, and otherwise to the one type c
-// admits, or to a pending value.
+// admits, or to a pending value. Where c admits no type, nothing converts to
+// it, and the answer is an error value whatever the value turns out to be.
 func (x converter) pending(v Value, c Constraint) Value {
 	n := v.n
 	pc := n.data.(Constraint)
@@ -183,6 +184,15 @@ func (x converter) pending(v Value, c Constraint) Value {
 			return pendingValue(c, n.null)
 		}
 		return narrowedUnknown(out.typ, n.null, nil)
+	}
+	if admitsNone(c) {
+		// Nothing converts to a constraint that no type satisfies, so no type
+		// the value could take does, and a pending value carrying c could
+		// never be resolved.
+		return errorValue(Diagnostic{
+			Code:    CodeOperationWrongType,
+			Message: "the operand of Convert is pending with constraint " + pc.String() + ", and no type converts to " + c.String(),
+		})
 	}
 	if t, ok := resultType(c); ok {
 		return narrowedUnknown(t, n.null, nil)

@@ -228,6 +228,20 @@ func candidates(o Operand, typ *tenon.Type) []tenon.Value {
 			break
 		}
 	}
+	// And constraints that name a kind of type rather than a type: one of a
+	// kind the position could accept, and one of a kind it has no type of.
+	for _, c := range candidateKinds() {
+		if k, _ := kindNamed(c); admitsKind(o.Constraint, k) && (typ == nil || tenon.Satisfies(c, *typ)) {
+			pending = append(pending, tenon.Pending(c))
+			break
+		}
+	}
+	for _, c := range candidateKinds() {
+		if k, _ := kindNamed(c); !admitsKind(o.Constraint, k) {
+			pending = append(pending, tenon.Pending(c))
+			break
+		}
+	}
 	return slices.Concat(errs, pending, unknown, known)
 }
 
@@ -238,6 +252,55 @@ func candidateTypes() []tenon.Type {
 		tenon.BoolType(), tenon.NumberType(), str, tenon.List(str), tenon.Set(str),
 		tenon.Map(tenon.NumberType()), tenon.Tuple(), tenon.Object(nil),
 	}
+}
+
+// candidateKinds returns constraints that name a kind of type, to make
+// pending operands of.
+func candidateKinds() []tenon.Constraint {
+	return []tenon.Constraint{
+		tenon.ListOf(tenon.Any()), tenon.SetOf(tenon.Any()), tenon.MapOf(tenon.Any()),
+		tenon.TupleOf(tenon.Any()), tenon.ObjectWith(nil, false),
+	}
+}
+
+// kindNamed returns the kind of type that c admits, and whether c names a
+// kind: a list, set, map, tuple or object constraint does, whatever its parts
+// say.
+func kindNamed(c tenon.Constraint) (tenon.Kind, bool) {
+	switch c.Kind() {
+	case tenon.ConstraintListOf:
+		return tenon.KindList, true
+	case tenon.ConstraintSetOf:
+		return tenon.KindSet, true
+	case tenon.ConstraintMapOf:
+		return tenon.KindMap, true
+	case tenon.ConstraintTupleOf:
+		return tenon.KindTuple, true
+	case tenon.ConstraintObjectWith:
+		return tenon.KindObject, true
+	}
+	return 0, false
+}
+
+// admitsKind reports whether c could admit a type of kind k, as far as the
+// types and kinds it names say. It is false only where each of them is of
+// another kind, so that no type of kind k satisfies c.
+func admitsKind(c tenon.Constraint, k tenon.Kind) bool {
+	switch c.Kind() {
+	case tenon.ConstraintAny:
+		return true
+	case tenon.ConstraintExactly:
+		return c.Type().Kind() == k
+	case tenon.ConstraintOneOf:
+		for _, m := range c.Members() {
+			if admitsKind(m, k) {
+				return true
+			}
+		}
+		return false
+	}
+	named, _ := kindNamed(c)
+	return named == k
 }
 
 // sharedTypes returns the types that every operand of an operation that takes
@@ -336,15 +399,21 @@ func knownNull(v tenon.Value) bool {
 	return n.IsKnown() && n.AsBool()
 }
 
-// rejected reports whether v is pending with a constraint that names one type,
-// and o does not accept that type, so that an operation can never apply to v
-// whatever it turns out to be.
+// rejected reports whether v is pending with a constraint that no type o
+// accepts satisfies, so that an operation can never apply to v whatever it
+// turns out to be. The matrix decides it for the constraints it builds
+// pending operands of: one naming a type o does not accept, and one naming a
+// kind o has no type of.
 func rejected(v tenon.Value, o Operand) bool {
 	if !v.IsPending() {
 		return false
 	}
 	c := v.Constraint()
-	return c.Kind() == tenon.ConstraintExactly && !tenon.Satisfies(o.Constraint, c.Type())
+	if c.Kind() == tenon.ConstraintExactly {
+		return !tenon.Satisfies(o.Constraint, c.Type())
+	}
+	k, ok := kindNamed(c)
+	return ok && !admitsKind(o.Constraint, k)
 }
 
 // hasCode reports whether v is an error value with a diagnostic of code c.

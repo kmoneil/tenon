@@ -213,8 +213,9 @@ func TestConformance_UN023_PendingOperands(t *testing.T) {
 			t.Errorf("%s = %s, want %s", tt.name, got, want)
 		}
 	}
-	// A pending operand that can only be of a type the operation accepts is as
-	// good as a value of that type.
+	// A pending operand that could still be of a type the operation accepts is
+	// answered as a value of that type would be, whatever else its constraint
+	// admits.
 	for _, tt := range []struct {
 		name string
 		got  tenon.Value
@@ -223,6 +224,17 @@ func TestConformance_UN023_PendingOperands(t *testing.T) {
 		{"NOT of a pending bool", tenon.Not(tenon.Pending(tenon.Exactly(bl))), "unknown(bool, not null)"},
 		{"Length of a pending list", tenon.Length(tenon.Pending(tenon.Exactly(tenon.List(str)))), "unknown(number, not null, >= 0)"},
 		{"Contains of a pending set", tenon.Contains(tenon.Pending(tenon.Exactly(tenon.Set(str))), tenon.String("a")), "unknown(bool, not null)"},
+		{"Length of a pending list of anything", tenon.Length(tenon.Pending(tenon.ListOf(tenon.Any()))), "unknown(number, not null, >= 0)"},
+		{
+			"Contains of a pending set of strings",
+			tenon.Contains(tenon.Pending(tenon.SetOf(tenon.Exactly(str))), tenon.String("a")),
+			"unknown(bool, not null)",
+		},
+		{
+			"Length of a pending string or tuple",
+			tenon.Length(tenon.Pending(tenon.OneOf(tenon.Exactly(str), tenon.TupleOf(tenon.Any())))),
+			"unknown(number, not null, >= 0)",
+		},
 	} {
 		if got := tt.got.String(); got != tt.want {
 			t.Errorf("%s = %s, want %s", tt.name, got, tt.want)
@@ -232,7 +244,12 @@ func TestConformance_UN023_PendingOperands(t *testing.T) {
 	// the operation can never apply, whatever the value turns out to be. That
 	// holds where the operation accepts one of several kinds, as Length does,
 	// or a kind with any element type, as Contains does, and not only where it
-	// accepts a single type.
+	// accepts a single type. It holds however the operand's constraint is
+	// written, one type or a kind of type or several, and for a constraint no
+	// type satisfies at all. Operands that must have one type between them
+	// fail alike where no type the operation accepts satisfies both, although
+	// each alone could be one it accepts.
+	lengthOperand := "one_of([exactly(string), list_of(any), set_of(any), map_of(any)])"
 	for _, tt := range []struct {
 		name string
 		got  tenon.Value
@@ -246,13 +263,52 @@ func TestConformance_UN023_PendingOperands(t *testing.T) {
 		{
 			"Length of a pending number",
 			tenon.Length(tenon.Pending(tenon.Exactly(num))),
-			"the operand of Length is pending with constraint exactly(number), and no type it allows satisfies " +
-				"one_of([exactly(string), list_of(any), set_of(any), map_of(any)])",
+			"the operand of Length is pending with constraint exactly(number), and no type it allows satisfies " + lengthOperand,
 		},
 		{
 			"Contains of a pending list",
 			tenon.Contains(tenon.Pending(tenon.Exactly(tenon.List(str))), tenon.String("a")),
 			"the first operand of Contains is pending with constraint exactly(list(string)), and no type it allows satisfies set_of(any)",
+		},
+		{
+			"Contains of a pending list of anything",
+			tenon.Contains(tenon.Pending(tenon.ListOf(tenon.Any())), tenon.String("a")),
+			"the first operand of Contains is pending with constraint list_of(any), and no type it allows satisfies set_of(any)",
+		},
+		{
+			"Length of a pending empty tuple",
+			tenon.Length(tenon.Pending(tenon.TupleOf())),
+			"the operand of Length is pending with constraint tuple_of([]), and no type it allows satisfies " + lengthOperand,
+		},
+		{
+			"Length of a pending tuple of one",
+			tenon.Length(tenon.Pending(tenon.TupleOf(tenon.Any()))),
+			"the operand of Length is pending with constraint tuple_of([any]), and no type it allows satisfies " + lengthOperand,
+		},
+		{
+			"Length of a pending number written as one of one",
+			tenon.Length(tenon.Pending(tenon.OneOf(tenon.Exactly(num)))),
+			"the operand of Length is pending with constraint one_of([exactly(number)]), and no type it allows satisfies " + lengthOperand,
+		},
+		{
+			"IsNull of a pending value that no type satisfies",
+			tenon.IsNull(tenon.Pending(tenon.OneOf())),
+			"the operand of IsNull is pending with constraint one_of([]), and no type it allows satisfies any",
+		},
+		{
+			"LessThan of a pending number written as one of one, and a string",
+			tenon.LessThan(tenon.Pending(tenon.OneOf(tenon.Exactly(num))), tenon.String("a")),
+			"the first operand of LessThan is pending with constraint one_of([exactly(number)]) and the second operand is " +
+				"a value of type string, and LessThan takes operands of one type",
+		},
+		{
+			"LessThan of two pendings that share only a type it rejects",
+			tenon.LessThan(
+				tenon.Pending(tenon.OneOf(tenon.Exactly(num), tenon.Exactly(bl))),
+				tenon.Pending(tenon.OneOf(tenon.Exactly(str), tenon.Exactly(bl))),
+			),
+			"the first operand of LessThan is pending with constraint one_of([exactly(number), exactly(bool)]) and the second " +
+				"operand is pending with constraint one_of([exactly(string), exactly(bool)]), and LessThan takes operands of one type",
 		},
 	} {
 		want := []tenon.Diagnostic{{Code: tenon.CodeOperationWrongType, Message: tt.want}}

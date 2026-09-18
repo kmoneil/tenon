@@ -467,9 +467,10 @@ func TestConformance_EQ005_ValuesOfDifferentTypes(t *testing.T) {
 }
 
 func TestConformance_UN023_EqualsWithAPendingOperand(t *testing.T) {
-	conformance.Covers(t, "UN-023")
+	conformance.Covers(t, "UN-023", "EQ-005")
 	num, str := tenon.NumberType(), tenon.StringType()
 	pending := tenon.Pending(tenon.Any())
+	anyList := tenon.Pending(tenon.ListOf(tenon.Any()))
 	// The answer is an unknown Bool and never another pending value, however
 	// little is known about the operand.
 	for _, tt := range []struct {
@@ -480,6 +481,8 @@ func TestConformance_UN023_EqualsWithAPendingOperand(t *testing.T) {
 		{"two pendings", tenon.Equals(pending, pending)},
 		{"an unknown and a pending", tenon.Equals(tenon.Unknown(num), pending)},
 		{"a null and a pending that may be null", tenon.Equals(tenon.NullVal(num), pending)},
+		{"two pendings that could share a type", tenon.Equals(anyList, tenon.Pending(tenon.ListOf(tenon.Exactly(num))))},
+		{"a pending list and a pending that could be one", tenon.Equals(anyList, tenon.Pending(tenon.OneOf(tenon.Exactly(num), tenon.ListOf(tenon.Any()))))},
 	} {
 		if tt.got.IsPending() {
 			t.Errorf("%s: Equals gave a pending value", tt.name)
@@ -491,17 +494,46 @@ func TestConformance_UN023_EqualsWithAPendingOperand(t *testing.T) {
 	}
 	// What a pending operand already says settles the answer where it can: a
 	// constraint that rules out the other operand's type, and a nullness fact
-	// that rules out equality with a value that cannot be null.
+	// that rules out equality with a value that cannot be null. Two pending
+	// operands whose constraints share no type can never have one type, and
+	// so are never equal, however their constraints are written.
 	for _, tt := range []struct {
 		name string
 		got  tenon.Value
 	}{
 		{"a pending string and a number", tenon.Equals(tenon.Pending(tenon.Exactly(str)), tenon.NumberFromInt(1))},
-		{"a pending list and a number", tenon.Equals(tenon.Pending(tenon.ListOf(tenon.Any())), tenon.NumberFromInt(1))},
+		{"a pending list and a number", tenon.Equals(anyList, tenon.NumberFromInt(1))},
 		{"a pending known to be null and a number", tenon.Equals(tenon.Narrow(pending, tenon.Null()), tenon.NumberFromInt(1))},
+		{"a pending list and a pending set", tenon.Equals(anyList, tenon.Pending(tenon.SetOf(tenon.Any())))},
+		{
+			"two pendings of one of several types each, none of them shared",
+			tenon.Equals(
+				tenon.Pending(tenon.OneOf(tenon.Exactly(num), tenon.ListOf(tenon.Any()))),
+				tenon.Pending(tenon.OneOf(tenon.Exactly(str), tenon.SetOf(tenon.Any()))),
+			),
+		},
+		{"a pending tuple of one and a pending empty tuple", tenon.Equals(tenon.Pending(tenon.TupleOf(tenon.Any())), tenon.Pending(tenon.TupleOf()))},
 	} {
 		if got := tt.got.String(); got != "false" {
 			t.Errorf("%s: Equals gave %s, want false", tt.name, got)
+		}
+	}
+	// A pending value known to be null equals the null of the one type its
+	// constraint admits, however the constraint names that type.
+	empty := tenon.Tuple()
+	for _, tt := range []struct {
+		name string
+		got  tenon.Value
+	}{
+		{"exactly the empty tuple", tenon.Equals(tenon.Narrow(tenon.Pending(tenon.Exactly(empty)), tenon.Null()), tenon.NullVal(empty))},
+		{"a tuple of nothing", tenon.Equals(tenon.Narrow(tenon.Pending(tenon.TupleOf()), tenon.Null()), tenon.NullVal(empty))},
+		{
+			"two pendings, each written its own way",
+			tenon.Equals(tenon.Narrow(tenon.Pending(tenon.TupleOf()), tenon.Null()), tenon.Narrow(tenon.Pending(tenon.OneOf(tenon.Exactly(empty))), tenon.Null())),
+		},
+	} {
+		if got := tt.got.String(); got != "true" {
+			t.Errorf("a pending null of %s and the null of the empty tuple: Equals gave %s, want true", tt.name, got)
 		}
 	}
 }
@@ -527,16 +559,19 @@ func TestEqualsDecidesOnlyWhatCannotChange(t *testing.T) {
 	// settled answer must hold for every type the pending value can take.
 	types := []tenon.Type{bl, num, str, tenon.List(str), tenon.Set(str), tenon.Map(num), tenon.Tuple(), tenon.Object(nil)}
 	type pending struct {
-		p tenon.Value
-		c tenon.Constraint
+		p       tenon.Value
+		c       tenon.Constraint
+		notNull bool
 	}
 	var pendings []pending
 	for _, c := range []tenon.Constraint{
 		tenon.Any(), tenon.Exactly(num), tenon.Exactly(str),
 		tenon.OneOf(tenon.Exactly(str), tenon.Exactly(bl)), tenon.ListOf(tenon.Any()),
+		tenon.SetOf(tenon.Any()), tenon.TupleOf(), tenon.OneOf(tenon.Exactly(tenon.Tuple())),
+		tenon.OneOf(tenon.Exactly(num), tenon.SetOf(tenon.Any())),
 	} {
 		p := tenon.Pending(c)
-		pendings = append(pendings, pending{p, c}, pending{tenon.Narrow(p, tenon.Null()), c}, pending{tenon.Narrow(p, tenon.NotNull()), c})
+		pendings = append(pendings, pending{p, c, false}, pending{tenon.Narrow(p, tenon.Null()), c, false}, pending{tenon.Narrow(p, tenon.NotNull()), c, true})
 	}
 	checked := 0
 	for _, pc := range pendings {
@@ -559,6 +594,40 @@ func TestEqualsDecidesOnlyWhatCannotChange(t *testing.T) {
 				}
 			}
 		}
+	}
+	// Pending operands against each other: a settled answer must hold for every
+	// pair of types the two can take. Two that could both be null are settled
+	// unequal only by their types, and some such pair must name no type in
+	// either constraint, or this says nothing about constraints that name a
+	// kind; some pair must be settled equal, too.
+	byTypes, equal := 0, 0
+	for _, a := range pendings {
+		for _, b := range pendings {
+			want, ok := settledAnswer(tenon.Equals(a.p, b.p))
+			if !ok {
+				continue
+			}
+			checked++
+			switch {
+			case want == "true":
+				equal++
+			case !a.notNull && !b.notNull && a.c.Kind() != tenon.ConstraintExactly && b.c.Kind() != tenon.ConstraintExactly:
+				byTypes++
+			}
+			for _, ta := range types {
+				for _, tb := range types {
+					if !tenon.Satisfies(a.c, ta) || !tenon.Satisfies(b.c, tb) {
+						continue
+					}
+					if got, ok := settledAnswer(tenon.Equals(tenon.Resolve(a.p, ta), tenon.Resolve(b.p, tb))); ok && got != want {
+						t.Errorf("%v equals %v is %s, but resolved to %v and %v it is %s", a.p, b.p, want, ta, tb, got)
+					}
+				}
+			}
+		}
+	}
+	if byTypes == 0 || equal == 0 {
+		t.Errorf("pending operands naming no type were settled unequal by their constraints %d times, and pending operands settled equal %d times; want some of each", byTypes, equal)
 	}
 
 	// Sets of small integers and of unknowns bounded within them, against

@@ -47,3 +47,12 @@ func RegisteredOperations() []RegisteredOperation {
 	}
 	return out
 }
+
+// SharedType, SoleType and AdmitsNone expose three decisions about
+// constraints to the property tests outside the package, which generate the
+// constraints they are checked on.
+func SharedType(cs ...Constraint) (Type, bool) { return sharedType(cs...) }
+
+func SoleType(c Constraint) (Type, bool) { return soleType(c) }
+
+func AdmitsNone(c Constraint) bool { return admitsNone(c) }

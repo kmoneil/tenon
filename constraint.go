@@ -212,6 +212,141 @@ func satisfiesFields(d *constraintData, attrs []attribute) bool {
 	return true
 }
 
+// sharedType returns a type that satisfies every one of cs, and whether there
+// is one: where Satisfies decides whether a given type satisfies a
+// constraint, this decides whether any type satisfies them all. Exactly
+// admits only its own type, OneOf what one of its members admits and Any every
+// type, so once those are taken apart, what is left names a kind, and
+// constraints naming different kinds share no type. Those naming one kind
+// share a type where their parts do: their element constraints, the members
+// of tuples of one length, and the fields of objects (sharedObject).
+//
+// The type is a witness, so that an answer that there is one can be checked
+// with Satisfies. It takes each combination of the constraints' parts at most
+// once, so its work grows with the product of their sizes, never
+// exponentially in one of them.
+func sharedType(cs ...Constraint) (Type, bool) {
+	for _, c := range cs {
+		if d := c.data(); d.kind == ConstraintExactly {
+			for _, other := range cs {
+				if !Satisfies(other, d.typ) {
+					return Type{}, false
+				}
+			}
+			return d.typ, true
+		}
+	}
+	for i, c := range cs {
+		if d := c.data(); d.kind == ConstraintOneOf {
+			rest := slices.Clone(cs)
+			for _, m := range d.members {
+				rest[i] = m
+				if t, ok := sharedType(rest...); ok {
+					return t, true
+				}
+			}
+			return Type{}, false
+		}
+	}
+	var kinds []*constraintData
+	for _, c := range cs {
+		if d := c.data(); d.kind != ConstraintAny {
+			kinds = append(kinds, d)
+		}
+	}
+	if len(kinds) == 0 {
+		return Type{boolType}, true // nothing but Any, which every type satisfies
+	}
+	kind := kinds[0].kind
+	for _, d := range kinds[1:] {
+		if d.kind != kind {
+			return Type{}, false
+		}
+	}
+	switch kind {
+	case ConstraintListOf, ConstraintSetOf, ConstraintMapOf:
+		elems := make([]Constraint, len(kinds))
+		for i, d := range kinds {
+			elems[i] = d.elem
+		}
+		elem, ok := sharedType(elems...)
+		switch {
+		case !ok:
+			return Type{}, false
+		case kind == ConstraintListOf:
+			return List(elem), true
+		case kind == ConstraintSetOf:
+			return Set(elem), true
+		}
+		return Map(elem), true
+	case ConstraintTupleOf:
+		elems := make([]Type, len(kinds[0].members))
+		for _, d := range kinds[1:] {
+			if len(d.members) != len(elems) {
+				return Type{}, false
+			}
+		}
+		for j := range elems {
+			column := make([]Constraint, len(kinds))
+			for i, d := range kinds {
+				column[i] = d.members[j]
+			}
+			t, ok := sharedType(column...)
+			if !ok {
+				return Type{}, false
+			}
+			elems[j] = t
+		}
+		return Tuple(elems...), true
+	}
+	return sharedObject(kinds)
+}
+
+// sharedObject returns an object type that satisfies every one of the
+// ObjectWith constraints ds, and whether there is one. An attribute is needed
+// where some constraint requires it, and may be present only where every
+// closed constraint names it; its type must satisfy each field that names it.
+// An attribute that no constraint requires is left out, which every
+// constraint allows, so the type found has the required attributes only.
+func sharedObject(ds []*constraintData) (Type, bool) {
+	var names []string
+	for _, d := range ds {
+		for _, f := range d.fields {
+			names = append(names, f.name)
+		}
+	}
+	slices.Sort(names)
+	attrs := map[string]Type{}
+	for _, name := range slices.Compact(names) {
+		var parts []Constraint
+		required, allowed := false, true
+		for _, d := range ds {
+			i, named := slices.BinarySearchFunc(d.fields, name, func(f field, name string) int {
+				return strings.Compare(f.name, name)
+			})
+			switch {
+			case named:
+				parts = append(parts, d.fields[i].Constraint)
+				required = required || d.fields[i].Required
+			case d.closed:
+				allowed = false
+			}
+		}
+		if !required {
+			continue
+		}
+		if !allowed {
+			return Type{}, false
+		}
+		t, ok := sharedType(parts...)
+		if !ok {
+			return Type{}, false
+		}
+		attrs[name] = t
+	}
+	return Object(attrs), true
+}
+
 // data returns the description of c, panicking if c is the zero Constraint.
 func (c Constraint) data() *constraintData {
 	if c.c == nil {

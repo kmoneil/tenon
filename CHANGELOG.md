@@ -4,26 +4,44 @@
 
 ### Fixed
 
-- `Length` and `Contains` give an error value with code
-  `operation.wrong_type` for a pending operand whose constraint names a type
-  they reject, as `[UN-023]` requires. 0.2.0 answered an unknown instead: the
-  length of a pending `Exactly(NumberType())` was an unknown number, and
-  `Contains` over a pending list an unknown Bool. Nothing in either answer
-  said the data was wrong, and resolving the operand turned the next call into
-  a usage panic (`[ER-001]`), so a type error in a configuration reached its
-  caller as a panic rather than as an error value. Every other operation
-  accepts one type, one of several, or any type, and already answered this
-  way. A pending operand whose constraint names no single type is answered as
-  before: `Contains` over a pending `ListOf(Any())` is an unknown Bool,
-  although no list is a set.
+- An operation given a pending operand that can only be of a type it rejects
+  gives an error value with code `operation.wrong_type`, however the operand's
+  constraint is written, as `[UN-023]` requires. 0.2.0 decided this only where
+  the operation accepted one type or one of several, or the constraint was
+  written `Exactly`, and answered an unknown elsewhere: the length of a
+  pending `Exactly(NumberType())` or `TupleOf()` was an unknown number,
+  `Contains` over a pending list an unknown Bool, and `LessThan` of a pending
+  `OneOf(Exactly(NumberType()))` and a string an unknown Bool. Nothing in
+  those answers said the data was wrong, and resolving the operand turned the
+  next call into a usage panic (`[ER-001]`), so a type error in a
+  configuration reached its caller as a panic rather than as an error value.
+  Whether constraints have a type in common is now decided for every
+  constraint, part by part, rather than only for one written `Exactly`.
+
+- `Equals` answers what the constraints of pending operands settle, however
+  they are written. Two operands whose constraints share no type are unequal
+  (`[EQ-005]`), as a pending list and a pending set are, and a pending value
+  known to be null equals the null of the one type its constraint admits, as
+  one written `TupleOf()` does the null of the empty tuple. 0.2.0 answered an
+  unknown Bool for both unless a constraint was written `Exactly`.
+
+- `Convert` gives an error value with code `operation.wrong_type` for a
+  pending value converted to a constraint that no type satisfies, such as
+  `OneOf()` or `ListOf(OneOf())`, where a value in any other state already
+  failed, with `convert.no_conversion`. 0.2.0 gave a pending value carrying
+  that constraint, which could never be resolved. Such a pending value is now
+  refused by every operation, since none can apply to it whatever it turns
+  out to be.
 
 ### Changed
 
 - `conformance/matrix` reports a `UN-023` violation where an operation answers
   a pending operand that can only be of a type it rejects without an
-  `operation.wrong_type` diagnostic. The matrix built such an operand for every
-  operand position and asserted nothing of it, which is how the defect above
-  passed the gate.
+  `operation.wrong_type` diagnostic. For each operand position it builds
+  pending operands whose constraints name a type and a kind of type (a list,
+  set, map, tuple or object of anything), one it accepts and one it rejects
+  of each. It had built the one naming a type and asserted nothing of it,
+  which is how the defects above passed the gate.
 
 ## 0.2.0 (2026-09-18)
 

@@ -639,6 +639,16 @@ func TestConformance_CV032_PendingValuesConvert(t *testing.T) {
 	// No type the constraint admits converts.
 	wantErrors(t, "pending bool to number", tenon.Convert(pendingBool, is(num), uns), wantDiag{tenon.CodeOperationWrongType, "."})
 	wantErrors(t, "pending number to string, safe", tenon.Convert(pendingNum, is(str), safe), wantDiag{tenon.CodeOperationWrongType, "."})
+	// Nor does any to a constraint that no type satisfies, whatever the pending
+	// value's constraint admits: a pending value carrying it could never be
+	// resolved.
+	for _, c := range []tenon.Constraint{
+		tenon.OneOf(), tenon.ListOf(tenon.OneOf()), tenon.ObjectWith(map[string]tenon.Field{"a": tenon.Required(tenon.OneOf())}, false),
+	} {
+		for _, p := range []tenon.Value{tenon.Pending(tenon.Any()), tenon.Pending(tenon.ListOf(tenon.Any()))} {
+			wantErrors(t, p.String()+" to "+c.String(), tenon.Convert(p, c, uns), wantDiag{tenon.CodeOperationWrongType, "."})
+		}
+	}
 	// One result type: the unknown of it, carrying the nullness fact.
 	wantValue(t, "pending number to string", tenon.Convert(pendingNum, is(str), uns), tenon.Unknown(str))
 	wantValue(t, "pending null number", tenon.Convert(tenon.Narrow(pendingNum, tenon.Null()), is(str), uns), tenon.NullVal(str))

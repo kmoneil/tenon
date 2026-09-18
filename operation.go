@@ -55,8 +55,8 @@ type op struct {
 	agree bool
 	// result describes what the operation produces, given the type of each
 	// operand, or the zero Type for an operand that is pending and whose
-	// constraint names no single type. Exactly(T) settles the result type; any
-	// other constraint leaves the result pending.
+	// constraint admits more than one type. Exactly(T) settles the result type;
+	// any other constraint leaves the result pending.
 	result func(types []Type) Constraint
 	// known is the operation itself. Every operand is known and acceptable,
 	// and the answer is a value or an error value, never an unknown one.
@@ -160,7 +160,7 @@ func (o *op) applyValue(args []Value) Value {
 		}
 	}
 	if o.agree {
-		if i, j, ok := disagreeing(args, false); ok {
+		if i, j, ok := o.disagreeing(args, false); ok {
 			usagePanic("%s: %s is %s and %s is %s, but %s takes operands of one type",
 				o.name, operandName(i, len(args)), args[i].n.describe(),
 				operandName(j, len(args)), args[j].n.describe(), o.name)
@@ -176,8 +176,10 @@ func (o *op) applyValue(args []Value) Value {
 		switch n := a.n; n.state {
 		case statePending:
 			known = false
+			// The operation can apply only if some type the operand's
+			// constraint admits is one it accepts.
 			c := n.data.(Constraint)
-			if !couldSatisfy(c, o.operands[i].constraint) {
+			if _, ok := sharedType(c, o.operands[i].constraint); !ok {
 				diags = append(diags, o.wrongType(i, len(args), c))
 				continue
 			}
@@ -185,9 +187,7 @@ func (o *op) applyValue(args []Value) Value {
 				diags = append(diags, o.nullOperand(i, len(args)))
 				continue
 			}
-			if c.Kind() == ConstraintExactly {
-				types[i] = c.Type()
-			}
+			types[i], _ = settledType(n)
 		case stateNull:
 			types[i] = n.typ
 			if !o.operands[i].nulls {
@@ -204,7 +204,7 @@ func (o *op) applyValue(args []Value) Value {
 		// call when it was made, and the type it will have is what rules it
 		// out. It is only worth saying when nothing else about the operands
 		// was wrong already.
-		if i, j, ok := disagreeing(args, true); ok {
+		if i, j, ok := o.disagreeing(args, true); ok {
 			diags = append(diags, o.disagreement(args, i, j))
 		}
 	}
@@ -293,25 +293,33 @@ func (o *op) nullOperand(i, n int) Diagnostic {
 	}
 }
 
-// disagreeing returns two operands whose types differ, and whether there are
-// any. An operand whose type nothing has settled agrees with everything, since
-// nothing it could turn out to be is ruled out yet. A pending operand counts
-// only when pending is true: the type it will have follows from its constraint
-// rather than being in hand, so a disagreement there is a different thing from
-// one between two values.
-func disagreeing(args []Value, pending bool) (int, int, bool) {
-	first, at := Type{}, 0
-	for i, a := range args {
-		if !pending && a.n.state == statePending {
-			continue
-		}
-		t, ok := settledType(a.n)
-		switch {
-		case !ok:
-		case first.t == nil:
-			first, at = t, i
-		case t != first:
-			return at, i, true
+// disagreeing returns two operands that can never have one type between them,
+// and whether there are any. An error operand has no type, and agrees with
+// everything. A pending operand counts only when pending is true: the type it
+// will have follows from its constraint rather than being in hand, so a
+// disagreement there is a different thing from one between two values. It
+// disagrees with another operand where no type satisfies both of their
+// constraints and what the operation accepts in both positions.
+//
+// Operands are taken two at a time, which decides every operation that takes
+// two; one that took more would have to ask about them all together, since
+// constraints can share a type two at a time and none between all three.
+func (o *op) disagreeing(args []Value, pending bool) (int, int, bool) {
+	for j, b := range args {
+		for i, a := range args[:j] {
+			if a.n.state == stateError || b.n.state == stateError {
+				continue
+			}
+			switch ap, bp := a.n.state == statePending, b.n.state == statePending; {
+			case !ap && !bp:
+				if a.n.typ != b.n.typ {
+					return i, j, true
+				}
+			case pending:
+				if _, ok := sharedType(constraintOf(a.n), constraintOf(b.n), o.operands[i].constraint, o.operands[j].constraint); !ok {
+					return i, j, true
+				}
+			}
 		}
 	}
 	return 0, 0, false
@@ -336,34 +344,6 @@ func operandText(n *node) string {
 		return "pending with constraint " + n.data.(Constraint).String()
 	}
 	return n.describe()
-}
-
-// couldSatisfy reports whether some type satisfying c satisfies the operand
-// constraint too, so that the operation could still apply once the type of a
-// pending value is settled. Where c names one type, that type is the only one
-// to ask about. Otherwise it decides only where the operand constraint names
-// one type, alone or as a member of a OneOf, and answers true for any other
-// operand constraint: it says that ListOf(Any()) could satisfy SetOf(Any()),
-// although no list is a set, and that OneOf() could satisfy Any(), although
-// OneOf() admits no type. Deciding those would mean comparing two constraints
-// in general, and assuming the operation could apply leaves the answer to the
-// value rather than inventing one here.
-func couldSatisfy(c, operand Constraint) bool {
-	if c.Kind() == ConstraintExactly {
-		return Satisfies(operand, c.Type())
-	}
-	switch operand.Kind() {
-	case ConstraintExactly:
-		return Satisfies(c, operand.Type())
-	case ConstraintOneOf:
-		for _, m := range operand.Members() {
-			if couldSatisfy(c, m) {
-				return true
-			}
-		}
-		return false
-	}
-	return true
 }
 
 // wrongType returns the diagnostic for a pending operand that can never have a

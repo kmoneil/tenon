@@ -1,6 +1,8 @@
 package tenon_test
 
 import (
+	"maps"
+	"math/rand"
 	"slices"
 	"strings"
 	"testing"
@@ -294,4 +296,312 @@ func TestZeroConstraint(t *testing.T) {
 	mustPanicUsage(t, "zero Constraint", func() { tenon.ListOf(zero) })
 	mustPanicUsage(t, "zero Constraint", func() { tenon.OneOf(tenon.Any(), zero) })
 	mustPanicUsage(t, "zero Constraint", func() { tenon.ObjectWith(map[string]tenon.Field{"a": {}}, true) })
+}
+
+// TestSharedTypeDecidesEveryConstraint holds sharedType to its answers. A type
+// it finds must satisfy every constraint it was given. Where it finds none, no
+// example of any of them may satisfy them all, nor any example of what they
+// have in common, which meet writes out part by part: those examples reach
+// the types a shared type would have to be where the constraints leave
+// positions open on opposite sides. It must agree with admitsNone, which asks
+// the question of one constraint, and a constraint that soleType gives a type
+// for may have no other example.
+func TestSharedTypeDecidesEveryConstraint(t *testing.T) {
+	conformance.Covers(t, "UN-023", "EQ-005")
+	capsule := tenon.Capsule("cap", tenon.CapsuleOps[celsius]{})
+	open := []tenon.Type{
+		boo, num, str, capsule, tenon.List(num), tenon.Set(str), tenon.Map(str), tenon.Tuple(), tenon.Tuple(num, str),
+		tenon.Object(nil), tenon.Object(map[string]tenon.Type{"a": num}),
+	}
+	shared, none := 0, 0
+	check := func(cs ...tenon.Constraint) bool {
+		t.Helper()
+		w, ok := tenon.SharedType(cs...)
+		if ok {
+			shared++
+			for _, c := range cs {
+				if !tenon.Satisfies(c, w) {
+					t.Errorf("SharedType(%v) = %v, which does not satisfy %v", cs, w, c)
+				}
+			}
+			return true
+		}
+		none++
+		common := cs[0]
+		for _, c := range cs[1:] {
+			common = meet(common, c)
+		}
+		for _, c := range append(slices.Clone(cs), common) {
+			for _, e := range examples(c, open) {
+				if satisfiesAll(cs, e) {
+					t.Errorf("SharedType(%v) found no type, but %v satisfies them all", cs, e)
+					return false
+				}
+			}
+		}
+		return false
+	}
+
+	// Where the parts meet in ways the generator reaches only now and then.
+	objectWith := func(closed bool, fields map[string]tenon.Field) tenon.Constraint {
+		return tenon.ObjectWith(fields, closed)
+	}
+	for _, tt := range []struct {
+		name string
+		cs   []tenon.Constraint
+		want bool
+	}{
+		{"anything", []tenon.Constraint{tenon.Any()}, true},
+		{"one of nothing", []tenon.Constraint{tenon.OneOf()}, false},
+		{"one of nothing and anything", []tenon.Constraint{tenon.OneOf(), tenon.Any()}, false},
+		{"a list and a set", []tenon.Constraint{tenon.ListOf(tenon.Any()), tenon.SetOf(tenon.Any())}, false},
+		{"tuples of two lengths", []tenon.Constraint{tenon.TupleOf(tenon.Any()), tenon.TupleOf()}, false},
+		{
+			"positions left open on opposite sides",
+			[]tenon.Constraint{tenon.TupleOf(tenon.Any(), is(num)), tenon.TupleOf(is(str), tenon.Any())},
+			true,
+		},
+		{
+			"elements of one of two types each, one type shared",
+			[]tenon.Constraint{tenon.ListOf(tenon.OneOf(is(num), is(str))), tenon.ListOf(tenon.OneOf(is(boo), is(str)))},
+			true,
+		},
+		{
+			"a field one requires and a closed one leaves out",
+			[]tenon.Constraint{objectWith(false, map[string]tenon.Field{"a": tenon.Required(is(num))}), objectWith(true, nil)},
+			false,
+		},
+		{
+			"a field one requires and a closed one names as optional",
+			[]tenon.Constraint{objectWith(false, map[string]tenon.Field{"a": tenon.Required(tenon.Any())}), objectWith(true, map[string]tenon.Field{"a": tenon.Optional(is(num))})},
+			true,
+		},
+		{
+			"optional fields whose constraints share no type",
+			[]tenon.Constraint{objectWith(true, map[string]tenon.Field{"a": tenon.Optional(is(num))}), objectWith(true, map[string]tenon.Field{"a": tenon.Optional(is(str))})},
+			true,
+		},
+		{
+			"a required field whose constraints share no type",
+			[]tenon.Constraint{objectWith(false, map[string]tenon.Field{"a": tenon.Required(is(num))}), objectWith(false, map[string]tenon.Field{"a": tenon.Optional(is(str))})},
+			false,
+		},
+		{
+			"fields that two closed objects each require and the other leaves out",
+			[]tenon.Constraint{objectWith(true, map[string]tenon.Field{"a": tenon.Required(tenon.Any())}), objectWith(true, map[string]tenon.Field{"b": tenon.Required(tenon.Any())})},
+			false,
+		},
+		{
+			"three that share a type two at a time and not together",
+			[]tenon.Constraint{tenon.OneOf(is(num), is(boo)), tenon.OneOf(is(str), is(boo)), tenon.OneOf(is(num), is(str))},
+			false,
+		},
+		{"a type and a constraint it satisfies", []tenon.Constraint{tenon.OneOf(tenon.ListOf(tenon.Any()), is(num)), is(tenon.List(str))}, true},
+	} {
+		if got := check(tt.cs...); got != tt.want {
+			t.Errorf("%s: SharedType(%v) found one: %t, want %t", tt.name, tt.cs, got, tt.want)
+		}
+	}
+
+	r := rand.New(rand.NewSource(20260918))
+	for range conformance.Iterations(t, 800) {
+		base := randomConstraint(r, 3, capsule)
+		// The examples are what the search for a missed shared type rests on,
+		// so they must satisfy their constraint, and one that admits a type
+		// must have some.
+		own := examples(base, open)
+		for _, e := range own {
+			if !tenon.Satisfies(base, e) {
+				t.Fatalf("the example %v does not satisfy %v", e, base)
+			}
+		}
+		w, ok := tenon.SharedType(base)
+		if ok == tenon.AdmitsNone(base) {
+			t.Errorf("SharedType(%v) found one: %t, and so did AdmitsNone", base, ok)
+		}
+		if ok && len(own) == 0 {
+			t.Fatalf("%v admits %v, but the test found no example of it", base, w)
+		}
+		if s, sole := tenon.SoleType(base); sole {
+			if w != s {
+				t.Errorf("SoleType(%v) = %v, but SharedType found %v", base, s, w)
+			}
+			for _, e := range own {
+				if e != s {
+					t.Errorf("SoleType(%v) = %v, but %v satisfies it too", base, s, e)
+					break
+				}
+			}
+		}
+		check(base)
+		check(base, related(r, base, capsule))
+		check(base, randomConstraint(r, 3, capsule))
+		check(base, related(r, base, capsule), related(r, base, capsule))
+	}
+	// A run that found one answer nearly always would say little of the other.
+	if shared < 500 || none < 500 {
+		t.Errorf("the generated constraints shared a type %d times and none %d times, too few of one to say much", shared, none)
+	}
+}
+
+// satisfiesAll reports whether t satisfies every one of cs.
+func satisfiesAll(cs []tenon.Constraint, t tenon.Type) bool {
+	for _, c := range cs {
+		if !tenon.Satisfies(c, t) {
+			return false
+		}
+	}
+	return true
+}
+
+// examples returns types that satisfy c, reaching each part of it: every
+// member of a OneOf, every optional field both present and absent, an
+// attribute no field names where an object is open, and the open types
+// wherever c leaves a type open. A long product is thinned to a spread of it.
+func examples(c tenon.Constraint, open []tenon.Type) []tenon.Type {
+	switch c.Kind() {
+	case tenon.ConstraintAny:
+		return open
+	case tenon.ConstraintExactly:
+		return []tenon.Type{c.Type()}
+	case tenon.ConstraintOneOf:
+		var out []tenon.Type
+		for _, m := range c.Members() {
+			out = append(out, examples(m, open)...)
+		}
+		return thinned(out)
+	case tenon.ConstraintListOf, tenon.ConstraintSetOf, tenon.ConstraintMapOf:
+		of := map[tenon.ConstraintKind]func(tenon.Type) tenon.Type{
+			tenon.ConstraintListOf: tenon.List, tenon.ConstraintSetOf: tenon.Set, tenon.ConstraintMapOf: tenon.Map,
+		}[c.Kind()]
+		var out []tenon.Type
+		for _, e := range examples(c.Element(), open) {
+			out = append(out, of(e))
+		}
+		return out
+	case tenon.ConstraintTupleOf:
+		rows := [][]tenon.Type{nil}
+		for _, m := range c.Members() {
+			var next [][]tenon.Type
+			for _, row := range rows {
+				for _, e := range examples(m, open) {
+					next = append(next, append(slices.Clone(row), e))
+				}
+			}
+			rows = thinned(next)
+		}
+		out := make([]tenon.Type, len(rows))
+		for i, row := range rows {
+			out[i] = tenon.Tuple(row...)
+		}
+		return out
+	}
+	rows := []map[string]tenon.Type{{}}
+	for _, name := range c.FieldNames() {
+		f, _ := c.Field(name)
+		var next []map[string]tenon.Type
+		for _, row := range rows {
+			if !f.Required {
+				next = append(next, row)
+			}
+			for _, e := range examples(f.Constraint, open) {
+				with := maps.Clone(row)
+				with[name] = e
+				next = append(next, with)
+			}
+		}
+		rows = thinned(next)
+	}
+	var out []tenon.Type
+	for _, row := range rows {
+		out = append(out, tenon.Object(row))
+		if !c.Closed() {
+			with := maps.Clone(row)
+			with["z"] = boo
+			out = append(out, tenon.Object(with))
+		}
+	}
+	return out
+}
+
+// thinned returns xs, or a spread of 48 of them where there are more.
+func thinned[T any](xs []T) []T {
+	const most = 48
+	if len(xs) <= most {
+		return xs
+	}
+	out := make([]T, most)
+	for i := range out {
+		out[i] = xs[i*len(xs)/most]
+	}
+	return out
+}
+
+// meet returns a constraint that admits exactly the types both c and d admit,
+// written out part by part: the test's own account of what two constraints
+// have in common, reached otherwise than sharedType reaches it.
+func meet(c, d tenon.Constraint) tenon.Constraint {
+	none := tenon.OneOf()
+	switch {
+	case c.Kind() == tenon.ConstraintAny:
+		return d
+	case d.Kind() == tenon.ConstraintAny:
+		return c
+	case c.Kind() == tenon.ConstraintExactly:
+		if tenon.Satisfies(d, c.Type()) {
+			return c
+		}
+		return none
+	case d.Kind() == tenon.ConstraintExactly:
+		return meet(d, c)
+	case c.Kind() == tenon.ConstraintOneOf:
+		var ms []tenon.Constraint
+		for _, m := range c.Members() {
+			ms = append(ms, meet(m, d))
+		}
+		return tenon.OneOf(ms...)
+	case d.Kind() == tenon.ConstraintOneOf:
+		return meet(d, c)
+	case c.Kind() != d.Kind():
+		return none
+	}
+	switch c.Kind() {
+	case tenon.ConstraintListOf:
+		return tenon.ListOf(meet(c.Element(), d.Element()))
+	case tenon.ConstraintSetOf:
+		return tenon.SetOf(meet(c.Element(), d.Element()))
+	case tenon.ConstraintMapOf:
+		return tenon.MapOf(meet(c.Element(), d.Element()))
+	case tenon.ConstraintTupleOf:
+		cm, dm := c.Members(), d.Members()
+		if len(cm) != len(dm) {
+			return none
+		}
+		ms := make([]tenon.Constraint, len(cm))
+		for i := range cm {
+			ms[i] = meet(cm[i], dm[i])
+		}
+		return tenon.TupleOf(ms...)
+	}
+	fields := map[string]tenon.Field{}
+	for _, name := range append(c.FieldNames(), d.FieldNames()...) {
+		fc, inC := c.Field(name)
+		fd, inD := d.Field(name)
+		switch {
+		case inC && inD:
+			fields[name] = tenon.Field{Constraint: meet(fc.Constraint, fd.Constraint), Required: fc.Required || fd.Required}
+		case inC && d.Closed() || inD && c.Closed():
+			// A closed constraint that does not name the attribute rules it
+			// out, so only an optional field survives, and nothing can fill it.
+			if fc.Required || fd.Required {
+				return none
+			}
+			fields[name] = tenon.Optional(none)
+		case inC:
+			fields[name] = fc
+		default:
+			fields[name] = fd
+		}
+	}
+	return tenon.ObjectWith(fields, c.Closed() || d.Closed())
 }

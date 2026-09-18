@@ -15,9 +15,10 @@ import (
 // Where an operand is not known, the answer is known false if the two cannot
 // meet whatever they turn out to be, known true if both are the same known
 // value, and an unknown Bool otherwise. A pending operand counts for what it
-// already says: one known to be null never equals a value that cannot be
-// null, and one whose constraint rules out the other operand's type never
-// equals it. An error operand gives an error value.
+// already says. One known to be null never equals a value that cannot be
+// null, and equals the null of the one type its constraint admits. Two
+// operands that can never have one type between them, as a pending list and a
+// pending set cannot, are never equal. An error operand gives an error value.
 //
 // Equals compares what values are rather than how they are held: a number
 // written two ways is one number, and a string is compared in the normalized
@@ -52,9 +53,9 @@ var equalsOp = register(&op{
 //
 // A pending operand has no type yet, but it may already say enough. Null
 // equals null and nothing else, so a value known to be null differs from one
-// that cannot be null whatever types the two turn out to have; and a
-// constraint that the other operand's type does not satisfy means the two
-// will never have one type.
+// that cannot be null whatever types the two turn out to have; and where the
+// constraints of the two share no type, a type in hand counting as the
+// constraint that names it, they will never have one type.
 //
 // Null is decided here and nowhere else. Two operands that could both still
 // be null could both turn out to be null, which is one value, so nothing they
@@ -71,13 +72,11 @@ func equality(a, b *node) (eq, settled bool) {
 	ta, oka := settledType(a)
 	tb, okb := settledType(b)
 	switch {
-	case !oka && !okb:
-		// Neither type is settled, so either could still be the other's.
-		return false, false
-	case !oka:
-		return false, !Satisfies(a.data.(Constraint), tb)
-	case !okb:
-		return false, !Satisfies(b.data.(Constraint), ta)
+	case !oka || !okb:
+		// A type that is not settled could still turn out to be the other's,
+		// unless no type satisfies what both say of theirs.
+		_, share := sharedType(constraintOf(a), constraintOf(b))
+		return false, !share
 	case ta != tb:
 		return false, true
 	case nullA && nullB:
@@ -103,19 +102,27 @@ func knownNull(n *node) bool {
 }
 
 // settledType returns the type that a value has or will have, and whether it
-// has one. A pending value has one only where its constraint names it.
+// has one. A pending value has one where its constraint admits exactly one
+// type, however the constraint is written.
 func settledType(n *node) (Type, bool) {
 	switch n.state {
 	case stateError:
 		// An error value has no type and never will have one.
 		return Type{}, false
 	case statePending:
-		if c := n.data.(Constraint); c.Kind() == ConstraintExactly {
-			return c.Type(), true
-		}
-		return Type{}, false
+		return soleType(n.data.(Constraint))
 	}
 	return n.typ, true
+}
+
+// constraintOf returns the constraint that the type of n satisfies: the one a
+// pending value carries, and Exactly of its type for any other value but an
+// error value, which has no type and is never asked about.
+func constraintOf(n *node) Constraint {
+	if n.state == statePending {
+		return n.data.(Constraint)
+	}
+	return Exactly(n.typ)
 }
 
 // sameValue reports whether two known values of one type are the same value.
