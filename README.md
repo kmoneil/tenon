@@ -14,11 +14,12 @@ programs that hold such values:
 - **Validation layers** check values against constraints, and report every
   failure with a stable code and the path to it.
 
-Version 0.1.0 implements version 0.1.0 of the tenon specification and
-satisfies every one of its rules, as `CONFORMANCE.md` reports; `CHANGELOG.md`
-says what it holds.
+Version 0.2.0 implements version 0.1.0 of the tenon specification. A
+conformance test covers every one of its 192 rules, as `CONFORMANCE.md`
+reports; `CHANGELOG.md` says what each release holds, and which rules the
+report still states more widely than its test exercises.
 
-    go get github.com/kmoneil/tenon@v0.1.0
+    go get github.com/kmoneil/tenon@v0.2.0
 
 # Unicode
 

@@ -1,6 +1,39 @@
 # Changelog
 
-## Unreleased
+## 0.2.0 (2026-09-18)
+
+A fix release for the six critical findings of an architecture audit of
+0.1.0: two panics on data, three classes of wrong answer, and a Unicode
+version that followed whichever Go toolchain a consumer built with. It
+implements version 0.1.0 of the tenon specification, unchanged: no rule was
+amended, added or withdrawn, and the count stays at 192.
+
+The minor version moves rather than the patch because value identity moved
+with it. A string of more than thirty non-starters is a different value than
+0.1.0 built, and `Equals`, `Length`, `Contains`, `Narrow` and `Convert`
+answer differently where an operand could still be null. Encodings of those
+values move with them. No diagnostic code changed, and no panic was added:
+two were removed.
+
+**Upgrading from 0.1.0.** Documents 0.1.0 wrote still decode, and a Go 1.27
+build now reads a Go 1.26 build's documents and writes the same bytes, which
+0.1.0 did not. Two things do not carry over: a value built from text holding
+a run of more than thirty non-starters, which 0.1.0 gave a U+034F it should
+not have, and the recorded length of a listing of members that could each be
+null, which 0.1.0 wrote as `length >= 2` and this release would derive as
+`length >= 1`. The document keeps what it recorded either way.
+
+**What `CONFORMANCE.md` still overstates.** It reports 192 of 192, and every
+rule does have a passing test, but for these the test exercises a narrower
+case than the rule states, as the audit found. This release closes `EQ-003`,
+`EQ-030`, `EQ-032`, `EQ-042`, `EQ-043`, `EQ-045`, `DI-012`, `DI-031`,
+`ER-002`, `ST-003` and `UN-007`. Still outstanding: `UN-004` and `UN-005`
+(what a narrowing leaves when only null remains), `UN-023` (`Length` and
+`Contains` on pending operands of a type they reject), `CV-026` and `MK-005`
+(conversion results moving with marks that do not redact and with how a
+one-type constraint is written), `DI-011` (path keys that carry marks), and
+`TY-017` (where a map's key diagnostics sit). Each has a fix planned for a
+later release, some waiting on a decision about what the rule should say.
 
 ### Fixed
 
