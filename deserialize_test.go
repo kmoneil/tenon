@@ -380,8 +380,8 @@ func mutate(r *rand.Rand, b []byte) []byte {
 }
 
 // FuzzDeserialize holds the decoder to never panicking, and to accepting only
-// what it would write. The seed corpus runs with the tests; M12 runs the
-// fuzzer itself.
+// what it would write. The seed corpus runs with the tests; `make fuzz` runs
+// the fuzzer itself.
 func FuzzDeserialize(f *testing.F) {
 	g := generator{rand.New(rand.NewSource(1))}
 	for range 64 {

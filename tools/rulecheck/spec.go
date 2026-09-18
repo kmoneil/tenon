@@ -56,7 +56,7 @@ func loadSpec(path string) (Manifest, error) {
 }
 
 // versionLine matches the line that states the specification's version, as in
-// **Version:** 0.1.0-draft, and captures the version.
+// **Version:** 0.1.0, and captures the version.
 var versionLine = regexp.MustCompile(`^\*\*Version:\*\*\s+(\S+)\s*$`)
 
 // specVersion returns the version that the specification states before its
