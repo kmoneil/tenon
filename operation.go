@@ -340,11 +340,18 @@ func operandText(n *node) string {
 
 // couldSatisfy reports whether some type satisfying c satisfies the operand
 // constraint too, so that the operation could still apply once the type of a
-// pending value is settled. It decides the constraints that operations state:
-// one type, one of several, or any at all. Anything else would mean comparing
-// two constraints in general, which nothing needs yet, and assuming it could
-// apply leaves the answer to the value rather than inventing one here.
+// pending value is settled. Where c names one type, that type is the only one
+// to ask about. Otherwise it decides only where the operand constraint names
+// one type, alone or as a member of a OneOf, and answers true for any other
+// operand constraint: it says that ListOf(Any()) could satisfy SetOf(Any()),
+// although no list is a set, and that OneOf() could satisfy Any(), although
+// OneOf() admits no type. Deciding those would mean comparing two constraints
+// in general, and assuming the operation could apply leaves the answer to the
+// value rather than inventing one here.
 func couldSatisfy(c, operand Constraint) bool {
+	if c.Kind() == ConstraintExactly {
+		return Satisfies(operand, c.Type())
+	}
 	switch operand.Kind() {
 	case ConstraintExactly:
 		return Satisfies(c, operand.Type())

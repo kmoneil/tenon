@@ -78,6 +78,15 @@ func TestOperandMatrixCatchesBrokenOperations(t *testing.T) {
 			}
 			return add(args)
 		}}},
+		{"UN-023", matrix.Operation{Name: "forgets the type a pending operand names", Operands: numbers, Fixed: true, Call: func(args ...tenon.Value) tenon.Value {
+			forgot := slices.Clone(args)
+			for i, a := range args {
+				if a.IsPending() && a.Constraint().Kind() == tenon.ConstraintExactly {
+					forgot[i] = tenon.WithMarks(tenon.Pending(tenon.Any()), marksOf(a)...)
+				}
+			}
+			return add(forgot)
+		}}},
 		{"UN-009", matrix.Operation{Name: "answers null with zero", Operands: numbers, Fixed: true, Call: func(args ...tenon.Value) tenon.Value {
 			for i, a := range args {
 				if !a.IsError() && !a.IsPending() && a.IsKnown() && tenon.IsNull(a).AsBool() {

@@ -195,8 +195,8 @@ func TestConformance_UN009_NullOperands(t *testing.T) {
 }
 
 func TestConformance_UN023_PendingOperands(t *testing.T) {
-	conformance.Covers(t, "UN-023")
-	bl, num := tenon.BoolType(), tenon.NumberType()
+	conformance.Covers(t, "UN-023", "ER-001")
+	bl, num, str := tenon.BoolType(), tenon.NumberType(), tenon.StringType()
 	pending := tenon.Pending(tenon.Any())
 	// These operations have a fixed result type, so a pending operand gives an
 	// unknown of that type rather than another pending value.
@@ -213,19 +213,58 @@ func TestConformance_UN023_PendingOperands(t *testing.T) {
 			t.Errorf("%s = %s, want %s", tt.name, got, want)
 		}
 	}
-	// A pending operand that can only be a Bool is as good as a Bool.
-	if got := tenon.Not(tenon.Pending(tenon.Exactly(bl))).String(); got != "unknown(bool, not null)" {
-		t.Errorf("NOT of a pending bool = %s", got)
+	// A pending operand that can only be of a type the operation accepts is as
+	// good as a value of that type.
+	for _, tt := range []struct {
+		name string
+		got  tenon.Value
+		want string
+	}{
+		{"NOT of a pending bool", tenon.Not(tenon.Pending(tenon.Exactly(bl))), "unknown(bool, not null)"},
+		{"Length of a pending list", tenon.Length(tenon.Pending(tenon.Exactly(tenon.List(str)))), "unknown(number, not null, >= 0)"},
+		{"Contains of a pending set", tenon.Contains(tenon.Pending(tenon.Exactly(tenon.Set(str))), tenon.String("a")), "unknown(bool, not null)"},
+	} {
+		if got := tt.got.String(); got != tt.want {
+			t.Errorf("%s = %s, want %s", tt.name, got, tt.want)
+		}
 	}
-	// One that cannot be a Bool at all is an error value: the operation can
-	// never apply, whatever the value turns out to be.
-	bad := tenon.Not(tenon.Pending(tenon.Exactly(num)))
-	if !bad.IsError() {
-		t.Fatalf("NOT of a pending number = %v, want an error value", bad)
+	// One that can only be of a type the operation rejects is an error value:
+	// the operation can never apply, whatever the value turns out to be. That
+	// holds where the operation accepts one of several kinds, as Length does,
+	// or a kind with any element type, as Contains does, and not only where it
+	// accepts a single type.
+	for _, tt := range []struct {
+		name string
+		got  tenon.Value
+		want string
+	}{
+		{
+			"NOT of a pending number",
+			tenon.Not(tenon.Pending(tenon.Exactly(num))),
+			"the operand of Not is pending with constraint exactly(number), and no type it allows satisfies exactly(bool)",
+		},
+		{
+			"Length of a pending number",
+			tenon.Length(tenon.Pending(tenon.Exactly(num))),
+			"the operand of Length is pending with constraint exactly(number), and no type it allows satisfies " +
+				"one_of([exactly(string), list_of(any), set_of(any), map_of(any)])",
+		},
+		{
+			"Contains of a pending list",
+			tenon.Contains(tenon.Pending(tenon.Exactly(tenon.List(str))), tenon.String("a")),
+			"the first operand of Contains is pending with constraint exactly(list(string)), and no type it allows satisfies set_of(any)",
+		},
+	} {
+		want := []tenon.Diagnostic{{Code: tenon.CodeOperationWrongType, Message: tt.want}}
+		if !tt.got.IsError() || !equalDiagnostics(tt.got.Diagnostics(), want) {
+			t.Errorf("%s = %v, want %v", tt.name, tt.got, want)
+		}
 	}
-	d := bad.Diagnostics()[0]
-	want := "the operand of Not is pending with constraint exactly(number), and no type it allows satisfies exactly(bool)"
-	if d.Code != tenon.CodeOperationWrongType || d.Message != want {
-		t.Errorf("NOT of a pending number gave %v, want %s saying %q", d, tenon.CodeOperationWrongType, want)
-	}
+	// Once resolved, the operand is a value the calling program chose to pass,
+	// and passing one of a type the operation rejects is that program's mistake
+	// (ER-001). While the type is still the data's, so is the mistake, which is
+	// why the answers above are error values.
+	mustPanicUsage(t, "does not satisfy one_of", func() {
+		tenon.Length(tenon.Resolve(tenon.Pending(tenon.Exactly(num)), num))
+	})
 }

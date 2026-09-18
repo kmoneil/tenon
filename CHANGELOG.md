@@ -1,5 +1,30 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- `Length` and `Contains` give an error value with code
+  `operation.wrong_type` for a pending operand whose constraint names a type
+  they reject, as `[UN-023]` requires. 0.2.0 answered an unknown instead: the
+  length of a pending `Exactly(NumberType())` was an unknown number, and
+  `Contains` over a pending list an unknown Bool. Nothing in either answer
+  said the data was wrong, and resolving the operand turned the next call into
+  a usage panic (`[ER-001]`), so a type error in a configuration reached its
+  caller as a panic rather than as an error value. Every other operation
+  accepts one type, one of several, or any type, and already answered this
+  way. A pending operand whose constraint names no single type is answered as
+  before: `Contains` over a pending `ListOf(Any())` is an unknown Bool,
+  although no list is a set.
+
+### Changed
+
+- `conformance/matrix` reports a `UN-023` violation where an operation answers
+  a pending operand that can only be of a type it rejects without an
+  `operation.wrong_type` diagnostic. The matrix built such an operand for every
+  operand position and asserted nothing of it, which is how the defect above
+  passed the gate.
+
 ## 0.2.0 (2026-09-18)
 
 A fix release for the six critical findings of an architecture audit of

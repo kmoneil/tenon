@@ -142,6 +142,9 @@ func checkArgs(op Operation, args []tenon.Value, report func(rule, format string
 			if !op.Operands[i].Nulls && knownNull(a) && !hasCode(r, tenon.CodeOperationNullOperand) {
 				report("UN-009", "%s(%s) gave %v for a null operand %d", op.Name, render(args), r, i+1)
 			}
+			if rejected(a, op.Operands[i]) && !hasCode(r, tenon.CodeOperationWrongType) {
+				report("UN-023", "%s(%s) gave %v, but operand %d can only be of a type the operation rejects", op.Name, render(args), r, i+1)
+			}
 		}
 	}
 	for _, marks := range markings(args) {
@@ -331,6 +334,17 @@ func knownNull(v tenon.Value) bool {
 	}
 	n := tenon.IsNull(v)
 	return n.IsKnown() && n.AsBool()
+}
+
+// rejected reports whether v is pending with a constraint that names one type,
+// and o does not accept that type, so that an operation can never apply to v
+// whatever it turns out to be.
+func rejected(v tenon.Value, o Operand) bool {
+	if !v.IsPending() {
+		return false
+	}
+	c := v.Constraint()
+	return c.Kind() == tenon.ConstraintExactly && !tenon.Satisfies(o.Constraint, c.Type())
 }
 
 // hasCode reports whether v is an error value with a diagnostic of code c.
