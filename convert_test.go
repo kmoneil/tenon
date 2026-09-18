@@ -1,6 +1,7 @@
 package tenon_test
 
 import (
+	"math/rand"
 	"slices"
 	"strings"
 	"testing"
@@ -1015,6 +1016,108 @@ func TestConformance_CV026_OneTypeWrittenAnyWay(t *testing.T) {
 	// A field that can never be present leaves one type.
 	one := tenon.ObjectWith(map[string]tenon.Field{"a": tenon.Required(is(num)), "b": tenon.Optional(tenon.OneOf())}, true)
 	wantValue(t, "pending map", tenon.Convert(tenon.Pending(is(tenon.Map(num))), one, uns), tenon.Unknown(tenon.Object(map[string]tenon.Type{"a": num})))
+
+	// An attribute of that field's name is then one the constraint does not
+	// allow, as Exactly of the type says, rather than one that fails to
+	// convert to the field's constraint: in an object or a map, known, null,
+	// unknown or pending, and alone or in a list.
+	onlyA := tenon.Object(map[string]tenon.Type{"a": num})
+	az := tenon.Object(map[string]tenon.Type{"a": num, "z": num})
+	bare := tenon.ObjectWith(map[string]tenon.Field{"a": tenon.Required(is(num)), "z": tenon.Optional(tenon.OneOf())}, true)
+	spellings := []tenon.Constraint{
+		bare,
+		tenon.OneOf(bare),
+		tenon.OneOf(tenon.OneOf(), bare),
+		tenon.ObjectWith(map[string]tenon.Field{"a": tenon.Required(tenon.OneOf(is(num))), "z": tenon.Optional(tenon.ListOf(tenon.OneOf()))}, true),
+	}
+	objAZ := obj(map[string]tenon.Value{"a": n(1), "z": n(2)})
+	mapAZ := tenon.MapVal(num, map[string]tenon.Value{"a": n(1), "z": n(2)})
+	for _, tt := range []struct {
+		name string
+		v    tenon.Value
+		want wantDiag
+	}{
+		{"an object", objAZ, wantDiag{tenon.CodeConvertUnexpectedAttribute, ".z"}},
+		{"a map", mapAZ, wantDiag{tenon.CodeConvertUnexpectedAttribute, `.["z"]`}},
+		{"a null object", tenon.NullVal(az), wantDiag{tenon.CodeConvertUnexpectedAttribute, "."}},
+		{"an unknown object", tenon.Unknown(az), wantDiag{tenon.CodeConvertUnexpectedAttribute, "."}},
+		{"a pending object", tenon.Pending(is(az)), wantDiag{tenon.CodeOperationWrongType, "."}},
+	} {
+		want := tenon.Convert(tt.v, is(onlyA), uns)
+		wantErrors(t, tt.name+" to "+is(onlyA).String(), want, tt.want)
+		for _, c := range spellings {
+			wantValue(t, tt.name+" to "+c.String(), tenon.Convert(tt.v, c, uns), want)
+		}
+	}
+	for _, tt := range []struct {
+		name string
+		v    tenon.Value
+		want wantDiag
+	}{
+		{"a list of objects", tenon.ListVal(az, objAZ), wantDiag{tenon.CodeConvertUnexpectedAttribute, ".[0].z"}},
+		{"a list of maps", tenon.ListVal(tenon.Map(num), mapAZ), wantDiag{tenon.CodeConvertUnexpectedAttribute, `.[0]["z"]`}},
+		{"a null list", tenon.NullVal(tenon.List(az)), wantDiag{tenon.CodeConvertUnexpectedAttribute, "."}},
+		{"an unknown list", tenon.Unknown(tenon.List(az)), wantDiag{tenon.CodeConvertUnexpectedAttribute, "."}},
+		{"a list holding an unknown object", tenon.ListVal(az, tenon.Unknown(az)), wantDiag{tenon.CodeConvertUnexpectedAttribute, ".[0]"}},
+	} {
+		want := tenon.Convert(tt.v, is(tenon.List(onlyA)), uns)
+		wantErrors(t, tt.name+" to "+is(tenon.List(onlyA)).String(), want, tt.want)
+		for _, c := range spellings {
+			wantValue(t, tt.name+" to list_of("+c.String()+")", tenon.Convert(tt.v, tenon.ListOf(c), uns), want)
+		}
+	}
+}
+
+// TestConformance_CV026_EverySpellingConvertsAlike holds CV-026 over
+// generated constraints: one that admits exactly one type, however it is
+// written, converts every value as Exactly of that type does, under either
+// policy, diagnostics and all.
+func TestConformance_CV026_EverySpellingConvertsAlike(t *testing.T) {
+	conformance.Covers(t, "CV-026")
+	capsule := tenon.Capsule("cap", tenon.CapsuleOps[celsius]{})
+	ab := tenon.Object(map[string]tenon.Type{"a": num, "b": num})
+	objAB := obj(map[string]tenon.Value{"a": n(1), "b": n(2)})
+	pool := append(values.All(),
+		objAB,
+		obj(map[string]tenon.Value{"a": tenon.ListVal(num, n(1)), "b": s("x")}),
+		tenon.MapVal(num, map[string]tenon.Value{"a": n(1), "b": n(2)}),
+		tenon.MapVal(str, map[string]tenon.Value{"a": s("1")}),
+		tenon.NullVal(ab),
+		tenon.Unknown(ab),
+		tenon.Pending(is(ab)),
+		tenon.ListVal(ab, objAB),
+		tenon.SetVal(num, n(1), n(2)),
+		tenon.TupleVal(n(1), s("x")),
+		tenon.TupleVal(s("1"), s("x")),
+		tenon.CapsuleVal(capsule, &celsius{}),
+		tenon.Unknown(capsule),
+	)
+	r := rand.New(rand.NewSource(20260919))
+	sole, failed := 0, 0
+	for range conformance.Iterations(t, 400) {
+		c := randomConstraint(r, 3, capsule)
+		one, ok := tenon.SoleType(c)
+		if !ok || c.Kind() == tenon.ConstraintExactly {
+			continue
+		}
+		sole++
+		for _, v := range pool {
+			for _, p := range []tenon.Policy{safe, uns} {
+				want := tenon.Convert(v, is(one), p)
+				if want.IsError() {
+					failed++
+				}
+				if got := tenon.Convert(v, c, p); !tenon.Identical(got, want) {
+					t.Errorf("Convert(%v, %v, %v) = %v, but to %v it is %v", v, c, p, got, is(one), want)
+				}
+			}
+		}
+	}
+	// A run that met few such constraints, or whose conversions all failed,
+	// would say little.
+	if sole < 100 || failed < 1000 {
+		t.Errorf("%d constraints admitted one type, with %d conversions failing: too few to say much", sole, failed)
+	}
 }
 
 // TestConversionMessagesWithholdRedactedShape checks that a length or a key

@@ -42,7 +42,22 @@
   gave unmarked. Only a redacting mark changes a message now, by the
   placeholder that stands in for what it withholds (`[MK-011]`).
 
+- Converting to a constraint that admits exactly one type converts as
+  `Exactly` of that type does, however the constraint is written, as
+  `[CV-026]` requires. 0.2.0 did so only for a `OneOf` or a capsule value. A
+  closed `ObjectWith` that names an optional field no type can fill, such as
+  `"z"?: one_of([])`, admits one type, and 0.2.0 reported an attribute of
+  that name as `convert.no_conversion`, where `Exactly` of the type reports
+  `convert.unexpected_attribute`, as it now does for an object or a map in
+  any state, alone or within a collection. A message that names the target
+  names it as `Exactly` of the type does, whatever the spelling.
+
 ### Changed
+
+- Converting to `Exactly` of a list, set, map, tuple or object type builds
+  the constraint it converts by once for the type, not again for every
+  member, which makes converting a list of objects to one about a fifth
+  faster.
 
 - `conformance/matrix` reports a `UN-023` violation where an operation answers
   a pending operand that can only be of a type it rejects without an

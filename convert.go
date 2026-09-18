@@ -42,7 +42,8 @@ func (p Policy) String() string {
 // conversion that the value's type and c call for,
 // and never a chain of them: a number converts to a string and a string to a
 // bool, but a number does not convert to a bool. A conversion that p does not
-// allow fails with code CodeConvertUnsafe.
+// allow fails with code CodeConvertUnsafe. A constraint that admits exactly
+// one type converts as Exactly of that type does, however it is written.
 //
 // The type of the result follows from the type of v and from c, not from what
 // v holds, except where a map becomes an object, whose attributes are the
@@ -186,11 +187,16 @@ func soleType(c Constraint) (Type, bool) {
 		}
 		return Map(elem), true
 	case ConstraintTupleOf:
-		elems := make([]Type, len(d.members))
+		// Conversion asks this of every constraint it meets, so a tuple that
+		// admits more than one type allocates nothing to say so.
+		var elems []Type
 		for i, m := range d.members {
 			t, ok := soleType(m)
 			if !ok {
 				return Type{}, false
+			}
+			if elems == nil {
+				elems = make([]Type, len(d.members))
 			}
 			elems[i] = t
 		}
@@ -199,14 +205,21 @@ func soleType(c Constraint) (Type, bool) {
 		if !d.closed {
 			return Type{}, false
 		}
+		// An optional field that some type fills leaves two types, one with
+		// the attribute and one without, which is decided before anything is
+		// built. One that no type fills leaves one choice: no attribute.
+		for _, f := range d.fields {
+			if !f.Required && !admitsNone(f.Constraint) {
+				return Type{}, false
+			}
+		}
 		attrs := make(map[string]Type, len(d.fields))
 		for _, f := range d.fields {
-			if !f.Required && admitsNone(f.Constraint) {
-				// No attribute can be here, so the field leaves one choice.
+			if !f.Required {
 				continue
 			}
 			t, ok := soleType(f.Constraint)
-			if !ok || !f.Required {
+			if !ok {
 				return Type{}, false
 			}
 			attrs[f.name] = t

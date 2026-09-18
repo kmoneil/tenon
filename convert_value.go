@@ -207,17 +207,23 @@ func (x converter) pending(v Value, c Constraint) Value {
 }
 
 // known converts a known value, whose content is in hand though a member of it
-// may not be known.
+// may not be known. A constraint that admits exactly one type converts as
+// Exactly of that type, however it is written (CV-026), so that is decided
+// first, once, as typeConvertKind decides it, and the kind of c decides the
+// rest.
 func (x converter) known(v Value, c Constraint) Value {
-	n, d := v.n, c.c
+	n := v.n
 	if fits(c, n.typ) {
 		u, _ := Unmark(v)
 		return u
 	}
-	if d.kind == ConstraintOneOf {
-		if t, ok := soleType(c); ok {
-			return x.known(v, Exactly(t))
-		}
+	if n.typ.t.kind != KindCapsule && isStructural(c) {
+		return x.structure(v, c)
+	}
+	if s, ok := soleType(c); ok {
+		return x.exactly(v, s)
+	}
+	if c.c.kind == ConstraintOneOf {
 		m, f := oneOfMember(n.typ, c, x.policy)
 		if f != nil {
 			return errorValue(f.diagnostic())
@@ -230,19 +236,32 @@ func (x converter) known(v Value, c Constraint) Value {
 		}
 		return r
 	}
-	if n.typ.t.kind == KindCapsule || d.kind == ConstraintExactly && d.typ.t.kind == KindCapsule {
-		s, ok := soleType(c)
-		if !ok {
-			return errorValue(noConversion(n.typ, c).diagnostic())
-		}
-		return x.capsule(v, s)
+	if n.typ.t.kind == KindCapsule {
+		// A capsule type converts only to a type that it, or the type it
+		// converts to, declares.
+		return errorValue(noConversion(n.typ, c).diagnostic())
 	}
-	switch d.kind {
-	case ConstraintExactly:
-		if isPrimitive(d.typ.t.kind) {
-			return x.primitive(v, d.typ)
-		}
-		return x.known(v, structural(d.typ))
+	return x.structure(v, c)
+}
+
+// exactly converts a known value to the type s, as converting to Exactly(s)
+// does (CV-020).
+func (x converter) exactly(v Value, s Type) Value {
+	switch {
+	case v.n.typ.t.kind == KindCapsule || s.t.kind == KindCapsule:
+		return x.capsule(v, s)
+	case isPrimitive(s.t.kind):
+		return x.primitive(v, s)
+	}
+	// The structure of s admits s alone, so converting to it does not ask
+	// for its one type again.
+	return x.structure(v, structural(s))
+}
+
+// structure converts a known value to a ListOf, SetOf, MapOf, TupleOf or
+// ObjectWith constraint.
+func (x converter) structure(v Value, c Constraint) Value {
+	switch c.c.kind {
 	case ConstraintListOf, ConstraintSetOf, ConstraintMapOf:
 		return x.collection(v, c)
 	case ConstraintTupleOf:
@@ -250,7 +269,7 @@ func (x converter) known(v Value, c Constraint) Value {
 	case ConstraintObjectWith:
 		return x.object(v, c)
 	}
-	return errorValue(noConversion(n.typ, c).diagnostic())
+	return errorValue(noConversion(v.n.typ, c).diagnostic())
 }
 
 // primitive converts a known value to the primitive type s.

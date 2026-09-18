@@ -5,6 +5,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"unicode/utf8"
 
 	"github.com/kmoneil/tenon/internal/uni"
@@ -68,6 +69,10 @@ type typeData struct {
 	attrs   []attribute  // the attributes of an Object, sorted by name
 	elems   []Type       // the element types of a Tuple
 	capsule *capsuleData // what a Capsule type declares
+	// structure holds what structural built for the type, once a conversion
+	// has asked for it. It is derived from the fields above, so it says
+	// nothing new, and every goroutine that builds it builds the same.
+	structure atomic.Pointer[constraintData]
 }
 
 // attribute is one attribute of an object type.

@@ -38,8 +38,8 @@ func (f *failure) diagnostic() Diagnostic {
 // typeConvert returns what converting a value of type t to c under the policy
 // p gives, for values whose map keys k describes. It is what decides whether a
 // conversion exists, and the result type of a null, an unknown or a pending
-// value. A constraint that admits exactly one type settles the result type,
-// whatever keys it would otherwise have taken (CV-026).
+// value. A constraint that gives a type (CV-027) settles the result type,
+// whatever keys it would otherwise have taken.
 func typeConvert(t Type, c Constraint, p Policy, k keys) typeOutcome {
 	out := typeConvertKind(t, c, p, k)
 	if out.pending {
@@ -50,29 +50,51 @@ func typeConvert(t Type, c Constraint, p Policy, k keys) typeOutcome {
 	return out
 }
 
+// typeConvertKind converts t to c by the kind of c. A constraint that admits
+// exactly one type converts as Exactly of that type, however it is written
+// (CV-026), so that is decided first, once, and the kind of c decides the
+// rest. One that structural builds is converted to as it stands, since it
+// converts as Exactly of its type already, unless t is a capsule type, which
+// converts by what the capsule types declare.
 func typeConvertKind(t Type, c Constraint, p Policy, k keys) typeOutcome {
 	if fits(c, t) {
 		return typeOutcome{typ: t}
 	}
-	d := c.c
-	if d.kind == ConstraintOneOf {
+	if t.t.kind != KindCapsule && isStructural(c) {
+		return typeConvertStructure(t, c, p, k)
+	}
+	if s, ok := soleType(c); ok {
+		return typeConvertExactly(t, s, p, k)
+	}
+	if c.c.kind == ConstraintOneOf {
 		return typeConvertOneOf(t, c, p, k)
 	}
-	if t.t.kind == KindCapsule || d.kind == ConstraintExactly && d.typ.t.kind == KindCapsule {
-		s, ok := soleType(c)
-		if !ok {
-			return failed(noConversion(t, c))
-		}
-		return capsuleTypeConvert(t, s, p)
+	if t.t.kind == KindCapsule {
+		// A capsule type converts only to a type that it, or the type it
+		// converts to, declares.
+		return failed(noConversion(t, c))
 	}
-	switch d.kind {
-	case ConstraintExactly:
-		s := d.typ
-		switch s.t.kind {
-		case KindBool, KindNumber, KindString:
-			return primitiveTypeConvert(t, s, p)
-		}
-		return typeConvertKind(t, structural(s), p, k)
+	return typeConvertStructure(t, c, p, k)
+}
+
+// typeConvertExactly converts t to the type s, as converting to Exactly(s)
+// does (CV-020).
+func typeConvertExactly(t, s Type, p Policy, k keys) typeOutcome {
+	switch {
+	case t.t.kind == KindCapsule || s.t.kind == KindCapsule:
+		return capsuleTypeConvert(t, s, p)
+	case isPrimitive(s.t.kind):
+		return primitiveTypeConvert(t, s, p)
+	}
+	// The structure of s admits s alone, so converting to it does not ask
+	// for its one type again.
+	return typeConvertStructure(t, structural(s), p, k)
+}
+
+// typeConvertStructure converts t to a ListOf, SetOf, MapOf, TupleOf or
+// ObjectWith constraint.
+func typeConvertStructure(t Type, c Constraint, p Policy, k keys) typeOutcome {
+	switch c.c.kind {
 	case ConstraintListOf, ConstraintSetOf, ConstraintMapOf:
 		return collectionTypeConvert(t, c, p, k)
 	case ConstraintTupleOf:
@@ -85,30 +107,69 @@ func typeConvertKind(t Type, c Constraint, p Policy, k keys) typeOutcome {
 
 // structural returns the constraint that names a list, set, map, tuple or
 // object type by its structure, which converts as Exactly of the type does.
+// Every member of a container converted to Exactly of a type asks for it, so
+// it is built once for the type and kept there.
 func structural(t Type) Constraint {
 	d := t.t
+	if c := d.structure.Load(); c != nil {
+		return Constraint{c}
+	}
+	var c Constraint
 	switch d.kind {
 	case KindList:
-		return ListOf(Exactly(d.elem))
+		c = ListOf(Exactly(d.elem))
 	case KindSet:
-		return SetOf(Exactly(d.elem))
+		c = SetOf(Exactly(d.elem))
 	case KindMap:
-		return MapOf(Exactly(d.elem))
+		c = MapOf(Exactly(d.elem))
 	case KindTuple:
 		members := make([]Constraint, len(d.elems))
 		for i, e := range d.elems {
 			members[i] = Exactly(e)
 		}
-		return TupleOf(members...)
+		c = TupleOf(members...)
 	case KindObject:
 		fields := make(map[string]Field, len(d.attrs))
 		for _, a := range d.attrs {
 			fields[a.name] = Required(Exactly(a.typ))
 		}
-		return ObjectWith(fields, true)
+		c = ObjectWith(fields, true)
+	default:
+		internalPanic("structural called on %s", t)
 	}
-	internalPanic("structural called on %s", t)
-	return Constraint{}
+	d.structure.CompareAndSwap(nil, c.c)
+	return Constraint{d.structure.Load()}
+}
+
+// isStructural reports whether c is a constraint that structural builds: the
+// list, set or map of an Exactly element, the tuple of Exactly members, or
+// the closed object whose every field is required and Exactly. Converting to
+// such a constraint is converting to Exactly of the one type it admits
+// already, so nothing needs to ask for that type.
+func isStructural(c Constraint) bool {
+	d := c.c
+	switch d.kind {
+	case ConstraintListOf, ConstraintSetOf, ConstraintMapOf:
+		return d.elem.c.kind == ConstraintExactly
+	case ConstraintTupleOf:
+		for _, m := range d.members {
+			if m.c.kind != ConstraintExactly {
+				return false
+			}
+		}
+		return true
+	case ConstraintObjectWith:
+		if !d.closed {
+			return false
+		}
+		for _, f := range d.fields {
+			if !f.Required || f.Constraint.c.kind != ConstraintExactly {
+				return false
+			}
+		}
+		return true
+	}
+	return false
 }
 
 func failed(f *failure) typeOutcome { return typeOutcome{fail: f} }
@@ -406,9 +467,6 @@ func mapObjectTypeConvert(t Type, c Constraint, p Policy, k keys) typeOutcome {
 // typeConvertOneOf converts t to the first member of a OneOf constraint to
 // which a conversion from t exists under the policy.
 func typeConvertOneOf(t Type, c Constraint, p Policy, k keys) typeOutcome {
-	if s, ok := soleType(c); ok {
-		return typeConvert(t, Exactly(s), p, k)
-	}
 	m, f := oneOfMember(t, c, p)
 	if f != nil {
 		return failed(f)
