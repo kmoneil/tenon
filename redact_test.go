@@ -67,6 +67,12 @@ func TestConformance_MK011_DiagnosticsWithholdRedactedContents(t *testing.T) {
 			`no value of type number satisfies both redacted("secret") and >= 50`,
 		},
 		{
+			"a narrowing given earlier in the same call, which a set holding an unknown cannot meet beside this one",
+			tenon.Narrow(tenon.WithMarks(tenon.SetVal(num, tenon.NumberFromInt(7), tenon.Unknown(num)), secret),
+				tenon.LengthMin(2), tenon.LengthMax(1)),
+			`the value redacted("secret") does not satisfy both redacted("secret") and length <= 1`,
+		},
+		{
 			"a bound under an Isolate mark",
 			tenon.Narrow(fifty, tenon.NumberMax(tenon.WithMarks(fortyTwo, pii), true)),
 			`the value 50 does not satisfy <= redacted("pii")`,

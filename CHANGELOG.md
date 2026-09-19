@@ -64,6 +64,22 @@
   placed by its bytes, and a shared key follows them all, as `[TY-017]` now
   states.
 
+- `Narrow` allows a set holding members that are not known every length it
+  can have, from the count of those that are provably distinct to the count
+  of all of them, as `Length` reports it (`[EQ-042]`). 0.2.0 held such a set
+  to the count of members it holds, so `LengthMax(1)` on a set of two unknown
+  numbers was a `range.contradiction`, although the two could be one member.
+  The narrowings of one call are now decided together, since such a set has
+  no range to record what each says: `LengthMin(2)` beside `LengthMax(1)`
+  contradicts it, as does a listing of more values than it could hold, such
+  as `Members` of 1, 2 and 3 on a set of two unknowns, which 0.2.0 let
+  through. A narrowing that leaves the set no more members than its known
+  ones gives the set of those, known, as `[UN-005]` requires: `LengthMax(1)`
+  on the set of 1 and an unknown number gives the set of 1. Where the
+  members can hold sets, the set is returned as it was instead, since
+  equality cannot always tell whether a set holding unknowns could turn out
+  to be a known one.
+
 ### Changed
 
 - Converting to `Exactly` of a list, set, map, tuple or object type builds

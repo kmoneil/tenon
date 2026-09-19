@@ -1,6 +1,7 @@
 package tenon_test
 
 import (
+	"slices"
 	"testing"
 
 	"github.com/kmoneil/tenon"
@@ -153,6 +154,38 @@ func TestConformance_EQ042_TheLengthOfASetHoldingUnknowns(t *testing.T) {
 			t.Errorf("%s: the length is %s, want %s", tt.name, got, tt.want)
 		}
 	}
+	// A narrowing allows such a set the lengths Length gives it: a bound that
+	// leaves one of them does not contradict the set, and one that leaves none
+	// does.
+	for _, set := range []tenon.Value{
+		tenon.SetVal(num, unknown, unknown),
+		tenon.SetVal(num, n(1), unknown),
+		tenon.SetVal(num, n(1), atLeastFive),
+		tenon.SetVal(num, n(1), atLeastFive, unknown),
+		tenon.SetVal(num, n(1), n(2), unknown, atLeastFive),
+	} {
+		const most = 6
+		var can [most + 1]bool // whether Length allows each length
+		for l := range can {
+			eq := tenon.Equals(tenon.Length(set), n(int64(l)))
+			can[l] = !eq.IsKnown() || eq.String() == "true"
+		}
+		for l := range int64(most + 1) {
+			for _, tt := range []struct {
+				ns    []tenon.Narrowing
+				leave []bool // whether Length allows each length the bounds leave
+			}{
+				{[]tenon.Narrowing{tenon.LengthMax(l)}, can[:l+1]},
+				{[]tenon.Narrowing{tenon.LengthMin(l)}, can[l:]},
+				{[]tenon.Narrowing{tenon.LengthMin(l), tenon.LengthMax(l)}, can[l : l+1]},
+			} {
+				if got := tenon.Narrow(set, tt.ns...); got.IsError() == slices.Contains(tt.leave, true) {
+					t.Errorf("%v narrowed by %v is %v, but its length is %v", set, tt.ns, got, tenon.Length(set))
+				}
+			}
+		}
+	}
+
 	// Length is for the kinds that have one.
 	for _, v := range []tenon.Value{tenon.Bool(true), n(1), tenon.TupleVal(), tenon.ObjectVal(nil)} {
 		mustPanicUsage(t, "does not satisfy one_of", func() { tenon.Length(v) })

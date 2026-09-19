@@ -1,6 +1,7 @@
 package tenon_test
 
 import (
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -160,9 +161,16 @@ func TestConformance_UN003_NarrowingIsMonotone(t *testing.T) {
 
 func TestConformance_UN004_ContradictionIsAnErrorValue(t *testing.T) {
 	conformance.Covers(t, "UN-004")
-	three, five := tenon.NumberFromInt(3), tenon.NumberFromInt(5)
+	one, two, three, five := tenon.NumberFromInt(1), tenon.NumberFromInt(2), tenon.NumberFromInt(3), tenon.NumberFromInt(5)
 	str, num := tenon.StringType(), tenon.NumberType()
 	lst := tenon.List(str)
+	// A set of one or two members: the unknown may turn out to be 1.
+	partial := tenon.SetVal(num, one, tenon.Unknown(num))
+	atLeastFive := tenon.Narrow(tenon.Unknown(num), tenon.NotNull(), tenon.NumberMin(five, true))
+	between := func(lo, hi string) tenon.Value {
+		return tenon.Narrow(tenon.Unknown(num), tenon.NotNull(),
+			tenon.NumberMin(tenon.NumberFromText(lo), true), tenon.NumberMax(tenon.NumberFromText(hi), true))
+	}
 	for _, tt := range []struct {
 		name string
 		v    tenon.Value
@@ -210,6 +218,102 @@ func TestConformance_UN004_ContradictionIsAnErrorValue(t *testing.T) {
 			[]tenon.Narrowing{tenon.NotNull()},
 			"the value null(string) does not satisfy not null",
 		},
+
+		// A set holding a member that is not known has a length that is a
+		// range, and the narrowings it is given are decided together against
+		// that range.
+		{
+			"a set that cannot be null", partial,
+			[]tenon.Narrowing{tenon.Null()},
+			"the value set(number)[1, unknown(number)] does not satisfy null",
+		},
+		{
+			"a set shorter than it can be", partial,
+			[]tenon.Narrowing{tenon.LengthMax(0)},
+			"the value set(number)[1, unknown(number)] does not satisfy length <= 0",
+		},
+		{
+			"a set longer than it can be", partial,
+			[]tenon.Narrowing{tenon.LengthMin(3)},
+			"the value set(number)[1, unknown(number)] does not satisfy length >= 3",
+		},
+		{
+			"lengths the set can have, bounds that cross", partial,
+			[]tenon.Narrowing{tenon.LengthMin(2), tenon.LengthMax(1)},
+			"the value set(number)[1, unknown(number)] does not satisfy both length >= 2 and length <= 1",
+		},
+		{
+			"the same bounds the other way round", partial,
+			[]tenon.Narrowing{tenon.LengthMax(1), tenon.LengthMin(2)},
+			"the value set(number)[1, unknown(number)] does not satisfy both length <= 1 and length >= 2",
+		},
+		{
+			"more listed members than the set holds", partial,
+			[]tenon.Narrowing{tenon.Members(three, two)},
+			"the value set(number)[1, unknown(number)] does not satisfy members {2, 3}",
+		},
+		{
+			"a listed member the set can hold, and a length that leaves no room for it", partial,
+			[]tenon.Narrowing{tenon.Members(two), tenon.LengthMax(1)},
+			"the value set(number)[1, unknown(number)] does not satisfy both members {2} and length <= 1",
+		},
+		{
+			"the same listing after the length", partial,
+			[]tenon.Narrowing{tenon.LengthMax(1), tenon.Members(two)},
+			"the value set(number)[1, unknown(number)] does not satisfy both length <= 1 and members {2}",
+		},
+		// Where more than one thing sets the bound that is crossed, the
+		// message names the members, which the value shows, ahead of a
+		// listing, and a listing ahead of a bound given, as a range's message
+		// names a listing ahead of a bound.
+		{
+			"a least length the members set as well as a bound", partial,
+			[]tenon.Narrowing{tenon.LengthMin(1), tenon.LengthMax(0)},
+			"the value set(number)[1, unknown(number)] does not satisfy length <= 0",
+		},
+		{
+			"a greatest length the members set as well as a bound", partial,
+			[]tenon.Narrowing{tenon.LengthMax(2), tenon.LengthMin(3)},
+			"the value set(number)[1, unknown(number)] does not satisfy length >= 3",
+		},
+		{
+			"a least length a listing sets as well as a bound", partial,
+			[]tenon.Narrowing{tenon.LengthMin(2), tenon.Members(two), tenon.LengthMax(1)},
+			"the value set(number)[1, unknown(number)] does not satisfy both members {2} and length <= 1",
+		},
+		{
+			// The first listing needs 1 and two more members, since its values
+			// are provably distinct from 1 and from each other. The second
+			// lists a value either of them could be, which sorts ahead of both
+			// and counts in their place, but they are needed all the same.
+			"a listing that counts fewer beside an earlier one",
+			tenon.SetVal(num, one, tenon.Unknown(num), tenon.Unknown(num)),
+			[]tenon.Narrowing{
+				tenon.Members(between("5", "6"), between("8", "9")),
+				tenon.Members(between("4.5", "9")),
+				tenon.LengthMax(2),
+			},
+			"the value set(number)[1, unknown(number), ... does not satisfy both members {unknown(number, not nul... and length <= 2",
+		},
+		{
+			"listings that need more members together than the set holds", partial,
+			[]tenon.Narrowing{tenon.Members(two), tenon.Members(three)},
+			"the value set(number)[1, unknown(number)] does not satisfy members {2, 3}",
+		},
+		{
+			// Two members could be 3 and one more, but neither can be 3.
+			"a listed member the set provably lacks", tenon.SetVal(num, atLeastFive, atLeastFive),
+			[]tenon.Narrowing{tenon.Members(three)},
+			"the value set(number)[unknown(number, not ... does not satisfy members {3}",
+		},
+		{
+			// Two listed values that are provably distinct need two members.
+			// Counted beside the member, which could be either of them and
+			// comes first, they would count as one.
+			"listed values the set has too few members for", tenon.SetVal(num, tenon.Unknown(num)),
+			[]tenon.Narrowing{tenon.Members(atLeastFive, tenon.Narrow(tenon.Unknown(num), tenon.NotNull(), tenon.NumberMax(one, true)))},
+			"the value set(number)[unknown(number)] does not satisfy members {unknown(number, not nul...",
+		},
 	} {
 		got := tenon.Narrow(tt.v, tt.ns...)
 		if !got.IsError() {
@@ -230,6 +334,188 @@ func TestConformance_UN004_ContradictionIsAnErrorValue(t *testing.T) {
 		if diags[0].Path.Len() != 0 {
 			t.Errorf("%s: path %s, want the empty path", tt.name, diags[0].Path)
 		}
+	}
+}
+
+func TestConformance_UN004_ASetHoldingUnknownsHasTheLengthsItCanHave(t *testing.T) {
+	conformance.Covers(t, "UN-004", "UN-007")
+	num := tenon.NumberType()
+	n := func(i int64) tenon.Value { return tenon.NumberFromInt(i) }
+	unknown := tenon.Unknown(num)
+	atLeastFive := tenon.Narrow(tenon.Unknown(num), tenon.NotNull(), tenon.NumberMin(n(5), true))
+
+	// A set holding members that are not known has a length that is a range,
+	// from the count of its members that are provably distinct to the count
+	// of all of them. A narrowing to lengths in that range leaves the set as
+	// it was, since it has nowhere to record what that says of its members.
+	for _, tt := range []struct {
+		name string
+		v    tenon.Value
+		ns   []tenon.Narrowing
+	}{
+		// 0.2.0 contradicted the first two, counting the members held.
+		{"two unknowns that may be one member", tenon.SetVal(num, unknown, unknown), []tenon.Narrowing{tenon.LengthMax(1)}},
+		{
+			"an unknown that may be either of two others", tenon.SetVal(num, n(1), atLeastFive, unknown),
+			[]tenon.Narrowing{tenon.LengthMax(2)},
+		},
+		{"two unknowns that may be two members", tenon.SetVal(num, unknown, unknown), []tenon.Narrowing{tenon.LengthMin(2)}},
+		{"exactly two", tenon.SetVal(num, unknown, unknown), []tenon.Narrowing{tenon.LengthMin(2), tenon.LengthMax(2)}},
+		{
+			"every length it can have, and not null", tenon.SetVal(num, unknown, unknown),
+			[]tenon.Narrowing{tenon.NotNull(), tenon.LengthMin(1), tenon.LengthMax(2)},
+		},
+		{"a listed value an unknown may be", tenon.SetVal(num, unknown, unknown), []tenon.Narrowing{tenon.Members(n(1))}},
+		{
+			"a listed value a known member is, and room for another", tenon.SetVal(num, n(1), unknown),
+			[]tenon.Narrowing{tenon.Members(n(1)), tenon.LengthMin(2)},
+		},
+	} {
+		if got := tenon.Narrow(tt.v, tt.ns...); !tenon.Identical(got, tt.v) {
+			t.Errorf("%s: narrowed %v to %v, want it as it was", tt.name, tt.v, got)
+		}
+	}
+
+	// Sets of up to three members, each a small integer or an unknown bounded
+	// among them, some of which may be null, are narrowed every way and checked
+	// against the sets each could turn out to be: a contradiction leaves no
+	// such set that satisfies the narrowings, a known result is the only one
+	// that does, and any other result is the set as it was. An unknown is
+	// tried at every integer and half-integer in its range, and at null where
+	// it may be null, which lets three members be all alike, all apart, or
+	// anything between wherever their ranges allow.
+	type member struct {
+		lo, hi int64
+		null   bool // whether the member may be null
+	}
+	kinds := []member{
+		{lo: 0, hi: 0}, {lo: 1, hi: 1},
+		{lo: 0, hi: 1}, {lo: 1, hi: 2}, {lo: 0, hi: 2},
+		{lo: 0, hi: 1, null: true}, {lo: 2, hi: 3, null: true},
+	}
+	var specs [][]member
+	for i, a := range kinds {
+		specs = append(specs, []member{a})
+		for j, b := range kinds[i:] {
+			specs = append(specs, []member{a, b})
+			for _, c := range kinds[i+j:] {
+				specs = append(specs, []member{a, b, c})
+			}
+		}
+	}
+	value := func(m member) tenon.Value {
+		switch {
+		case m.lo == m.hi:
+			return n(m.lo)
+		case m.null:
+			return tenon.Narrow(tenon.Unknown(num), tenon.NumberMin(n(m.lo), true), tenon.NumberMax(n(m.hi), true))
+		}
+		return tenon.Narrow(tenon.Unknown(num), tenon.NotNull(), tenon.NumberMin(n(m.lo), true), tenon.NumberMax(n(m.hi), true))
+	}
+	build := func(spec []member) tenon.Value {
+		elems := make([]tenon.Value, len(spec))
+		for i, m := range spec {
+			elems[i] = value(m)
+		}
+		return tenon.SetVal(num, elems...)
+	}
+	// choices returns the sets spec is tried as.
+	choices := func(spec []member) []tenon.Value {
+		var out []tenon.Value
+		var walk func(i int, picked []tenon.Value)
+		walk = func(i int, picked []tenon.Value) {
+			if i == len(spec) {
+				out = append(out, tenon.SetVal(num, picked...))
+				return
+			}
+			if spec[i].null {
+				walk(i+1, append(slices.Clone(picked), tenon.NullVal(num)))
+			}
+			for half := 2 * spec[i].lo; half <= 2*spec[i].hi; half++ {
+				v := n(half / 2)
+				if half%2 != 0 {
+					v = tenon.NumberFromText(strconv.FormatInt(half/2, 10) + ".5")
+				}
+				walk(i+1, append(slices.Clone(picked), v))
+			}
+		}
+		walk(0, nil)
+		return out
+	}
+	var narrowings [][]tenon.Narrowing
+	listings := [][]tenon.Value{
+		nil, {n(0)}, {n(3)}, {n(0), n(1)}, {n(1), n(2)}, {tenon.NullVal(num)},
+		{value(member{lo: 2, hi: 3})}, {n(0), value(member{lo: 2, hi: 3})},
+	}
+	for lo := int64(-1); lo <= 3; lo++ {
+		for hi := int64(-1); hi <= 3; hi++ {
+			for _, listed := range listings {
+				var ns []tenon.Narrowing
+				if lo >= 0 {
+					ns = append(ns, tenon.LengthMin(lo))
+				}
+				if hi >= 0 {
+					ns = append(ns, tenon.LengthMax(hi))
+				}
+				if listed != nil {
+					ns = append(ns, tenon.Members(listed...))
+				}
+				narrowings = append(narrowings, ns)
+			}
+		}
+	}
+	contradicted, pinned, kept := 0, 0, 0
+	for _, spec := range specs {
+		set := build(spec)
+		if set.IsKnown() {
+			continue // every member is known, so it has one length
+		}
+		sets := choices(spec)
+		for _, ns := range narrowings {
+			got := tenon.Narrow(set, ns...)
+			var allowed []tenon.Value
+			for _, s := range sets {
+				if !tenon.Narrow(s, ns...).IsError() {
+					allowed = append(allowed, s)
+				}
+			}
+			switch {
+			case got.IsError():
+				contradicted++
+				if code := got.Diagnostics()[0].Code; code != tenon.CodeRangeContradiction {
+					t.Errorf("%v narrowed by %v: code %s, want %s", set, ns, code, tenon.CodeRangeContradiction)
+				}
+				if len(allowed) > 0 {
+					t.Errorf("%v narrowed by %v is a contradiction, but %v satisfies them", set, ns, allowed[0])
+				}
+			case got.IsKnown():
+				pinned++
+				if len(allowed) == 0 {
+					t.Errorf("%v narrowed by %v is %v, but no set it could be satisfies them", set, ns, got)
+				}
+				for _, s := range allowed {
+					if !tenon.Identical(s, got) {
+						t.Errorf("%v narrowed by %v is %v, but %v satisfies them too", set, ns, got, s)
+					}
+				}
+			default:
+				kept++
+				if !tenon.Identical(got, set) {
+					t.Errorf("%v narrowed by %v is %v, want the set as it was", set, ns, got)
+				}
+			}
+			// The narrowings are decided together, so their order does not
+			// change what they leave.
+			back := slices.Clone(ns)
+			slices.Reverse(back)
+			if again := tenon.Narrow(set, back...); again.IsError() != got.IsError() ||
+				!got.IsError() && !tenon.Identical(again, got) {
+				t.Errorf("%v narrowed by %v is %v, but narrowed by %v it is %v", set, ns, got, back, again)
+			}
+		}
+	}
+	if contradicted < 100 || pinned < 100 || kept < 100 {
+		t.Errorf("too few of each result to say much: %d contradictions, %d known, %d kept", contradicted, pinned, kept)
 	}
 }
 
@@ -411,6 +697,16 @@ func TestConformance_UN005_NarrowingToOneValue(t *testing.T) {
 	str, num := tenon.StringType(), tenon.NumberType()
 	lst, set, mp := tenon.List(str), tenon.Set(str), tenon.Map(str)
 	empty := tenon.Tuple()
+	bounded := func(ns ...tenon.Narrowing) tenon.Value {
+		return tenon.Narrow(tenon.Unknown(num), append([]tenon.Narrowing{tenon.NotNull()}, ns...)...)
+	}
+	// Two sets that equality cannot tell apart, although the second can never
+	// be the first: its unknowns would need their one member between 3 and 4
+	// to be both of them.
+	n := tenon.NumberFromInt
+	fourKnown := tenon.SetVal(num, n(1), n(2), n(3), n(4))
+	oneOrTwo := bounded(tenon.NumberMin(n(1), true), tenon.NumberMax(n(2), true))
+	fourUnfit := tenon.SetVal(num, oneOrTwo, oneOrTwo, oneOrTwo, bounded(tenon.NumberMin(n(3), true), tenon.NumberMax(n(4), true)))
 	// A range that comes down to one value is that value, known.
 	for _, tt := range []struct {
 		name string
@@ -454,6 +750,32 @@ func TestConformance_UN005_NarrowingToOneValue(t *testing.T) {
 			"an object with no attributes", tenon.Unknown(tenon.Object(nil)),
 			[]tenon.Narrowing{tenon.NotNull()},
 			tenon.ObjectVal(nil),
+		},
+
+		// A set holding members that are not known, left no more members than
+		// its known ones, holds those alone: every other member must turn out
+		// to be one of them.
+		{
+			"a set left its known member", tenon.SetVal(num, one, tenon.Unknown(num)),
+			[]tenon.Narrowing{tenon.LengthMax(1)},
+			tenon.SetVal(num, one),
+		},
+		{
+			"a set left its known members, which hold what is listed",
+			tenon.SetVal(num, one, five, tenon.Unknown(num), bounded(tenon.NumberMax(five, false))),
+			[]tenon.Narrowing{tenon.NotNull(), tenon.Members(five), tenon.LengthMax(2)},
+			tenon.SetVal(num, one, five),
+		},
+		{
+			"a set left its null member", tenon.SetVal(num, tenon.NullVal(num), tenon.Unknown(num)),
+			[]tenon.Narrowing{tenon.LengthMax(1)},
+			tenon.SetVal(num, tenon.NullVal(num)),
+		},
+		{
+			"a set left its known list",
+			tenon.SetVal(tenon.List(num), tenon.ListVal(num, one, five), tenon.ListVal(num, tenon.Unknown(num), five)),
+			[]tenon.Narrowing{tenon.LengthMax(1)},
+			tenon.SetVal(tenon.List(num), tenon.ListVal(num, one, five)),
 		},
 	} {
 		got := tenon.Narrow(tt.v, tt.ns...)
@@ -504,9 +826,40 @@ func TestConformance_UN005_NarrowingToOneValue(t *testing.T) {
 			"a length that pins a collection", tenon.Unknown(tenon.List(empty)),
 			[]tenon.Narrowing{tenon.NotNull(), tenon.LengthMin(3), tenon.LengthMax(3)},
 		},
+		{
+			// The second unknown is provably not 1, so the set holds two
+			// members, and one of them is not known.
+			"a set left room for a member that is not known",
+			tenon.SetVal(num, one, bounded(tenon.NumberMin(five, true)), tenon.Unknown(num)),
+			[]tenon.Narrowing{tenon.LengthMax(2)},
+		},
+		{
+			"a set with no known member to be left", tenon.SetVal(num, tenon.Unknown(num), tenon.Unknown(num)),
+			[]tenon.Narrowing{tenon.LengthMax(1)},
+		},
+		{
+			// A length of one leaves no set at all, and Narrow, which cannot
+			// tell that either, must not answer with the first member alone.
+			"a set of sets", tenon.SetVal(tenon.Set(num), fourKnown, fourUnfit),
+			[]tenon.Narrowing{tenon.LengthMax(1)},
+		},
 	} {
 		if got := tenon.Narrow(tt.v, tt.ns...); got.IsKnown() {
 			t.Errorf("%s: narrowed to the known value %v", tt.name, got)
+		}
+	}
+	// Nor where those two sets lie deeper within the members.
+	for _, wrap := range []func(tenon.Value) tenon.Value{
+		func(s tenon.Value) tenon.Value { return tenon.ListVal(s.Type(), s) },
+		func(s tenon.Value) tenon.Value { return tenon.MapVal(s.Type(), map[string]tenon.Value{"k": s}) },
+		func(s tenon.Value) tenon.Value { return tenon.TupleVal(s) },
+		func(s tenon.Value) tenon.Value {
+			return tenon.ObjectVal(map[string]tenon.Value{"a": tenon.TupleVal(s)})
+		},
+	} {
+		a, b := wrap(fourKnown), wrap(fourUnfit)
+		if got := tenon.Narrow(tenon.SetVal(a.Type(), a, b), tenon.LengthMax(1)); got.IsKnown() {
+			t.Errorf("a set of %v narrowed to one member is the known value %v", a.Type(), got)
 		}
 	}
 	// Both values that range holds exist.

@@ -147,6 +147,10 @@ func TestConformance_MK002_PropagationPolicies(t *testing.T) {
 	if !tenon.HasMark(k, prop) || !tenon.HasMark(k, iso) {
 		t.Errorf("collapsing to one value dropped marks: %v", k)
 	}
+	s := tenon.Narrow(tenon.WithMarks(tenon.SetVal(num, five, tenon.Unknown(num)), prop, iso), tenon.LengthMax(1))
+	if !s.IsKnown() || !tenon.HasMark(s, prop) || !tenon.HasMark(s, iso) {
+		t.Errorf("a set left its known member produced %v, want that set, known, with both marks", s)
+	}
 
 	// Resolving a pending value refines it the same way.
 	p := tenon.WithMarks(tenon.Pending(tenon.Any()), prop, iso)

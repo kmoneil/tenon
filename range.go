@@ -253,6 +253,14 @@ func writeMembers(b *strings.Builder, members []Value) {
 	b.WriteByte('}')
 }
 
+// membersText renders listed members for a message, shortened if they are
+// long.
+func membersText(members []Value) string {
+	var b strings.Builder
+	writeMembers(&b, members)
+	return shortened(b.String(), func(s string) string { return s })
+}
+
 // narrowingKind identifies which row of the narrowings table a Narrowing is.
 type narrowingKind uint8
 
@@ -463,7 +471,9 @@ func (nw Narrowing) appliesTo(t Type) bool {
 	return false
 }
 
-// holdsFor reports whether the known value n satisfies nw.
+// holdsFor reports whether n satisfies nw, where n is null or has content
+// whose length is the count it holds. A set holding members that are not
+// known has a length that is a range, and narrowPartialSet decides it.
 func (nw Narrowing) holdsFor(n *node) bool {
 	if n.state == stateNull {
 		// Null has no number, no prefix and no length, so every narrowing
@@ -520,6 +530,16 @@ func (n *node) length() int64 {
 // range recording as many members as its greatest length allows, all of them
 // provably distinct and null excluded, has come down to the set holding those
 // members, which is known when every member is.
+//
+// A set holding members that are not known has no range of its own to record
+// a narrowing in, and its length is a range, as Length reports it. Its
+// narrowings are decided together, by the lengths they leave it, a listing
+// counting its values as members the set must hold. One that leaves it no
+// length contradicts it. One that leaves it no more members than its known
+// ones leaves the set of those, known, since every other member must turn out
+// to be one of them; where its members can hold sets, that one returns the set
+// as it was, since equality cannot always tell whether a set holding unknowns
+// could turn out to be a known one. Any other returns the set as it was.
 //
 // Apart from Null and NotNull, a narrowing says what a value is when it is not
 // null, so a range that still holds null keeps it: NotNull alone excludes
@@ -585,6 +605,9 @@ func narrowValue(v Value, ns []Narrowing) Value {
 			}
 		}
 	}
+	if n.partial && n.typ.t.kind == KindSet {
+		return narrowPartialSet(v, ns)
+	}
 	if n.state != stateUnknown {
 		for _, nw := range ns {
 			if !nw.holdsFor(n) {
@@ -621,6 +644,124 @@ func narrowValue(v Value, ns []Narrowing) Value {
 		return v
 	}
 	return Value{&node{state: stateUnknown, typ: n.typ, data: &r}}
+}
+
+// narrowPartialSet narrows v, a set holding members that are not known. Such a
+// set has no range to record a narrowing in: what it could be is given by its
+// members, and so is its length, which lies between the count of those that
+// are provably distinct and the count of all of them. Its narrowings are
+// therefore decided together, by the lengths they leave it, a listing leaving
+// only lengths that can hold the listed values beside the members, since each
+// listed value must be one of them. Leaving it no length is a contradiction.
+// Leaving it no more members than its known ones means every other member is
+// one of those, so it is the set of them, known, where its element type nests
+// no set. Anything else leaves v as it was, which may allow sets the
+// narrowings rule out, but never rules out one they allow.
+func narrowPartialSet(v Value, ns []Narrowing) Value {
+	n := v.data()
+	members := n.data.([]Value)
+	// The least length is the most that any of these says: the members, by
+	// the count of those that are provably distinct, the listings beside
+	// them, and a LengthMin. The greatest is the fewer of the members held and
+	// a LengthMax.
+	held, count := int64(provablyDistinct(members)), int64(len(members))
+	var fromListings int64
+	var listed rangeData          // the listings, recorded as a range records them
+	var atLeast, atMost Narrowing // the greatest LengthMin and the least LengthMax
+	least := func() int64 { return max(held, fromListings, atLeast.n) }
+	most := func() int64 {
+		if atMost.kind != 0 && atMost.n < count {
+			return atMost.n
+		}
+		return count
+	}
+	for _, nw := range ns {
+		switch nw.kind {
+		case narrowLengthMin:
+			if nw.n > atLeast.n {
+				atLeast = nw
+			}
+		case narrowLengthMax:
+			if atMost.kind == 0 || nw.n < atMost.n {
+				atMost = nw
+			}
+		case narrowMembers:
+			if lacksSome(n, nw.members) {
+				return contradiction("the value " + valueText(v) + " does not satisfy " + nw.message())
+			}
+			// The listed values alone, and the set holding them beside the
+			// members, each count a least length. The second can come out
+			// lower, when a member that is not known sorts ahead of them.
+			listed.addMembers(nw.members)
+			together := orderMembers(append(slices.Clone(members), listed.members...))
+			fromListings = max(fromListings, listed.lenLo, int64(provablyDistinct(together)))
+		default:
+			if !nw.holdsFor(n) {
+				return contradiction("the value " + valueText(v) + " does not satisfy " + nw.message())
+			}
+		}
+		if least() <= most() {
+			continue
+		}
+		// nw moved one bound past the other. The message names it, and what
+		// sets the other bound unless the members do, since the value shows
+		// them: the listings ahead of a LengthMin, as a range's messages name
+		// them. What sets it is withheld when the value is redacted, as a
+		// range's messages withhold a fact in force.
+		moved, other := nw.message(), ""
+		if nw.kind == narrowMembers {
+			moved = membersText(listed.members)
+		}
+		switch {
+		case nw.kind != narrowLengthMax:
+			if most() < count {
+				other = atMost.message()
+			}
+		case held >= least():
+		case fromListings >= least():
+			other = membersText(listed.members)
+		default:
+			other = atLeast.message()
+		}
+		message := "the value " + valueText(v) + " does not satisfy "
+		if other != "" {
+			if ms := n.redactingMarks(); ms != nil {
+				other = redactedText(ms)
+			}
+			message += "both " + other + " and "
+		}
+		return contradiction(message + moved)
+	}
+	// No more members than the known ones, which a set holds first, leaves
+	// each of the others to be one of them. That takes a member equality
+	// cannot tell apart from a known one to be able to be it, which holds for
+	// every type that nests no set. Between sets, equality compares counts and
+	// single members, and can leave open a set holding unknowns that no way of
+	// resolving them makes the known one, so v stays as it is there.
+	known := 0
+	for known < len(members) && members[known].n.isKnown() {
+		known++
+	}
+	if most() == int64(known) && !nestsSet(n.typ.t.elem) {
+		return SetVal(n.typ.t.elem, members[:known]...)
+	}
+	return v
+}
+
+// nestsSet reports whether a value of type t can hold a set, at any depth.
+func nestsSet(t Type) bool {
+	d := t.t
+	switch d.kind {
+	case KindSet:
+		return true
+	case KindList, KindMap:
+		return nestsSet(d.elem)
+	case KindTuple:
+		return slices.ContainsFunc(d.elems, nestsSet)
+	case KindObject:
+		return slices.ContainsFunc(d.attrs, func(a attribute) bool { return nestsSet(a.typ) })
+	}
+	return false
 }
 
 // singleton returns the one value that r describes, and whether it describes
@@ -880,9 +1021,7 @@ func (r *rangeData) lengthMinText() string {
 		return "prefix " + quoted(r.pfx)
 	}
 	if len(r.members) > 0 && int64(provablyDistinct(r.members)) >= r.lenLo {
-		var b strings.Builder
-		writeMembers(&b, r.members)
-		return shortened(b.String(), func(s string) string { return s })
+		return membersText(r.members)
 	}
 	return "length >= " + strconv.FormatInt(r.lenLo, 10)
 }
