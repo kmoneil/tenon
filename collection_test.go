@@ -97,8 +97,50 @@ func TestConformance_TY017_DuplicateMapKeys(t *testing.T) {
 		t.Errorf("diagnostics %v; want one duplicate-key diagnostic naming both spellings", d)
 	}
 
-	// Every problem is reported, invalid keys first, in a fixed order.
+	// A shared key is reported whatever its entries hold, after the
+	// diagnostics of their elements, which the key's normalized form locates.
+	// Every problem comes in the order of the keys: an invalid key's own
+	// diagnostic beside its element's, which keep their paths, and entries
+	// that share a key by their keys as given.
 	one := tenon.NumberFromInt(1)
+	composedE, decomposedE := "\U000000E9", "e\U00000301"
+	at := func(key string) string { return tenon.Path{}.Index(tenon.String(key)).String() }
+	sharedE := "map keys " + strconv.QuoteToASCII(decomposedE) + " and " + strconv.QuoteToASCII(composedE) +
+		" are the same key after normalization"
+	for _, tt := range []struct {
+		name    string
+		entries map[string]tenon.Value
+		want    []string
+	}{
+		{
+			"an error element beside a number",
+			map[string]tenon.Value{composedE: failed("bad"), decomposedE: one},
+			[]string{"bad at " + at(composedE), sharedE},
+		},
+		{
+			"two error elements",
+			map[string]tenon.Value{composedE: failed("composed"), decomposedE: failed("decomposed")},
+			[]string{"decomposed at " + at(composedE), "composed at " + at(composedE), sharedE},
+		},
+		{
+			"every kind of problem",
+			map[string]tenon.Value{
+				"a\xff": failed("under a bad key"), decomposedE: failed("one"), composedE: one, "f": failed("two"),
+				"\xffz": failed("under the last key"),
+			},
+			[]string{
+				`map key "a\xff" is not well-formed UTF-8 at byte 1`, "under a bad key", "two at " + at("f"), "one at " + at(composedE),
+				`map key "\xffz" is not well-formed UTF-8 at byte 0`, "under the last key", sharedE,
+			},
+		},
+	} {
+		if got := located(tenon.MapVal(num, tt.entries)); !slices.Equal(got, tt.want) {
+			t.Errorf("%s: diagnostics %q, want %q", tt.name, got, tt.want)
+		}
+	}
+
+	// With no elements that fail, the invalid keys come first, then the keys
+	// that normalize alike.
 	many := tenon.MapVal(num, map[string]tenon.Value{
 		"\xffz": one, "a\xff": one,
 		composed: one, decomposed: one,
@@ -117,6 +159,72 @@ func TestConformance_TY017_DuplicateMapKeys(t *testing.T) {
 	}
 	if !slices.Equal(got, want) {
 		t.Errorf("diagnostics:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+	}
+}
+
+// TestConformance_TY017_AnyEntriesAnySpelling builds a map from every choice
+// of entries over five keys, two of them spellings of one key and two not
+// well-formed UTF-8, one sorting before that key and one after it, each
+// absent or holding a number or one of two error values. The map is an error
+// value exactly when an entry is a problem; a shared key is reported exactly
+// when both its spellings are there, whatever they hold, after everything
+// else; and where no key is shared, spelling the one key the other way
+// changes nothing.
+func TestConformance_TY017_AnyEntriesAnySpelling(t *testing.T) {
+	conformance.Covers(t, "TY-016", "TY-017", "ER-008")
+	num := tenon.NumberType()
+	composedE, decomposedE := "\U000000E9", "e\U00000301"
+	keys := []string{"a\xff", "f", decomposedE, composedE, "\xffz"}
+	elems := []tenon.Value{tenon.NumberFromInt(1), failed("x"), failed("y")}
+	respelled := map[string]string{composedE: decomposedE, decomposedE: composedE}
+	for choice := range 1 << (2 * len(keys)) {
+		entries := map[string]tenon.Value{}
+		for i, k := range keys {
+			if pick := choice >> (2 * i) & 3; pick > 0 {
+				entries[k] = elems[pick-1]
+			}
+		}
+		_, hasComposed := entries[composedE]
+		_, hasDecomposed := entries[decomposedE]
+		_, firstInvalid := entries["a\xff"]
+		_, lastInvalid := entries["\xffz"]
+		shared := hasComposed && hasDecomposed
+		problem := shared || firstInvalid || lastInvalid
+		for _, e := range entries {
+			problem = problem || e.IsError()
+		}
+		v := tenon.MapVal(num, entries)
+		if v.IsError() != problem {
+			t.Errorf("MapVal(%q) = %v", entries, v)
+			continue
+		}
+		if !v.IsError() {
+			continue
+		}
+		ds := v.Diagnostics()
+		var dups []int
+		for i, d := range ds {
+			if d.Code == tenon.CodeMapDuplicateKey {
+				dups = append(dups, i)
+			}
+		}
+		switch {
+		case shared && !slices.Equal(dups, []int{len(ds) - 1}):
+			t.Errorf("MapVal(%q) gave %q, want the shared key reported once, last", entries, located(v))
+		case !shared && len(dups) > 0:
+			t.Errorf("MapVal(%q) gave %q, reporting a key that nothing shares", entries, located(v))
+		case !shared:
+			other := map[string]tenon.Value{}
+			for k, e := range entries {
+				if r, ok := respelled[k]; ok {
+					k = r
+				}
+				other[k] = e
+			}
+			if w := tenon.MapVal(num, other); !tenon.Identical(v, w) {
+				t.Errorf("MapVal(%q) gave %q, but spelled the other way %q", entries, located(v), located(w))
+			}
+		}
 	}
 }
 
@@ -156,6 +264,11 @@ func TestContainerValues(t *testing.T) {
 	mustPanicUsage(t, "ListVal: element 0 has type number, not string", func() { tenon.ListVal(str, one) })
 	mustPanicUsage(t, "element 1 is a pending value, which has no type", func() { tenon.SetVal(str, a, tenon.Pending(tenon.Any())) })
 	mustPanicUsage(t, `the element of key "k" has type string, not number`, func() { tenon.MapVal(num, map[string]tenon.Value{"k": a}) })
+	// A host's own mistake panics before any problem the data has is reported,
+	// under a key that is not well-formed UTF-8 too.
+	mustPanicUsage(t, `the element of key "\xff" has type string, not number`, func() {
+		tenon.MapVal(num, map[string]tenon.Value{"\xff": a, "k": tenon.ErrorVal(tenon.Diagnostic{Code: "app.failed", Message: "m"})})
+	})
 	mustPanicUsage(t, "the same name after normalization", func() {
 		tenon.ObjectVal(map[string]tenon.Value{"caf\u00e9": a, "cafe\u0301": b})
 	})

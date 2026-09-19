@@ -86,6 +86,18 @@ func TestConformance_ER008_ContainersHoistErrors(t *testing.T) {
 		t.Errorf("one message at two positions gave %q", got)
 	}
 
+	// A map's elements come in the order of its keys, normalized, so two
+	// spellings of one map hoist alike.
+	composedE, decomposedE := "\U000000E9", "e\U00000301"
+	one, two := failed("one"), failed("two")
+	spelled := tenon.MapVal(str, map[string]tenon.Value{decomposedE: one, "f": two})
+	if other := tenon.MapVal(str, map[string]tenon.Value{composedE: one, "f": two}); !tenon.Identical(spelled, other) {
+		t.Errorf("two spellings of one map gave %q and %q", located(spelled), located(other))
+	}
+	if got, want := located(spelled), []string{`two at .["f"]`, "one at " + tenon.Path{}.Index(tenon.String(composedE)).String()}; !slices.Equal(got, want) {
+		t.Errorf("a map with two error elements gave %q, want %q", got, want)
+	}
+
 	// A key that is not a string cannot locate its element, so that element's
 	// diagnostics keep the paths they came with.
 	mixed := tenon.MapVal(str, map[string]tenon.Value{"a\xff": failed("under a bad key"), "k": first})

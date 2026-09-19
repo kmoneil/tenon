@@ -52,6 +52,18 @@
   any state, alone or within a collection. A message that names the target
   names it as `Exactly` of the type does, whatever the spelling.
 
+- `MapVal` reports keys that normalize alike with `map.duplicate_key`
+  whatever their elements are, as `[TY-017]` requires, and gives its
+  diagnostics in the order of the keys, normalized (`[ER-008]`). 0.2.0 looked
+  for such keys only among the elements that were not errors, so an error
+  element under U+00E9 beside a number under e followed by U+0301 gave no
+  `map.duplicate_key`; and it hoisted error elements in the order of the keys
+  as given, so two spellings of one map holding error elements listed the
+  same diagnostics in different orders, and were not `Identical`. Each entry
+  now reports in the order of its key, a key that is not well-formed UTF-8
+  placed by its bytes, and a shared key follows them all, as `[TY-017]` now
+  states.
+
 ### Changed
 
 - Converting to `Exactly` of a list, set, map, tuple or object type builds

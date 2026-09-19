@@ -284,64 +284,86 @@ func anyMarked(vals []Value) bool {
 //
 // The result is an error value if a key is not well-formed UTF-8, if keys are
 // the same key after normalization, or if an element is an error value, with a
-// diagnostic for each problem: code CodeStringInvalidUTF8 for each such key and
-// the diagnostics of each error element, in key order, then code
-// CodeMapDuplicateKey for each group of keys that normalize alike. The error
+// diagnostic for each problem, in the order of the keys, normalized where they
+// are well-formed: code CodeStringInvalidUTF8 for each such key and the
+// diagnostics of each error element, then code CodeMapDuplicateKey for each
+// group of keys that normalize alike, whatever their elements are. The error
 // value carries the Propagate marks of the error elements. MapVal panics if
 // elem is the zero Type, or an element is neither an error value nor a
 // resolved value of type elem.
 func MapVal(elem Type, entries map[string]Value) Value {
 	t := Map(elem)
+	// keyed is an entry beside its key as given. Its key is the normalized
+	// form, or the key as given where that is not well-formed UTF-8, which no
+	// normalized key can equal.
 	type keyed struct {
 		mapEntry
 		original string
+		invalid  bool
 	}
-	var errs containerErrors
 	list := make([]keyed, 0, len(entries))
 	for _, key := range slices.Sorted(maps.Keys(entries)) {
 		val := entries[key]
+		if !isError(val) {
+			requireMember("MapVal", "the element of key "+quotedASCII(key), val, elem)
+		}
 		normalized, err := uni.Canonical(key)
 		if err != nil {
-			errs.addDiagnostic(Diagnostic{
-				Code:    CodeStringInvalidUTF8,
-				Message: "map key " + quotedASCII(key) + " is not well-formed UTF-8 at byte " + strconv.Itoa(invalidUTF8At(key)),
-			})
-			// No path step can name a key that is not a string, so an error
-			// element under it keeps the path it came with.
-			if isError(val) {
-				errs.addUnlocated(val)
-			} else {
-				requireMember("MapVal", "the element of key "+quotedASCII(key), val, elem)
-			}
+			list = append(list, keyed{mapEntry{key, val}, key, true})
 			continue
 		}
-		if isError(val) {
-			errs.add(indexStep(String(normalized)), val)
-			continue
-		}
-		requireMember("MapVal", "the element of key "+quotedASCII(key), val, elem)
-		list = append(list, keyed{mapEntry{normalized, val}, key})
+		list = append(list, keyed{mapEntry{normalized, val}, key, false})
 	}
 
-	slices.SortStableFunc(list, func(a, b keyed) int { return strings.Compare(a.key, b.key) })
+	// Bytewise order is string order for the normalized keys, and places the
+	// others among them; entries that share a key follow their keys as given
+	// (TY-017). Each entry reports in that order, and a key that entries share
+	// is reported after them all, whatever their elements are.
+	slices.SortFunc(list, func(a, b keyed) int {
+		if c := strings.Compare(a.key, b.key); c != 0 {
+			return c
+		}
+		return strings.Compare(a.original, b.original)
+	})
+	var errs containerErrors
+	var shared [][]keyed
 	out := make([]mapEntry, 0, len(list))
 	for i := 0; i < len(list); {
 		j := i + 1
 		for j < len(list) && list[j].key == list[i].key {
 			j++
 		}
-		if j-i > 1 {
-			spellings := make([]string, j-i)
-			for k, e := range list[i:j] {
-				spellings[k] = quotedASCII(e.original)
+		for _, e := range list[i:j] {
+			switch {
+			case e.invalid:
+				errs.addDiagnostic(Diagnostic{
+					Code:    CodeStringInvalidUTF8,
+					Message: "map key " + quotedASCII(e.original) + " is not well-formed UTF-8 at byte " + strconv.Itoa(invalidUTF8At(e.original)),
+				})
+				// No path step can name a key that is not a string, so an
+				// error element under it keeps the path it came with.
+				if isError(e.val) {
+					errs.addUnlocated(e.val)
+				}
+			case isError(e.val):
+				errs.add(indexStep(String(e.key)), e.val)
 			}
-			errs.addDiagnostic(Diagnostic{
-				Code:    CodeMapDuplicateKey,
-				Message: "map keys " + strings.Join(spellings, " and ") + " are the same key after normalization",
-			})
+		}
+		if j-i > 1 {
+			shared = append(shared, list[i:j])
 		}
 		out = append(out, list[i].mapEntry)
 		i = j
+	}
+	for _, group := range shared {
+		spellings := make([]string, len(group))
+		for k, e := range group {
+			spellings[k] = quotedASCII(e.original)
+		}
+		errs.addDiagnostic(Diagnostic{
+			Code:    CodeMapDuplicateKey,
+			Message: "map keys " + strings.Join(spellings, " and ") + " are the same key after normalization",
+		})
 	}
 	if v, ok := errs.value(); ok {
 		return v
