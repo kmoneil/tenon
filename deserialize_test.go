@@ -253,6 +253,7 @@ func TestConformance_SE002_OnlyTheEncodingDecodes(t *testing.T) {
 		{"range keys out of order", "83 00 02 da74656e01 a2 01 82 01 f5 00 f5"},
 		{"a range that is one value", "83 00 82 04 02 da74656e01 a2 00 f5 05 00"},
 		{"a set range bounded by what its element type bounds", "83 00 82 05 01 da74656e01 a1 05 03"},
+		{"a set of every bool holding an unknown bool", "83 00 82 05 01 84 da74656e01 a0 f4 f5 f6"},
 		{"a deep mark listed on a member", "83 00 82 04 02 da74656e02 82 81 da74656e02 82 01 81 81 6164 81 81 6164"},
 		{"marks out of order", "83 00 01 da74656e02 82 f5 82 83 6170 03 6176 81 616d"},
 		{"an indefinite-length array", "83 00 82 04 02 9f 01 ff"},

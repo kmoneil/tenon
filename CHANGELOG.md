@@ -75,10 +75,7 @@
   as `Members` of 1, 2 and 3 on a set of two unknowns, which 0.2.0 let
   through. A narrowing that leaves the set no more members than its known
   ones gives the set of those, known, as `[UN-005]` requires: `LengthMax(1)`
-  on the set of 1 and an unknown number gives the set of 1. Where the
-  members can hold sets, the set is returned as it was instead, since
-  equality cannot always tell whether a set holding unknowns could turn out
-  to be a known one.
+  on the set of 1 and an unknown number gives the set of 1.
 
 - A set is no longer than the values its element type holds, null among them,
   and `Narrow` and `Length` both say so where that type holds few of them: a
@@ -109,6 +106,19 @@
   is the set of 1 and 2, and a set of three unknown bools narrowed to a length
   of three is the set of every bool. 0.2.0 answered an unknown Bool and left
   the set as it was in each of those.
+
+- A set does not keep a member that is not known where every value that member
+  could be is already a member of it, as `[EQ-041]` now says: the set of
+  `false`, `true`, null and an unknown bool is the set of the three, known, and
+  so is the set of `false`, `true` and a bool known only not to be null. 0.2.0
+  kept the member, so the value reported itself not known although its range
+  held one set (`[VA-003]`), `Equals` could not tell it from the set of the
+  others (`[EQ-002]`), and one value had two encodings (`[SE-001]`). Which
+  values a member could be is decided where the element type holds at most 256
+  of them, as `[UN-005]` counts them, and every member is kept where it holds
+  more. An encoding written by 0.2.0 that holds such a member no longer
+  decodes, the members it spells not being the ones the set holds
+  (`serialize.not_canonical`).
 
 ### Changed
 

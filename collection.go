@@ -131,7 +131,7 @@ func sequenceValue(t Type, fn string, elems []Value) Value {
 	}
 	members := slices.Clone(elems)
 	if t.t.kind == KindSet {
-		members = orderMembers(distinctMembers(members))
+		members = withNothingLeftToBe(t, orderMembers(distinctMembers(members)))
 	}
 	return Value{&node{state: stateKnown, partial: anyPartial(members), markedWithin: anyMarked(members), typ: t, data: members}}
 }
@@ -247,6 +247,50 @@ func orderMembers(members []Value) []Value {
 		return strings.Compare(reading[a.n], reading[b.n])
 	})
 	return members
+}
+
+// withNothingLeftToBe returns these members of a set of type t, in the order
+// they are held, without those that are not known and could only be values the
+// set holds already. Such a member has no value of its own left to be, so the
+// set does not keep it (EQ-041), and where none is left the set is known, its
+// range holding the one set (VA-003). Only an element type whose values can be
+// counted and built is asked about, since deciding it means naming them.
+func withNothingLeftToBe(t Type, members []Value) []Value {
+	c := setCeiling(t)
+	if !c.set || c.n > maxDomainSet {
+		return members
+	}
+	known := 0
+	for known < len(members) && members[known].n.isKnown() {
+		known++
+	}
+	if known == len(members) {
+		return members
+	}
+	values := memberValues(t.t.elem)
+	kept, dropped := members[:known:known], false
+	for _, m := range members[known:] {
+		if couldOnlyBe(m, values, members[:known]) {
+			dropped = true
+			continue
+		}
+		kept = append(kept, m)
+	}
+	if !dropped {
+		return members
+	}
+	return kept
+}
+
+// couldOnlyBe reports whether every one of these values that m could turn out
+// to be is one of these members already.
+func couldOnlyBe(m Value, values, members []Value) bool {
+	for _, v := range values {
+		if eq, settled := equality(v.n, m.n); (!settled || eq) && !sameAsSome(members, v) {
+			return false
+		}
+	}
+	return true
 }
 
 // sameAsSome reports whether equality settles that m is one of these members.

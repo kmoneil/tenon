@@ -105,6 +105,120 @@ func TestConformance_EQ041_MembersThatAreNotKnownAreKept(t *testing.T) {
 	if tenon.SetVal(num, unknown).IsKnown() {
 		t.Error("a set holding an unknown reports itself known")
 	}
+
+	// A member is kept because it could still be a value of its own. Where
+	// every value it could be is a member already, it could not, and the set
+	// holds those alone.
+	b, empty := tenon.BoolType(), tenon.Tuple()
+	for _, tt := range []struct {
+		name string
+		set  tenon.Value
+		want tenon.Value
+	}{
+		{
+			"every bool, and an unknown bool",
+			tenon.SetVal(b, tenon.Bool(false), tenon.Bool(true), tenon.NullVal(b), tenon.Unknown(b)),
+			tenon.SetVal(b, tenon.Bool(false), tenon.Bool(true), tenon.NullVal(b)),
+		},
+		{
+			"every bool, and two unknown bools, one of which cannot be null",
+			tenon.SetVal(b, tenon.NullVal(b), tenon.Bool(true), tenon.Bool(false),
+				tenon.Unknown(b), tenon.Narrow(tenon.Unknown(b), tenon.NotNull())),
+			tenon.SetVal(b, tenon.Bool(false), tenon.Bool(true), tenon.NullVal(b)),
+		},
+		{
+			"every empty tuple, and an unknown one",
+			tenon.SetVal(empty, tenon.TupleVal(), tenon.NullVal(empty), tenon.Unknown(empty)),
+			tenon.SetVal(empty, tenon.TupleVal(), tenon.NullVal(empty)),
+		},
+		{
+			// Not every bool, but every bool this member could be.
+			"false and true, and a bool that cannot be null",
+			tenon.SetVal(b, tenon.Bool(false), tenon.Bool(true), tenon.Narrow(tenon.Unknown(b), tenon.NotNull())),
+			tenon.SetVal(b, tenon.Bool(false), tenon.Bool(true)),
+		},
+		{
+			"the empty tuple, and one that cannot be null",
+			tenon.SetVal(empty, tenon.TupleVal(), tenon.Narrow(tenon.Unknown(empty), tenon.NotNull())),
+			tenon.SetVal(empty, tenon.TupleVal()),
+		},
+		{
+			// The member could be the set of the empty tuple or the set of
+			// null, and the set holds both.
+			"sets of empty tuples, and one holding an unknown",
+			tenon.SetVal(tenon.Set(empty),
+				tenon.SetVal(empty, tenon.TupleVal()), tenon.SetVal(empty, tenon.NullVal(empty)),
+				tenon.SetVal(empty, tenon.Unknown(empty))),
+			tenon.SetVal(tenon.Set(empty), tenon.SetVal(empty, tenon.TupleVal()), tenon.SetVal(empty, tenon.NullVal(empty))),
+		},
+	} {
+		if !tt.set.IsKnown() || !tenon.Identical(tt.set, tt.want) {
+			t.Errorf("%s: the set is %v, want %v, known", tt.name, tt.set, tt.want)
+		}
+		if got := tenon.Equals(tt.set, tt.want).String(); got != "true" {
+			t.Errorf("%s: it equals %v as %s, want true", tt.name, tt.want, got)
+		}
+		if tenon.Hash(tt.set) != tenon.Hash(tt.want) {
+			t.Errorf("%s: it hashes apart from %v", tt.name, tt.want)
+		}
+		if got := tenon.Narrow(tt.set); !tenon.Identical(got, tt.set) {
+			t.Errorf("%s: narrowing it by nothing gave %v", tt.name, got)
+		}
+	}
+	// One value short of every one of them, the member has something to be.
+	for _, tt := range []struct {
+		set     tenon.Value
+		members int
+	}{
+		{tenon.SetVal(b, tenon.Bool(false), tenon.Bool(true), tenon.Unknown(b)), 3},
+		{tenon.SetVal(b, tenon.NullVal(b), tenon.Bool(true), tenon.Unknown(b)), 3},
+		{tenon.SetVal(b, tenon.Bool(false), tenon.Narrow(tenon.Unknown(b), tenon.NotNull())), 2},
+		{tenon.SetVal(tenon.Set(empty), tenon.SetVal(empty, tenon.TupleVal()), tenon.SetVal(empty, tenon.Unknown(empty))), 2},
+		{tenon.SetVal(empty, tenon.TupleVal(), tenon.Unknown(empty)), 2},
+		{tenon.SetVal(num, n(1), unknown), 2},
+		{
+			// Each member is asked about for itself: the set of the empty
+			// tuple and an unknown one could only be a member here, and is
+			// dropped, while the set of an unknown one could be the set of
+			// null, which is no member, and stays. The one dropped comes
+			// first.
+			tenon.SetVal(tenon.Set(empty),
+				tenon.SetVal(empty, tenon.TupleVal()),
+				tenon.SetVal(empty, tenon.TupleVal(), tenon.NullVal(empty)),
+				tenon.SetVal(empty, tenon.TupleVal(), tenon.Unknown(empty)),
+				tenon.SetVal(empty, tenon.Unknown(empty))),
+			3,
+		},
+	} {
+		if tt.set.IsKnown() || tt.set.Len() != tt.members {
+			t.Errorf("%v is known, or does not hold %d members", tt.set, tt.members)
+		}
+	}
+	// What a member could be is decided where the element type holds at most
+	// 256 values, so a set over a type holding one more keeps its member,
+	// however many of those values it holds already.
+	for _, tt := range []struct {
+		empties int  // how many empty tuples the element type holds
+		known   bool // whether a set of every value of it comes out known
+	}{
+		{7, true},  // 128 values, and null: 129 members
+		{8, false}, // 256 values, and null: 257 members
+	} {
+		elem := tenon.Tuple(slices.Repeat([]tenon.Type{empty}, tt.empties)...)
+		values := []tenon.Value{tenon.NullVal(elem), tenon.Unknown(elem)}
+		for mask := range 1 << tt.empties {
+			row := make([]tenon.Value, tt.empties)
+			for i := range row {
+				if row[i] = tenon.TupleVal(); mask&(1<<i) != 0 {
+					row[i] = tenon.NullVal(empty)
+				}
+			}
+			values = append(values, tenon.TupleVal(row...))
+		}
+		if set := tenon.SetVal(elem, values...); set.IsKnown() != tt.known {
+			t.Errorf("a set of every value of %v and an unknown one is known %t, want %t", elem, set.IsKnown(), tt.known)
+		}
+	}
 }
 
 func TestConformance_EQ042_TheLengthOfASetHoldingUnknowns(t *testing.T) {
