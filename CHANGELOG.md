@@ -4,6 +4,33 @@
 
 ### Added
 
+- `gotenon.Encode` takes data whose types a Go program does not know. A value
+  of an interface type encodes as what it holds, so the `map[string]any` that
+  `encoding/json` gives encodes as an object of whatever the document held, a
+  slice of anything as a tuple, at any depth. It was a usage panic, which made
+  the commonest input to a library for data whose types are not known at
+  compile time the one thing it refused.
+
+  A `json.Number` is now the number its text spells rather than text, in both
+  directions. Read a document with `json.Decoder.UseNumber` and its numbers
+  arrive exactly, keeping the distinction the document drew between `8080` and
+  `"8080"`, so a schema asking for numbers is met under the safe policy; read
+  it without, and each number is the `float64` nearest to it, which is a
+  different number and says so.
+
+  An interface is also the only way a Go value comes to hold itself, since a
+  Go type that holds itself has no mapping at all, and a value that does is a
+  usage error rather than a stack that runs out. Holding the same value in
+  two places is not holding itself.
+
+  Two things such data cannot carry by itself, and both are reported rather
+  than guessed. A JSON null says null without saying null of what, so encoding
+  a nil interface fails with the new code `encode.untyped_nil`, located by its
+  path, and the schema the caller converts to says which null it meant.
+  Decoding back into an interface is a usage error: nothing in a value says
+  which Go type it would take, so decode into `tenon.Value`, which holds any
+  value.
+
 - Documentation a consumer can start from. The package doc is a tour of the
   package in thirteen sections, each naming the API to look at next, where it
   was a definition and a note about Unicode. Nineteen examples in the root
@@ -19,6 +46,11 @@
   rather than the reader.
 
 ### Fixed
+
+- `gotenon.Encode` locates a failure in a map that encodes as an object, one
+  whose members' types need not agree, by the attribute of that object rather
+  than by an index of the map, so the path names a place the value it
+  describes has.
 
 - An operation given a pending operand that can only be of a type it rejects
   gives an error value with code `operation.wrong_type`, however the operand's

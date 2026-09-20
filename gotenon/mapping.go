@@ -1,6 +1,7 @@
 package gotenon
 
 import (
+	"encoding/json"
 	"math/big"
 	"reflect"
 	"strings"
@@ -28,7 +29,9 @@ const (
 	goStruct
 	goPointer
 	goValue
-	goCustom // a type that marshals and unmarshals itself, which needs no other mapping
+	goJSONNumber // encoding/json.Number, a number written down [GO-034]
+	goInterface  // a type whose values encode as what they hold [GO-015]
+	goCustom     // a type that marshals and unmarshals itself, which needs no other mapping
 )
 
 // ValueMarshaler is implemented by a Go type that encodes itself: Encode gives
@@ -83,6 +86,8 @@ var (
 	bigIntGoType   = reflect.TypeFor[big.Int]()
 	bigFloatGoType = reflect.TypeFor[big.Float]()
 	bigRatGoType   = reflect.TypeFor[big.Rat]()
+	// A json.Number is a number written down, not text [GO-034].
+	jsonNumberGoType = reflect.TypeFor[json.Number]()
 
 	marshalerGoType   = reflect.TypeFor[ValueMarshaler]()
 	unmarshalerGoType = reflect.TypeFor[ValueUnmarshaler]()
@@ -133,6 +138,8 @@ func buildMapping(rt reflect.Type, building map[reflect.Type]bool) *goMapping {
 		m.kind, m.typ, m.constraint = goBigFloat, tenon.NumberType(), number
 	case bigRatGoType:
 		m.kind, m.typ, m.constraint = goBigRat, tenon.NumberType(), number
+	case jsonNumberGoType:
+		m.kind, m.typ, m.constraint = goJSONNumber, tenon.NumberType(), number
 	default:
 		switch rt.Kind() {
 		case reflect.Bool:
@@ -170,6 +177,12 @@ func buildMapping(rt reflect.Type, building map[reflect.Type]bool) *goMapping {
 		case reflect.Struct:
 			m.kind = goStruct
 			structMapping(m, building)
+		case reflect.Interface:
+			// A value of an interface type encodes as what it holds, whose
+			// type is not known until it is in hand, so the interface maps
+			// to no type. Decoding into one is a usage error, which the
+			// decoder reports where it meets it.
+			m.kind, m.constraint = goInterface, tenon.Any()
 		case reflect.Pointer:
 			if rt.Elem() == valueGoType {
 				usagePanic("the Go type %s is a pointer to tenon.Value, which does not map to tenon; use tenon.Value itself", rt)

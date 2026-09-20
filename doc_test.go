@@ -55,8 +55,15 @@ func TestPackageDocNamesRealSymbols(t *testing.T) {
 	}
 
 	// Nothing else is in brackets. A bracketed name the parser did not take
-	// for a link is text that reads as a broken link.
-	for _, m := range regexp.MustCompile(`\[[^\]\n]+\]`).FindAllString(text, -1) {
+	// for a link is text that reads as a broken link, unless it follows a
+	// word, where it is Go type syntax rather than a reference: the brackets
+	// of map[string]any are part of what they spell.
+	brackets := regexp.MustCompile(`\[[^\]\n]+\]`)
+	for _, at := range brackets.FindAllStringIndex(text, -1) {
+		m := text[at[0]:at[1]]
+		if at[0] > 0 && text[at[0]-1] != ' ' && text[at[0]-1] != '\n' {
+			continue
+		}
 		if inner := strings.Trim(m, "[]"); !links[inner] {
 			t.Errorf("the package doc holds %s, which is not a documentation link", m)
 		}

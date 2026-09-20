@@ -91,8 +91,16 @@ func (f *failures) withError(p tenon.Path, code tenon.Code, err error) {
 // array, a map for a map with string keys, an object for a struct, and for a
 // tenon.Value the value itself. The type follows from T, so a nil pointer,
 // slice or map encodes as the null of the type T maps to. A slice or map whose
-// elements need not share a type, as tenon.Value and marshaler types need not,
-// encodes as a tuple or an object.
+// elements need not share a type, as tenon.Value, interface and marshaler
+// types need not, encodes as a tuple or an object.
+//
+// A value of an interface type encodes as what it holds, by that value's own
+// type, so the map[string]any that encoding/json gives encodes as an object of
+// whatever the document held. A nil interface holds no value, and no type
+// follows from it, so it fails with tenon.CodeEncodeUntypedNil: which null a
+// JSON null is is the caller's to say. A json.Number is the number its text
+// spells, so a document read with UseNumber keeps its own distinction between
+// 8080 and "8080".
 //
 // A struct maps its exported fields to attributes, each named by its tenon tag
 // or by the field's name: `tenon:"name"`, with `tenon:"name,optional"` marking
@@ -104,14 +112,17 @@ func (f *failures) withError(p tenon.Path, code tenon.Code, err error) {
 // rounded rendering of it. Encode fails with a *DiagnosticError where a part of
 // x cannot be encoded: a NaN or an infinity (tenon.CodeEncodeNotANumber), a big.Rat
 // that is not a terminating decimal (tenon.CodeEncodeInexact), a number outside the
-// range of numbers (tenon.CodeNumberOutOfRange), a string that is not valid
+// range of numbers (tenon.CodeNumberOutOfRange), a json.Number whose text
+// spells no number (tenon.CodeNumberInvalidSyntax), a nil interface
+// (tenon.CodeEncodeUntypedNil), a string that is not valid
 // UTF-8 (tenon.CodeStringInvalidUTF8), a map of values whose types need not
 // agree whose keys are empty or collide once normalized, and a MarshalValue
 // method's failure (tenon.CodeEncodeMarshalFailed, or its own diagnostics).
 //
-// Encode panics where T does not map to tenon: an interface, a channel, a
+// Encode panics where T does not map to tenon: a channel, a
 // function, a complex number, a pointer to tenon.Value, a map without string
-// keys, or a type that holds itself; where a struct's tags are malformed; on a
+// keys, or a type that holds itself, whether T is that type or holds it in an
+// interface; where a struct's tags are malformed; on a
 // required tenon.Value field, or any other tenon.Value, holding the zero
 // Value; and on a MarshalValue method returning the zero Value.
 func Encode[T any](x T) (tenon.Value, error) {
@@ -127,6 +138,31 @@ func Encode[T any](x T) (tenon.Value, error) {
 // encoder encodes one Go value, collecting what it cannot encode.
 type encoder struct {
 	fails failures
+	// within holds the Go containers the encoder is inside, so that a value
+	// that holds itself is told apart from one that holds another copy of
+	// the same thing.
+	within map[cycle]bool
+}
+
+// cycle identifies a Go container by what it holds rather than by its own
+// address alone: two slices over one array share an address, and differ in
+// the members they hold.
+type cycle struct {
+	ptr uintptr
+	len int
+	typ reflect.Type
+}
+
+// cycleOf returns the identity of rv, and whether rv is a container that can
+// hold itself at all: a map, a slice or a pointer.
+func cycleOf(rv reflect.Value) (cycle, bool) {
+	switch rv.Kind() {
+	case reflect.Map, reflect.Slice:
+		return cycle{rv.Pointer(), rv.Len(), rv.Type()}, true
+	case reflect.Pointer:
+		return cycle{rv.Pointer(), 0, rv.Type()}, true
+	}
+	return cycle{}, false
 }
 
 func (e *encoder) fail(p tenon.Path, code tenon.Code, message string) {
@@ -146,6 +182,27 @@ func (e *encoder) encode(m *goMapping, rv reflect.Value, p tenon.Path) (tenon.Va
 			usagePanic("Encode: the tenon.Value at %q is the zero Value, which is not a value", p.String())
 		}
 		return v, true
+	case goInterface:
+		// What an interface holds encodes by its own type [GO-015]. A nil
+		// one holds nothing, and no type follows from nothing.
+		if rv.IsNil() {
+			e.fail(p, tenon.CodeEncodeUntypedNil, "a nil "+m.rt.String()+" holds no value, and no type follows from it")
+			return tenon.Value{}, false
+		}
+		held := rv.Elem()
+		if c, container := cycleOf(held); container {
+			// An interface is the only way a Go value holds itself, a type
+			// that holds itself having no mapping at all [GO-011].
+			if e.within[c] {
+				usagePanic("Encode: the Go value at %q holds itself, and a value that maps to tenon must be finite", p.String())
+			}
+			if e.within == nil {
+				e.within = map[cycle]bool{}
+			}
+			e.within[c] = true
+			defer delete(e.within, c)
+		}
+		return e.encode(mappingOf(held.Type()), held, p)
 	case goBool:
 		return tenon.Bool(rv.Bool()), true
 	case goString:
@@ -164,6 +221,10 @@ func (e *encoder) encode(m *goMapping, rv reflect.Value, p tenon.Path) (tenon.Va
 		return tenon.NumberFromText(text), true
 	case goBigInt, goBigFloat, goBigRat:
 		return e.bigNumber(m, rv, p)
+	case goJSONNumber:
+		// The text of a json.Number is the text a number parses from, and
+		// text that parses to no number is data that is wrong [GO-034].
+		return e.fromData(tenon.NumberFromText(rv.String()), p)
 	case goSlice, goArray:
 		return e.sequence(m, rv, p)
 	case goMap:
@@ -382,10 +443,16 @@ func (e *encoder) mapping(m *goMapping, rv reflect.Value, p tenon.Path) (tenon.V
 		}
 		normalized[canonical] = key
 		at := p.Index(tenon.String(canonical))
-		if !m.typed() && canonical == "" {
-			e.fail(at, tenon.CodeConvertUnexpectedAttribute, `the map key "" cannot be an attribute name`)
-			ok = false
-			continue
+		if !m.typed() {
+			if canonical == "" {
+				e.fail(at, tenon.CodeConvertUnexpectedAttribute, `the map key "" cannot be an attribute name`)
+				ok = false
+				continue
+			}
+			// A map whose members' types need not agree encodes as an object
+			// [GO-012], so what is in it is located as an attribute of one,
+			// which is where the reader of a diagnostic looks for it.
+			at = p.Attribute(canonical)
 		}
 		v, good := e.encode(m.elem, rv.MapIndex(reflect.ValueOf(key).Convert(m.rt.Key())), at)
 		entries[canonical], ok = v, ok && good

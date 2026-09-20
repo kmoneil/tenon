@@ -38,6 +38,7 @@ var specCodes = []string{
 	"encode.inexact",
 	"encode.marshal_failed",
 	"encode.not_a_number",
+	"encode.untyped_nil",
 	"map.duplicate_key",
 	"number.divide_by_zero",
 	"number.invalid_syntax",

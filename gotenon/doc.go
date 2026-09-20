@@ -4,9 +4,29 @@
 // a tenon value by converting it, under a policy the caller chooses, to the
 // constraint the Go type maps to. Go's booleans, strings and numbers map to
 // Bool, String and Number; slices and arrays to lists; maps with string keys to
-// maps; structs to objects; and tenon.Value to any value at all. Struct fields
+// maps; structs to objects; an interface to what its value holds; and
+// tenon.Value to any value at all. Struct fields
 // are named by their tenon tag, `tenon:"name,optional"`, or by the field's
 // name, and `tenon:"-"` leaves one out.
+//
+// # Data whose types are not known at compile time
+//
+// Such data reaches a Go program as any: encoding/json gives map[string]any,
+// and so does every other reader of foreign data. Encode takes it, by what
+// each value holds, so a map of anything is an object and a slice of anything
+// a tuple, at any depth. Read the document with json.Decoder.UseNumber, and
+// its numbers arrive as json.Number and encode as the numbers they spell,
+// keeping the distinction the document drew between 8080 and "8080"; read it
+// without, and each number is the float64 nearest to it, which is a different
+// number and says so.
+//
+// Two things such data cannot carry by itself. A JSON null says null without
+// saying null of what, and a null has a type, so encoding a nil interface
+// fails with tenon.CodeEncodeUntypedNil, located by its path, and the schema
+// the caller converts to is what says which null it meant. And decoding back
+// into an interface is a usage error: nothing in a value says which Go type it
+// would take, so decode into tenon.Value, which holds any value, or into the
+// Go types the program actually has.
 //
 // A type can encode and decode itself by implementing ValueMarshaler and, on
 // its pointer, ValueUnmarshaler. Failures are reported as a *DiagnosticError,

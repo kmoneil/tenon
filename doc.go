@@ -156,6 +156,11 @@
 // from one, converting under a policy the caller chooses. Struct fields are
 // named by their tenon tag.
 //
+// Data whose types a program does not know is what this package is for, and in
+// Go that data arrives as any: the map[string]any that encoding/json gives
+// encodes by what each value holds, so a document becomes a value without a Go
+// type written for it.
+//
 // A Go type that tenon should carry through unchanged, rather than map, is a
 // [Capsule] type: it keeps its identity, and declares how it is compared,
 // hashed, displayed and encoded.

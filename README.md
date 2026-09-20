@@ -138,6 +138,7 @@ into a value identical to the one that was sent.
 | **Validation layers** check values against constraints and report every failure with a stable code and the path to it. | `Example_validation` |
 | **Configuration languages** evaluate expressions over values some of which are not settled, unify the branches of a conditional, and locate what is wrong in the file. | `Example_configLanguage` |
 | **Go programs with types already** encode their structs and decode them back, keeping in a `tenon.Value` field whatever Go has no type for. | `gotenon` |
+| **Go programs without them** take data whose types they do not know, the `map[string]any` that `encoding/json` gives, by what each value holds, with the document's own numbers kept exactly. | `gotenon` |
 
 # Immutability and concurrent use
 

@@ -32,10 +32,13 @@ import (
 // A null decodes into a pointer, slice or map as nil, and into an optional
 // field as the field's zero value, as an absent optional attribute leaves it. A
 // float64 is the nearest to the number, ties to even; a big.Float takes the
-// precision big.Float.SetRat gives it.
+// precision big.Float.SetRat gives it, and a json.Number the number's canonical
+// text.
 //
 // Decode panics where T does not map to tenon, as Encode does, and if p is
-// not Safe or Unsafe.
+// not Safe or Unsafe. It panics as well where T is an interface type, or holds
+// one: nothing in a value says which Go type it would take, and tenon.Value is
+// the Go type that holds any value, so decode into that.
 func Decode[T any](v tenon.Value, p tenon.Policy) (T, error) {
 	var out T
 	if v == (tenon.Value{}) {
@@ -222,6 +225,9 @@ func (d *decoder) build(m *goMapping, dst reflect.Value, v tenon.Value, p tenon.
 		return
 	}
 	switch m.kind {
+	case goInterface:
+		// Nothing in a value says which Go type it would take [GO-011].
+		usagePanic("Decode: the value at %q is decoded into a Go %s, an interface, which says nothing of the Go type it would take; decode into tenon.Value, which holds any value", p.String(), m.rt)
 	case goBool:
 		dst.SetBool(v.AsBool())
 	case goString:
@@ -239,6 +245,10 @@ func (d *decoder) build(m *goMapping, dst reflect.Value, v tenon.Value, p tenon.
 			return
 		}
 		dst.SetFloat(f)
+	case goJSONNumber:
+		// The canonical text of the number [GO-034], which Value.String
+		// gives for a Number.
+		dst.SetString(v.String())
 	case goBigRat:
 		dst.Set(reflect.ValueOf(v.AsBigRat()).Elem())
 	case goBigFloat:
