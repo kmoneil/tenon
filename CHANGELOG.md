@@ -127,6 +127,16 @@
   member, which makes converting a list of objects to one about a fifth
   faster.
 
+- Recording the members a range lists, and counting how many of a set's
+  members are provably distinct, take the time the order a set holds its
+  members in already gives them, rather than comparing every pair of known
+  members. A range listing 16,000 known numbers, a document of 47,746 bytes,
+  decodes in six milliseconds where 0.2.0 took three and a half seconds, and
+  `Length` of a set of 8,000 known members beside one that is not known takes
+  69 microseconds where it took 300 milliseconds. Neither allocates any more
+  than before. Members that are not known are still compared with one another,
+  which is what telling those apart takes.
+
 - `conformance/matrix` reports a `UN-023` violation where an operation answers
   a pending operand that can only be of a type it rejects without an
   `operation.wrong_type` diagnostic. For each operand position it builds

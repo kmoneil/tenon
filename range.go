@@ -978,14 +978,27 @@ func (r *rangeData) addMembers(vs []Value) {
 	if len(vs) == 0 {
 		return
 	}
+	// Values that are one member are neighbours once the members are in the
+	// order a set holds them: equal known values tie there (EQ-045), and two
+	// that are identical read alike, which is the only way a value that is not
+	// known is one member with another. So the listing is ordered first and
+	// the first of each run kept, rather than every value being compared with
+	// every value recorded.
 	merged := slices.Clone(r.members)
 	for _, v := range vs {
-		if vacuousMember(v) || slices.ContainsFunc(merged, func(k Value) bool { return oneMember(k, v) }) {
+		if !vacuousMember(v) {
+			merged = append(merged, v)
+		}
+	}
+	ordered := orderMembers(merged)
+	kept := ordered[:0]
+	for _, v := range ordered {
+		if last := len(kept) - 1; last >= 0 && oneMember(kept[last], v) {
 			continue
 		}
-		merged = append(merged, v)
+		kept = append(kept, v)
 	}
-	r.members = orderMembers(merged)
+	r.members = kept
 	lo := int64(provablyDistinct(r.members))
 	if lo == 0 {
 		lo = 1

@@ -405,3 +405,43 @@ func FuzzDeserialize(f *testing.F) {
 		}
 	})
 }
+
+// BenchmarkSetListings measures the work of recording, counting and decoding
+// the known members of a set, at a size and four times it: the growth from one
+// to the other is the reading, not the wall clock.
+func BenchmarkSetListings(b *testing.B) {
+	num := tenon.NumberType()
+	for _, size := range []int{2000, 8000} {
+		members := make([]tenon.Value, size)
+		for i := range members {
+			members[i] = tenon.NumberFromInt(int64(i))
+		}
+		listing := tenon.Members(members...)
+		held := tenon.SetVal(num, append(members, tenon.Unknown(num))...)
+		recorded := tenon.Narrow(tenon.Unknown(tenon.Set(num)), listing)
+		encoded, failure, ok := tenon.Serialize(recorded)
+		if !ok {
+			b.Fatalf("Serialize(%v) failed: %v", recorded, failure)
+		}
+		b.Run(fmt.Sprintf("record/%d", size), func(b *testing.B) {
+			b.ReportAllocs()
+			for b.Loop() {
+				tenon.Narrow(tenon.Unknown(tenon.Set(num)), listing)
+			}
+		})
+		b.Run(fmt.Sprintf("length/%d", size), func(b *testing.B) {
+			b.ReportAllocs()
+			for b.Loop() {
+				tenon.Length(held)
+			}
+		})
+		b.Run(fmt.Sprintf("decode/%d", size), func(b *testing.B) {
+			b.ReportAllocs()
+			for b.Loop() {
+				if _, _, ok := tenon.Deserialize(encoded, decoders); !ok {
+					b.Fatal("the document did not decode")
+				}
+			}
+		})
+	}
+}

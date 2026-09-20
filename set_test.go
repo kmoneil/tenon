@@ -337,6 +337,45 @@ func TestConformance_EQ042_TheLengthOfASetHoldingUnknowns(t *testing.T) {
 	}
 }
 
+// TestConformance_EQ030_MembersAreToldApartByTheirHashes holds the work of
+// telling known members apart to the hashes they have rather than to the pairs
+// they make. A capsule type counts what its values are compared with, which
+// only two known values of it ever are.
+func TestConformance_EQ030_MembersAreToldApartByTheirHashes(t *testing.T) {
+	conformance.Covers(t, "EQ-030", "EQ-042", "UN-002")
+	compared := 0
+	counted := tenon.Capsule("counted", tenon.CapsuleOps[int]{
+		Equals:  func(a, b *int) bool { compared++; return *a == *b },
+		Hash:    func(v *int) uint64 { return uint64(*v) },
+		Compare: func(a, b *int) int { return *a - *b },
+	})
+	const size = 400
+	members := make([]tenon.Value, size)
+	for i := range members {
+		v := i
+		members[i] = tenon.CapsuleVal(counted, &v)
+	}
+	held := tenon.SetVal(counted, append(slices.Clone(members), tenon.Unknown(counted))...)
+	for _, tt := range []struct {
+		name string
+		call func() tenon.Value
+	}{
+		{"a range listing them all", func() tenon.Value {
+			return tenon.Narrow(tenon.Unknown(tenon.Set(counted)), tenon.Members(members...))
+		}},
+		{"the length of a set of them beside an unknown", func() tenon.Value { return tenon.Length(held) }},
+	} {
+		compared = 0
+		if got := tt.call(); got.IsError() {
+			t.Fatalf("%s: %v", tt.name, got)
+		}
+		// Comparing every pair would be eighty thousand of them.
+		if compared > 4*size {
+			t.Errorf("%s: %d comparisons over %d members, want at most %d", tt.name, compared, size, 4*size)
+		}
+	}
+}
+
 func TestConformance_EQ043_MembershipOfASetHoldingUnknowns(t *testing.T) {
 	conformance.Covers(t, "EQ-043")
 	num, str := tenon.NumberType(), tenon.StringType()

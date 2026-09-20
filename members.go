@@ -105,14 +105,27 @@ func setLengthBounds(t Type, members []Value) (low, high int) {
 // provablyDistinct returns how many of these members are provably distinct
 // from every member counted before them, taken in the order they are held,
 // which is canonical for a set and for the members recorded in a range alike.
+//
+// Two known members are told apart by being unequal, and that order holds them
+// first and ties exactly the ones that are equal (EQ-045), so a known member
+// is one already counted exactly when it is the one counted last. A member
+// that is not known is compared with every member counted, since what tells it
+// apart is what it could still turn out to be.
 func provablyDistinct(members []Value) int {
-	var counted []Value
+	var known, others []Value
 	for _, m := range members {
-		if distinctFromAll(counted, m) {
-			counted = append(counted, m)
+		if !m.n.isKnown() {
+			if distinctFromAll(known, m) && distinctFromAll(others, m) {
+				others = append(others, m)
+			}
+			continue
 		}
+		if last := len(known) - 1; last >= 0 && sameValue(known[last].n, m.n) {
+			continue
+		}
+		known = append(known, m)
 	}
-	return len(counted)
+	return len(known) + len(others)
 }
 
 // distinctFromAll reports whether equality settles that m differs from every
