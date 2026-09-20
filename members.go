@@ -63,7 +63,7 @@ var lengthOp = register(&op{
 		ns := []Narrowing{NumberMin(NumberFromInt(0), true)}
 		switch n := args[0].n; {
 		case n.state == stateKnown:
-			low, high := setLengthBounds(n.data.([]Value))
+			low, high := setLengthBounds(n.typ, n.data.([]Value))
 			ns = append(ns,
 				NumberMin(NumberFromInt(int64(low)), true),
 				NumberMax(NumberFromInt(int64(high)), true))
@@ -72,19 +72,34 @@ var lengthOp = register(&op{
 			if rd.lenLo > 0 {
 				ns = append(ns, NumberMin(NumberFromInt(rd.lenLo), true))
 			}
-			if rd.lenHi.set {
-				ns = append(ns, NumberMax(NumberFromInt(rd.lenHi.n), true))
+			// A set of an element type holding few values is no longer than
+			// the values it could hold, whether or not its range says so.
+			hi := setCeiling(n.typ)
+			if rd.lenHi.set && (!hi.set || rd.lenHi.n < hi.n) {
+				hi = rd.lenHi
+			}
+			if hi.set {
+				ns = append(ns, NumberMax(NumberFromInt(hi.n), true))
 			}
 		}
 		return Narrow(r, ns...)
 	},
 })
 
-// setLengthBounds returns how few and how many members a set could turn out to
-// have: the members that are provably distinct from every member counted before
-// them, and all of them.
-func setLengthBounds(members []Value) (low, high int) {
-	return provablyDistinct(members), len(members)
+// setLengthBounds returns how few and how many members a set of type t holding
+// these members could turn out to have: the members that are provably distinct
+// from every member counted before them, and all of them, or as many as the
+// element type has values, null among them, where it has fewer.
+func setLengthBounds(t Type, members []Value) (low, high int) {
+	high = len(members)
+	// Every element type has at least one value, so it bounds nothing until a
+	// set holds two members, and equality asks this of every set it compares.
+	if high > 1 {
+		if c := setCeiling(t); c.set && c.n < int64(high) {
+			high = int(c.n)
+		}
+	}
+	return provablyDistinct(members), high
 }
 
 // provablyDistinct returns how many of these members are provably distinct

@@ -618,12 +618,13 @@ func narrowValue(v Value, ns []Narrowing) Value {
 	}
 	old := n.data.(*rangeData)
 	r := *old
+	ceiling := setCeiling(n.typ)
 	// A fact already in force is what the value says about itself, or what a
 	// narrowing given before this one said, so a message withholds it when
 	// either carries a redacting mark.
 	withheld := n.redactingMarks()
 	for _, nw := range ns {
-		clash, ok := r.apply(nw)
+		clash, ok := r.apply(nw, ceiling)
 		if !ok {
 			if withheld != nil {
 				clash = redactedText(withheld)
@@ -634,7 +635,7 @@ func narrowValue(v Value, ns []Narrowing) Value {
 			withheld, _ = mergeMarks(withheld, ms)
 		}
 	}
-	if sole, ok := r.singleton(n.typ); ok {
+	if sole, ok := r.singleton(n.typ, ceiling); ok {
 		return sole
 	}
 	if set, ok := r.memberSet(n.typ); ok {
@@ -662,18 +663,24 @@ func narrowPartialSet(v Value, ns []Narrowing) Value {
 	members := n.data.([]Value)
 	// The least length is the most that any of these says: the members, by
 	// the count of those that are provably distinct, the listings beside
-	// them, and a LengthMin. The greatest is the fewer of the members held and
-	// a LengthMax.
+	// them, and a LengthMin. The greatest is the fewest of the members held, a
+	// LengthMax, and the values the element type holds, null among them, since
+	// a set holds each of them once at most.
 	held, count := int64(provablyDistinct(members)), int64(len(members))
+	ceiling := setCeiling(n.typ)
 	var fromListings int64
 	var listed rangeData          // the listings, recorded as a range records them
 	var atLeast, atMost Narrowing // the greatest LengthMin and the least LengthMax
 	least := func() int64 { return max(held, fromListings, atLeast.n) }
 	most := func() int64 {
-		if atMost.kind != 0 && atMost.n < count {
-			return atMost.n
+		m := count
+		if ceiling.set && ceiling.n < m {
+			m = ceiling.n
 		}
-		return count
+		if atMost.kind != 0 && atMost.n < m {
+			m = atMost.n
+		}
+		return m
 	}
 	for _, nw := range ns {
 		switch nw.kind {
@@ -714,8 +721,10 @@ func narrowPartialSet(v Value, ns []Narrowing) Value {
 		}
 		switch {
 		case nw.kind != narrowLengthMax:
-			if most() < count {
-				other = atMost.message()
+			// The greatest length comes from a LengthMax or from the element
+			// type; either reads as the bound it sets.
+			if m := most(); m < count {
+				other = "length <= " + strconv.FormatInt(m, 10)
 			}
 		case held >= least():
 		case fromListings >= least():
@@ -767,8 +776,8 @@ func nestsSet(t Type) bool {
 // singleton returns the one value that r describes, and whether it describes
 // exactly one. A range that has come down to a single value is that value: an
 // unknown that nothing more could ever say is a known value. t is the type of
-// the value whose range r is.
-func (r *rangeData) singleton(t Type) (Value, bool) {
+// the value whose range r is, and ceiling the greatest length it allows.
+func (r *rangeData) singleton(t Type, ceiling lengthBound) (Value, bool) {
 	if r.null == nullOnly {
 		return NullVal(t), true
 	}
@@ -793,6 +802,12 @@ func (r *rangeData) singleton(t Type) (Value, bool) {
 	case KindSet:
 		if r.emptyOnly() {
 			return SetVal(t.t.elem), true
+		}
+		// As many members as the element type has values, null among them,
+		// leaves the set holding every one of them, which is built where
+		// there are few enough of them to build.
+		if ceiling.set && r.lenLo == ceiling.n && ceiling.n <= maxDomainSet {
+			return fullSet(t), true
 		}
 	case KindMap:
 		if r.emptyOnly() {
@@ -865,8 +880,10 @@ func valueText(v Value) string {
 }
 
 // apply narrows r by nw. It reports whether anything is left, and names the
-// narrowing already in force that nw contradicts when nothing is.
-func (r *rangeData) apply(nw Narrowing) (string, bool) {
+// narrowing already in force that nw contradicts when nothing is. ceiling is
+// the greatest length the type allows, which a set over an element type
+// holding few values has (setCeiling).
+func (r *rangeData) apply(nw Narrowing, ceiling lengthBound) (string, bool) {
 	switch nw.kind {
 	case narrowNotNull:
 		if r.null == nullOnly {
@@ -908,27 +925,32 @@ func (r *rangeData) apply(nw Narrowing) (string, bool) {
 			return "prefix " + quoted(r.pfx), false
 		}
 		r.implyLength()
-		if !r.lengthOK() {
-			return r.lengthMaxText(), false
+		if !r.lengthOK(ceiling) {
+			return r.lengthMaxText(ceiling), false
 		}
 	case narrowLengthMin:
 		if nw.n > r.lenLo {
 			r.lenLo = nw.n
 		}
-		if !r.lengthOK() {
-			return r.lengthMaxText(), false
+		if !r.lengthOK(ceiling) {
+			return r.lengthMaxText(ceiling), false
 		}
 	case narrowLengthMax:
+		if ceiling.set && nw.n >= ceiling.n {
+			// The type allows no more than this, so recording it would give
+			// one set of values two spellings.
+			return "", true
+		}
 		if !r.lenHi.set || nw.n < r.lenHi.n {
 			r.lenHi = lengthBound{n: nw.n, set: true}
 		}
-		if !r.lengthOK() {
+		if !r.lengthOK(ceiling) {
 			return r.lengthMinText(), false
 		}
 	case narrowMembers:
 		r.addMembers(nw.members)
-		if !r.lengthOK() {
-			return r.lengthMaxText(), false
+		if !r.lengthOK(ceiling) {
+			return r.lengthMaxText(ceiling), false
 		}
 	}
 	return "", true
@@ -1009,9 +1031,10 @@ func (r *rangeData) implyLength() {
 // numberOK reports whether some number meets both bounds of r.
 func (r *rangeData) numberOK() bool { return !crosses(r.lo, r.hi) }
 
-// lengthOK reports whether some length meets both length bounds of r.
-func (r *rangeData) lengthOK() bool {
-	return !r.lenHi.set || r.lenLo <= r.lenHi.n
+// lengthOK reports whether some length meets both length bounds of r and the
+// ceiling its type sets.
+func (r *rangeData) lengthOK(ceiling lengthBound) bool {
+	return (!r.lenHi.set || r.lenLo <= r.lenHi.n) && (!ceiling.set || r.lenLo <= ceiling.n)
 }
 
 // lengthMinText names the narrowing that forces the least length of r, which
@@ -1026,7 +1049,12 @@ func (r *rangeData) lengthMinText() string {
 	return "length >= " + strconv.FormatInt(r.lenLo, 10)
 }
 
-// lengthMaxText names the narrowing that forces the greatest length of r.
-func (r *rangeData) lengthMaxText() string {
-	return "length <= " + strconv.FormatInt(r.lenHi.n, 10)
+// lengthMaxText names what forces the greatest length of r, which is the
+// ceiling its type sets where that is the lesser.
+func (r *rangeData) lengthMaxText(ceiling lengthBound) string {
+	n := r.lenHi.n
+	if !r.lenHi.set || ceiling.set && ceiling.n < n {
+		n = ceiling.n
+	}
+	return "length <= " + strconv.FormatInt(n, 10)
 }

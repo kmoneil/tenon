@@ -109,9 +109,9 @@ func TestConformance_EQ041_MembersThatAreNotKnownAreKept(t *testing.T) {
 
 func TestConformance_EQ042_TheLengthOfASetHoldingUnknowns(t *testing.T) {
 	conformance.Covers(t, "EQ-042")
-	num, str := tenon.NumberType(), tenon.StringType()
+	num, str, boolType := tenon.NumberType(), tenon.StringType(), tenon.BoolType()
 	n := func(i int64) tenon.Value { return tenon.NumberFromInt(i) }
-	unknown := tenon.Unknown(num)
+	unknown, unknownBool := tenon.Unknown(num), tenon.Unknown(boolType)
 	atLeastFive := tenon.Narrow(tenon.Unknown(num), tenon.NumberMin(n(5), true))
 	for _, tt := range []struct {
 		name string
@@ -149,6 +149,31 @@ func TestConformance_EQ042_TheLengthOfASetHoldingUnknowns(t *testing.T) {
 			"unknown(number, not null, >= 2, <= 5)",
 		},
 		{"a pending value", tenon.Length(tenon.Pending(tenon.Any())), "unknown(number, not null, >= 0)"},
+		// A set holds distinct values of its element type, null among them, so
+		// where that type holds few values they bound the length as well.
+		{
+			"four unknown bools",
+			tenon.Length(tenon.SetVal(boolType, unknownBool, unknownBool, unknownBool, unknownBool)),
+			"unknown(number, not null, >= 1, <= 3)",
+		},
+		{
+			"an unknown set of bools",
+			tenon.Length(tenon.Narrow(tenon.Unknown(tenon.Set(boolType)), tenon.NotNull())),
+			"unknown(number, not null, >= 0, <= 3)",
+		},
+		{
+			"an unknown set of numbers, which has no such bound",
+			tenon.Length(tenon.Narrow(tenon.Unknown(tenon.Set(num)), tenon.NotNull())),
+			"unknown(number, not null, >= 0)",
+		},
+		{
+			// A list holds a value as often as it likes, so what its element
+			// type holds bounds nothing.
+			"an unknown list of bools",
+			tenon.Length(tenon.Narrow(tenon.Unknown(tenon.List(boolType)), tenon.NotNull())),
+			"unknown(number, not null, >= 0)",
+		},
+		{"a list holding four unknown bools", tenon.Length(tenon.ListVal(boolType, unknownBool, unknownBool, unknownBool, unknownBool)), "4"},
 	} {
 		if got := tt.got.String(); got != tt.want {
 			t.Errorf("%s: the length is %s, want %s", tt.name, got, tt.want)
@@ -163,6 +188,8 @@ func TestConformance_EQ042_TheLengthOfASetHoldingUnknowns(t *testing.T) {
 		tenon.SetVal(num, n(1), atLeastFive),
 		tenon.SetVal(num, n(1), atLeastFive, unknown),
 		tenon.SetVal(num, n(1), n(2), unknown, atLeastFive),
+		tenon.SetVal(boolType, unknownBool, unknownBool, unknownBool, unknownBool),
+		tenon.SetVal(boolType, tenon.Bool(true), unknownBool),
 	} {
 		const most = 6
 		var can [most + 1]bool // whether Length allows each length

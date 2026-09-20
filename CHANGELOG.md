@@ -80,6 +80,22 @@
   equality cannot always tell whether a set holding unknowns could turn out
   to be a known one.
 
+- A set is no longer than the values its element type holds, null among them,
+  and `Narrow` and `Length` both say so where that type holds few of them: a
+  set of bools has at most three members, one for each bool and one for null.
+  0.2.0 let a range of such a set ask for more, so
+  `Narrow(Unknown(Set(BoolType())), LengthMin(4))` was an unknown set no value
+  could ever be; it is now a `range.contradiction` (`[UN-001]`, `[UN-004]`).
+  A narrowing that leaves such a set every one of those values, null excluded,
+  gives the set holding them, known, as `[UN-005]` requires, where there are
+  at most 256 of them; above that the range stands, since the values of a type
+  can be far more numerous than the text of the type. A length bound that the
+  element type already sets is not recorded, so one range describes one set of
+  values: `LengthMax(3)` on an unknown set of bools leaves the range as it was.
+  An encoding written by 0.2.0 that records such a bound no longer decodes,
+  since the range it describes is not the one the bytes spell
+  (`serialize.not_canonical`).
+
 ### Changed
 
 - Converting to `Exactly` of a list, set, map, tuple or object type builds

@@ -285,7 +285,7 @@ func (r *rangeData) excludesPartial(n *node) bool {
 		lo = len(n.data.([]mapEntry))
 		hi = lo
 	case KindSet:
-		lo, hi = setLengthBounds(n.data.([]Value))
+		lo, hi = setLengthBounds(n.typ, n.data.([]Value))
 	default:
 		return false
 	}
@@ -343,8 +343,8 @@ func membersDisjoint(a, b *node) bool {
 		return anyDisjoint(a.data.([]Value), b.data.([]Value))
 	case KindSet:
 		x, y := a.data.([]Value), b.data.([]Value)
-		xlo, xhi := setLengthBounds(x)
-		ylo, yhi := setLengthBounds(y)
+		xlo, xhi := setLengthBounds(a.typ, x)
+		ylo, yhi := setLengthBounds(b.typ, y)
 		return xhi < ylo || yhi < xlo || lacksSome(b, x) || lacksSome(a, y)
 	case KindMap:
 		x, y := a.data.([]mapEntry), b.data.([]mapEntry)

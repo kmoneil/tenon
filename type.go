@@ -73,6 +73,12 @@ type typeData struct {
 	// has asked for it. It is derived from the fields above, so it says
 	// nothing new, and every goroutine that builds it builds the same.
 	structure atomic.Pointer[constraintData]
+	// domain holds how many values the type holds, once something has asked:
+	// zero while nothing has, -1 where it holds more than can be counted, and
+	// the count otherwise. Equality asks it of every set it compares, so the
+	// count is kept rather than walked again; like structure, it is derived
+	// from the fields above.
+	domain atomic.Int64
 }
 
 // attribute is one attribute of an object type.

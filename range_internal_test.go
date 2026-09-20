@@ -43,6 +43,19 @@ func TestRangesAreCanonical(t *testing.T) {
 			Narrow(Unknown(str), LengthMax(3)),
 			Narrow(Unknown(str), LengthMax(3), LengthMax(9), LengthMin(0)),
 		},
+		{
+			// A set of bools has at most three members, one for each value
+			// bool holds and one for null, so a greatest length of three says
+			// nothing the type does not.
+			"a length the element type already bounds",
+			Unknown(Set(BoolType())),
+			Narrow(Unknown(Set(BoolType())), LengthMax(3)),
+		},
+		{
+			"a length the element type bounds, under a listing",
+			Narrow(Unknown(Set(BoolType())), Members(Bool(true))),
+			Narrow(Unknown(Set(BoolType())), LengthMax(4), Members(Bool(true))),
+		},
 	} {
 		if a, b := rangeOf(t, tt.a), rangeOf(t, tt.b); !a.equal(b) {
 			t.Errorf("%s: %+v and %+v are not the same range", tt.name, *a, *b)
