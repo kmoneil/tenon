@@ -541,6 +541,9 @@ func count(n int, thing string) string {
 // policy, by the rules of type unification, and whether there is one. It is
 // commutative and associative, so the order of types does not matter.
 func unifyTypes(types []Type, p Policy) (Type, bool) {
+	if len(types) > 1 && allObjects(types) {
+		return unifyObjectTypes(types, p)
+	}
 	u := types[0]
 	for _, t := range types[1:] {
 		var ok bool
@@ -549,6 +552,49 @@ func unifyTypes(types []Type, p Policy) (Type, bool) {
 		}
 	}
 	return u, true
+}
+
+// allObjects reports whether every one of types is an object type.
+func allObjects(types []Type) bool {
+	for _, t := range types {
+		if t.t.kind != KindObject {
+			return false
+		}
+	}
+	return true
+}
+
+// unifyObjectTypes unifies object types in one pass: the union holds every
+// attribute of every type, each the unification of the types that hold that
+// attribute, which is what unifying two at a time gives and what unification
+// being associative promises.
+//
+// Folding builds the union again at every step, so n objects of distinct
+// attributes build and intern n object types, the last of them the answer and
+// the rest of them waste: the work and the memory grow as the square of the
+// number of types where the union grows with it.
+func unifyObjectTypes(types []Type, p Policy) (Type, bool) {
+	names := make([]string, 0, len(types[0].t.attrs))
+	held := map[string][]Type{}
+	for _, t := range types {
+		for _, attr := range t.t.attrs {
+			if _, seen := held[attr.name]; !seen {
+				names = append(names, attr.name)
+			}
+			held[attr.name] = append(held[attr.name], attr.typ)
+		}
+	}
+	attrs := make(map[string]Type, len(names))
+	// In the order the names were met, so that nothing turns on the order a
+	// Go map iterates in.
+	for _, name := range names {
+		u, ok := unifyTypes(held[name], p)
+		if !ok {
+			return Type{}, false
+		}
+		attrs[name] = u
+	}
+	return Object(attrs), true
 }
 
 // unifyTwo unifies two types.

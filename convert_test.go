@@ -1,6 +1,7 @@
 package tenon_test
 
 import (
+	"fmt"
 	"math/rand"
 	"slices"
 	"strings"
@@ -780,6 +781,78 @@ func TestConformance_CV044_TypesUnify(t *testing.T) {
 	}
 }
 
+// TestConformance_CV044_ObjectsUnifyAttributeByAttribute holds the union of
+// object types to the attributes the types hold rather than to the order they
+// are unified in: every attribute of every type is in it, each the unification
+// of the types that hold that attribute, and every value fitted to it keeps
+// its own attributes and gains a null for the rest.
+func TestConformance_CV044_ObjectsUnifyAttributeByAttribute(t *testing.T) {
+	conformance.Covers(t, "CV-044", "CV-041", "CV-021")
+	list := tenon.ListOf(tenon.Any())
+	// Names that interleave: one object holds the second attribute alone,
+	// one the first and third, one the last, and one of them all.
+	members := []tenon.Value{
+		obj(map[string]tenon.Value{"b": n(1)}),
+		obj(map[string]tenon.Value{"a": s("x"), "c": tenon.Bool(true)}),
+		obj(map[string]tenon.Value{"d": n(2)}),
+		obj(map[string]tenon.Value{"a": s("y"), "b": n(3), "c": tenon.Bool(false), "d": n(4)}),
+	}
+	union := tenon.Object(map[string]tenon.Type{"a": str, "b": num, "c": boo, "d": num})
+	null := func(t tenon.Type) tenon.Value { return tenon.NullVal(t) }
+	want := tenon.ListVal(union,
+		obj(map[string]tenon.Value{"a": null(str), "b": n(1), "c": null(boo), "d": null(num)}),
+		obj(map[string]tenon.Value{"a": s("x"), "b": null(num), "c": tenon.Bool(true), "d": null(num)}),
+		obj(map[string]tenon.Value{"a": null(str), "b": null(num), "c": null(boo), "d": n(2)}),
+		obj(map[string]tenon.Value{"a": s("y"), "b": n(3), "c": tenon.Bool(false), "d": n(4)}),
+	)
+	wantValue(t, "objects whose names interleave", tenon.Convert(tenon.TupleVal(members...), list, safe), want)
+
+	// An attribute that several hold unifies as its own types do, at any
+	// depth, and the union does not depend on the order they are met in.
+	nested := []tenon.Value{
+		obj(map[string]tenon.Value{"x": obj(map[string]tenon.Value{"p": n(1)})}),
+		obj(map[string]tenon.Value{"x": obj(map[string]tenon.Value{"q": s("a")}), "y": n(2)}),
+		obj(map[string]tenon.Value{"x": obj(map[string]tenon.Value{"p": n(3), "r": tenon.Bool(true)})}),
+	}
+	inner := tenon.Object(map[string]tenon.Type{"p": num, "q": str, "r": boo})
+	outer := tenon.Object(map[string]tenon.Type{"x": inner, "y": num})
+	for _, tt := range []struct {
+		name string
+		vals []tenon.Value
+		want tenon.Type
+	}{
+		{"objects whose names interleave", members, union},
+		{"objects holding objects", nested, outer},
+	} {
+		for _, perm := range permutations(len(tt.vals)) {
+			elems := make([]tenon.Value, len(tt.vals))
+			for i, j := range perm {
+				elems[i] = tt.vals[j]
+			}
+			r := tenon.Convert(tenon.TupleVal(elems...), list, safe)
+			if r.IsError() || r.Type() != tenon.List(tt.want) {
+				t.Errorf("%s in the order %v gave %v, want a list of %v", tt.name, perm, r, tt.want)
+			}
+		}
+	}
+
+	// Attributes that do not unify fail, whichever object holds them and
+	// however many do not.
+	clash := []tenon.Value{
+		obj(map[string]tenon.Value{"a": n(1)}),
+		obj(map[string]tenon.Value{"b": n(2)}),
+		obj(map[string]tenon.Value{"a": tenon.ListVal(num)}),
+	}
+	for _, perm := range permutations(len(clash)) {
+		elems := make([]tenon.Value, len(clash))
+		for i, j := range perm {
+			elems[i] = clash[j]
+		}
+		wantErrors(t, "an attribute of two kinds", tenon.Convert(tenon.TupleVal(elems...), list, safe),
+			wantDiag{tenon.CodeConvertNoCommonType, "."})
+	}
+}
+
 // permutations returns every ordering of 0 to n-1.
 func permutations(n int) [][]int {
 	if n == 0 {
@@ -1249,5 +1322,48 @@ func TestConformance_CV033_FailuresCarryOnlyTheMarksTheyRead(t *testing.T) {
 	// A member read and placed in the set gives the set its mark.
 	if got := tenon.Convert(list, tenon.SetOf(tenon.Any()), uns); got.IsError() || !tenon.HasMark(got, prop) {
 		t.Errorf("a member converted into a set gave %v, want a set carrying its mark", got)
+	}
+}
+
+// BenchmarkObjectUnions measures converting objects of distinct attribute
+// names, and nulls of such object types, to a list of anything: their element
+// type is the object type holding every attribute of every member. Each is
+// measured at a size and four times it, the growth from one to the other
+// being the reading, not the wall clock. The objects themselves grow as the
+// square of their number, each holding every attribute, where the nulls do
+// not: one null of the union is one value.
+func BenchmarkObjectUnions(b *testing.B) {
+	oneAttribute := func(i int) tenon.Value {
+		return tenon.ObjectVal(map[string]tenon.Value{fmt.Sprintf("a%05d", i): n(int64(i))})
+	}
+	for _, size := range []int{500, 2000} {
+		members := make([]tenon.Value, size)
+		for i := range members {
+			members[i] = oneAttribute(i)
+		}
+		v := tenon.TupleVal(members...)
+		b.Run(fmt.Sprintf("objects/%d", size), func(b *testing.B) {
+			b.ReportAllocs()
+			for b.Loop() {
+				if got := tenon.Convert(v, tenon.ListOf(tenon.Any()), tenon.Unsafe); got.IsError() {
+					b.Fatalf("the tuple did not convert: %v", got)
+				}
+			}
+		})
+	}
+	for _, size := range []int{2000, 8000} {
+		members := make([]tenon.Value, size)
+		for i := range members {
+			members[i] = tenon.NullVal(oneAttribute(i).Type())
+		}
+		v := tenon.TupleVal(members...)
+		b.Run(fmt.Sprintf("nulls/%d", size), func(b *testing.B) {
+			b.ReportAllocs()
+			for b.Loop() {
+				if got := tenon.Convert(v, tenon.ListOf(tenon.Any()), tenon.Unsafe); got.IsError() {
+					b.Fatalf("the tuple did not convert: %v", got)
+				}
+			}
+		})
 	}
 }

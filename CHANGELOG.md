@@ -158,6 +158,19 @@
   projection itself, in bytes and in diagnostics, is what it was, and so is
   the memory it takes.
 
+- Unifying object types, which converting a collection to `ListOf`, `SetOf`
+  or `MapOf` does over its members, builds the union in one pass: it holds
+  every attribute of every type, each the unification of the types that hold
+  that attribute. Unifying two at a time built the union again for every type
+  after the first, and fitting each member to it gathered another map per
+  member and interned the type they all share again. Converting a tuple of
+  2,000 objects of distinct attributes to a list of anything takes 162
+  milliseconds and 216 MiB where 0.2.0 took 2.6 seconds and 2.2 GiB, and
+  8,000 nulls of such object types take 5.9 milliseconds and 6 MiB where they
+  took 10 seconds and 7.8 GiB. The objects still grow as the square of their
+  number, since each of them gains every attribute of all of them, but the
+  memory now grows with that output rather than faster than it.
+
 - `conformance/matrix` reports a `UN-023` violation where an operation answers
   a pending operand that can only be of a type it rejects without an
   `operation.wrong_type` diagnostic. For each operand position it builds

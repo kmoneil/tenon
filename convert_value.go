@@ -706,18 +706,26 @@ func (x converter) fitKnown(m Value, e Type) Value {
 		}
 		return TupleVal(fitted...)
 	case KindObject:
-		attrs := make(map[string]Value, len(to.attrs))
-		for i, name := range h.names {
-			attrs[name] = h.vals[i]
-		}
-		for _, a := range to.attrs {
-			if v, ok := attrs[a.name]; ok {
-				attrs[a.name] = x.fit(v, a.typ)
-			} else {
-				attrs[a.name] = NullVal(a.typ)
+		// The type names the attributes and their order, and the value's own
+		// attributes are in that order too, both being sorted by name, so
+		// the two are walked together and the value is built by the type.
+		// Gathering a map of every attribute instead, and interning the type
+		// it describes, would cost each of n objects fitted to a type of n
+		// attributes another copy of a type they all share.
+		vals := make([]Value, len(to.attrs))
+		own := 0
+		for i, a := range to.attrs {
+			for own < len(h.names) && h.names[own] < a.name {
+				own++
 			}
+			if own < len(h.names) && h.names[own] == a.name {
+				vals[i] = x.fit(h.vals[own], a.typ)
+				own++
+				continue
+			}
+			vals[i] = NullVal(a.typ)
 		}
-		return ObjectVal(attrs)
+		return objectOf(e, vals)
 	}
 	internalPanic("fit called with %s for %s", e, n.describe())
 	return Value{}

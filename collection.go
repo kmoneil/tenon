@@ -189,6 +189,21 @@ func ObjectVal(attrs map[string]Value) Value {
 	return Value{&node{state: stateKnown, partial: anyPartial(vals), markedWithin: anyMarked(vals), typ: Object(types), data: vals}}
 }
 
+// objectOf returns the object value of type t holding vals, one per attribute
+// of t in its order. It is for a caller that has the type and the values it
+// asks for already, where ObjectVal takes a map, normalizes its names, orders
+// them and interns the type they describe, all of which t settles. Since no
+// container holds an error value, and nothing here would locate one, a caller
+// that has not settled its values first is a mistake in this package.
+func objectOf(t Type, vals []Value) Value {
+	for i, v := range vals {
+		if isError(v) {
+			internalPanic("objectOf: attribute %q of %s is an error value", t.t.attrs[i].name, t)
+		}
+	}
+	return Value{&node{state: stateKnown, partial: anyPartial(vals), markedWithin: anyMarked(vals), typ: t, data: vals}}
+}
+
 // distinctMembers returns the members of a set: members that equality reports
 // the same are one member, and the first of them is the one kept. Known members
 // are looked up by hash, and the rest are compared against everything kept,
