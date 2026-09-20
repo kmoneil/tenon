@@ -137,6 +137,17 @@
   than before. Members that are not known are still compared with one another,
   which is what telling those apart takes.
 
+- Serializing a value that carries deep marks settles what each mark set
+  under it lists for itself once, against the marks its container implies
+  held as a set, rather than testing every mark on every value against them
+  one by one and computing the deep marks of every known value it meets,
+  containers and numbers alike. A list of 1,000 numbers under 400 distinct
+  deep marks with payloads, a document of 10,634 bytes, serializes in 236
+  microseconds where 0.2.0 took 0.72 seconds and deserializes in 1.4
+  milliseconds where it took 0.68 seconds, in a sixtieth and a thirtieth of
+  the memory. Deserializing pays what serializing pays, since it encodes the
+  value it decoded to check that the input is that value's encoding.
+
 - `conformance/matrix` reports a `UN-023` violation where an operation answers
   a pending operand that can only be of a type it rejects without an
   `operation.wrong_type` diagnostic. For each operand position it builds

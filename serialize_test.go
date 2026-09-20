@@ -3,6 +3,7 @@ package tenon_test
 import (
 	"bytes"
 	"encoding/hex"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -228,6 +229,77 @@ func TestConformance_SE031_Marks(t *testing.T) {
 	wantEncoding(t, "a deep mark on a set", tenon.WithMarks(tenon.SetVal(num, n(1)), deep), "83 00 82 05 02 da74656e02 82 81 01 81 81 6164")
 }
 
+// deepCount is a deep mark that counts how often it is asked whether it is
+// deep. The count is shared, so two of them with one identifier are one mark.
+type deepCount struct {
+	id    string
+	asked *int
+}
+
+func (m deepCount) MarkID() string                 { return m.id }
+func (deepCount) Propagation() tenon.Propagation   { return tenon.Propagate }
+func (deepCount) Redacting() bool                  { return false }
+func (m deepCount) Deep() bool                     { *m.asked++; return true }
+func (deepCount) MarkPayload() (tenon.Value, bool) { return tenon.Value{}, false }
+
+// TestConformance_SE031_DeepMarksAreDecidedOncePerMarkSet holds the work of
+// leaving a container's deep marks off the values it holds to the mark sets
+// they carry rather than to the values themselves: the values a container
+// holds share the set the deep marks were attached to them through, so the
+// encoder asks about that set once. A mark counts what it is asked.
+func TestConformance_SE031_DeepMarksAreDecidedOncePerMarkSet(t *testing.T) {
+	conformance.Covers(t, "SE-031", "MK-008", "SE-003")
+	asked := 0
+	marks := make([]tenon.Mark, 4)
+	read := tenon.Decoders{Marks: map[string]tenon.MarkDecoder{}}
+	for i := range marks {
+		m := deepCount{id: fmt.Sprintf("d%d", i), asked: &asked}
+		marks[i] = m
+		read.Marks[m.id] = func(tenon.Value, bool) (tenon.Mark, []tenon.Diagnostic) { return m, nil }
+	}
+	// asking returns how often serializing a list of that many numbers under
+	// the marks asks a mark whether it is deep.
+	asking := func(members int) int {
+		held := make([]tenon.Value, members)
+		for i := range held {
+			held[i] = n(int64(i))
+		}
+		v := tenon.WithMarks(tenon.ListVal(num, held...), marks...)
+		asked = 0
+		b, failure, ok := tenon.Serialize(v)
+		if !ok {
+			t.Fatalf("Serialize(a list of %d members under %d deep marks) failed: %v", members, len(marks), failure)
+		}
+		count := asked
+		if got, _, ok := tenon.Deserialize(b, read); !ok || !tenon.Identical(got, v) {
+			t.Errorf("a list of %d members under %d deep marks came back as %v", members, len(marks), got)
+		}
+		return count
+	}
+	// v0.1.0 asked twice per member per mark: 40 questions of a list of four
+	// and 2,056 of one of 256.
+	if small, large := asking(4), asking(256); small != large {
+		t.Errorf("serializing a list of 4 members under %d deep marks asks %d times whether a mark is deep, and one of 256 members asks %d: the question is not settled once per mark set",
+			len(marks), small, large)
+	}
+	// What a mark set lists is settled against the marks the container
+	// implies, not against the set alone: one value carrying both marks
+	// lists the one its container does not imply, which is a different mark
+	// under each of these two lists.
+	held := tenon.WithMarks(n(1), marks[0], marks[1])
+	pair := tenon.TupleVal(
+		tenon.WithMarks(tenon.ListVal(num, held), marks[0]),
+		tenon.WithMarks(tenon.ListVal(num, held), marks[1]),
+	)
+	b, failure, ok := tenon.Serialize(pair)
+	if !ok {
+		t.Fatalf("Serialize(%v) failed: %v", pair, failure)
+	}
+	if got, _, ok := tenon.Deserialize(b, read); !ok || !tenon.Identical(got, pair) {
+		t.Errorf("two lists whose deep marks differ, both holding one value, came back as %v", got)
+	}
+}
+
 func TestConformance_SE040_Capsules(t *testing.T) {
 	conformance.Covers(t, "SE-040", "SE-042", "SE-050")
 	wantEncoding(t, "a capsule type in a constraint", tenon.Pending(is(degrees)), "83 01 82 01 82 09 63 742f63 00")
@@ -380,5 +452,54 @@ func TestConformance_SE001_OneValueOneEncoding(t *testing.T) {
 		if !bytes.Equal(a, b) {
 			t.Errorf("%v and %v encode as %x and %x", pair[0], pair[1], a, b)
 		}
+	}
+}
+
+// deepNote is a deep mark serialized with a string payload.
+type deepNote struct{ id, text string }
+
+func (m deepNote) MarkID() string                   { return m.id }
+func (deepNote) Propagation() tenon.Propagation     { return tenon.Propagate }
+func (deepNote) Redacting() bool                    { return false }
+func (deepNote) Deep() bool                         { return true }
+func (m deepNote) MarkPayload() (tenon.Value, bool) { return tenon.String(m.text), true }
+
+// BenchmarkDeepMarkEncoding measures serializing and deserializing a list of a
+// thousand numbers under d distinct deep marks, at a count and four times it:
+// the growth from one to the other is the reading, not the wall clock.
+func BenchmarkDeepMarkEncoding(b *testing.B) {
+	for _, d := range []int{100, 400} {
+		marks := make([]tenon.Mark, d)
+		read := tenon.Decoders{Marks: map[string]tenon.MarkDecoder{}}
+		for i := range marks {
+			m := deepNote{id: fmt.Sprintf("m%04d", i), text: fmt.Sprintf("payload %d", i)}
+			marks[i] = m
+			read.Marks[m.id] = func(tenon.Value, bool) (tenon.Mark, []tenon.Diagnostic) { return m, nil }
+		}
+		members := make([]tenon.Value, 1000)
+		for i := range members {
+			members[i] = tenon.NumberFromInt(int64(i))
+		}
+		v := tenon.WithMarks(tenon.ListVal(tenon.NumberType(), members...), marks...)
+		encoded, failure, ok := tenon.Serialize(v)
+		if !ok {
+			b.Fatalf("Serialize(a list under %d deep marks) failed: %v", d, failure)
+		}
+		b.Run(fmt.Sprintf("serialize/%d", d), func(b *testing.B) {
+			b.ReportAllocs()
+			for b.Loop() {
+				if _, _, ok := tenon.Serialize(v); !ok {
+					b.Fatal("the value did not serialize")
+				}
+			}
+		})
+		b.Run(fmt.Sprintf("deserialize/%d", d), func(b *testing.B) {
+			b.ReportAllocs()
+			for b.Loop() {
+				if _, _, ok := tenon.Deserialize(encoded, read); !ok {
+					b.Fatal("the document did not decode")
+				}
+			}
+		})
 	}
 }

@@ -48,7 +48,7 @@ const (
 // serialize alike.
 func Serialize(v Value) ([]byte, Value, bool) {
 	v.data()
-	e := &encoder{ids: map[string]Type{}}
+	e := &encoder{ids: map[string]Type{}, implied: map[*markSet]*impliedMarks{}}
 	body := e.item(nil, v)
 	if failure, failed := e.errs.value(); failed {
 		return nil, failure, false
@@ -64,6 +64,9 @@ type encoder struct {
 	errs containerErrors
 	// ids holds the capsule identifiers met so far, and the type using each.
 	ids map[string]Type
+	// implied holds what each mark set met on a container implies on the
+	// values it holds, or nil where it implies nothing.
+	implied map[*markSet]*impliedMarks
 	// failures counts the calls to fail. It is not len(errs.diags), which
 	// records one diagnostic however many times an identical one arrives, and
 	// payloads that fail alike fail with the same message at the same path.
@@ -229,17 +232,77 @@ func (e *encoder) constraint(b []byte, c Constraint, p Path) []byte {
 	return b
 }
 
-// content appends the content of the resolved value v, which p locates. The
-// value is held by a container carrying the deep marks implied, which v carries
-// because the container does, and which are therefore not listed on v.
-func (e *encoder) content(b []byte, v Value, p Path, implied []Mark) []byte {
-	var own []Mark
-	for _, m := range v.n.markList() {
-		if !isDeep(m) || !slices.Contains(implied, m) {
-			own = append(own, m)
-		}
+// impliedMarks is what a container carrying deep marks implies on the values
+// it holds: they carry those marks because the container does, so [SE-031]
+// does not list them again. The marks a value lists for itself follow from
+// the mark set it holds, so they are decided once per set rather than once
+// per value: a container's members commonly share one set, the one the deep
+// marks were attached to them through.
+type impliedMarks struct {
+	deep map[Mark]bool       // the container's deep marks
+	own  map[*markSet][]Mark // what a value holding that set lists for itself
+}
+
+// listed returns the marks a value holding held lists for itself, which are
+// those the container does not imply on it. The result is read, never
+// appended to: it is often held's own list, which the mark set shares.
+func (im *impliedMarks) listed(held *markSet) []Mark {
+	if own, ok := im.own[held]; ok {
+		return own
 	}
-	if own == nil {
+	own := held.list
+	for i, m := range held.list {
+		if !im.deep[m] {
+			continue
+		}
+		own = slices.Clone(held.list[:i:i])
+		for _, m := range held.list[i+1:] {
+			if !im.deep[m] {
+				own = append(own, m)
+			}
+		}
+		break
+	}
+	if im.own == nil {
+		im.own = map[*markSet][]Mark{}
+	}
+	im.own[held] = own
+	return own
+}
+
+// implies returns what a container carrying the marks in ms implies on the
+// values it holds, or nil where it implies nothing. Containers that carry the
+// same marks share one answer, which holds what the values under them list.
+func (e *encoder) implies(ms *markSet) *impliedMarks {
+	if ms == nil {
+		return nil
+	}
+	if im, ok := e.implied[ms]; ok {
+		return im
+	}
+	var im *impliedMarks
+	for _, m := range ms.list {
+		if !isDeep(m) {
+			continue
+		}
+		if im == nil {
+			im = &impliedMarks{deep: map[Mark]bool{}}
+		}
+		im.deep[m] = true
+	}
+	e.implied[ms] = im
+	return im
+}
+
+// content appends the content of the resolved value v, which p locates. The
+// value is held by a container implying deep marks on it, which v carries
+// because the container does, and which are therefore not listed on v.
+func (e *encoder) content(b []byte, v Value, p Path, implied *impliedMarks) []byte {
+	own := v.n.markList()
+	if own != nil && implied != nil {
+		own = implied.listed(v.n.marks)
+	}
+	if len(own) == 0 {
 		return e.bare(b, v, p)
 	}
 	b = cbor.AppendTag(b, tagMarked)
@@ -258,7 +321,6 @@ func (e *encoder) bare(b []byte, v Value, p Path) []byte {
 		b = cbor.AppendTag(b, tagUnknown)
 		return e.rng(b, n.data.(*rangeData), p)
 	}
-	deep := deepMarks(n.markList())
 	switch n.typ.t.kind {
 	case KindBool:
 		return cbor.AppendBool(b, n.data.(bool))
@@ -268,28 +330,33 @@ func (e *encoder) bare(b []byte, v Value, p Path) []byte {
 		return cbor.AppendText(b, n.data.(string))
 	case KindList, KindTuple:
 		members := n.data.([]Value)
+		implied := e.implies(n.marks)
 		b = cbor.AppendArray(b, len(members))
 		for i, m := range members {
-			b = e.content(b, m, p.extend(indexStep(NumberFromInt(int64(i)))), deep)
+			b = e.content(b, m, p.extend(indexStep(NumberFromInt(int64(i)))), implied)
 		}
 		return b
 	case KindSet:
+		// The members of a set carry no marks in storage ([MK-006]), so a
+		// deep mark on the set implies nothing on them: it stays on the set.
 		members := n.data.([]Value)
 		return e.members(b, members, func(i int) Path { return p.extend(indexStep(NumberFromInt(int64(i)))) })
 	case KindMap:
 		entries := n.data.([]mapEntry)
+		implied := e.implies(n.marks)
 		b = cbor.AppendArray(b, len(entries))
 		for _, entry := range entries {
 			b = cbor.AppendArray(b, 2)
 			b = cbor.AppendText(b, entry.key)
-			b = e.content(b, entry.val, p.extend(indexStep(String(entry.key))), deep)
+			b = e.content(b, entry.val, p.extend(indexStep(String(entry.key))), implied)
 		}
 		return b
 	case KindObject:
 		attrs := n.data.([]Value)
+		implied := e.implies(n.marks)
 		b = cbor.AppendArray(b, len(attrs))
 		for i, m := range attrs {
-			b = e.content(b, m, p.extend(attributeStep(n.typ.t.attrs[i].name)), deep)
+			b = e.content(b, m, p.extend(attributeStep(n.typ.t.attrs[i].name)), implied)
 		}
 		return b
 	}
