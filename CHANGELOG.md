@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+### Added
+
+- Documentation a consumer can start from. The package doc is a tour of the
+  package in thirteen sections, each naming the API to look at next, where it
+  was a definition and a note about Unicode. Nineteen examples in the root
+  package and four in `gotenon` show the API a consumer meets first and build
+  the use cases the README claims: a validation layer over untrusted JSON, a
+  plugin protocol across a process boundary, a plan engine that shows a
+  secret changing without showing the secret, and the value layer of a
+  configuration language. The README opens with a program and its output
+  rather than three claims. Each of these is held to the code by a test: the
+  package doc's links must name symbols that exist, the README's code must
+  be a line-for-line copy of an example the suite runs, and every example's
+  output is the output it gave, so documentation that drifts fails the gate
+  rather than the reader.
+
 ### Fixed
 
 - An operation given a pending operand that can only be of a type it rejects
