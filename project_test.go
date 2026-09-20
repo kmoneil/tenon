@@ -2,11 +2,14 @@ package tenon_test
 
 import (
 	"encoding/json"
+	"fmt"
+	"slices"
 	"strings"
 	"testing"
 
 	"github.com/kmoneil/tenon"
 	"github.com/kmoneil/tenon/conformance"
+	"github.com/kmoneil/tenon/conformance/values"
 )
 
 // wantProjection fails t unless v projects to want.
@@ -117,4 +120,77 @@ func TestConformance_SE061_WhatDoesNotProject(t *testing.T) {
 		t.Errorf("projecting an error value gave %v", got)
 	}
 	mustPanicUsage(t, "use of the zero Value", func() { tenon.ProjectJSON(tenon.Value{}) })
+}
+
+// TestConformance_SE061_EveryDiagnosticHasItsOwnPath holds the projection to
+// one diagnostic per member that fails, each at the path of the member that
+// failed: the projector visits each path once and fails at most once there,
+// which is why it records what it finds rather than looking for a duplicate
+// of it first.
+func TestConformance_SE061_EveryDiagnosticHasItsOwnPath(t *testing.T) {
+	conformance.Covers(t, "SE-061")
+	secret := stamp{id: "secret", redact: true}
+	unknown := tenon.Unknown(num)
+	// One value, held in many places: each place fails for itself.
+	v := obj(map[string]tenon.Value{
+		"a": tenon.ListVal(num, unknown, n(1), unknown),
+		"b": tenon.MapVal(num, map[string]tenon.Value{"a": unknown, "b": unknown}),
+		"c": tenon.WithMarks(s("hunter2"), secret),
+		"d": unknown,
+	})
+	_, failure, ok := tenon.ProjectJSON(v)
+	if ok {
+		t.Fatalf("ProjectJSON(%v) succeeded", v)
+	}
+	diags := failure.Diagnostics()
+	var paths []string
+	for _, d := range diags {
+		paths = append(paths, d.Path.String())
+	}
+	want := []string{".a[0]", ".a[2]", `.b["a"]`, `.b["b"]`, ".c", ".d"}
+	if !slices.Equal(paths, want) {
+		t.Errorf("ProjectJSON(%v) failed at %v, want %v", v, paths, want)
+	}
+	wantDistinct(t, "the object above", diags)
+	// Nothing in the corpus projects one diagnostic twice either. An error
+	// value is given back as it is, diagnostics and all, so it says nothing
+	// about what the projector records.
+	for _, v := range values.All() {
+		if _, failure, ok := tenon.ProjectJSON(v); !ok && !v.IsError() {
+			wantDistinct(t, v.String(), failure.Diagnostics())
+		}
+	}
+}
+
+// wantDistinct fails t unless no two of the diagnostics are the same.
+func wantDistinct(t *testing.T, what string, diags []tenon.Diagnostic) {
+	t.Helper()
+	for i, d := range diags {
+		for j, e := range diags {
+			if i != j && d.Equal(e) {
+				t.Errorf("%s: diagnostics %d and %d are the same: %v", what, i, j, d)
+			}
+		}
+	}
+}
+
+// BenchmarkProjectJSON measures projecting a list of unknowns, none of which
+// projects, at a size and four times it: the growth from one to the other is
+// the reading, not the wall clock.
+func BenchmarkProjectJSON(b *testing.B) {
+	for _, size := range []int{5000, 20000} {
+		members := make([]tenon.Value, size)
+		for i := range members {
+			members[i] = tenon.Unknown(num)
+		}
+		v := tenon.ListVal(num, members...)
+		b.Run(fmt.Sprintf("unknowns/%d", size), func(b *testing.B) {
+			b.ReportAllocs()
+			for b.Loop() {
+				if _, _, ok := tenon.ProjectJSON(v); ok {
+					b.Fatal("the value projected")
+				}
+			}
+		})
+	}
 }

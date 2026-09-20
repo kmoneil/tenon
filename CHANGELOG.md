@@ -148,6 +148,16 @@
   the memory. Deserializing pays what serializing pays, since it encodes the
   value it decoded to check that the input is that value's encoding.
 
+- `ProjectJSON` records the diagnostic of each member that does not project
+  as it meets it, rather than scanning the diagnostics it has recorded for
+  one equal to it first. It visits each path once and fails at most once
+  there, so no two of them can be equal; a container under construction,
+  which can meet one diagnostic on many members, still looks. Projecting a
+  list of 20,000 unknowns takes 5.8 milliseconds where 0.2.0 took 2.78
+  seconds, and 5,000 take 1.3 milliseconds where they took 165. The
+  projection itself, in bytes and in diagnostics, is what it was, and so is
+  the memory it takes.
+
 - `conformance/matrix` reports a `UN-023` violation where an operation answers
   a pending operand that can only be of a type it rejects without an
   `operation.wrong_type` diagnostic. For each operand position it builds
