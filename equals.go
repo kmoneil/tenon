@@ -342,6 +342,16 @@ func membersDisjoint(a, b *node) bool {
 		// The type fixes how many there are and what order they are in.
 		return anyDisjoint(a.data.([]Value), b.data.([]Value))
 	case KindSet:
+		// One of the two holds members that are not known, two known sets
+		// having been settled by their values already. Where the other is
+		// known, the matching decides it: its members must be what the members
+		// of the one could turn out to be, each its own.
+		switch {
+		case !a.partial:
+			return !couldEqual(a, b)
+		case !b.partial:
+			return !couldEqual(b, a)
+		}
 		x, y := a.data.([]Value), b.data.([]Value)
 		xlo, xhi := setLengthBounds(a.typ, x)
 		ylo, yhi := setLengthBounds(b.typ, y)

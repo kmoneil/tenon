@@ -96,6 +96,20 @@
   since the range it describes is not the one the bytes spell
   (`serialize.not_canonical`).
 
+- A set holding members that are not known is held to what its members can be,
+  one member apiece, since one member is one value. `Equals` of a known set and
+  such a set is false where no way of resolving the members gives that set, as
+  it is for `{1, 2, 3, 4}` against a set of three members between 1 and 2 and
+  one between 3 and 4, whose one member between 3 and 4 would have to be both 3
+  and 4 (`[EQ-003]`). Narrowing such a set by `Members` is a
+  `range.contradiction` where the listed values the set does not hold cannot
+  each be given a member of their own (`[UN-004]`), and where the lengths leave
+  it no more members than the values it must hold, the result is the known set
+  of those (`[UN-005]`): `Members` of 1 and 2 on a set of two unknown numbers
+  is the set of 1 and 2, and a set of three unknown bools narrowed to a length
+  of three is the set of every bool. 0.2.0 answered an unknown Bool and left
+  the set as it was in each of those.
+
 ### Changed
 
 - Converting to `Exactly` of a list, set, map, tuple or object type builds

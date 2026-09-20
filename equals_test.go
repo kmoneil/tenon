@@ -297,6 +297,27 @@ func TestConformance_EQ003_EqualsWithAnOperandThatIsNotKnown(t *testing.T) {
 			tenon.SetVal(num, n(1), tenon.Unknown(num)),
 			"unknown(bool, not null)",
 		},
+		// A set holding unknowns is a known set only if its members can be
+		// that set's members, each its own: the three members between 1 and 2
+		// leave the one between 3 and 4 to be both 3 and 4.
+		{
+			"a known set no member could be twice over",
+			tenon.SetVal(num, n(1), n(2), n(3), n(4)),
+			tenon.SetVal(num, notNull(between(1, 2)), notNull(between(1, 2)), notNull(between(1, 2)), notNull(between(3, 4))),
+			"false",
+		},
+		{
+			"a known set the members can cover between them",
+			tenon.SetVal(num, n(1), n(2)),
+			tenon.SetVal(num, notNull(between(1, 2)), notNull(between(1, 2))),
+			"unknown(bool, not null)",
+		},
+		{
+			"a known set with a member that no member of the other could be",
+			tenon.SetVal(num, n(1), n(2)),
+			tenon.SetVal(num, notNull(between(1, 2)), notNull(between(5, 9))),
+			"false",
+		},
 	} {
 		if got := tenon.Equals(tt.a, tt.b).String(); got != tt.want {
 			t.Errorf("%s: %v equals %v is %s, want %s", tt.name, tt.a, tt.b, got, tt.want)
