@@ -24,6 +24,7 @@ const (
 	CodeEncodeInexact               Code = "encode.inexact"
 	CodeEncodeMarshalFailed         Code = "encode.marshal_failed"
 	CodeEncodeNotANumber            Code = "encode.not_a_number"
+	CodeEncodeUntypedNil            Code = "encode.untyped_nil"
 	CodeMapDuplicateKey             Code = "map.duplicate_key"
 	CodeNumberDivideByZero          Code = "number.divide_by_zero"
 	CodeNumberInvalidSyntax         Code = "number.invalid_syntax"
