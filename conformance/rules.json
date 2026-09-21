@@ -1,5 +1,5 @@
 {
-  "version": "0.1.0",
+  "version": "0.2.0",
   "rules": [
     {"id":"TY-001","area":"TY","withdrawn":false,"outline":false},
     {"id":"TY-002","area":"TY","withdrawn":false,"outline":false},

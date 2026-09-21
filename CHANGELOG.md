@@ -1,6 +1,44 @@
 # Changelog
 
-## Unreleased
+## 0.3.0 (2026-09-21)
+
+Most of what the 0.1.0 audit found that did not wait on a decision: answers
+the rules did not allow, and work that grew faster than its input. Beside
+those, documentation a consumer can start from, and data whose types a Go
+program does not know. It implements version 0.2.0 of the tenon
+specification, which amends
+`TY-017`, `UN-005`, `EQ-041` and `EQ-042`, and adds `GO-015` and `GO-034`,
+amending `GO-010` and `GO-011` with them: 194 rules where 0.1.0 had 192.
+
+The minor version moves rather than the patch because two changes break a
+0.2.0 user. `gotenon` encodes a `json.Number` as the Number its text spells,
+where 0.2.0 gave a String, and a few encodings 0.2.0 wrote no longer decode.
+
+**Upgrading from 0.2.0.** Documents 0.2.0 wrote still decode, with two
+exceptions, both over sets whose element type holds at most 256 values, as a
+set of bools does: a range recording a length bound the element type already
+sets, and a set holding a member that is not known where its other members
+leave it nothing to be. Both now fail with `serialize.not_canonical`, since
+the value such bytes describe is spelled differently now. `gotenon` decodes a
+`json.Number` from a Number, as it encodes one. Where an operand is not
+known, `Mul`, `Div`, `Mod` and `LessThan` now give bounds and answers where
+0.2.0 gave a bare unknown, and a factor of zero gives a known zero, so the
+values they compute, and the encodings of those values, move; nothing moves
+where every operand is known. One diagnostic code is added,
+`encode.untyped_nil`, and some inputs are reported under a different code
+than 0.2.0 gave: `operation.wrong_type` for a pending operand of a type the
+operation rejects, where 0.2.0 answered an unknown, `convert.unexpected_attribute`
+where a constraint admits one type and `Exactly` of that type reports it,
+where 0.2.0 gave `convert.no_conversion`, and `map.duplicate_key` for keys that
+normalize alike beside an error element. Encoding a value of an interface type
+no longer panics; one that holds itself is refused as a usage error.
+
+**What `CONFORMANCE.md` still overstates.** It reports 194 of 194, and every
+rule does have a passing test, but for these the test exercises a narrower
+case than the rule states, as the audit found. This release closes `UN-023`,
+`CV-026`, `MK-005` and `TY-017`. Still outstanding: `UN-004` and `UN-005`
+(what a narrowing leaves when only null remains) and `DI-011` (path keys that
+carry marks), each waiting on a decision about what the rule should say.
 
 ### Added
 
