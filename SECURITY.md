@@ -20,12 +20,18 @@ of them is a vulnerability:
 - A value carrying a redacting mark never shows its contents in a display
   form, a diagnostic message or a JSON projection, nor in anything derived
   from it.
-- `Deserialize` does not panic whatever bytes it is given, and does not
-  allocate for a length the input declares that the rest of the input could
-  not hold.
+- `Deserialize` does not panic whatever bytes it is given, does not allocate
+  for a length the input declares that the rest of the input could not hold,
+  and does work that grows no faster than n log n in the length of its input,
+  however the input is shaped. Bound the length of what you decode and you
+  bound the cost, as with any parser.
+- Number text is read only up to 10,000 characters, and refused beyond,
+  before it is read: reading digits costs the square of their number, and
+  text arrives from outside, as a JSON document's numbers do.
 
-How much work decoding may do is not yet bounded for every input. Until it
-is, limit the size of input taken from a source you do not trust.
+Any input that makes tenon do work out of proportion to its length, through
+`Deserialize`, `String`, `NumberFromText` or `gotenon.Encode`, is a
+vulnerability, and so is any input that makes it panic.
 
 ## Supported versions
 

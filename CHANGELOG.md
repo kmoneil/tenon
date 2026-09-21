@@ -12,6 +12,14 @@
 
 ### Changed
 
+- `Deserialize` promises what it costs: its work grows no faster than n log n
+  in the length of the input, however the input is shaped (`[SE-005]`), so a
+  caller taking documents from outside bounds the cost by bounding their
+  length. The specification allowed a decoder to bound what it decodes, and
+  three shapes a document could take made decoding quadratic; they are fixed
+  below, and nothing is refused for its size but nesting deeper than 512
+  levels, as before. `SECURITY.md` says so.
+
 - Number text longer than 10,000 characters is refused before it is read,
   with the new code `number.too_long`, by `NumberFromText`, by conversion from
   a String, and by `gotenon.Encode` of a `json.Number` (`[NU-024]`). Reading

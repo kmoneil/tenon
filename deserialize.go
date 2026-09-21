@@ -44,7 +44,13 @@ const maxDepth = 512
 // where it refuses what it is given.
 //
 // Deserialize never panics on its input, and never allocates for a length the
-// input declares before the input has shown it holds that much.
+// input declares before the input has shown it holds that much. The work it
+// does grows no faster than n log n in the length of data, however data is
+// shaped, so a caller that takes documents from outside bounds the cost of
+// decoding them by bounding their length, as for any parser. The work of the
+// capsule and mark decoders a caller supplies is theirs. Nesting deeper than
+// 512 levels, each item, type, constraint or content counting one, is the only
+// thing refused for its size.
 //
 // Deserialize panics if decoders names a capsule type that declares no
 // encoding, or two that declare one identifier, and on a mark decoder that
