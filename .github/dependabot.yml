@@ -1,0 +1,13 @@
+# Weekly updates for the module's dependencies and for the pinned Actions.
+# Dependabot only moves versions the module already depends on; a new
+# dependency still needs a decision of its own.
+version: 2
+updates:
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
