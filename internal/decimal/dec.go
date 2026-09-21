@@ -29,6 +29,8 @@ const (
 	ErrDivideByZero
 	// ErrModuloByZero reports a remainder with a zero divisor.
 	ErrModuloByZero
+	// ErrTooLong reports text longer than Parse reads.
+	ErrTooLong
 )
 
 func (e Error) Error() string {
@@ -41,6 +43,8 @@ func (e Error) Error() string {
 		return "decimal: division by zero"
 	case ErrModuloByZero:
 		return "decimal: modulo by zero"
+	case ErrTooLong:
+		return "decimal: number text too long"
 	}
 	return "decimal: error " + strconv.Itoa(int(e))
 }
@@ -166,12 +170,22 @@ func pow10(n int64) *big.Int {
 // text has anywhere near that many digits.
 const expLimit = 1 << 62
 
+// MaxTextLength is the length of the longest text Parse reads. Reading decimal
+// digits into a binary coefficient costs the square of their number, so a
+// limit on the text is a limit on the work: 10,000 characters parse in about a
+// tenth of a millisecond, and a million in more than a second.
+const MaxTextLength = 10_000
+
 // Parse returns the number that s denotes. s must consist of an optional "-",
 // one or more ASCII digits, optionally a "." and one or more digits, and
 // optionally an exponent: "e" or "E", an optional "+" or "-", and one or more
-// digits. Parse returns ErrSyntax if s has any other form, and ErrOutOfRange
-// if the number is out of range. The number is exact, never rounded.
+// digits. Parse returns ErrTooLong, without reading s, if s is longer than
+// MaxTextLength; ErrSyntax if s has any other form; and ErrOutOfRange if the
+// number is out of range. The number is exact, never rounded.
 func Parse(s string) (Dec, error) {
+	if len(s) > MaxTextLength {
+		return Dec{}, ErrTooLong
+	}
 	rest := s
 	neg := strings.HasPrefix(rest, "-")
 	if neg {

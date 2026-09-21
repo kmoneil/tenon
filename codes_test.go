@@ -44,6 +44,7 @@ var specCodes = []string{
 	"number.invalid_syntax",
 	"number.modulo_by_zero",
 	"number.out_of_range",
+	"number.too_long",
 	"operation.null_operand",
 	"operation.wrong_type",
 	"range.contradiction",

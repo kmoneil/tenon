@@ -106,12 +106,37 @@ func NumberFromInt(i int64) Value {
 	return numberValue(decimal.FromInt64(i))
 }
 
+// NumberFromBigInt returns the Number value i, exactly, without rendering it
+// as text: a number with more digits than NumberFromText reads is made this
+// way, or by arithmetic. An integer with a digit outside the range of numbers
+// gives an error value with code CodeNumberOutOfRange, which is decided from
+// its size before anything else. It does not retain i.
+//
+// NumberFromBigInt panics if i is nil.
+func NumberFromBigInt(i *big.Int) Value {
+	if i == nil {
+		usagePanic("NumberFromBigInt called with a nil *big.Int")
+	}
+	d, err := decimal.FromBigInt(i)
+	if err != nil {
+		return errorValue(Diagnostic{Code: CodeNumberOutOfRange, Message: "an integer of " +
+			strconv.Itoa(i.BitLen()) + " bits is outside the range of numbers"})
+	}
+	return numberValue(d)
+}
+
 // NumberFromText returns the Number value that s denotes. The syntax is an
 // optional "-", one or more ASCII digits, optionally a "." and one or more
 // digits, and optionally an exponent: "e" or "E", an optional sign, and one or
 // more digits. The number is exact. If s has another form, the result is an
 // error value with code CodeNumberInvalidSyntax, and if the number is out of
 // range, an error value with code CodeNumberOutOfRange.
+//
+// Text longer than 10,000 characters gives an error value with code
+// CodeNumberTooLong, without being read: reading digits costs the square of
+// their number, so the limit keeps the cost of text from outside, such as a
+// JSON document's numbers, in proportion to its length. A number of more
+// digits is still a number, and arithmetic and Deserialize make one.
 func NumberFromText(s string) Value {
 	d, err := decimal.Parse(s)
 	switch err {
@@ -119,8 +144,18 @@ func NumberFromText(s string) Value {
 		return numberValue(d)
 	case decimal.ErrOutOfRange:
 		return errorValue(Diagnostic{Code: CodeNumberOutOfRange, Message: quoted(s) + " is outside the range of numbers"})
+	case decimal.ErrTooLong:
+		return errorValue(tooLong(len(s)))
 	}
 	return errorValue(Diagnostic{Code: CodeNumberInvalidSyntax, Message: quoted(s) + " is not a number"})
+}
+
+// tooLong is the diagnostic for number text of n characters, longer than
+// parsing reads. It gives the length rather than the text, which would be as
+// long.
+func tooLong(n int) Diagnostic {
+	return Diagnostic{Code: CodeNumberTooLong, Message: "a number's text of " + strconv.Itoa(n) +
+		" characters is longer than the " + strconv.Itoa(decimal.MaxTextLength) + " that parsing reads"}
 }
 
 func numberValue(d decimal.Dec) Value {
