@@ -30,6 +30,7 @@ const (
 	CodeNumberInvalidSyntax         Code = "number.invalid_syntax"
 	CodeNumberModuloByZero          Code = "number.modulo_by_zero"
 	CodeNumberOutOfRange            Code = "number.out_of_range"
+	CodeNumberTooLong               Code = "number.too_long"
 	CodeOperationNullOperand        Code = "operation.null_operand"
 	CodeOperationWrongType          Code = "operation.wrong_type"
 	CodeRangeContradiction          Code = "range.contradiction"
