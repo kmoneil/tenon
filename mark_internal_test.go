@@ -2,6 +2,7 @@ package tenon
 
 import (
 	"fmt"
+	"math/rand"
 	"slices"
 	"strconv"
 	"testing"
@@ -360,3 +361,70 @@ func BenchmarkUnmarkedValues(b *testing.B) {
 		_ = Narrow(Unknown(str), NotNull(), LengthMin(1))
 	}
 }
+
+// TestMergeMarksIsTheScan holds mergeMarks and deepMarks, whichever way they
+// look for a mark, to the answers a scan of the list gives, which they gave
+// before a set took over from the scan past manyMarks. Marks are drawn from a
+// pool small enough to repeat, both within the marks added and between them
+// and the marks held, and the lists run from none to four times manyMarks.
+func TestMergeMarksIsTheScan(t *testing.T) {
+	r := rand.New(rand.NewSource(1342))
+	pool := make([]Mark, 5*manyMarks)
+	for i := range pool {
+		pool[i] = namedMark{id: fmt.Sprintf("m%03d", i), deep: i%3 == 0}
+	}
+	pick := func(n int) []Mark {
+		ms := make([]Mark, n)
+		for i := range ms {
+			ms[i] = pool[r.Intn(len(pool))]
+		}
+		return ms
+	}
+	for range conformance.Iterations(t, 1000) {
+		held := scanMerge(nil, pick(r.Intn(4*manyMarks)))
+		marks := pick(r.Intn(4 * manyMarks))
+		got, grew := mergeMarks(held, marks)
+		want := scanMerge(held, marks)
+		if grew != (len(want) > len(held)) || !slices.Equal(got, want) {
+			t.Fatalf("mergeMarks(%v, %v) = %v, %v; want %v", held, marks, got, grew, want)
+		}
+		if d, want := deepMarks(marks), scanDeep(marks); !slices.Equal(d, want) {
+			t.Fatalf("deepMarks(%v) = %v, want %v", marks, d, want)
+		}
+	}
+}
+
+// scanMerge is mergeMarks as a scan of the list for every mark.
+func scanMerge(held, marks []Mark) []Mark {
+	merged := slices.Clone(held)
+	for _, m := range marks {
+		if !slices.Contains(merged, m) {
+			merged = append(merged, m)
+		}
+	}
+	sortMarks(merged)
+	return merged
+}
+
+// scanDeep is deepMarks as a scan of the list for every mark.
+func scanDeep(marks []Mark) []Mark {
+	var deep []Mark
+	for _, m := range marks {
+		if isDeep(m) && !slices.Contains(deep, m) {
+			deep = append(deep, m)
+		}
+	}
+	sortMarks(deep)
+	return deep
+}
+
+// namedMark is a mark told apart by its identifier, deep or not.
+type namedMark struct {
+	id   string
+	deep bool
+}
+
+func (m namedMark) MarkID() string         { return m.id }
+func (namedMark) Propagation() Propagation { return Propagate }
+func (namedMark) Redacting() bool          { return false }
+func (m namedMark) Deep() bool             { return m.deep }

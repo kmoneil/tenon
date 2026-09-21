@@ -477,3 +477,29 @@ func BenchmarkSetOfUnknowns(b *testing.B) {
 		})
 	}
 }
+
+// BenchmarkManyMarks measures decoding a value that carries many marks, at a
+// count and four times it: the growth from one to the other is the reading.
+func BenchmarkManyMarks(b *testing.B) {
+	for _, d := range []int{1000, 4000} {
+		marks := make([]tenon.Mark, d)
+		read := tenon.Decoders{Marks: map[string]tenon.MarkDecoder{}}
+		for i := range marks {
+			m := note{id: fmt.Sprintf("m%05d", i), text: "x"}
+			marks[i] = m
+			read.Marks[m.id] = func(tenon.Value, bool) (tenon.Mark, []tenon.Diagnostic) { return m, nil }
+		}
+		encoded, failure, ok := tenon.Serialize(tenon.WithMarks(tenon.NumberFromInt(1), marks...))
+		if !ok {
+			b.Fatalf("Serialize(a value with %d marks) failed: %v", d, failure)
+		}
+		b.Run(fmt.Sprintf("decode/%d", d), func(b *testing.B) {
+			b.ReportAllocs()
+			for b.Loop() {
+				if _, _, ok := tenon.Deserialize(encoded, read); !ok {
+					b.Fatal("the document did not decode")
+				}
+			}
+		})
+	}
+}

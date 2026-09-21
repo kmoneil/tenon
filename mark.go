@@ -146,8 +146,9 @@ func comparableMark(m Mark) (ok bool) {
 // and whether any of them was not held already. held itself is left as it is.
 func mergeMarks(held, marks []Mark) ([]Mark, bool) {
 	merged, grew := held, false
+	var seen markLookup
 	for _, m := range marks {
-		if slices.Contains(merged, m) {
+		if seen.holds(merged, m) {
 			continue
 		}
 		if !grew {
@@ -161,6 +162,38 @@ func mergeMarks(held, marks []Mark) ([]Mark, bool) {
 	return merged, grew
 }
 
+// manyMarks is the most marks a markLookup scans for one mark. A value carries
+// a handful of marks, among which a scan is quickest and allocates nothing; but
+// a document can put thousands on one value, and scanning them for each mark
+// costs the square of them: 4,000 marks took 36 ms to decode.
+const manyMarks = 16
+
+// markLookup says whether a mark is among the marks a list holds so far, by
+// scanning the list while it is short and by a set of them once it is not. The
+// list only grows while a markLookup is in use, so the set, once made, needs
+// only the marks the list gains after it.
+type markLookup struct {
+	set map[Mark]struct{}
+	n   int // how many of the list's marks the set holds
+}
+
+// holds reports whether m is in list, which holds the marks the previous
+// calls saw and perhaps more at its end.
+func (l *markLookup) holds(list []Mark, m Mark) bool {
+	if l.set == nil {
+		if len(list) <= manyMarks {
+			return slices.Contains(list, m)
+		}
+		l.set = make(map[Mark]struct{}, 2*len(list))
+	}
+	for _, h := range list[l.n:] {
+		l.set[h] = struct{}{}
+	}
+	l.n = len(list)
+	_, ok := l.set[m]
+	return ok
+}
+
 // isDeep reports whether m is a deep mark.
 func isDeep(m Mark) bool {
 	d, ok := m.(DeepMark)
@@ -171,8 +204,9 @@ func isDeep(m Mark) bool {
 // identifier, or nil when there are none.
 func deepMarks(marks []Mark) []Mark {
 	var deep []Mark
+	var seen markLookup
 	for _, m := range marks {
-		if isDeep(m) && !slices.Contains(deep, m) {
+		if isDeep(m) && !seen.holds(deep, m) {
 			deep = append(deep, m)
 		}
 	}

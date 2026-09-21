@@ -23,6 +23,13 @@
   known equal to anything, so no comparison could succeed. Which members a set
   keeps is unchanged.
 
+- Attaching many marks to one value, which decoding does with the marks a
+  document lists, takes time in proportion to the marks, where it took the
+  square of them: a value carrying 4,000 marks took 40 milliseconds to decode
+  and takes 2.4. Each mark was looked for in the list of marks so far; past
+  sixteen they are looked up in a set. A value carrying a handful of marks, as
+  nearly every value does, allocates nothing more than before.
+
 ## 0.3.0 (2026-09-21)
 
 Most of what the 0.1.0 audit found that did not wait on a decision: answers
