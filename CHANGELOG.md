@@ -1,6 +1,39 @@
 # Changelog
 
-## Unreleased
+## 0.4.0 (2026-09-21)
+
+Bounded work on input from outside. `Deserialize` now promises that its work
+grows no faster than n log n in the length of what it is given, however that
+is shaped, and number text is read only up to 10,000 characters. It implements
+version 0.3.0 of the tenon specification, which amends `SE-005` to make that
+promise and adds `NU-024`: 195 rules where 0.3.0's had 194.
+
+**Upgrade if you build strings or decode documents from input you do not
+trust.** 0.3.0 and earlier normalize a long run of combining marks in time
+that grows with the square of the run: a string of 200 KB takes 70 seconds to
+build, and a document of 80 KB holding such a run takes 6.2 seconds to decode
+before it is refused. `String`, map keys, attribute names, `Deserialize` and
+`gotenon.Encode` of text all reach it. Three other shapes cost the square of
+their size in 0.3.0 and no longer do: a set's members that are not known, the
+marks on one value, and the failures the encoder reports.
+
+The minor version moves because one change refuses what 0.3.0 accepted:
+number text longer than 10,000 characters, through `NumberFromText`,
+conversion from a String or a `json.Number`, now gives an error value with the
+new code `number.too_long`. A number of more digits is still a number:
+`NumberFromBigInt`, which is new, makes one from a `*big.Int`, and `gotenon`
+makes Go's big numbers that way, where it read them back from text.
+
+**Upgrading from 0.3.0.** Documents 0.3.0 wrote decode as they did, and
+nothing that decoded then is refused now: nesting deeper than 512 levels was
+refused before and is the only refusal for size. No value, answer or encoding
+changes, except that number text past 10,000 characters is refused.
+
+**What `CONFORMANCE.md` still overstates.** It reports 195 of 195, and every
+rule does have a passing test, but for `UN-004` and `UN-005` (what a narrowing
+leaves when only null remains) and `DI-011` (path keys that carry marks) the
+test exercises a narrower case than the rule states, as the audit found. Both
+wait on a decision about what the rule should say.
 
 ### Added
 
