@@ -21,7 +21,7 @@
 // [Identical] reports them identical, [Hash] gives them one hash, and
 // [Serialize] gives them one encoding.
 //
-// This package implements tenon specification version 0.2.0. Every rule of it
+// This package implements tenon specification version 0.3.0. Every rule of it
 // has a conformance test, which CONFORMANCE.md reports.
 //
 // # Values and their states
