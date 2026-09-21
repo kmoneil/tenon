@@ -8,7 +8,7 @@
 # The tests run with -count=1 because a cached result records nothing.
 RULECOV := $(CURDIR)/.rulecov
 
-.PHONY: check check-slow determinism fuzz rules codes report
+.PHONY: check check-slow determinism fuzz fuzz-parse fuzz-string fuzz-deserialize release-fuzz rules codes report
 
 check:
 	@echo '==> gofmt'
@@ -57,11 +57,22 @@ determinism:
 	diff -r '$(EMIT)/first' '$(EMIT)/second'
 	@echo "determinism: $$(find '$(EMIT)/first' -type f | wc -l | tr -d ' ') outputs came out the same in both runs"
 
-# fuzz runs each fuzz target for FUZZTIME. What the fuzzer finds that fails is
-# written to the package's testdata/fuzz directory, where it joins the seeds.
+# fuzz runs each fuzz target for FUZZTIME, 30 minutes by default, one after
+# another, or all at once with make -j3 fuzz. What the fuzzer finds that fails
+# is written to the package's testdata/fuzz directory, where it joins the seeds
+# that every test run replays.
 FUZZTIME ?= 30m
-fuzz:
+fuzz: fuzz-parse fuzz-string fuzz-deserialize
+fuzz-parse:
 	go test -run='^$$' -fuzz='^FuzzParse$$' -fuzztime=$(FUZZTIME) ./internal/decimal
+fuzz-string:
 	go test -run='^$$' -fuzz='^FuzzString$$' -fuzztime=$(FUZZTIME) .
+fuzz-deserialize:
 	go test -run='^$$' -fuzz='^FuzzDeserialize$$' -fuzztime=$(FUZZTIME) .
+
+# release-fuzz is the fuzzing a release asks for: every target at once for five
+# minutes. The depth is CI's, which fuzzes each for thirty minutes every night
+# (.github/workflows/fuzz.yml), and keeps what it found from night to night.
+release-fuzz:
+	$(MAKE) -j3 fuzz FUZZTIME=5m
 
