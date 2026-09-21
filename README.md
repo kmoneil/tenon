@@ -33,10 +33,10 @@ fmt.Println(address.IsKnown(), tenon.Length(address))
 // false unknown(number, not null, >= 0)
 ```
 
-    go get github.com/kmoneil/tenon@v0.2.0
+    go get github.com/kmoneil/tenon@v0.3.0
 
-Version 0.2.0 implements version 0.1.0 of the tenon specification. A
-conformance test covers every one of its 192 rules, as `CONFORMANCE.md`
+Version 0.3.0 implements version 0.2.0 of the tenon specification. A
+conformance test covers every one of its 194 rules, as `CONFORMANCE.md`
 reports; `CHANGELOG.md` says what each release holds, and which rules the
 report still states more widely than its test exercises.
 
