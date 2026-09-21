@@ -171,16 +171,36 @@ func FuzzParse(f *testing.F) {
 	for _, s := range []string{"0", "-1.5e-3", "+5", "1e", "007", "1e999999", "1e1000000", " 1", "1_0", "0.000e-99"} {
 		f.Add(s)
 	}
+	// 9,997 characters, whose canonical text, written out positionally with
+	// nineteen zeros after the point, is 10,011: too long to read back.
+	f.Add(strings.Repeat("7", 9990) + "e-10009")
 	f.Fuzz(func(t *testing.T, s string) {
 		d, err := Parse(s)
+		// Text past the limit is refused unread, whatever it holds [NU-024].
+		if len(s) > MaxTextLength {
+			if err != ErrTooLong {
+				t.Fatalf("Parse of %d characters = %v, want ErrTooLong", len(s), err)
+			}
+			return
+		}
 		if (err != ErrSyntax) != grammar.MatchString(s) {
 			t.Fatalf("Parse(%q) = %v, but matching the grammar is %t", s, err, grammar.MatchString(s))
 		}
 		if err != nil {
 			return
 		}
+		// The canonical text is a round trip wherever it is itself short
+		// enough to read: writing a number out positionally can add as many
+		// as twenty-one characters to the digits it was read from.
 		text := d.String()
-		if back, err := Parse(text); err != nil || !back.Equal(d) || back.String() != text {
+		back, err := Parse(text)
+		if len(text) > MaxTextLength {
+			if err != ErrTooLong {
+				t.Fatalf("the canonical text of %q, %d characters, parses as %v, want ErrTooLong", s, len(text), err)
+			}
+			return
+		}
+		if err != nil || !back.Equal(d) || back.String() != text {
 			t.Fatalf("Parse(%q) gave %s, which parses back as %v, %v", s, text, back, err)
 		}
 	})
