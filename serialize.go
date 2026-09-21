@@ -71,12 +71,26 @@ type encoder struct {
 	// records one diagnostic however many times an identical one arrives, and
 	// payloads that fail alike fail with the same message at the same path.
 	failures int
+	// recorded holds the encoding of every diagnostic recorded, by which one
+	// that arrives again is known without comparing it with each before it:
+	// two diagnostics are equal exactly when their encodings are.
+	recorded map[string]struct{}
 }
 
-// fail records a diagnostic for what is at path p.
+// fail records a diagnostic for what is at path p, unless an identical one is
+// recorded already.
 func (e *encoder) fail(p Path, code Code, message string) {
 	e.failures++
-	e.errs.addDiagnostic(Diagnostic{Code: code, Message: message, Path: p})
+	d := Diagnostic{Code: code, Message: message, Path: p}
+	key := string(appendDiagnostic(nil, d))
+	if _, dup := e.recorded[key]; dup {
+		return
+	}
+	if e.recorded == nil {
+		e.recorded = map[string]struct{}{}
+	}
+	e.recorded[key] = struct{}{}
+	e.errs.diags = append(e.errs.diags, d)
 }
 
 // item appends the item of v.

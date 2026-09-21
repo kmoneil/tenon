@@ -503,3 +503,25 @@ func BenchmarkDeepMarkEncoding(b *testing.B) {
 		})
 	}
 }
+
+// BenchmarkSerializeFailures measures serializing a list of capsule values of
+// a type that declares no encoding, each a diagnostic at its own path, at a
+// size and four times it: the growth from one to the other is the reading.
+func BenchmarkSerializeFailures(b *testing.B) {
+	opaque := tenon.Capsule("opaque", tenon.CapsuleOps[celsius]{})
+	for _, size := range []int{5000, 20000} {
+		members := make([]tenon.Value, size)
+		for i := range members {
+			members[i] = tenon.CapsuleVal(opaque, &celsius{int64(i)})
+		}
+		v := tenon.ListVal(opaque, members...)
+		b.Run(fmt.Sprintf("%d", size), func(b *testing.B) {
+			b.ReportAllocs()
+			for b.Loop() {
+				if _, _, ok := tenon.Serialize(v); ok {
+					b.Fatal("the list serialized")
+				}
+			}
+		})
+	}
+}
