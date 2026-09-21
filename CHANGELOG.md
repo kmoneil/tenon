@@ -50,6 +50,14 @@
   sixteen they are looked up in a set. A value carrying a handful of marks, as
   nearly every value does, allocates nothing more than before.
 
+- Serializing a value with many parts that cannot be serialized takes time in
+  proportion to them, where it took the square of them: a list of 20,000
+  capsule values of a type that declares no encoding took 2.6 seconds to
+  report them and takes 16 milliseconds. Each failure was compared with every
+  failure recorded, so that one arriving twice is recorded once; each is now
+  looked up by its encoding. `Deserialize` encodes what it decoded, so this
+  reached decoding too.
+
 ## 0.3.0 (2026-09-21)
 
 Most of what the 0.1.0 audit found that did not wait on a decision: answers
