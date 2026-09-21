@@ -59,14 +59,17 @@ port = tenon.Narrow(port, tenon.NotNull(), tenon.NumberMin(tenon.NumberFromInt(1
 fmt.Println(port)
 
 // Operations read what is recorded and answer what it settles: no port
-// of 1024 or more is port 80, whatever else it turns out to be.
+// of 1024 or more is port 80, or comes before it, whatever else it turns
+// out to be.
 fmt.Println(tenon.Equals(port, tenon.NumberFromInt(80)))
-fmt.Println(tenon.Add(port, tenon.NumberFromInt(1)))
+fmt.Println(tenon.LessThan(port, tenon.NumberFromInt(80)))
+fmt.Println(tenon.Mul(port, tenon.NumberFromInt(2)))
 // Output:
 // unknown(number)
 // unknown(number, not null, >= 1024)
 // false
-// unknown(number, not null, >= 1025)
+// false
+// unknown(number, not null, >= 2048)
 ```
 
 Narrowing is monotone: what a value has said, it goes on saying. A narrowing

@@ -39,7 +39,7 @@ func Example_configLanguage() {
 
 	// One over a variable that is not known yet is answered as far as it can
 	// be, and carries what is known about the rest.
-	fmt.Println(tenon.Add(vars.lookup("scale"), vars.lookup("base")))
+	fmt.Println(tenon.Mul(vars.lookup("scale"), vars.lookup("base")))
 
 	// A failure travels through the expression rather than stopping it.
 	broken := tenon.Add(vars.lookup("missing"), tenon.NumberFromInt(1))
@@ -68,7 +68,7 @@ func Example_configLanguage() {
 	}
 	// Output:
 	// 6
-	// unknown(number, not null, >= 5)
+	// unknown(number, not null, >= 6)
 	// config.undefined_variable no variable named "missing"
 	// exactly(string) true
 	// "8080" "auto"

@@ -89,8 +89,27 @@ func TestConformance_UN007_ArithmeticBoundsWhatItCan(t *testing.T) {
 		// the rule allows a result to say less than it might.
 		{"an operand with no bounds", tenon.Add(x, tenon.Unknown(num)), "unknown(number, not null)"},
 		{"a pending operand", tenon.Add(x, tenon.Pending(tenon.Exactly(num))), "unknown(number, not null)"},
-		{"multiplication, which does not bound", tenon.Mul(x, two), "unknown(number, not null)"},
-		{"division, which does not bound", tenon.Div(x, two), "unknown(number, not null)"},
+		// A product is least and greatest at the products of the bounds.
+		{"a product of bounds", tenon.Mul(x, two), "unknown(number, not null, >= 2, <= 20)"},
+		{"a product of two ranges", tenon.Mul(x, y), "unknown(number, not null, >= 0, <= 20)"},
+		{"a factor that is negative", tenon.Mul(x, tenon.NumberFromInt(-2)), "unknown(number, not null, >= -20, <= -2)"},
+		{"a factor that spans zero", tenon.Mul(x, tenon.Sub(y, one)), "unknown(number, not null, >= -10, <= 10)"},
+		{"a factor that is unbounded above", tenon.Mul(x, tenon.Narrow(tenon.Unknown(num), tenon.NumberMin(two, true))), "unknown(number, not null, >= 2)"},
+		// A factor of zero makes every product zero, however little is known
+		// of the other, and a range of one value is that value.
+		{"a factor of zero", tenon.Mul(zero, tenon.Unknown(num)), "0"},
+		// A quotient is bounded where the divisor keeps away from zero.
+		{"a quotient of bounds", tenon.Div(x, two), "unknown(number, not null, >= 0.5, <= 5)"},
+		{"a divisor that is a range", tenon.Div(x, tenon.Add(y, two)), "unknown(number, not null, >= 0.25, <= 5)"},
+		{"a divisor that is negative", tenon.Div(x, tenon.NumberFromInt(-4)), "unknown(number, not null, >= -2.5, <= -0.25)"},
+		{"a divisor that may be zero", tenon.Div(x, y), "unknown(number, not null)"},
+		{"a divisor that may come near zero", tenon.Div(x, tenon.Narrow(tenon.Unknown(num), tenon.NumberMin(zero, false))), "unknown(number, not null)"},
+		// A remainder has the sign of the dividend and is smaller in magnitude
+		// than the divisor can be.
+		{"a remainder", tenon.Mod(x, tenon.NumberFromInt(3)), "unknown(number, not null, >= 0, < 3)"},
+		{"a remainder of a negative dividend", tenon.Mod(tenon.Sub(zero, x), tenon.NumberFromInt(3)), "unknown(number, not null, > -3, <= 0)"},
+		{"a remainder no greater than its dividend", tenon.Mod(y, tenon.NumberFromInt(7)), "unknown(number, not null, >= 0, <= 2)"},
+		{"a divisor that is a range", tenon.Mod(x, tenon.Add(y, one)), "unknown(number, not null, >= 0, < 3)"},
 	} {
 		if got := tt.got.String(); got != tt.want {
 			t.Errorf("%s = %s, want %s", tt.name, got, tt.want)
@@ -100,6 +119,15 @@ func TestConformance_UN007_ArithmeticBoundsWhatItCan(t *testing.T) {
 	above := tenon.Narrow(tenon.Unknown(num), tenon.NumberMin(one, false))
 	if got, want := tenon.Add(above, two).String(), "unknown(number, not null, > 3)"; got != want {
 		t.Errorf("a sum of an exclusive bound = %s, want %s", got, want)
+	}
+	// And a product's, where no factor that reaches its bound is zero.
+	if got, want := tenon.Mul(above, two).String(), "unknown(number, not null, > 2)"; got != want {
+		t.Errorf("a product of an exclusive bound = %s, want %s", got, want)
+	}
+	// A quotient's includes its own value, since a quotient is rounded and a
+	// value past the bound may round onto it.
+	if got, want := tenon.Div(above, two).String(), "unknown(number, not null, >= 0.5)"; got != want {
+		t.Errorf("a quotient of an exclusive bound = %s, want %s", got, want)
 	}
 	// The bounds hold every outcome: a value drawn from the range, added, is
 	// in the result's range.

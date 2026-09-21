@@ -7,6 +7,67 @@ import (
 	"github.com/kmoneil/tenon/conformance"
 )
 
+// TestConformance_UN007_OrderReadsBoundsAndPrefixes holds LessThan to what the
+// ranges of its operands settle: where every value one may have comes before
+// every value the other may have, or none does, the answer is known.
+func TestConformance_UN007_OrderReadsBoundsAndPrefixes(t *testing.T) {
+	conformance.Covers(t, "UN-007", "EQ-020", "UN-006")
+	num, str := tenon.NumberType(), tenon.StringType()
+	n := func(text string) tenon.Value { return tenon.NumberFromText(text) }
+	s := func(text string) tenon.Value { return tenon.String(text) }
+	between := func(lo, hi string) tenon.Value {
+		return tenon.Narrow(tenon.Unknown(num), tenon.NotNull(), tenon.NumberMin(n(lo), true), tenon.NumberMax(n(hi), true))
+	}
+	atLeast := func(lo string, inclusive bool) tenon.Value {
+		return tenon.Narrow(tenon.Unknown(num), tenon.NotNull(), tenon.NumberMin(n(lo), inclusive))
+	}
+	atMost := func(hi string, inclusive bool) tenon.Value {
+		return tenon.Narrow(tenon.Unknown(num), tenon.NotNull(), tenon.NumberMax(n(hi), inclusive))
+	}
+	prefixed := func(p string) tenon.Value {
+		return tenon.Narrow(tenon.Unknown(str), tenon.NotNull(), tenon.StringPrefix(p))
+	}
+	for _, tt := range []struct {
+		name string
+		a, b tenon.Value
+		want string
+	}{
+		{"a port of 1024 or more against 80", atLeast("1024", true), n("80"), "false"},
+		{"at most 10 against 100", atMost("10", true), n("100"), "true"},
+		{"below 10 against 10 or more", atMost("10", false), atLeast("10", true), "true"},
+		{"at most 10 against 10 or more, both of which may be 10", atMost("10", true), atLeast("10", true), "unknown(bool, not null)"},
+		{"10 or more against at most 10", atLeast("10", true), atMost("10", true), "false"},
+		{"two ranges apart", between("1", "2"), between("3", "4"), "true"},
+		{"the other way about", between("3", "4"), between("1", "2"), "false"},
+		{"two ranges that overlap", between("1", "3"), between("2", "4"), "unknown(bool, not null)"},
+		// The values a range holds other than null decide it, as they bound
+		// a sum: a null operand is an error, which appears once it is known.
+		{"a range that may be null", tenon.Narrow(tenon.Unknown(num), tenon.NumberMin(n("1024"), true)), n("80"), "false"},
+		// A prefix orders every value that begins with it. These end in a
+		// character nothing composes with, which a prefix keeps (UN-006).
+		{"a prefix against a string it comes before", prefixed("ab-"), s("ab."), "true"},
+		{"a prefix against a string it comes after", prefixed("ab."), s("ab-"), "false"},
+		{"a prefix against a string that properly begins it", prefixed("ab-"), s("ab"), "false"},
+		{"a string that properly begins a prefix", s("ab"), prefixed("ab-"), "true"},
+		{"a prefix against the same string", prefixed("ab-"), s("ab-"), "unknown(bool, not null)"},
+		{"a prefix against a longer prefix", prefixed("a-"), prefixed("a-b-"), "unknown(bool, not null)"},
+		{"two prefixes apart", prefixed("ab-"), prefixed("ab."), "true"},
+		// A prefix whose last letter a mark may follow keeps only what the
+		// mark cannot change: "abc" is recorded as "ab", since a cedilla
+		// after the c makes U+00E7, which comes after "abd".
+		{"a prefix that loses its last letter", prefixed("abc"), s("abd"), "unknown(bool, not null)"},
+		// A prefix is what normalization leaves standing (UN-006): "cafe"
+		// is recorded as "caf", since what follows may compose with the e,
+		// and "caf" with U+00E9 comes after "caff" where "cafe" comes before it.
+		{"a prefix whose last character may compose", prefixed("cafe"), s("caff"), "unknown(bool, not null)"},
+		{"what it may compose to", s("caf\U000000e9"), s("caff"), "false"},
+	} {
+		if got := tenon.LessThan(tt.a, tt.b).String(); got != tt.want {
+			t.Errorf("%s: %v before %v is %s, want %s", tt.name, tt.a, tt.b, got, tt.want)
+		}
+	}
+}
+
 func TestConformance_EQ020_Ordering(t *testing.T) {
 	conformance.Covers(t, "EQ-020")
 	num, str := tenon.NumberType(), tenon.StringType()

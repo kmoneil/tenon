@@ -155,13 +155,25 @@ func exactQuotient(x, y *big.Int) (*big.Int, int64) {
 // roundedQuotient returns q and s with q × 10^-s equal to x/y rounded to prec
 // significant digits, half to even. x and y are positive.
 func roundedQuotient(x, y *big.Int, prec int64) (*big.Int, int64) {
+	q, r, den, s := truncatedQuotient(x, y, prec)
+	if c := r.Lsh(r, 1).Cmp(den); c > 0 || (c == 0 && q.Bit(0) == 1) {
+		q.Add(q, big.NewInt(1))
+	}
+	return q, s
+}
+
+// truncatedQuotient returns q, the remainder r and the divisor den with q × 10^-s
+// equal to x/y truncated to prec significant digits, and r/den the part of the
+// last digit that truncation dropped. x and y are positive.
+func truncatedQuotient(x, y *big.Int, prec int64) (q, r, den *big.Int, s int64) {
 	lo, hi := pow10(prec-1), pow10(prec)
 	// Guess the shift that gives the quotient prec digits; the loop corrects
 	// the guess until the integer quotient lies in [lo, hi).
-	s := prec - (digitsLowerBound(x) - digitsLowerBound(y))
-	q, r := new(big.Int), new(big.Int)
+	s = prec - (digitsLowerBound(x) - digitsLowerBound(y))
+	q, r = new(big.Int), new(big.Int)
 	for {
-		num, den := x, y
+		num := x
+		den = y
 		if s >= 0 {
 			num = new(big.Int).Mul(x, pow10(s))
 		} else {
@@ -174,12 +186,44 @@ func roundedQuotient(x, y *big.Int, prec int64) (*big.Int, int64) {
 		case q.Cmp(lo) < 0:
 			s++
 		default:
-			if c := r.Lsh(r, 1).Cmp(den); c > 0 || (c == 0 && q.Bit(0) == 1) {
-				q.Add(q, big.NewInt(1))
-			}
-			return q, s
+			return q, r, den, s
 		}
 	}
+}
+
+// DivBound returns d / e rounded to DivisionPrecision significant digits
+// toward positive infinity where up is set, and toward negative infinity where
+// it is not: a quotient of no more digits that terminates is itself.
+//
+// It is what bounds a range of quotients. Div is exact where a quotient
+// terminates, at any length, and rounded where it does not, and that is not
+// monotone: 1e40/3 rounds down to 96 threes, while a smaller quotient, (1e40 -
+// 1e-100)/3, terminates in 140 of them and is greater. Every value Div gives
+// for a quotient no less than d/e is at least d.DivBound(e, false), and every
+// value it gives for one no greater is at most d.DivBound(e, true). DivBound
+// returns ErrDivideByZero if e is zero, and ErrOutOfRange if the bound is out
+// of range.
+func (d Dec) DivBound(e Dec, up bool) (Dec, error) {
+	if e.Sign() == 0 {
+		return Dec{}, ErrDivideByZero
+	}
+	if d.Sign() == 0 {
+		return Dec{}, nil
+	}
+	x, y := d.scaledCoefficient(0), e.scaledCoefficient(0)
+	neg := x.Sign() != y.Sign()
+	x.Abs(x)
+	y.Abs(y)
+	q, r, _, s := truncatedQuotient(x, y, DivisionPrecision)
+	// Rounding the magnitude away from zero rounds a positive quotient up and
+	// a negative one down.
+	if r.Sign() != 0 && up != neg {
+		q.Add(q, big.NewInt(1))
+	}
+	if neg {
+		q.Neg(q)
+	}
+	return fromBig(q, d.exp-e.exp-s)
 }
 
 // digitsLowerBound returns a lower bound, within a few digits for any

@@ -170,6 +170,23 @@
 
 ### Changed
 
+- `Mul`, `Div`, `Mod` and `LessThan` answer what their operands' ranges
+  settle, as `Add`, `Sub` and `Equals` already did. Twice a number at least 2
+  is a number at least 4, a quotient is bounded where the divisor keeps away
+  from zero, a remainder lies between zero and its dividend and is smaller
+  than its divisor can be, and a number of 1024 or more is known not to come
+  before 80. `LessThan` of strings reads their prefixes, as far as
+  normalization leaves them standing. A factor of zero makes a product known
+  zero however little is known of the other. 0.2.0 answered each of these
+  with a bare unknown, which the rules allow and which told a plan nothing.
+
+  A quotient's bounds are rounded outward. Division is exact where a quotient
+  terminates, at any length, and rounded to 96 digits where it does not, which
+  is not monotone: `(1e40 - 1e-100)/3` terminates in 140 threes and is greater
+  than `1e40/3` rounded to 96 of them, although it is the smaller quotient. A
+  bound on a range of quotients is therefore rounded down or up at 96 digits,
+  and is the quotient itself where that terminates within them.
+
 - Converting to `Exactly` of a list, set, map, tuple or object type builds
   the constraint it converts by once for the type, not again for every
   member, which makes converting a list of objects to one about a fifth

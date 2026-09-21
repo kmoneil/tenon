@@ -76,9 +76,11 @@
 // say is not unknown. A narrowing that leaves nothing gives an error value,
 // since no value has an empty range.
 //
-// Operations read ranges and write them: [Add] of two unknown numbers is an
-// unknown number bounded by what the operands' bounds allow, and [Equals] of
-// two values that cannot be equal is false however little else is known.
+// Operations read ranges and write them: [Add], [Sub], [Mul], [Div] and
+// [Mod] of unknown numbers give an unknown number bounded by what the
+// operands' bounds allow, and [Equals] and [LessThan] answer where the ranges
+// settle the question, however little else is known: no number of 1024 or
+// more comes before 80.
 //
 // # Operations, errors and paths
 //

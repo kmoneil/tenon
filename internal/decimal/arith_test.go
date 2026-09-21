@@ -426,3 +426,71 @@ func TestConformance_NU017_Remainder(t *testing.T) {
 		}
 	}
 }
+
+// TestDivBound holds the directed quotient to its promise: the quotient rounded
+// toward one infinity or the other at DivisionPrecision digits, and itself
+// where it terminates within them.
+func TestDivBound(t *testing.T) {
+	threes := strings.Repeat("3", DivisionPrecision)
+	for _, tt := range []struct {
+		x, y     string
+		down, up string
+	}{
+		{"1", "4", "0.25", "0.25"},
+		{"-1", "4", "-0.25", "-0.25"},
+		{"1", "3", "0." + threes, "0." + threes[1:] + "4"},
+		{"-1", "3", "-0." + threes[1:] + "4", "-0." + threes},
+		{"1", "-3", "-0." + threes[1:] + "4", "-0." + threes},
+		{"0", "7", "0", "0"},
+		// A quotient that terminates beyond the precision is rounded as one
+		// that does not terminate is, since Div keeps every one of its digits.
+		{"9999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999.9", "3",
+			threes[:DivisionPrecision-1] + "3" + strings.Repeat("0", 139-DivisionPrecision),
+			threes[:DivisionPrecision-1] + "4" + strings.Repeat("0", 139-DivisionPrecision)},
+	} {
+		x, y := mustParse(t, tt.x), mustParse(t, tt.y)
+		for _, dir := range []struct {
+			up   bool
+			want string
+		}{{false, tt.down}, {true, tt.up}} {
+			got, err := x.DivBound(y, dir.up)
+			if err != nil {
+				t.Fatalf("%s.DivBound(%s, %t): %v", tt.x, tt.y, dir.up, err)
+			}
+			if want := mustParse(t, dir.want); got.Cmp(want) != 0 || got.String() != want.String() {
+				t.Errorf("%s.DivBound(%s, %t) = %s, want %s", tt.x, tt.y, dir.up, got, want)
+			}
+		}
+	}
+	if _, err := mustParse(t, "1").DivBound(Dec{}, true); err != ErrDivideByZero {
+		t.Errorf("DivBound by zero gave %v", err)
+	}
+
+	// Whatever the quotient, Div lies between the two, and so does the exact
+	// quotient: down × y and up × y bracket x.
+	r := rand.New(rand.NewPCG(96, 0))
+	texts := []string{"1", "3", "7", "-7", "0.1", "12345678901234567890", "1e-50", "2", "-9.5", "1e40", "999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999.7"}
+	for range 2000 {
+		x, y := mustParse(t, texts[r.IntN(len(texts))]), mustParse(t, texts[r.IntN(len(texts))])
+		q, err := x.Div(y)
+		if err != nil {
+			continue
+		}
+		down, err1 := x.DivBound(y, false)
+		up, err2 := x.DivBound(y, true)
+		if err1 != nil || err2 != nil {
+			t.Fatalf("%s / %s: %v, %v", x, y, err1, err2)
+		}
+		if down.Cmp(q) > 0 || up.Cmp(q) < 0 {
+			t.Fatalf("%s / %s = %s, outside [%s, %s]", x, y, q, down, up)
+		}
+		lo, _ := down.Mul(y)
+		hi, _ := up.Mul(y)
+		if y.Sign() < 0 {
+			lo, hi = hi, lo
+		}
+		if lo.Cmp(x) > 0 || hi.Cmp(x) < 0 {
+			t.Fatalf("%s / %s is not between %s and %s", x, y, down, up)
+		}
+	}
+}
