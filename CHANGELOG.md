@@ -15,6 +15,14 @@
   and `gotenon.Encode` of text from outside, such as a JSON document. The
   order a run is sorted into is the same.
 
+- Building or decoding a set whose members are not known takes time in
+  proportion to the members, where it took the square of them: a set of 8,000
+  unknowns took half a second to decode and decodes in 16 milliseconds. Each
+  such member was compared with every member already kept, looking for one
+  `Equals` settles equal to it, and `Equals` never settles a value that is not
+  known equal to anything, so no comparison could succeed. Which members a set
+  keeps is unchanged.
+
 ## 0.3.0 (2026-09-21)
 
 Most of what the 0.1.0 audit found that did not wait on a decision: answers

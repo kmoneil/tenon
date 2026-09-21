@@ -6,6 +6,7 @@ import (
 
 	"github.com/kmoneil/tenon"
 	"github.com/kmoneil/tenon/conformance"
+	"github.com/kmoneil/tenon/conformance/values"
 )
 
 func TestConformance_EQ040_SetMembersAreToldApartByEquality(t *testing.T) {
@@ -66,6 +67,32 @@ func TestConformance_EQ040_SetMembersAreToldApartByEquality(t *testing.T) {
 	}
 	if got := bad.Diagnostics()[0].Path.String(); got != ".[2]" {
 		t.Errorf("the error member is located at %s, want .[2], where it was given", got)
+	}
+}
+
+// TestConformance_EQ041_NoMemberThatIsNotKnownIsSettledEqual holds Equals to
+// what lets a set keep a member that is not known without comparing it with
+// the members it already holds: Equals never settles such a value equal to
+// anything, since what it could still turn out to be might differ, so no member
+// kept could be its double. Every pair from the corpus is tried, each value
+// with itself among them, which is where an answer by identity would show.
+func TestConformance_EQ041_NoMemberThatIsNotKnownIsSettledEqual(t *testing.T) {
+	conformance.Covers(t, "EQ-041", "EQ-003")
+	all := values.All()
+	tried := 0
+	for _, b := range all {
+		if !b.IsResolved() || b.IsKnown() {
+			continue
+		}
+		for _, a := range all {
+			if eq := tenon.Equals(a, b); eq.IsKnown() && eq.AsBool() {
+				t.Errorf("Equals(%v, %v) is known true, where %v is not known", a, b, b)
+			}
+			tried++
+		}
+	}
+	if tried < 1000 {
+		t.Errorf("only %d pairs held a value that is not known", tried)
 	}
 }
 

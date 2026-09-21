@@ -206,17 +206,22 @@ func objectOf(t Type, vals []Value) Value {
 
 // distinctMembers returns the members of a set: members that equality reports
 // the same are one member, and the first of them is the one kept. Known members
-// are looked up by hash, and the rest are compared against everything kept,
-// which is what the rule asks for and costs little, since equality settles that
-// two members are the same only where both are known.
+// are looked up by hash, among the known members kept.
+//
+// A member that is not known is kept without comparing it with anything.
+// [EQ-041] joins it to another member only where Equals settles the two equal,
+// and equality settles two values equal only where both are known nulls or both
+// are known, which a member that is not known is neither. Comparing it with
+// every member kept, as this once did, could never find its double, and cost
+// the square of the members: 133 ms to decode a set of 4,000 unknowns.
+// TestConformance_EQ041_NoMemberThatIsNotKnownIsSettledEqual holds equality to
+// that, so that a change to it that would make this wrong fails there.
 func distinctMembers(members []Value) []Value {
 	var kept []Value
 	var buckets map[uint64][]Value
 	for _, m := range members {
 		if !m.n.isKnown() {
-			if !sameAsSome(kept, m) {
-				kept = append(kept, m)
-			}
+			kept = append(kept, m)
 			continue
 		}
 		if buckets == nil {

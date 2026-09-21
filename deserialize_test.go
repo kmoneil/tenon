@@ -445,3 +445,35 @@ func BenchmarkSetListings(b *testing.B) {
 		})
 	}
 }
+
+// BenchmarkSetOfUnknowns measures building and decoding a set whose members
+// are none of them known, at a size and four times it: the growth from one to
+// the other is the reading, not the wall clock.
+func BenchmarkSetOfUnknowns(b *testing.B) {
+	num := tenon.NumberType()
+	for _, size := range []int{2000, 8000} {
+		members := make([]tenon.Value, size)
+		for i := range members {
+			members[i] = tenon.Narrow(tenon.Unknown(num), tenon.NotNull(), tenon.NumberMin(tenon.NumberFromInt(int64(i)), true))
+		}
+		set := tenon.SetVal(num, members...)
+		encoded, failure, ok := tenon.Serialize(set)
+		if !ok {
+			b.Fatalf("Serialize(a set of %d unknowns) failed: %v", size, failure)
+		}
+		b.Run(fmt.Sprintf("build/%d", size), func(b *testing.B) {
+			b.ReportAllocs()
+			for b.Loop() {
+				tenon.SetVal(num, members...)
+			}
+		})
+		b.Run(fmt.Sprintf("decode/%d", size), func(b *testing.B) {
+			b.ReportAllocs()
+			for b.Loop() {
+				if _, _, ok := tenon.Deserialize(encoded, decoders); !ok {
+					b.Fatal("the document did not decode")
+				}
+			}
+		})
+	}
+}
