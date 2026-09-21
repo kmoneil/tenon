@@ -311,6 +311,100 @@ func TestConformance_SE043_DecodersAreSupplied(t *testing.T) {
 	})
 }
 
+// counting is a capsule type that encodes as a number and counts how often
+// two of its values are compared, which only two known values of it ever are.
+var (
+	countingCompared int
+	counting         = tenon.Capsule("counting", tenon.CapsuleOps[int64]{
+		Equals: func(a, b *int64) bool { countingCompared++; return *a == *b },
+		Hash:   func(v *int64) uint64 { return uint64(*v) },
+		Encoding: &tenon.CapsuleEncoding[int64]{
+			ID:     "t/counting",
+			Type:   tenon.NumberType(),
+			Encode: func(v *int64) tenon.Value { return tenon.NumberFromInt(*v) },
+			Decode: func(v tenon.Value) (*int64, []tenon.Diagnostic) {
+				i, _ := v.AsInt64()
+				return &i, nil
+			},
+		},
+	})
+)
+
+// TestConformance_SE005_DecodingWorkIsBounded holds decoding to the promise
+// that its work grows no faster than n log n in the length of its input, and
+// that nesting is the only thing it refuses for size. Three shapes are
+// quadratic done the obvious way, and each is decoded here at a size where
+// that took seconds: a run of combining marks out of canonical order, a set
+// whose members are not known, and a value carrying thousands of marks. The
+// set is held to a count rather than a time: its members hold values of a
+// capsule type that counts its comparisons, which comparing every pair of
+// members would make millions of.
+func TestConformance_SE005_DecodingWorkIsBounded(t *testing.T) {
+	conformance.Covers(t, "SE-005", "SE-051", "ST-002", "EQ-041")
+	// 512 levels decode and 513 do not: the item, 510 list types, a number.
+	levels := func(k int) string { return document + "83 00 " + strings.Repeat("82 04 ", k) + "02 f6" }
+	if _, failure, ok := tenon.Deserialize(fromHex(t, levels(510)), decoders); !ok {
+		t.Errorf("512 levels were refused: %v", failure)
+	}
+	wantDecodeFailure(t, "513 levels", levels(511), tenon.CodeSerializeTooLarge)
+
+	// A run of 40,000 marks out of canonical order, 80 KB, is refused as not
+	// canonical, which took 6.2 seconds when the run was sorted by insertion.
+	var run strings.Builder
+	run.WriteString("a")
+	for i := range 40_000 {
+		run.WriteString([]string{"\U00000316", "\U00000301"}[i%2])
+	}
+	text := run.String()
+	doc := fromHex(t, document+"83 00 03")
+	doc = append(doc, 0x7a, byte(len(text)>>24), byte(len(text)>>16), byte(len(text)>>8), byte(len(text)))
+	doc = append(doc, text...)
+	if _, failure, ok := tenon.Deserialize(doc, decoders); ok || failure.Diagnostics()[0].Code != tenon.CodeSerializeNotCanonical {
+		t.Errorf("the run out of order decoded as %v, %v", ok, failure)
+	}
+
+	// A set of 2,000 members that are not known, each a tuple holding a
+	// counting value and an unknown number: no two are compared.
+	num := tenon.NumberType()
+	elem := tenon.Tuple(counting, num)
+	members := make([]tenon.Value, 2000)
+	for i := range members {
+		v := int64(i)
+		members[i] = tenon.TupleVal(tenon.CapsuleVal(counting, &v), tenon.Unknown(num))
+	}
+	withCounting := tenon.Decoders{Capsules: []tenon.Type{counting}}
+	countingCompared = 0
+	set := tenon.SetVal(elem, members...)
+	b, failure, ok := tenon.Serialize(set)
+	if !ok {
+		t.Fatalf("Serialize(the set) failed: %v", failure)
+	}
+	got, failure, ok := tenon.Deserialize(b, withCounting)
+	compared := countingCompared
+	if !ok || !tenon.Identical(got, set) {
+		t.Fatalf("the set came back as %v, %v", got, failure)
+	}
+	if compared > 4*len(members) {
+		t.Errorf("building, encoding and decoding a set of %d members that are not known compared them %d times, where every pair is %d",
+			len(members), compared, len(members)*(len(members)-1)/2)
+	}
+
+	// A value carrying 4,000 marks decodes, which took 36 ms and grew with
+	// the square of the marks.
+	marks := make([]tenon.Mark, 4000)
+	read := tenon.Decoders{Marks: map[string]tenon.MarkDecoder{}}
+	for i := range marks {
+		m := note{id: fmt.Sprintf("m%05d", i), text: "x"}
+		marks[i] = m
+		read.Marks[m.id] = func(tenon.Value, bool) (tenon.Mark, []tenon.Diagnostic) { return m, nil }
+	}
+	marked := tenon.WithMarks(tenon.NumberFromInt(1), marks...)
+	b, _, _ = tenon.Serialize(marked)
+	if got, failure, ok := tenon.Deserialize(b, read); !ok || !tenon.Identical(got, marked) {
+		t.Errorf("the value with 4,000 marks came back as %v, %v", got, failure)
+	}
+}
+
 func TestConformance_SE005_DecodingIsBounded(t *testing.T) {
 	conformance.Covers(t, "SE-005", "SE-051")
 	// Nesting beyond the bound is refused, not followed down the stack.
