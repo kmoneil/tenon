@@ -2,7 +2,10 @@ package uni
 
 import (
 	"encoding/json"
+	"math/rand/v2"
 	"os"
+	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -96,5 +99,72 @@ func TestNormalizationLeavesIllFormedTextAlone(t *testing.T) {
 		if got := NFC(s); got != s {
 			t.Errorf("NFC(%q) = %q, want it unchanged", s, got)
 		}
+	}
+}
+
+// TestReorderIsTheStableSortByClass holds reorder, whichever way it sorts a
+// run, to what canonical ordering is: the stable sort of each run of
+// non-starters by combining class, which the insertion sort reorder used for
+// every run is the plainest statement of. Runs are drawn from marks of several
+// classes, the same class repeated among them, both sides of the length at
+// which reorder stops sorting by insertion, and starters between runs.
+func TestReorderIsTheStableSortByClass(t *testing.T) {
+	r := rand.New(rand.NewPCG(1340, 0))
+	// Marks of classes 202, 216, 220, 230 and 232, two of 230 so that ties
+	// show whether the order within a class is kept, and two starters.
+	alphabet := []rune{0x0327, 0x031B, 0x0316, 0x0301, 0x0308, 0x0315, 'a', 0x0915}
+	for range conformance.Iterations(t, 2000) {
+		n := r.IntN(3 * shortRun)
+		rs := make([]rune, n)
+		for i := range rs {
+			if r.IntN(12) == 0 {
+				rs[i] = alphabet[6+r.IntN(2)] // a starter now and then
+			} else {
+				rs[i] = alphabet[r.IntN(6)]
+			}
+		}
+		want := slices.Clone(rs)
+		insertionOrder(want)
+		got := slices.Clone(rs)
+		reorder(got)
+		if !slices.Equal(got, want) {
+			t.Fatalf("reorder(%U) = %U, want %U", rs, got, want)
+		}
+	}
+}
+
+// insertionOrder is canonical ordering as an insertion sort over the whole
+// text, which is what reorder did before runs were sorted one at a time.
+func insertionOrder(rs []rune) {
+	for i := 1; i < len(rs); i++ {
+		cc := combiningClass(rs[i])
+		if cc == 0 {
+			continue
+		}
+		for j := i; j > 0; j-- {
+			if prev := combiningClass(rs[j-1]); prev == 0 || prev <= cc {
+				break
+			}
+			rs[j-1], rs[j] = rs[j], rs[j-1]
+		}
+	}
+}
+
+// BenchmarkLongRun measures normalizing a run of marks whose classes
+// alternate, so that canonical ordering moves every other one, at a length and
+// four times it: the growth from one to the other is the reading.
+func BenchmarkLongRun(b *testing.B) {
+	for _, n := range []int{10000, 40000} {
+		rs := []rune{'a'}
+		for i := range n {
+			rs = append(rs, []rune{0x0316, 0x0301}[i%2])
+		}
+		text := string(rs)
+		b.Run(strconv.Itoa(n), func(b *testing.B) {
+			b.ReportAllocs()
+			for b.Loop() {
+				NFC(text)
+			}
+		})
 	}
 }

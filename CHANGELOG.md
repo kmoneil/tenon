@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- Normalizing text that holds a long run of combining marks takes time in
+  proportion to the run, where it took the square of it. tenon normalizes by
+  plain UAX #15, without the Stream-Safe Text Process, so nothing caps a run,
+  and canonical ordering sorted each one by insertion: a string of 100,000
+  marks took 70 seconds to build, and a document of 80 KB holding such a run
+  out of order took 6.2 seconds to decode before it was refused as not
+  canonical. They take 15 and 11 milliseconds. Every string tenon builds is
+  normalized, so this reached `String`, map keys, attribute names, decoding,
+  and `gotenon.Encode` of text from outside, such as a JSON document. The
+  order a run is sorted into is the same.
+
 ## 0.3.0 (2026-09-21)
 
 Most of what the 0.1.0 audit found that did not wait on a decision: answers

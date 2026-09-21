@@ -118,20 +118,74 @@ func decompose(dst []rune, s string) []rune {
 
 // reorder puts rs into canonical order in place: within each run of
 // non-starters the combining classes do not fall, and runes of one class keep
-// the order they arrived in. The runs are short, so this is an insertion sort.
+// the order they arrived in, which is a stable sort of each run by class.
+//
+// A run is almost always a mark or two, which an insertion sort orders without
+// allocating. But nothing caps a run here, since normalization is plain UAX #15
+// without the Stream-Safe Text Process, so a run is as long as the text holding
+// it, and insertion is quadratic in it: a run of 100,000 marks took seventy
+// seconds. A run longer than shortRun is sorted by counting instead, which is
+// linear in it, and as stable.
 func reorder(rs []rune) {
-	for i := 1; i < len(rs); i++ {
-		cc := combiningClass(rs[i])
-		if cc == 0 {
+	for i := 0; i < len(rs); {
+		if combiningClass(rs[i]) == 0 {
+			i++
 			continue
 		}
-		for j := i; j > 0; j-- {
-			if prev := combiningClass(rs[j-1]); prev == 0 || prev <= cc {
-				break
-			}
-			rs[j-1], rs[j] = rs[j], rs[j-1]
+		j := i + 1
+		for j < len(rs) && combiningClass(rs[j]) != 0 {
+			j++
+		}
+		if run := rs[i:j]; len(run) > shortRun {
+			countingSort(run)
+		} else {
+			insertionSort(run)
+		}
+		i = j
+	}
+}
+
+// shortRun is the longest run of non-starters that reorder sorts by insertion.
+// It is about the thirty the Stream-Safe Text Process allows, past which text
+// is no longer anything a writing system asks for.
+const shortRun = 32
+
+// insertionSort orders a run of non-starters by combining class, moving a rune
+// only past runes of a greater class, so that runes of one class keep their
+// order.
+func insertionSort(run []rune) {
+	for i := 1; i < len(run); i++ {
+		cc := combiningClass(run[i])
+		for j := i; j > 0 && combiningClass(run[j-1]) > cc; j-- {
+			run[j-1], run[j] = run[j], run[j-1]
 		}
 	}
+}
+
+// countingSort orders a run of non-starters by combining class, keeping the
+// runes of one class in their order, in time linear in the run: a class is a
+// byte, so the runes are counted by class, and each is written where the runes
+// of the classes below its own end.
+func countingSort(run []rune) {
+	classes := make([]uint8, len(run))
+	var start [256]int
+	for i, r := range run {
+		c := combiningClass(r)
+		classes[i] = c
+		start[c]++
+	}
+	at := 0
+	for c, n := range start { // over a copy of the counts, so writing start is safe
+		start[c] = at
+		at += n
+	}
+	sorted := make([]rune, len(run))
+	for i, r := range run {
+		c := classes[i]
+		sorted[start[c]] = r
+		start[c]++
+	}
+	copy(run, sorted)
 }
 
 // compose applies the canonical composition algorithm in place and returns the
