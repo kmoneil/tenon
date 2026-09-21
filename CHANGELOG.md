@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+### Added
+
+- `NumberFromBigInt` makes a Number from a `*big.Int` exactly, without
+  rendering it as text, as `AsBigInt` reads one back. It is how a number of
+  more digits than `NumberFromText` reads is made, and `gotenon` now makes Go's
+  `big.Int`, `big.Float` and `big.Rat` values this way, from their coefficients,
+  where it rendered them as text and read the text back.
+
+### Changed
+
+- Number text longer than 10,000 characters is refused before it is read,
+  with the new code `number.too_long`, by `NumberFromText`, by conversion from
+  a String, and by `gotenon.Encode` of a `json.Number` (`[NU-024]`). Reading
+  decimal digits costs the square of their number: 10,000 characters parse in
+  about a tenth of a millisecond, and a million, still a number in range, took
+  more than a second, so a few megabytes of digits in a JSON document cost
+  seconds. The message gives the length of the text rather than the text. A
+  number of more digits is still a number: arithmetic makes one, `Deserialize`
+  reads one from its coefficient's bytes, and `NumberFromBigInt` makes one.
+
 ### Fixed
 
 - Normalizing text that holds a long run of combining marks takes time in

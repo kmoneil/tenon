@@ -399,4 +399,38 @@ func TestConformance_GO034_JSONNumbers(t *testing.T) {
 		t.Fatalf(`json.Number("http") encoded: %v`, err)
 	}
 	wantErrors(t, "text that is no number", failed.Value, wantDiag{tenon.CodeNumberInvalidSyntax, "."})
+
+	// Text longer than parsing reads is refused before it is read [NU-024],
+	// at the path of the number in the document.
+	_, err = gotenon.Encode(map[string]any{"n": json.Number(strings.Repeat("7", 10_001))})
+	if !errors.As(err, &failed) {
+		t.Fatalf("a json.Number of 10,001 digits encoded: %v", err)
+	}
+	wantErrors(t, "text longer than parsing reads", failed.Value, wantDiag{tenon.CodeNumberTooLong, ".n"})
+}
+
+// TestConformance_GO030_NumbersOfManyDigits holds Go's big numbers to their
+// exact values however many digits they have: they are made from their
+// coefficients, not read back from text, so the limit on how much number text
+// is read does not reach them.
+func TestConformance_GO030_NumbersOfManyDigits(t *testing.T) {
+	conformance.Covers(t, "GO-030", "NU-024")
+	huge := new(big.Int).Exp(big.NewInt(7), big.NewInt(20_000), nil) // 16,902 digits
+	got := encoded(t, huge)
+	if back, ok := got.AsBigInt(); !ok || back.Cmp(huge) != 0 {
+		t.Errorf("7^20000 encoded as a number that is not 7^20000")
+	}
+	// 1 / 2^20000 is a terminating decimal of 20,000 places.
+	tiny := new(big.Rat).SetFrac(big.NewInt(1), new(big.Int).Lsh(big.NewInt(1), 20_000))
+	if got := encoded(t, *tiny); got.AsBigRat().Cmp(tiny) != 0 {
+		t.Errorf("1/2^20000 encoded as a different number")
+	}
+	want := new(big.Rat).Add(big.NewRat(1, 1), tiny)
+	f := new(big.Float).SetPrec(40_000).SetRat(want) // 20,001 bits, exact at this precision
+	if r, _ := f.Rat(nil); r.Cmp(want) != 0 {
+		t.Fatal("the big.Float does not hold 1 + 2^-20000")
+	}
+	if got := encoded(t, *f); got.AsBigRat().Cmp(want) != 0 {
+		t.Errorf("1 + 2^-20000 as a big.Float encoded as a different number")
+	}
 }

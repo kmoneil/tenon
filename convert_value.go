@@ -300,6 +300,8 @@ func (x converter) primitive(v Value, s Type) Value {
 		return numberValue(d)
 	case decimal.ErrOutOfRange:
 		return errorValue(Diagnostic{Code: CodeNumberOutOfRange, Message: x.text(v) + " is outside the range of numbers"})
+	case decimal.ErrTooLong:
+		return errorValue(tooLong(len(text)))
 	}
 	return errorValue(Diagnostic{Code: CodeNumberInvalidSyntax, Message: x.text(v) + " is not a number"})
 }

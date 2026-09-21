@@ -217,8 +217,9 @@ func (e *encoder) encode(m *goMapping, rv reflect.Value, p tenon.Path) (tenon.Va
 			e.fail(p, tenon.CodeEncodeNotANumber, strconv.FormatFloat(f, 'g', -1, 64)+" is not a number")
 			return tenon.Value{}, false
 		}
-		text, _ := exactBigFloat(new(big.Float).SetFloat64(f))
-		return tenon.NumberFromText(text), true
+		// A finite float64 is always inside the digit window.
+		c, exp, _ := exactBigFloat(new(big.Float).SetFloat64(f))
+		return decimalNumber(c, exp), true
 	case goBigInt, goBigFloat, goBigRat:
 		return e.bigNumber(m, rv, p)
 	case goJSONNumber:
@@ -307,21 +308,22 @@ func (e *encoder) bigNumber(m *goMapping, rv reflect.Value, p tenon.Path) (tenon
 	ptr := reflect.New(m.rt)
 	ptr.Elem().Set(rv)
 	var (
-		text string
-		ok   bool
+		c   *big.Int
+		exp int64
+		ok  bool
 	)
 	switch x := ptr.Interface().(type) {
 	case *big.Int:
-		text, ok = x.String(), true
+		c, ok = x, true
 	case *big.Float:
 		if x.IsInf() {
 			e.fail(p, tenon.CodeEncodeNotANumber, x.String()+" is not a number")
 			return tenon.Value{}, false
 		}
-		text, ok = exactBigFloat(x)
+		c, exp, ok = exactBigFloat(x)
 	case *big.Rat:
 		var exact bool
-		text, exact, ok = exactRat(x)
+		c, exp, exact, ok = exactRat(x)
 		if !exact {
 			e.fail(p, tenon.CodeEncodeInexact, "the rational "+x.String()+" is not a terminating decimal")
 			return tenon.Value{}, false
@@ -331,7 +333,20 @@ func (e *encoder) bigNumber(m *goMapping, rv reflect.Value, p tenon.Path) (tenon
 		e.fail(p, tenon.CodeNumberOutOfRange, "the number is outside the range of numbers")
 		return tenon.Value{}, false
 	}
-	return e.fromData(tenon.NumberFromText(text), p)
+	return e.fromData(decimalNumber(c, exp), p)
+}
+
+// decimalNumber returns the Number c × 10^exp, built from the coefficient and
+// a power of ten rather than read from text: a number can have more digits
+// than NumberFromText reads, and it is exact either way. The coefficients
+// exactBigFloat and exactRat give end in a digit other than zero, so the
+// number is out of range exactly where 10^exp is, and saying so is right.
+func decimalNumber(c *big.Int, exp int64) tenon.Value {
+	n := tenon.NumberFromBigInt(c)
+	if exp == 0 || n.IsError() {
+		return n
+	}
+	return tenon.Mul(n, tenon.NumberFromText("1e"+strconv.FormatInt(exp, 10)))
 }
 
 // maxBinaryPlaces bounds how many binary places a number in the digit window
@@ -341,9 +356,9 @@ const maxBinaryPlaces = 3321929
 // exactBigFloat returns the decimal text of the value f, which is finite,
 // holds exactly: a binary fraction always terminates in decimal. It reports
 // false for a number too far outside the digit window to be worth computing.
-func exactBigFloat(f *big.Float) (string, bool) {
+func exactBigFloat(f *big.Float) (*big.Int, int64, bool) {
 	if f.Sign() == 0 {
-		return "0", true
+		return new(big.Int), 0, true
 	}
 	mant := new(big.Float)
 	exp := int64(f.MantExp(mant))
@@ -352,23 +367,23 @@ func exactBigFloat(f *big.Float) (string, bool) {
 	c, _ := new(big.Float).SetMantExp(mant, int(prec)).Int(nil)
 	k := exp - prec
 	if exp > maxBinaryPlaces || -k > maxBinaryPlaces {
-		return "", false
+		return nil, 0, false
 	}
 	if k >= 0 {
-		return c.Lsh(c, uint(k)).String(), true
+		return c.Lsh(c, uint(k)), 0, true
 	}
 	// c × 2^k is c × 5^-k × 10^k.
 	c.Mul(c, new(big.Int).Exp(big.NewInt(5), big.NewInt(-k), nil))
-	return c.String() + "e" + strconv.FormatInt(k, 10), true
+	return c, k, true
 }
 
 // exactRat returns the decimal text of r, whether r is a terminating decimal,
 // one whose denominator has no prime factor but two and five, and false for a
 // denominator too large to be worth dividing.
-func exactRat(r *big.Rat) (text string, exact, ok bool) {
+func exactRat(r *big.Rat) (c *big.Int, exp int64, exact, ok bool) {
 	den := new(big.Int).Set(r.Denom())
 	if int64(den.BitLen()) > maxBinaryPlaces+1 {
-		return "", true, false
+		return nil, 0, true, false
 	}
 	twos := int64(den.TrailingZeroBits())
 	den.Rsh(den, uint(twos))
@@ -386,13 +401,13 @@ func exactRat(r *big.Rat) (text string, exact, ok bool) {
 		}
 	}
 	if den.Cmp(big.NewInt(1)) != 0 {
-		return "", false, true
+		return nil, 0, false, true
 	}
 	n := max(twos, fives)
-	c := new(big.Int).Set(r.Num())
+	c = new(big.Int).Set(r.Num())
 	c.Lsh(c, uint(n-twos))
 	c.Mul(c, new(big.Int).Exp(big.NewInt(5), big.NewInt(n-fives), nil))
-	return c.String() + "e-" + strconv.FormatInt(n, 10), true, true
+	return c, -n, true, true
 }
 
 // sequence encodes a slice or an array.

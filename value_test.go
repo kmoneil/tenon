@@ -4,6 +4,7 @@ import (
 	"math"
 	"math/big"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -432,4 +433,55 @@ func TestConformance_UN024_PendingNullness(t *testing.T) {
 	if again := tenon.Narrow(null, tenon.Null()); again != null {
 		t.Errorf("narrowing a pending null to null again produced a new value")
 	}
+}
+
+// TestConformance_NU024_NumberTextHasALengthLimit holds parsing to the limit
+// on how much text it reads: text of 10,000 characters is read, and longer text
+// is refused before any of it is, whatever it holds, with a message that gives
+// its length rather than repeating it. Every route that reads number text meets
+// the limit: NumberFromText, conversion from a string, and a json.Number.
+func TestConformance_NU024_NumberTextHasALengthLimit(t *testing.T) {
+	conformance.Covers(t, "NU-024", "NU-021", "CV-010")
+	atLimit := "1" + strings.Repeat("7", 9_999)
+	if got := tenon.NumberFromText(atLimit); got.IsError() {
+		t.Fatalf("10,000 characters were refused: %v", got.Diagnostics()[0])
+	}
+	for _, tt := range []struct {
+		name string
+		text string
+	}{
+		{"one character past the limit", atLimit + "7"},
+		{"a million characters", strings.Repeat("7", 1_000_000)},
+		{"text that is no number", strings.Repeat("x", 10_001)},
+		{"a number with a long run of leading zeros", strings.Repeat("0", 10_000) + "1"},
+	} {
+		for _, route := range []struct {
+			name string
+			v    tenon.Value
+		}{
+			{"NumberFromText", tenon.NumberFromText(tt.text)},
+			{"Convert", tenon.Convert(tenon.String(tt.text), tenon.Exactly(tenon.NumberType()), tenon.Unsafe)},
+		} {
+			if !route.v.IsError() || route.v.Diagnostics()[0].Code != tenon.CodeNumberTooLong {
+				t.Errorf("%s through %s = %v, want an error value with code %s", tt.name, route.name, route.v, tenon.CodeNumberTooLong)
+				continue
+			}
+			if msg := route.v.Diagnostics()[0].Message; len(msg) > 200 || !strings.Contains(msg, strconv.Itoa(len(tt.text))) {
+				t.Errorf("%s through %s: the message %q does not give the length in few words", tt.name, route.name, msg)
+			}
+		}
+	}
+	// A number of more digits is still a number: it is made without text.
+	big10k := new(big.Int).Exp(big.NewInt(7), big.NewInt(20_000), nil) // 16,902 digits
+	n := tenon.NumberFromBigInt(big10k)
+	if n.IsError() {
+		t.Fatalf("NumberFromBigInt(7^20000) = %v", n)
+	}
+	if back, ok := n.AsBigInt(); !ok || back.Cmp(big10k) != 0 {
+		t.Errorf("7^20000 came back as %v, %v", back, ok)
+	}
+	if got := tenon.NumberFromBigInt(new(big.Int).Exp(big.NewInt(10), big.NewInt(1_000_001), nil)); !got.IsError() || got.Diagnostics()[0].Code != tenon.CodeNumberOutOfRange {
+		t.Errorf("NumberFromBigInt(10^1000001) = %v, want an error value with code %s", got, tenon.CodeNumberOutOfRange)
+	}
+	mustPanicUsage(t, "nil *big.Int", func() { tenon.NumberFromBigInt(nil) })
 }
