@@ -144,22 +144,41 @@ func comparableMark(m Mark) (ok bool) {
 
 // mergeMarks returns held with marks added, each once, sorted by identifier,
 // and whether any of them was not held already. held itself is left as it is.
+//
+// held is sorted already, so each mark is looked for among the marks sharing
+// its identifier and put where it belongs, rather than the whole list being
+// searched and then sorted again. A value can carry thousands of marks, and
+// one more arrives whenever a deep mark reaches it, so both of those cost
+// more than the merge itself.
 func mergeMarks(held, marks []Mark) ([]Mark, bool) {
 	merged, grew := held, false
-	var seen markLookup
 	for _, m := range marks {
-		if seen.holds(merged, m) {
+		at, found := placeMark(merged, m)
+		if found {
 			continue
 		}
 		if !grew {
 			merged, grew = slices.Clone(held), true
 		}
-		merged = append(merged, m)
-	}
-	if grew {
-		sortMarks(merged)
+		merged = slices.Insert(merged, at, m)
 	}
 	return merged, grew
+}
+
+// placeMark returns where m belongs in a list of marks sorted by identifier,
+// which is after the marks that share its identifier, so that marks arriving
+// later sit behind those held already, and whether the list holds m already.
+func placeMark(list []Mark, m Mark) (int, bool) {
+	id := m.MarkID()
+	at, _ := slices.BinarySearchFunc(list, id, func(h Mark, id string) int {
+		return strings.Compare(h.MarkID(), id)
+	})
+	for ; at < len(list) && list[at].MarkID() == id; at++ {
+		if list[at] == m {
+			return at, true
+		}
+	}
+	return at, false
 }
 
 // manyMarks is the most marks a markLookup scans for one mark. A value carries
