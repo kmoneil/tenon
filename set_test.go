@@ -3,7 +3,9 @@ package tenon_test
 import (
 	"bytes"
 	"fmt"
+	"runtime"
 	"slices"
+	"sync"
 	"testing"
 
 	"github.com/kmoneil/tenon"
@@ -686,5 +688,121 @@ func BenchmarkSetComparisons(b *testing.B) {
 				}
 			}
 		})
+	}
+}
+
+// TestConformance_UN005_ASetOverFewValuesDecidesThemOnce holds what a set
+// over an element type holding few values costs: the values that type holds
+// are built once for the type rather than for every such set, and what the
+// set does not hold already is worked out once rather than looked for again
+// for each member that is not known.
+func TestConformance_UN005_ASetOverFewValuesDecidesThemOnce(t *testing.T) {
+	conformance.Covers(t, "UN-005", "EQ-041", "SE-005")
+	boo := tenon.BoolType()
+	five := func(elem tenon.Type) tenon.Type { return tenon.Tuple(elem, elem, elem, elem, elem) }
+	// Two documents of the same shape and nearly the same size: one over an
+	// element type holding 243 values, one over a type holding more than can
+	// be counted. Each set holds one member that is not known, which is what
+	// sets the first one deciding what its members leave open.
+	document := func(elem tenon.Type) []byte {
+		const sets = 1000
+		members := make([]tenon.Value, sets)
+		for i := range members {
+			members[i] = tenon.SetVal(elem, tenon.Unknown(elem))
+		}
+		doc, failure, ok := tenon.Serialize(tenon.ListVal(tenon.Set(elem), members...))
+		if !ok {
+			t.Fatalf("Serialize(%d sets of %v) failed: %v", sets, elem, failure)
+		}
+		return doc
+	}
+	allocated := func(doc []byte) uint64 {
+		var before, after runtime.MemStats
+		runtime.GC()
+		runtime.ReadMemStats(&before)
+		if _, failure, ok := tenon.Deserialize(doc, decoders); !ok {
+			t.Fatalf("a document of sets did not decode: %v", failure)
+		}
+		runtime.ReadMemStats(&after)
+		return after.TotalAlloc - before.TotalAlloc
+	}
+	few, many := allocated(document(five(boo))), allocated(document(five(num)))
+	if grew := float64(few) / float64(many); grew > 4 {
+		t.Errorf("sets over a type of 243 values allocated %.1f times what sets over a type of uncountably many did (%d bytes against %d)",
+			grew, few, many)
+	}
+
+	// A set holding every value of its element type but null, beside members
+	// that are not known: each of those could still be null, so the set keeps
+	// them, and deciding that asked every value about every member before.
+	elem := five(boo)
+	full := tuplesOfBools(boo)
+	members := append(slices.Clone(full), make([]tenon.Value, 2000)...)
+	for i := len(full); i < len(members); i++ {
+		members[i] = tenon.Unknown(elem)
+	}
+	set := tenon.SetVal(elem, members...)
+	if got, want := set.Len(), len(members); got != want {
+		t.Errorf("a set of every value but null, beside %d unknowns, holds %d members, want %d", len(members)-len(full), got, want)
+	}
+	// And a set that holds null as well leaves them nothing to be at all.
+	withNull := tenon.SetVal(elem, append(slices.Clone(members), tenon.NullVal(elem))...)
+	if got, want := withNull.Len(), len(full)+1; got != want {
+		t.Errorf("a set of every value, beside %d unknowns, holds %d members, want %d", len(members)-len(full), got, want)
+	}
+	if !withNull.IsKnown() {
+		t.Errorf("a set holding every value its members can be is %v, want a known value", withNull)
+	}
+}
+
+// tuplesOfBools returns every value a tuple of five Bool elements can be,
+// null aside: each element is true, false or the null of Bool, which is
+// three to the fifth, 243 of them.
+func tuplesOfBools(boo tenon.Type) []tenon.Value {
+	each := []tenon.Value{tenon.Bool(false), tenon.Bool(true), tenon.NullVal(boo)}
+	rows := [][]tenon.Value{nil}
+	for range 5 {
+		var next [][]tenon.Value
+		for _, row := range rows {
+			for _, v := range each {
+				next = append(next, append(append([]tenon.Value{}, row...), v))
+			}
+		}
+		rows = next
+	}
+	out := make([]tenon.Value, len(rows))
+	for i, row := range rows {
+		out[i] = tenon.TupleVal(row...)
+	}
+	return out
+}
+
+// TestSetsOverFewValuesConcurrent holds the values a type keeps for the sets
+// over it to being built from several goroutines at once: every set comes out
+// the same, whichever goroutine built the values first, and the race detector
+// sees the writing and the reading.
+func TestSetsOverFewValuesConcurrent(t *testing.T) {
+	const workers = 16
+	// A type of this run's own, so that the values it keeps are built here.
+	boo := tenon.BoolType()
+	elem := tenon.Tuple(boo, boo, tenon.Tuple(boo, boo))
+	held := tenon.TupleVal(tenon.Bool(true), tenon.NullVal(boo), tenon.TupleVal(tenon.Bool(false), tenon.Bool(true)))
+	results := make([]tenon.Value, workers)
+	var wg sync.WaitGroup
+	for w := range workers {
+		wg.Go(func() {
+			for range 50 {
+				results[w] = tenon.SetVal(elem, held, tenon.Unknown(elem), tenon.Narrow(tenon.Unknown(elem), tenon.NotNull()))
+			}
+		})
+	}
+	wg.Wait()
+	for w, got := range results {
+		if !tenon.Identical(got, results[0]) {
+			t.Errorf("worker %d built %v, where worker 0 built %v", w, got, results[0])
+		}
+	}
+	if results[0].Len() != 3 {
+		t.Errorf("the set holds %d members, want 3", results[0].Len())
 	}
 }
