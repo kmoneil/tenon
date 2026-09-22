@@ -282,6 +282,32 @@ func TestConformance_SE031_DeepMarksAreDecidedOncePerMarkSet(t *testing.T) {
 		t.Errorf("serializing a list of 4 members under %d deep marks asks %d times whether a mark is deep, and one of 256 members asks %d: the question is not settled once per mark set",
 			len(marks), small, large)
 	}
+	// Marks at many levels, one to a level: the question is settled once for
+	// each mark, not once for each mark in every set that holds it, and a
+	// value nested deeply holds the marks of the levels above it in every
+	// set within it.
+	const levels = 120
+	nested := n(1)
+	deepRead := tenon.Decoders{Marks: map[string]tenon.MarkDecoder{}}
+	for i := range levels {
+		m := deepCount{id: fmt.Sprintf("n%03d", i), asked: &asked}
+		deepRead.Marks[m.id] = func(tenon.Value, bool) (tenon.Mark, []tenon.Diagnostic) { return m, nil }
+		nested = tenon.WithMarks(tenon.ListVal(nested.Type(), nested), m)
+	}
+	nestedDoc, why, fine := tenon.Serialize(nested)
+	if !fine {
+		t.Fatalf("Serialize(a value nested %d levels, each marked) failed: %v", levels, why)
+	}
+	asked = 0
+	if got, why, fine := tenon.Deserialize(nestedDoc, deepRead); !fine || !tenon.Identical(got, nested) {
+		t.Fatalf("a value nested %d levels came back as %v, %v", levels, got, why)
+	}
+	// Once for every set that holds a mark is the square of the levels: 7,260
+	// questions of 120 of them.
+	if asked > 4*levels {
+		t.Errorf("decoding a value nested %d levels asked %d times whether a mark is deep, want at most %d", levels, asked, 4*levels)
+	}
+
 	// What a mark set lists is settled against the marks the container
 	// implies, not against the set alone: one value carrying both marks
 	// lists the one its container does not imply, which is a different mark

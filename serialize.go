@@ -75,6 +75,10 @@ type encoder struct {
 	// that arrives again is known without comparing it with each before it:
 	// two diagnostics are equal exactly when their encodings are.
 	recorded map[string]struct{}
+	// deepMarks holds whether each mark met is deep, since a mark declares
+	// that once and for all and the marks of an enclosing value are in the
+	// mark set of every value under it.
+	deepMarks map[Mark]bool
 }
 
 // fail records a diagnostic for what is at path p, unless an identical one is
@@ -284,6 +288,21 @@ func (im *impliedMarks) listed(held *markSet) []Mark {
 	return own
 }
 
+// deep reports whether m is a deep mark, asking the mark once however many
+// mark sets hold it: a value nested deeply carries a set at every level, and
+// the marks of the levels above are in each of them.
+func (e *encoder) deep(m Mark) bool {
+	if kept, asked := e.deepMarks[m]; asked {
+		return kept
+	}
+	if e.deepMarks == nil {
+		e.deepMarks = map[Mark]bool{}
+	}
+	d := isDeep(m)
+	e.deepMarks[m] = d
+	return d
+}
+
 // implies returns what a container carrying the marks in ms implies on the
 // values it holds, or nil where it implies nothing. Containers that carry the
 // same marks share one answer, which holds what the values under them list.
@@ -296,7 +315,7 @@ func (e *encoder) implies(ms *markSet) *impliedMarks {
 	}
 	var im *impliedMarks
 	for _, m := range ms.list {
-		if !isDeep(m) {
+		if !e.deep(m) {
 			continue
 		}
 		if im == nil {

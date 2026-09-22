@@ -66,6 +66,18 @@
   Numbers costs. A member that is not known beside the 243 values of such a
   type cost 0.37 milliseconds to decide and costs 0.6 microseconds.
 
+- Attaching a mark to a value that carries many of them takes the marks as
+  they are rather than building a set of them to look one up and sorting the
+  whole list again, and serializing asks each mark once whether it is deep
+  rather than once for every set of marks holding it. Both show where a value
+  is nested level upon level under deep marks, which a document can be: one
+  of 72 kilobytes holding sixteen such nests of 240 levels decoded in 3.0
+  seconds and allocated 4.1 gigabytes, and decodes in 0.73 seconds and
+  allocates 0.90; a list of 10,000 numbers under 250 levels of deep marks
+  decodes in 169 milliseconds where it took 375. Such a document still costs
+  more per byte than one without marks, since each level attaches its mark to
+  everything below it as it is read.
+
 ## 0.4.0 (2026-09-21)
 
 Bounded work on input from outside. `Deserialize` now promises that its work

@@ -373,6 +373,12 @@ func TestMergeMarksIsTheScan(t *testing.T) {
 	for i := range pool {
 		pool[i] = namedMark{id: fmt.Sprintf("m%03d", i), deep: i%3 == 0}
 	}
+	// Marks that share an identifier and are not the same mark: they tie in
+	// the order marks are held in, where the one held already comes first and
+	// the one arriving goes behind it.
+	for i := range 2 * manyMarks {
+		pool = append(pool, probe{id: fmt.Sprintf("t%02d", i%4), deep: i%2 == 0, redact: i%3 == 0})
+	}
 	pick := func(n int) []Mark {
 		ms := make([]Mark, n)
 		for i := range ms {
