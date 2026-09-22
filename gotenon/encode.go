@@ -416,6 +416,14 @@ func decimalNumber(c *big.Int, exp int64) tenon.Value {
 // can need: 2^3321929 exceeds 10^1000000.
 const maxBinaryPlaces = 3321929
 
+// maxDecimalPlaces is how many decimal places a number in tenon's digit
+// window can have: a digit below the 10^-999999 place lies outside it, and
+// TestConformance_GO030_NumbersAtTheEdgeOfTheWindow holds this to what tenon
+// accepts. A binary fraction c × 2^k with c odd has exactly -k of them, since
+// c × 5^-k is odd and the last digit sits at 10^k; a rational whose
+// denominator is 2^a × 5^b has max(a, b).
+const maxDecimalPlaces = 999999
+
 // exactBigFloat returns the decimal text of the value f, which is finite,
 // holds exactly: a binary fraction always terminates in decimal. It reports
 // false for a number too far outside the digit window to be worth computing.
@@ -429,7 +437,9 @@ func exactBigFloat(f *big.Float) (*big.Int, int64, bool) {
 	// f is c × 2^k, with c an odd integer of prec bits.
 	c, _ := new(big.Float).SetMantExp(mant, int(prec)).Int(nil)
 	k := exp - prec
-	if exp > maxBinaryPlaces || -k > maxBinaryPlaces {
+	// The last digit of c × 2^k sits at 10^k, so the places below the point
+	// say whether the number is in the window before 5^-k is built.
+	if exp > maxBinaryPlaces || -k > maxDecimalPlaces {
 		return nil, 0, false
 	}
 	if k >= 0 {
@@ -444,26 +454,23 @@ func exactBigFloat(f *big.Float) (*big.Int, int64, bool) {
 // one whose denominator has no prime factor but two and five, and false for a
 // denominator too large to be worth dividing.
 func exactRat(r *big.Rat) (c *big.Int, exp int64, exact, ok bool) {
-	den := new(big.Int).Set(r.Denom())
-	if int64(den.BitLen()) > maxBinaryPlaces+1 {
+	// A denominator of more bits than the window has decimal places, however
+	// it factors, puts the last digit below the window. It is refused before
+	// it is so much as copied.
+	if int64(r.Denom().BitLen()) > maxBinaryPlaces+1 {
 		return nil, 0, true, false
 	}
+	den := new(big.Int).Set(r.Denom())
 	twos := int64(den.TrailingZeroBits())
 	den.Rsh(den, uint(twos))
-	var fives int64
-	q, rem := new(big.Int), new(big.Int)
-	for _, step := range []int64{27, 1} {
-		divisor := new(big.Int).Exp(big.NewInt(5), big.NewInt(step), nil)
-		for {
-			q.QuoRem(den, divisor, rem)
-			if rem.Sign() != 0 {
-				break
-			}
-			den.Set(q)
-			fives += step
-		}
+	fives, rest := valuation(den, 5, maxDecimalPlaces)
+	// A terminating decimal with 2^a × 5^b beneath it has max(a, b) places,
+	// so past the window the last digit is below it whatever is left over,
+	// and the counting stops rather than dividing the rest of the way out.
+	if twos > maxDecimalPlaces || fives > maxDecimalPlaces {
+		return nil, 0, true, false
 	}
-	if den.Cmp(big.NewInt(1)) != 0 {
+	if rest.Cmp(big.NewInt(1)) != 0 {
 		return nil, 0, false, true
 	}
 	n := max(twos, fives)
@@ -471,6 +478,40 @@ func exactRat(r *big.Rat) (c *big.Int, exp int64, exact, ok bool) {
 	c.Lsh(c, uint(n-twos))
 	c.Mul(c, new(big.Int).Exp(big.NewInt(5), big.NewInt(n-fives), nil))
 	return c, -n, true, true
+}
+
+// valuation returns how many times p divides d, and what is left of d once
+// they are taken out, stopping once the count passes limit, where what is
+// left is what it had reached. It divides by p, then by p squared, then by
+// that squared, while each divides, and then takes the smaller powers out on
+// the way down, so a denominator of p^n costs the logarithm of n divisions
+// rather than n of them.
+func valuation(d *big.Int, p, limit int64) (int64, *big.Int) {
+	rest := new(big.Int).Set(d)
+	powers := []*big.Int{big.NewInt(p)}
+	steps := []int64{1}
+	q, rem := new(big.Int), new(big.Int)
+	var n int64
+	for i := 0; n <= limit; i++ {
+		if q.QuoRem(rest, powers[i], rem); rem.Sign() != 0 {
+			break
+		}
+		rest.Set(q)
+		n += steps[i]
+		if i+1 == len(powers) {
+			powers = append(powers, new(big.Int).Mul(powers[i], powers[i]))
+			steps = append(steps, 2*steps[i])
+		}
+	}
+	// Each power above the one that stopped it is too large to divide what is
+	// left, and each below it divides at most once, the powers being squares.
+	for i := len(powers) - 2; i >= 0 && n <= limit; i-- {
+		if q.QuoRem(rest, powers[i], rem); rem.Sign() == 0 {
+			rest.Set(q)
+			n += steps[i]
+		}
+	}
+	return n, rest
 }
 
 // sequence encodes a slice or an array.

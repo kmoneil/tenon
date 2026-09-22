@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"math/big"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -510,4 +511,85 @@ func BenchmarkEncodeFailures(b *testing.B) {
 			}
 		})
 	}
+}
+
+// TestConformance_GO030_NumbersAtTheEdgeOfTheWindow holds encoding a Go big
+// number to tenon's digit window: what lies inside it encodes exactly, what
+// lies outside is refused as out of range, and the refusal is decided from
+// how many places the number has rather than by working them out.
+func TestConformance_GO030_NumbersAtTheEdgeOfTheWindow(t *testing.T) {
+	conformance.Covers(t, "GO-030", "NU-016")
+	one := big.NewInt(1)
+	pow := func(base, exp int64) *big.Int {
+		return new(big.Int).Exp(big.NewInt(base), big.NewInt(exp), nil)
+	}
+	// A rational whose denominator is a power of two or five terminates, and
+	// its value is exactly the coefficient the places give it.
+	// One over a power of two is that many places of five, and one over a
+	// power of five that many of two, since ten is the two of them.
+	paired := map[int64]int64{2: 5, 5: 2}
+	for _, k := range []int64{1, 2, 17, 500} {
+		for _, base := range []int64{2, 5} {
+			r := new(big.Rat).SetFrac(one, pow(base, k))
+			want := tenon.Mul(tenon.NumberFromBigInt(pow(paired[base], k)), tenon.NumberFromText("1e-"+strconv.FormatInt(k, 10)))
+			wantValue(t, fmt.Sprintf("1/%d^%d", base, k), encoded(t, r), want)
+		}
+	}
+	// A denominator with both, and one with a factor that is neither.
+	wantValue(t, "3/(2^4 × 5^2)", encoded(t, new(big.Rat).SetFrac(big.NewInt(3), big.NewInt(400))),
+		tenon.NumberFromText("0.0075"))
+	wantEncodeFailure(t, "a third", new(big.Rat).SetFrac(one, big.NewInt(3)),
+		wantDiag{tenon.CodeEncodeInexact, "."})
+
+	// The window is tenon's: a digit at the 10^-999999 place is inside it,
+	// and one below is not, whichever way a Go number reaches it.
+	if v := tenon.NumberFromText("1e-999999"); v.IsError() {
+		t.Fatalf("tenon refused 1e-999999: %v", v)
+	}
+	if v := tenon.NumberFromText("1e-1000000"); !v.IsError() || v.Diagnostics()[0].Code != tenon.CodeNumberOutOfRange {
+		t.Fatalf("tenon took 1e-1000000: %v", v)
+	}
+	edge := new(big.Float).SetMantExp(big.NewFloat(1), -999999)
+	if got := encoded(t, edge); !got.IsKnown() {
+		t.Errorf("2^-999999 encoded as %v", got)
+	}
+	wantEncodeFailure(t, "a float one place below the window", new(big.Float).SetMantExp(big.NewFloat(1), -1_000_000),
+		wantDiag{tenon.CodeNumberOutOfRange, "."})
+	// A denominator of more bits than the window has places is refused
+	// without being factored at all, and a float below it without the power
+	// of five that would carry it being built: both cost a few hundred bytes
+	// where the number itself is megabytes.
+	far := new(big.Rat).SetFrac(one, pow(5, 4_000_000))
+	wantEncodeFailure(t, "a rational far below the window", far,
+		wantDiag{tenon.CodeNumberOutOfRange, "."})
+	for _, tt := range []struct {
+		name string
+		call func()
+	}{
+		{"a float below the window", func() { gotenon.Encode(new(big.Float).SetMantExp(big.NewFloat(1), -1_000_000)) }},
+		{"a rational far below the window", func() { gotenon.Encode(far) }},
+	} {
+		var before, after runtime.MemStats
+		runtime.GC()
+		runtime.ReadMemStats(&before)
+		tt.call()
+		runtime.ReadMemStats(&after)
+		if grew := after.TotalAlloc - before.TotalAlloc; grew > 64<<10 {
+			t.Errorf("refusing %s allocated %d bytes, more than the 65,536 it may", tt.name, grew)
+		}
+	}
+	// At the edge itself the places are counted, which took ten seconds when
+	// the fives were divided out one at a time.
+	if got := encoded(t, new(big.Rat).SetFrac(one, pow(5, 999_999))); !got.IsKnown() {
+		t.Errorf("1/5^999999 encoded as %v", got)
+	}
+	wantEncodeFailure(t, "a rational one place below the window", new(big.Rat).SetFrac(one, pow(5, 1_000_001)),
+		wantDiag{tenon.CodeNumberOutOfRange, "."})
+	// A denominator that is below the window and has a factor that is neither
+	// two nor five is out of range rather than inexact: the window is decided
+	// from the places, before what is left over is looked at, as a
+	// denominator too large to factor at all has always been.
+	wantEncodeFailure(t, "a rational below the window that does not terminate",
+		new(big.Rat).SetFrac(one, new(big.Int).Mul(big.NewInt(3), pow(5, 1_000_001))),
+		wantDiag{tenon.CodeNumberOutOfRange, "."})
 }

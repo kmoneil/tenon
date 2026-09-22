@@ -42,6 +42,17 @@
   document listing two such sets of 400 members made 2.6 million comparisons
   of the values inside them and makes 4,572.
 
+- A Go `big.Float` or `big.Rat` outside tenon's digit window is refused from
+  the places it has rather than by working them out, and one inside it costs
+  what the arithmetic costs rather than the square of it. `gotenon.Encode` of
+  a float a place below the window was refused after 17 milliseconds and
+  2.3 megabytes of working, and is refused in 39 microseconds and 904 bytes;
+  a rational of 1,430,000 places took 10 seconds and takes 0.24; and one of
+  400,000 places, which is inside the window and encodes, took 0.71 seconds
+  and takes 0.03. The fives under a rational were divided out one at a time,
+  which costs the square of the denominator; they are now counted by squaring,
+  and the denominator's size decides the far cases before it is even copied.
+
 ## 0.4.0 (2026-09-21)
 
 Bounded work on input from outside. `Deserialize` now promises that its work
