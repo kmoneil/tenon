@@ -162,6 +162,22 @@ func (d *decoder) array(want int, what string) *decodeError {
 	return nil
 }
 
+// arrayOf reads the head of the array holding the content of a value of type
+// t, which has want items. The type is rendered only where the head is not
+// that array: a document states a type once and holds many values of it, and
+// rendering it for each of them would cost the type's text per value.
+func (d *decoder) arrayOf(want int, t Type) *decodeError {
+	at := d.r.Offset()
+	n, err := d.r.ReadArray()
+	if err != nil {
+		return d.cborError(err)
+	}
+	if n != want {
+		return d.malformed(at, "the content of %s is an array of %d items, not %d", t, n, want)
+	}
+	return nil
+}
+
 // kind reads an unsigned integer naming a kind.
 func (d *decoder) kind(what string) (uint64, int, *decodeError) {
 	at := d.r.Offset()
@@ -610,18 +626,22 @@ func (d *decoder) content(t Type) (Value, *decodeError) {
 		return m, nil
 	case KindObject:
 		attrs := t.t.attrs
-		if err := d.array(len(attrs), "the content of "+t.String()); err != nil {
+		if err := d.arrayOf(len(attrs), t); err != nil {
 			return Value{}, err
 		}
-		vals := make(map[string]Value, len(attrs))
-		for _, a := range attrs {
+		vals := make([]Value, len(attrs))
+		for i, a := range attrs {
 			v, err := d.content(a.typ)
 			if err != nil {
 				return Value{}, err
 			}
-			vals[a.name] = v
+			vals[i] = v
 		}
-		return ObjectVal(vals), nil
+		// The type says what the attributes are called and what order they
+		// come in, so the object is built from it rather than from a map
+		// whose names would be normalized and whose type would be interned
+		// again, once for every object a document holds.
+		return objectOf(t, vals), nil
 	}
 	return d.capsule(t, at)
 }
