@@ -152,12 +152,14 @@ func sameValue(a, b *node) bool {
 	return slices.EqualFunc(x, y, func(p, q Value) bool { return sameValue(p.n, q.n) })
 }
 
-// sameMembers reports whether two sets hold the same members. Until a set drops
-// the members that equal one another, one set can be held as different slices,
-// in different orders and with repetitions, so the comparison is membership
-// each way rather than position by position.
+// sameMembers reports whether two known sets hold the same members. A set
+// holds its members in the canonical order, which ties exactly the ones that
+// are equal (EQ-045), and holds each of them once, so two sets with the same
+// members hold them in the same order and one walk decides it, as
+// compareContent's walk of the same members already does. Membership each way
+// would compare every pair.
 func sameMembers(x, y []Value) bool {
-	return sameMembersFunc(x, y, func(a, b Value) bool { return sameValue(a.n, b.n) })
+	return slices.EqualFunc(x, y, func(a, b Value) bool { return sameValue(a.n, b.n) })
 }
 
 // sameMembersFunc reports whether every member of each set is a member of the
@@ -296,10 +298,15 @@ func (r *rangeData) excludesPartial(n *node) bool {
 }
 
 // lacksSome reports whether some of these values is provably not a member of
-// the set.
+// the set. The set's members are indexed once, since every value asks the
+// same set the same question.
 func lacksSome(set *node, values []Value) bool {
+	if len(values) == 0 {
+		return false
+	}
+	held := indexMembers(set)
 	for _, v := range values {
-		if found, settled := membership(set, v); settled && !found {
+		if found, settled := held.membership(v); settled && !found {
 			return true
 		}
 	}

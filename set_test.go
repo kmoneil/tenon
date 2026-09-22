@@ -1,6 +1,8 @@
 package tenon_test
 
 import (
+	"bytes"
+	"fmt"
 	"slices"
 	"testing"
 
@@ -550,4 +552,139 @@ func slicesEqualValues(a, b []tenon.Value) bool {
 		}
 	}
 	return true
+}
+
+// TestConformance_EQ045_KnownMembersAreComparedInTheirOrder holds comparing
+// the known members of two sets to the order a set holds them in, which puts
+// them first and ties exactly the ones that are equal, rather than to the
+// pairs they make. A capsule type counts what its values are compared with,
+// which only two known values of it ever are.
+func TestConformance_EQ045_KnownMembersAreComparedInTheirOrder(t *testing.T) {
+	conformance.Covers(t, "EQ-044", "EQ-045", "EQ-003", "EQ-010", "SE-005")
+	const size = 400
+	set := tenon.Set(counting)
+	value := func(i int64) tenon.Value { return tenon.CapsuleVal(counting, &i) }
+	members := func(from, count int64) []tenon.Value {
+		out := make([]tenon.Value, count)
+		for i := range out {
+			out[i] = value(from + int64(i))
+		}
+		return out
+	}
+	// The same members, given in two orders, and a set that differs in one.
+	forwards := members(0, size)
+	backwards := slices.Clone(members(0, size))
+	slices.Reverse(backwards)
+	a, b := tenon.SetVal(counting, forwards...), tenon.SetVal(counting, backwards...)
+	c := tenon.SetVal(counting, append(members(0, size-1), value(size))...)
+
+	// Two sets whose members are partly known, listed in a range: the
+	// document is canonical, and deciding what it says compares the members
+	// of the two sets with each other.
+	partly := func(extra int64) tenon.Value {
+		return tenon.SetVal(counting, append(members(0, size-1), value(extra), tenon.Unknown(counting))...)
+	}
+	listing := tenon.Narrow(tenon.Unknown(tenon.Set(set)), tenon.Members(partly(size), partly(size+1)))
+	listed, failure, ok := tenon.Serialize(listing)
+	if !ok {
+		t.Fatalf("Serialize(a listing of two partly known sets) failed: %v", failure)
+	}
+	// A document holding two sets that hold the same members: the outer value
+	// is a set, so the two are one member and the document is not its own
+	// encoding, which the decoder finds out by comparing them.
+	pair, failure, ok := tenon.Serialize(tenon.ListVal(set, a, b))
+	if !ok {
+		t.Fatalf("Serialize(a list of two sets) failed: %v", failure)
+	}
+	pair = bytes.Clone(pair)
+	at := bytes.Index(pair, []byte{0x82, 0x04, 0x82, 0x05})
+	if at < 0 {
+		t.Fatalf("no list-of-set type in %x", pair[:16])
+	}
+	pair[at+1] = 0x05 // the outer list type becomes a set type
+
+	read := tenon.Decoders{Capsules: []tenon.Type{counting}}
+	var decoded tenon.Value
+	for _, tt := range []struct {
+		name string
+		want string
+		// call does the work being counted and says what it got; every
+		// comparison it makes is one of the capsule type's.
+		call func() string
+		// budget is how many comparisons it may make over size members. One
+		// operation compares each member a few times at most; a document
+		// decoded is several operations, since the two sets it holds are
+		// built, told apart, recorded and encoded again.
+		budget int
+	}{
+		{"Equals of two sets of the same members", "true", func() string { return tenon.Equals(a, b).String() }, 4 * size},
+		{"Equals of two sets differing in one member", "false", func() string { return tenon.Equals(a, c).String() }, 4 * size},
+		{"Identical of two sets of the same members", "true", func() string { return fmt.Sprint(tenon.Identical(a, b)) }, 4 * size},
+		{"Identical of two sets differing in one member", "false", func() string { return fmt.Sprint(tenon.Identical(a, c)) }, 4 * size},
+		{"Contains", "true", func() string { return tenon.Contains(a, value(size/2)).String() }, 4 * size},
+		{"decoding a document of two sets holding the same members", string(tenon.CodeSerializeNotCanonical), func() string {
+			_, failure, ok := tenon.Deserialize(pair, read)
+			if ok {
+				return "decoded"
+			}
+			return string(failure.Diagnostics()[0].Code)
+		}, 8 * size},
+		{"decoding a listing of two partly known sets", "true", func() string {
+			var failure tenon.Value
+			var ok bool
+			decoded, failure, ok = tenon.Deserialize(listed, read)
+			if !ok {
+				return "refused: " + failure.Diagnostics()[0].Message
+			}
+			return "true"
+		}, 20 * size},
+	} {
+		countingCompared = 0
+		got := tt.call()
+		compared := countingCompared
+		if got != tt.want {
+			t.Errorf("%s gave %s, want %s", tt.name, got, tt.want)
+		}
+		// Comparing every pair would be one hundred and sixty thousand.
+		if compared > tt.budget {
+			t.Errorf("%s: %d comparisons over %d members, want at most %d", tt.name, compared, size, tt.budget)
+		}
+	}
+	// What came back is the value that was written, whatever the counting.
+	if !tenon.Identical(decoded, listing) {
+		t.Errorf("the listing came back as %v", decoded)
+	}
+}
+
+// BenchmarkSetComparisons measures comparing two sets of known members, built
+// apart, at a size and four times it: the growth from one to the other is the
+// reading, not the wall clock.
+func BenchmarkSetComparisons(b *testing.B) {
+	num := tenon.NumberType()
+	for _, size := range []int{2000, 8000} {
+		build := func() tenon.Value {
+			members := make([]tenon.Value, size)
+			for i := range members {
+				members[i] = tenon.NumberFromInt(int64(i))
+			}
+			return tenon.SetVal(num, members...)
+		}
+		x, y := build(), build()
+		b.Run(fmt.Sprintf("equals/%d", size), func(b *testing.B) {
+			b.ReportAllocs()
+			for b.Loop() {
+				if v := tenon.Equals(x, y); v.IsError() {
+					b.Fatal(v)
+				}
+			}
+		})
+		b.Run(fmt.Sprintf("identical/%d", size), func(b *testing.B) {
+			b.ReportAllocs()
+			for b.Loop() {
+				if !tenon.Identical(x, y) {
+					b.Fatal("the sets differ")
+				}
+			}
+		})
+	}
 }

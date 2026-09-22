@@ -29,6 +29,19 @@
   an ordinary document of 1,000 objects of three attributes decodes 2.8 times
   faster and allocates 2.6 times less.
 
+- Comparing two sets of known members takes time in proportion to them, where
+  it took the square of them. A set holds its members in the canonical order,
+  which ties exactly the ones that are equal and holds each of them once, so
+  two sets with the same members hold them in the same order and one walk
+  decides it, as the canonical comparison of two sets already did; membership
+  each way compared every pair. `Equals` of two sets of 8,000 members took
+  399 milliseconds and takes 77 microseconds, and `Identical` took 1.6 seconds
+  and takes 0.2. A set asked about many values at once, which is what deciding
+  two sets that hold members which are not known comes down to, now indexes
+  its known members by hash once rather than scanning them for each: a
+  document listing two such sets of 400 members made 2.6 million comparisons
+  of the values inside them and makes 4,572.
+
 ## 0.4.0 (2026-09-21)
 
 Bounded work on input from outside. `Deserialize` now promises that its work

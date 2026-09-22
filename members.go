@@ -182,8 +182,13 @@ var containsOp = register(&op{
 // settled: a member that is provably v settles it, and so does every member
 // being provably not v. Anything else leaves it open.
 func membership(set *node, v Value) (found, settled bool) {
+	return among(set.data.([]Value), v)
+}
+
+// among says whether v is one of these members, and whether that is settled.
+func among(members []Value, v Value) (found, settled bool) {
 	settled = true
-	for _, m := range set.data.([]Value) {
+	for _, m := range members {
 		switch eq, ok := equality(m.n, v.n); {
 		case ok && eq:
 			return true, true
@@ -192,4 +197,55 @@ func membership(set *node, v Value) (found, settled bool) {
 		}
 	}
 	return false, settled
+}
+
+// knownMembers returns how many of a set's members are known, which are the
+// ones it holds first (EQ-044).
+func knownMembers(members []Value) int {
+	n := 0
+	for n < len(members) && members[n].n.isKnown() {
+		n++
+	}
+	return n
+}
+
+// memberIndex answers membership of one set for value after value. Its known
+// members are bucketed by hash, since a known value is equal to a known
+// member only where their hashes agree (EQ-030), as a set's own construction
+// tells them apart; the rest are kept as they are, since what tells a member
+// that is not known apart from a value is what it could still turn out to be,
+// which no hash holds.
+type memberIndex struct {
+	known   []Value
+	buckets map[uint64][]Value
+	rest    []Value
+}
+
+// indexMembers indexes the members of a known set.
+func indexMembers(set *node) memberIndex {
+	members := set.data.([]Value)
+	k := knownMembers(members)
+	x := memberIndex{known: members[:k], rest: members[k:]}
+	x.buckets = make(map[uint64][]Value, len(x.known))
+	for _, m := range x.known {
+		h := hashNode(m.n)
+		x.buckets[h] = append(x.buckets[h], m)
+	}
+	return x
+}
+
+// membership says whether v is a member of the set indexed, and gives the
+// answer membership gives.
+func (x memberIndex) membership(v Value) (found, settled bool) {
+	candidates := x.known
+	if v.n.isKnown() {
+		// Equal known values have equal hashes, so the known members in other
+		// buckets are provably not v and say nothing about the answer.
+		candidates = x.buckets[hashNode(v.n)]
+	}
+	if found, settled = among(candidates, v); found {
+		return true, true
+	}
+	restFound, restSettled := among(x.rest, v)
+	return restFound, settled && restSettled
 }

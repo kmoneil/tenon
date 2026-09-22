@@ -110,11 +110,25 @@ func (c Constraint) equal(d Constraint) bool {
 }
 
 // sameMultiset reports whether two sets hold identical members, each as many
-// times in one as in the other.
+// times in one as in the other. A set holds the known ones first, in the
+// canonical order, and holds each of them once, so those line up and one walk
+// decides them; the members that are not known are counted, since a set keeps
+// identical ones apart and what makes two of them one member is what they
+// could turn out to be.
 func sameMultiset(x, y []Value) bool {
 	if len(x) != len(y) {
 		return false
 	}
+	kx, ky := knownMembers(x), knownMembers(y)
+	if kx != ky {
+		return false
+	}
+	for i := range kx {
+		if !Identical(x[i], y[i]) {
+			return false
+		}
+	}
+	x, y = x[kx:], y[ky:]
 	count := func(members []Value, m Value) int {
 		n := 0
 		for _, k := range members {
