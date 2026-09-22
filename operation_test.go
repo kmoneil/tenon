@@ -2,6 +2,7 @@ package tenon_test
 
 import (
 	"slices"
+	"strconv"
 	"testing"
 
 	"github.com/kmoneil/tenon"
@@ -45,6 +46,48 @@ func TestConformance_ER005_DiagnosticsConcatenate(t *testing.T) {
 	// An operation with one error operand carries that operand's diagnostics.
 	if d := tenon.Or(tenon.Bool(false), a).Diagnostics(); !equalDiagnostics(d, []tenon.Diagnostic{first, shared}) {
 		t.Errorf("diagnostics %v; want the error operand's own", d)
+	}
+
+	// Operands carrying many diagnostics collapse the same way, on either
+	// side of the count where propagation stops comparing each diagnostic
+	// with every one taken and starts looking it up: the first operand's in
+	// order, then those of the second that are new.
+	for _, count := range []int{4, 40} {
+		var left, right []tenon.Diagnostic
+		var want []tenon.Diagnostic
+		for i := range count {
+			d := tenon.Diagnostic{Code: "app.left", Message: "d" + strconv.Itoa(i)}
+			left = append(left, d)
+			want = append(want, d)
+			if i%2 == 0 {
+				right = append(right, d) // shared, so recorded once
+				continue
+			}
+			only := tenon.Diagnostic{Code: "app.right", Message: "r" + strconv.Itoa(i)}
+			right = append(right, only)
+		}
+		for _, d := range right {
+			if d.Code == "app.right" {
+				want = append(want, d)
+			}
+		}
+		got := tenon.And(tenon.ErrorVal(left...), tenon.ErrorVal(right...)).Diagnostics()
+		if !equalDiagnostics(got, want) {
+			t.Errorf("with %d diagnostics on each operand, got %d, want %d", count, len(got), len(want))
+		}
+	}
+
+	// Two operands carrying thousands of diagnostics between them propagate
+	// in time proportional to them, which took seconds when each was compared
+	// with every one taken.
+	const many = 10_000
+	var left, right []tenon.Diagnostic
+	for i := range many {
+		left = append(left, tenon.Diagnostic{Code: "app.left", Message: "l" + strconv.Itoa(i)})
+		right = append(right, tenon.Diagnostic{Code: "app.right", Message: "r" + strconv.Itoa(i)})
+	}
+	if d := tenon.And(tenon.ErrorVal(left...), tenon.ErrorVal(right...)).Diagnostics(); len(d) != 2*many {
+		t.Errorf("two operands of %d diagnostics gave %d", many, len(d))
 	}
 }
 

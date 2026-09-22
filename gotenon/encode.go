@@ -41,13 +41,76 @@ func (e *DiagnosticError) Error() string {
 // slice.
 func (e *DiagnosticError) Diagnostics() []tenon.Diagnostic { return e.Value.Diagnostics() }
 
-// failures collects diagnostics, each once.
-type failures []tenon.Diagnostic
+// manyFailures is the most diagnostics a failures compares one against. A Go
+// value fails in a handful of places, among which a scan is quickest and
+// allocates nothing; but every member of a slice or map can fail, and
+// comparing each failure with every failure collected costs the square of
+// them: a JSON array of 20,000 nulls took 3 seconds to encode.
+const manyFailures = 16
+
+// failures collects diagnostics, each once: by comparing them while there are
+// few, and by a set of their keys once there are many.
+type failures struct {
+	list []tenon.Diagnostic
+	seen map[string]struct{}
+	n    int    // how many of the list's diagnostics the set holds
+	buf  []byte // the key of the diagnostic being looked up, kept to be reused
+}
 
 func (f *failures) add(d tenon.Diagnostic) {
-	if !slices.ContainsFunc(*f, d.Equal) {
-		*f = append(*f, d)
+	if !f.holds(d) {
+		f.list = append(f.list, d)
 	}
+}
+
+// holds reports whether d is among the diagnostics collected.
+func (f *failures) holds(d tenon.Diagnostic) bool {
+	if f.seen == nil {
+		if len(f.list) <= manyFailures {
+			return slices.ContainsFunc(f.list, d.Equal)
+		}
+		f.seen = make(map[string]struct{}, 2*len(f.list))
+	}
+	for _, h := range f.list[f.n:] {
+		f.seen[string(appendFailureKey(nil, h))] = struct{}{}
+	}
+	f.n = len(f.list)
+	// The key of what is looked up is built in a buffer of its own, which a
+	// lookup of a map by a string of bytes does not copy.
+	f.buf = appendFailureKey(f.buf[:0], d)
+	_, ok := f.seen[string(f.buf)]
+	return ok
+}
+
+// appendFailureKey appends a key that two diagnostics share exactly when
+// tenon.Diagnostic.Equal reports them the same: the code, the message, and
+// each step of the path, written after its length so that no two of them run
+// together and tagged by its kind so that an attribute and a key of the same
+// text stay apart. A key is written as the value it is, without the marks it
+// carries, which Equal leaves out as well; a number is written in its one
+// canonical text, whatever text it was read from.
+func appendFailureKey(b []byte, d tenon.Diagnostic) []byte {
+	b = appendKeyPart(b, string(d.Code))
+	b = appendKeyPart(b, d.Message)
+	for _, s := range d.Path.Steps() {
+		if s.Kind() == tenon.StepAttribute {
+			b = appendKeyPart(append(b, 'a'), s.Name())
+			continue
+		}
+		key, _ := tenon.UnmarkDeep(s.Key())
+		if key.Type() == tenon.StringType() {
+			b = appendKeyPart(append(b, 's'), key.AsString())
+			continue
+		}
+		b = appendKeyPart(append(b, 'n'), key.String())
+	}
+	return b
+}
+
+// appendKeyPart appends one part of a key, after its length in bytes.
+func appendKeyPart(b []byte, part string) []byte {
+	b = strconv.AppendInt(b, int64(len(part)), 10)
+	return append(append(b, ':'), part...)
 }
 
 // within adds diagnostics that arose within the part at p.
@@ -129,8 +192,8 @@ func Encode[T any](x T) (tenon.Value, error) {
 	m := mappingOf(reflect.TypeFor[T]())
 	var e encoder
 	v, ok := e.encode(m, reflect.ValueOf(&x).Elem(), tenon.Path{})
-	if len(e.fails) > 0 || !ok {
-		return tenon.Value{}, &DiagnosticError{Value: tenon.ErrorVal(e.fails...)}
+	if len(e.fails.list) > 0 || !ok {
+		return tenon.Value{}, &DiagnosticError{Value: tenon.ErrorVal(e.fails.list...)}
 	}
 	return v, nil
 }

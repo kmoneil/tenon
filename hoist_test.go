@@ -1,7 +1,9 @@
 package tenon_test
 
 import (
+	"fmt"
 	"slices"
+	"strconv"
 	"testing"
 
 	"github.com/kmoneil/tenon"
@@ -107,8 +109,79 @@ func TestConformance_ER008_ContainersHoistErrors(t *testing.T) {
 		t.Errorf("diagnostics %q", got)
 	}
 
+	// A container with many error members records each diagnostic once,
+	// whether there are few or many: a diagnostic repeated within one member
+	// is kept once, and one message at two positions is two diagnostics,
+	// which holds on either side of the count where the lookup stops
+	// comparing and starts looking up.
+	for _, count := range []int{4, 40} {
+		members := make([]tenon.Value, count)
+		var want []string
+		for i := range members {
+			twice := tenon.Diagnostic{Code: "app.failed", Message: "twice"}
+			members[i] = tenon.ErrorVal(twice, twice,
+				tenon.Diagnostic{Code: "app.failed", Message: "member " + strconv.Itoa(i)})
+			at := " at .[" + strconv.Itoa(i) + "]"
+			want = append(want, "twice"+at, "member "+strconv.Itoa(i)+at)
+		}
+		if got := located(tenon.ListVal(str, members...)); !slices.Equal(got, want) {
+			t.Errorf("a list of %d error members gave %q, want %q", count, got, want)
+		}
+	}
+
+	// Many members, each failing once: every diagnostic is recorded, in
+	// element order. A list this long took seconds to build when each
+	// diagnostic was compared with every one recorded before it.
+	const many = 20_000
+	members := make([]tenon.Value, many)
+	for i := range members {
+		members[i] = failed("member " + strconv.Itoa(i))
+	}
+	d := tenon.ListVal(str, members...).Diagnostics()
+	if len(d) != many {
+		t.Fatalf("a list of %d error members gave %d diagnostics", many, len(d))
+	}
+	if first, last := d[0].Path.String(), d[many-1].Path.String(); first != ".[0]" || last != ".["+strconv.Itoa(many-1)+"]" {
+		t.Errorf("the diagnostics run from %s to %s", first, last)
+	}
+
 	// Members that are not error values are still checked, and a host's own
 	// mistake still panics.
 	mustPanicUsage(t, "has type number, not string", func() { tenon.ListVal(str, first, tenon.NumberFromInt(1)) })
 	mustPanicUsage(t, "is a pending value", func() { tenon.TupleVal(first, tenon.Pending(tenon.Any())) })
+}
+
+// BenchmarkHoistedFailures measures building a list of error members, each a
+// diagnostic at its own path, and propagating two operands' diagnostics
+// through an operation, at a size and four times it: the growth from one to
+// the other is the reading, not the wall clock.
+func BenchmarkHoistedFailures(b *testing.B) {
+	str := tenon.StringType()
+	for _, size := range []int{5000, 20000} {
+		members := make([]tenon.Value, size)
+		left := make([]tenon.Diagnostic, size)
+		right := make([]tenon.Diagnostic, size)
+		for i := range members {
+			members[i] = failed("member " + strconv.Itoa(i))
+			left[i] = tenon.Diagnostic{Code: "app.left", Message: "l" + strconv.Itoa(i)}
+			right[i] = tenon.Diagnostic{Code: "app.right", Message: "r" + strconv.Itoa(i)}
+		}
+		x, y := tenon.ErrorVal(left...), tenon.ErrorVal(right...)
+		b.Run(fmt.Sprintf("hoist/%d", size), func(b *testing.B) {
+			b.ReportAllocs()
+			for b.Loop() {
+				if v := tenon.ListVal(str, members...); !v.IsError() {
+					b.Fatal("the list was built")
+				}
+			}
+		})
+		b.Run(fmt.Sprintf("propagate/%d", size), func(b *testing.B) {
+			b.ReportAllocs()
+			for b.Loop() {
+				if v := tenon.And(x, y); !v.IsError() {
+					b.Fatal("the operation gave a value")
+				}
+			}
+		})
+	}
 }

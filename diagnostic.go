@@ -1,6 +1,7 @@
 package tenon
 
 import (
+	"slices"
 	"strings"
 	"unicode/utf8"
 )
@@ -20,6 +21,49 @@ type Diagnostic struct {
 func (d Diagnostic) Equal(e Diagnostic) bool {
 	return d.Code == e.Code && d.Message == e.Message && d.Path.Equal(e.Path)
 }
+
+// manyDiagnostics is the most diagnostics a diagnosticLookup compares one
+// against. A value fails in a handful of places, among which a scan is
+// quickest and allocates nothing; but one document can fail in every member
+// it holds, and comparing each failure with every failure recorded costs the
+// square of them: 20,000 of them took 7 seconds to collect.
+const manyDiagnostics = 16
+
+// diagnosticLookup says whether a diagnostic is among those a list holds so
+// far, by comparing them while the list is short and by a set of their keys
+// once it is not. The list only grows while a diagnosticLookup is in use, so
+// the set, once made, needs only the diagnostics the list gains after it.
+type diagnosticLookup struct {
+	set map[string]struct{}
+	n   int    // how many of the list's diagnostics the set holds
+	buf []byte // the key of the diagnostic being looked up, kept to be reused
+}
+
+// holds reports whether d is in list, which holds the diagnostics the
+// previous calls saw and perhaps more at its end.
+func (l *diagnosticLookup) holds(list []Diagnostic, d Diagnostic) bool {
+	if l.set == nil {
+		if len(list) <= manyDiagnostics {
+			return slices.ContainsFunc(list, d.Equal)
+		}
+		l.set = make(map[string]struct{}, 2*len(list))
+	}
+	for _, h := range list[l.n:] {
+		l.set[diagnosticKey(h)] = struct{}{}
+	}
+	l.n = len(list)
+	// The key of what is looked up is built in a buffer of its own, which a
+	// lookup of a map by a string of bytes does not copy.
+	l.buf = appendDiagnostic(l.buf[:0], d)
+	_, ok := l.set[string(l.buf)]
+	return ok
+}
+
+// diagnosticKey is the encoding of d, which two diagnostics share exactly
+// when Equal reports them the same: the encoding holds the code, the message
+// and each step of the path, it writes a number key canonically, and it
+// leaves out the marks on a key, as Equal does.
+func diagnosticKey(d Diagnostic) string { return string(appendDiagnostic(nil, d)) }
 
 // ErrorVal returns an error value carrying diags. Data that is wrong produces
 // an error value like this one rather than a panic, and operations on it carry
