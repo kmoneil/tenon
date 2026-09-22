@@ -25,6 +25,7 @@ type mapEntry struct {
 type containerErrors struct {
 	diags []Diagnostic
 	marks []Mark
+	seen  diagnosticLookup
 }
 
 // add records the diagnostics of an error member that step locates within the
@@ -57,7 +58,7 @@ func (c *containerErrors) addMarks(member Value) {
 
 // addDiagnostic records d unless it is already there.
 func (c *containerErrors) addDiagnostic(d Diagnostic) {
-	if !slices.ContainsFunc(c.diags, d.Equal) {
+	if !c.seen.holds(c.diags, d) {
 		c.diags = append(c.diags, d)
 	}
 }

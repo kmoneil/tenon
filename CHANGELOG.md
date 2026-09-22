@@ -1,5 +1,23 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- Collecting the diagnostics of a value that fails in many places takes time
+  in proportion to them, where it took the square of them. Building a list of
+  20,000 error members took 1.0 second and takes 13 milliseconds; an operation
+  over two error values carrying 20,000 diagnostics between them took 6.5
+  seconds and takes 18 milliseconds; and `gotenon.Encode` of a `[]any` holding
+  20,000 nils, which is what an array of nulls read by `encoding/json` gives,
+  took 3.1 seconds and takes 18 milliseconds. Each diagnostic was compared
+  with every diagnostic recorded, so that one arriving twice is recorded once;
+  past a handful, each is now looked up by a key that two diagnostics share
+  exactly when they are equal, as the encoder has done since 0.4.0. `Convert`
+  and `gotenon.Decode` collect their failures the same way and are bounded
+  with them. A value that fails in a handful of places, as nearly every one
+  does, allocates nothing more than before.
+
 ## 0.4.0 (2026-09-21)
 
 Bounded work on input from outside. `Deserialize` now promises that its work

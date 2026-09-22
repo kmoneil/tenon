@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"math/big"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -432,5 +433,81 @@ func TestConformance_GO030_NumbersOfManyDigits(t *testing.T) {
 	}
 	if got := encoded(t, *f); got.AsBigRat().Cmp(want) != 0 {
 		t.Errorf("1 + 2^-20000 as a big.Float encoded as a different number")
+	}
+}
+
+// repeats is a marshaler that fails with each of its diagnostics twice.
+type repeats struct{ count int }
+
+func (r repeats) MarshalValue() (tenon.Value, error) {
+	var diags []tenon.Diagnostic
+	for i := range r.count {
+		d := tenon.Diagnostic{Code: "app.repeated", Message: "d" + strconv.Itoa(i)}
+		diags = append(diags, d, d)
+	}
+	return tenon.Value{}, &gotenon.DiagnosticError{Value: tenon.ErrorVal(diags...)}
+}
+
+// TestConformance_GO003_FailuresAreRecordedOnce holds encoding to one
+// diagnostic per part that fails, in member order, however many parts fail:
+// the collection stops comparing each new diagnostic with every one recorded
+// and looks it up instead once there are many, and the answers do not change
+// with it.
+func TestConformance_GO003_FailuresAreRecordedOnce(t *testing.T) {
+	conformance.Covers(t, "GO-003")
+
+	// A diagnostic that arrives twice is recorded once, on either side of the
+	// count where the collection changes how it looks.
+	for _, count := range []int{4, 40} {
+		var want []wantDiag
+		for range count {
+			want = append(want, wantDiag{"app.repeated", "."})
+		}
+		wantEncodeFailure(t, "a marshaler failing twice over", repeats{count}, want...)
+	}
+
+	// Every part that fails is reported, where it is, in member order: a
+	// nil interface holds no value, and no type follows from nothing.
+	for _, count := range []int{4, 40} {
+		var want []wantDiag
+		for i := range count {
+			want = append(want, wantDiag{tenon.CodeEncodeUntypedNil, ".[" + strconv.Itoa(i) + "]"})
+		}
+		wantEncodeFailure(t, "a slice of nil interfaces", make([]any, count), want...)
+	}
+
+	// Many parts failing at once are reported in time proportional to them,
+	// which took seconds when each diagnostic was compared with every one
+	// recorded before it. A document read by encoding/json holding an array
+	// of nulls arrives here.
+	const many = 20_000
+	_, err := gotenon.Encode(make([]any, many))
+	var de *gotenon.DiagnosticError
+	if !errors.As(err, &de) {
+		t.Fatalf("Encode of %d nils gave %v, want a *DiagnosticError", many, err)
+	}
+	d := de.Diagnostics()
+	if len(d) != many {
+		t.Fatalf("Encode of %d nils gave %d diagnostics", many, len(d))
+	}
+	if first, last := d[0].Path.String(), d[many-1].Path.String(); first != ".[0]" || last != ".["+strconv.Itoa(many-1)+"]" {
+		t.Errorf("the diagnostics run from %s to %s", first, last)
+	}
+}
+
+// BenchmarkEncodeFailures measures encoding a slice of nil interfaces, each a
+// diagnostic at its own path, at a size and four times it: the growth from
+// one to the other is the reading, not the wall clock.
+func BenchmarkEncodeFailures(b *testing.B) {
+	for _, size := range []int{5000, 20000} {
+		x := make([]any, size)
+		b.Run(fmt.Sprintf("%d", size), func(b *testing.B) {
+			b.ReportAllocs()
+			for b.Loop() {
+				if _, err := gotenon.Encode(x); err == nil {
+					b.Fatal("the slice encoded")
+				}
+			}
+		})
 	}
 }

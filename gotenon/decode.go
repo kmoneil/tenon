@@ -50,9 +50,9 @@ func Decode[T any](v tenon.Value, p tenon.Policy) (T, error) {
 	m := mappingOf(reflect.TypeFor[T]())
 	d := decoder{policy: p, marked: map[string]tenon.Diagnostic{}}
 	d.decode(m, reflect.ValueOf(&out).Elem(), v, tenon.Path{}, false)
-	if len(d.fails) > 0 {
+	if len(d.fails.list) > 0 {
 		var zero T
-		return zero, &DiagnosticError{Value: tenon.ErrorVal(d.fails...)}
+		return zero, &DiagnosticError{Value: tenon.ErrorVal(d.fails.list...)}
 	}
 	return out, nil
 }

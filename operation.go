@@ -17,12 +17,13 @@ import (
 // wrote something wrong and discarding it would hide a real mistake.
 func propagate(operands ...Value) (Value, bool) {
 	var diags []Diagnostic
+	var seen diagnosticLookup
 	for _, v := range operands {
 		if v.data().state != stateError {
 			continue
 		}
 		for _, d := range v.n.data.([]Diagnostic) {
-			if !slices.ContainsFunc(diags, d.Equal) {
+			if !seen.holds(diags, d) {
 				diags = append(diags, d)
 			}
 		}
