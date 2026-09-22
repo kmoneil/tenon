@@ -118,8 +118,19 @@ func fullSet(t Type) Value {
 // memberValues returns every value a member of type t can be: the values of
 // its domain and null. The order is not the order a set holds them in, which
 // SetVal settles.
+//
+// The values are built once for the type and kept on it: every set over a
+// type holding few values asks for them as soon as it holds a member that is
+// not known, and building them again means building up to 256 values, each of
+// which builds the values within it. They are immutable, as every value is,
+// and the caller reads the slice rather than writing to it.
 func memberValues(t Type) []Value {
-	return append(domainValues(t), NullVal(t))
+	if kept := t.t.values.Load(); kept != nil {
+		return *kept
+	}
+	values := append(domainValues(t), NullVal(t))
+	t.t.values.CompareAndSwap(nil, &values)
+	return *t.t.values.Load()
 }
 
 // domainValues returns the values of the domain of t, which must be finite

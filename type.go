@@ -79,6 +79,13 @@ type typeData struct {
 	// count is kept rather than walked again; like structure, it is derived
 	// from the fields above.
 	domain atomic.Int64
+	// values holds the values a member of the type can be, null among them,
+	// once a set over it has asked: every set holding a member that is not
+	// known asks, and there are up to 256 of them to build. Like structure it
+	// is derived from the fields above, so every goroutine that builds it
+	// builds the same, and it is set only for a type whose values can be
+	// counted and built.
+	values atomic.Pointer[[]Value]
 }
 
 // attribute is one attribute of an object type.

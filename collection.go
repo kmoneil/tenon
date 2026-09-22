@@ -281,17 +281,16 @@ func withNothingLeftToBe(t Type, members []Value) []Value {
 	if !c.set || c.n > maxDomainSet {
 		return members
 	}
-	known := 0
-	for known < len(members) && members[known].n.isKnown() {
-		known++
-	}
+	known := knownMembers(members)
 	if known == len(members) {
 		return members
 	}
-	values := memberValues(t.t.elem)
+	// Which values the set does not hold already is worked out once, since
+	// every member that is not known is asked the same thing about them.
+	missing := valuesMissing(t.t.elem, members[:known])
 	kept, dropped := members[:known:known], false
 	for _, m := range members[known:] {
-		if couldOnlyBe(m, values, members[:known]) {
+		if couldOnlyBe(m, missing) {
 			dropped = true
 			continue
 		}
@@ -303,11 +302,33 @@ func withNothingLeftToBe(t Type, members []Value) []Value {
 	return kept
 }
 
-// couldOnlyBe reports whether every one of these values that m could turn out
-// to be is one of these members already.
-func couldOnlyBe(m Value, values, members []Value) bool {
+// valuesMissing returns the values a member of type elem can be that these
+// members, which are known, do not hold. They are looked up among the members
+// by hash, as a set's own construction tells its members apart, rather than
+// each being compared with every member.
+func valuesMissing(elem Type, known []Value) []Value {
+	values := memberValues(elem)
+	if len(known) == 0 {
+		// A set with no known member holds none of them, so the values the
+		// type keeps are the answer, and nothing is built for this set.
+		return values
+	}
+	held := indexMembers(known)
+	var missing []Value
 	for _, v := range values {
-		if eq, settled := equality(v.n, m.n); (!settled || eq) && !sameAsSome(members, v) {
+		if found, _ := held.membership(v); !found {
+			missing = append(missing, v)
+		}
+	}
+	return missing
+}
+
+// couldOnlyBe reports whether every value m could turn out to be is one the
+// set holds already, which is so exactly when m could be none of the values
+// missing from it.
+func couldOnlyBe(m Value, missing []Value) bool {
+	for _, v := range missing {
+		if eq, settled := equality(v.n, m.n); !settled || eq {
 			return false
 		}
 	}

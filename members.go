@@ -221,9 +221,8 @@ type memberIndex struct {
 	rest    []Value
 }
 
-// indexMembers indexes the members of a known set.
-func indexMembers(set *node) memberIndex {
-	members := set.data.([]Value)
+// indexMembers indexes the members a set holds.
+func indexMembers(members []Value) memberIndex {
 	k := knownMembers(members)
 	x := memberIndex{known: members[:k], rest: members[k:]}
 	x.buckets = make(map[uint64][]Value, len(x.known))

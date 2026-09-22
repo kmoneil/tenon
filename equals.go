@@ -304,7 +304,7 @@ func lacksSome(set *node, values []Value) bool {
 	if len(values) == 0 {
 		return false
 	}
-	held := indexMembers(set)
+	held := indexMembers(set.data.([]Value))
 	for _, v := range values {
 		if found, settled := held.membership(v); settled && !found {
 			return true
