@@ -405,6 +405,77 @@ func TestConformance_SE005_DecodingWorkIsBounded(t *testing.T) {
 	}
 }
 
+// TestConformance_SE005_ObjectsCostWhatTheyHold holds decoding a document of
+// many objects of one type to work that grows with the document. A document
+// states an object type once and then holds values of it, each of which can
+// be a couple of bytes, so a decoder that reads the type again for every
+// object, by rendering it or by gathering its attributes afresh, does work
+// that grows with the square of what it is given.
+func TestConformance_SE005_ObjectsCostWhatTheyHold(t *testing.T) {
+	conformance.Covers(t, "SE-005", "SE-003")
+	// The type's text is eight bytes per object in the document, so a decoder
+	// that reads it per object does sixteen times the work for four times the
+	// document. Allocated bytes are the reading, being the same on every run
+	// where a wall clock is not.
+	var allocated []uint64
+	for _, size := range []int{250, 1000} {
+		name := strings.Repeat("a", 8*size)
+		attrs := map[string]tenon.Type{name: num}
+		objects := make([]tenon.Value, size)
+		for i := range objects {
+			objects[i] = obj(map[string]tenon.Value{name: tenon.NullVal(num)})
+		}
+		doc, failure, ok := tenon.Serialize(tenon.ListVal(tenon.Object(attrs), objects...))
+		if !ok {
+			t.Fatalf("Serialize(%d objects) failed: %v", size, failure)
+		}
+		var before, after runtime.MemStats
+		runtime.GC()
+		runtime.ReadMemStats(&before)
+		got, failure, ok := tenon.Deserialize(doc, decoders)
+		runtime.ReadMemStats(&after)
+		if !ok {
+			t.Fatalf("a document of %d objects came back as %v", size, failure)
+		}
+		if got.Len() != size {
+			t.Fatalf("a document of %d objects decoded to %d", size, got.Len())
+		}
+		allocated = append(allocated, after.TotalAlloc-before.TotalAlloc)
+	}
+	if grew := float64(allocated[1]) / float64(allocated[0]); grew > 5 {
+		t.Errorf("four times the document allocated %.1f times as much (%d bytes, then %d)",
+			grew, allocated[0], allocated[1])
+	}
+
+	// A document of ordinary objects costs what its content holds, rather
+	// than what its type says: the decoder has the type already.
+	small := make([]tenon.Value, 100)
+	for i := range small {
+		small[i] = obj(map[string]tenon.Value{"name": s("x"), "port": n(int64(i)), "on": tenon.Bool(true)})
+	}
+	doc, failure, ok := tenon.Serialize(tenon.ListVal(small[0].Type(), small...))
+	if !ok {
+		t.Fatalf("Serialize(100 objects) failed: %v", failure)
+	}
+	allocs := testing.AllocsPerRun(10, func() {
+		if _, _, ok := tenon.Deserialize(doc, decoders); !ok {
+			t.Fatal("the document did not decode")
+		}
+	})
+	if budget := float64(30 * len(small)); allocs > budget {
+		t.Errorf("decoding %d objects of three attributes made %.0f allocations, more than %.0f", len(small), allocs, budget)
+	}
+
+	// The content of an object is an array of its attributes, and a document
+	// saying otherwise fails where it says it, naming the type it is not.
+	short := document + "83 00 82 08 82 82 6161 02 82 6162 02 81 f6"
+	wantDecodeFailure(t, "an object content of one item too few", short, tenon.CodeSerializeMalformed)
+	want := `at byte 20: the content of object({"a": number, "b": number}) is an array of 1 items, not 2`
+	if _, failure, _ := tenon.Deserialize(fromHex(t, short), decoders); failure.Diagnostics()[0].Message != want {
+		t.Errorf("a short object content said %q, want %q", failure.Diagnostics()[0].Message, want)
+	}
+}
+
 func TestConformance_SE005_DecodingIsBounded(t *testing.T) {
 	conformance.Covers(t, "SE-005", "SE-051")
 	// Nesting beyond the bound is refused, not followed down the stack.
@@ -591,6 +662,54 @@ func BenchmarkManyMarks(b *testing.B) {
 			b.ReportAllocs()
 			for b.Loop() {
 				if _, _, ok := tenon.Deserialize(encoded, read); !ok {
+					b.Fatal("the document did not decode")
+				}
+			}
+		})
+	}
+}
+
+// BenchmarkObjectDocuments measures decoding a document of many objects of
+// one type, at a size and four times it: the growth from one to the other is
+// the reading, not the wall clock. The type's text is eight bytes per object,
+// so a decoder that reads the type again for every object grows with the
+// square of the document.
+func BenchmarkObjectDocuments(b *testing.B) {
+	for _, size := range []int{250, 1000} {
+		name := strings.Repeat("a", 8*size)
+		objects := make([]tenon.Value, size)
+		for i := range objects {
+			objects[i] = obj(map[string]tenon.Value{name: tenon.NullVal(num)})
+		}
+		doc, failure, ok := tenon.Serialize(tenon.ListVal(tenon.Object(map[string]tenon.Type{name: num}), objects...))
+		if !ok {
+			b.Fatalf("Serialize(%d objects) failed: %v", size, failure)
+		}
+		b.Run(fmt.Sprintf("named/%d", size), func(b *testing.B) {
+			b.ReportAllocs()
+			b.SetBytes(int64(len(doc)))
+			for b.Loop() {
+				if _, _, ok := tenon.Deserialize(doc, decoders); !ok {
+					b.Fatal("the document did not decode")
+				}
+			}
+		})
+	}
+	// An ordinary document, whose objects hold more than its type says.
+	for _, size := range []int{250, 1000} {
+		objects := make([]tenon.Value, size)
+		for i := range objects {
+			objects[i] = obj(map[string]tenon.Value{"name": s("x"), "port": n(int64(i)), "on": tenon.Bool(true)})
+		}
+		doc, failure, ok := tenon.Serialize(tenon.ListVal(objects[0].Type(), objects...))
+		if !ok {
+			b.Fatalf("Serialize(%d objects) failed: %v", size, failure)
+		}
+		b.Run(fmt.Sprintf("plain/%d", size), func(b *testing.B) {
+			b.ReportAllocs()
+			b.SetBytes(int64(len(doc)))
+			for b.Loop() {
+				if _, _, ok := tenon.Deserialize(doc, decoders); !ok {
 					b.Fatal("the document did not decode")
 				}
 			}

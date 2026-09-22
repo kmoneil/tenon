@@ -18,6 +18,17 @@
   with them. A value that fails in a handful of places, as nearly every one
   does, allocates nothing more than before.
 
+- Decoding a document of many objects of one type takes time and memory in
+  proportion to the document, where it took the square of it. The decoder
+  rendered the object type into a message that only a malformed document
+  would have used, and then gathered the attributes into a map and worked the
+  type out again, once for every object; it now builds the object from the
+  type it has already decoded, and renders that type only where the content
+  is not the array it should be. A 10 KB document of 1,000 objects whose type
+  names one long attribute decoded in 64 milliseconds and decodes in 0.4, and
+  an ordinary document of 1,000 objects of three attributes decodes 2.8 times
+  faster and allocates 2.6 times less.
+
 ## 0.4.0 (2026-09-21)
 
 Bounded work on input from outside. `Deserialize` now promises that its work
