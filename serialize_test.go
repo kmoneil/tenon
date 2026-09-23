@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/hex"
 	"fmt"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -306,6 +307,22 @@ func TestConformance_SE031_DeepMarksAreDecidedOncePerMarkSet(t *testing.T) {
 	// questions of 120 of them.
 	if asked > 4*levels {
 		t.Errorf("decoding a value nested %d levels asked %d times whether a mark is deep, want at most %d", levels, asked, 4*levels)
+	}
+	// What such a document costs to decode is held to a budget as well, since
+	// every level attaches its mark to the values below it and what that
+	// costs is how the marks are held: building a set of them for each merge
+	// allocated 17 KB for every byte of this document, where it now takes
+	// 4.8 KB and the budget is 10.
+	var before, after runtime.MemStats
+	runtime.GC()
+	runtime.ReadMemStats(&before)
+	if _, _, fine := tenon.Deserialize(nestedDoc, deepRead); !fine {
+		t.Fatalf("the nested document did not decode a second time")
+	}
+	runtime.ReadMemStats(&after)
+	if grew, budget := after.TotalAlloc-before.TotalAlloc, uint64(10<<10)*uint64(len(nestedDoc)); grew > budget {
+		t.Errorf("decoding a value nested %d levels, %d bytes of document, allocated %d bytes, more than the %d it may",
+			levels, len(nestedDoc), grew, budget)
 	}
 
 	// What a mark set lists is settled against the marks the container

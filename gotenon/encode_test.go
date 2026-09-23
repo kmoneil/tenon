@@ -481,7 +481,9 @@ func TestConformance_GO003_FailuresAreRecordedOnce(t *testing.T) {
 	// which took seconds when each diagnostic was compared with every one
 	// recorded before it. A document read by encoding/json holding an array
 	// of nulls arrives here.
-	const many = 20_000
+	// Sized so that comparing each failure with every one collected takes
+	// seconds rather than the milliseconds it takes now.
+	const many = 40_000
 	_, err := gotenon.Encode(make([]any, many))
 	var de *gotenon.DiagnosticError
 	if !errors.As(err, &de) {
@@ -579,9 +581,20 @@ func TestConformance_GO030_NumbersAtTheEdgeOfTheWindow(t *testing.T) {
 		}
 	}
 	// At the edge itself the places are counted, which took ten seconds when
-	// the fives were divided out one at a time.
-	if got := encoded(t, new(big.Rat).SetFrac(one, pow(5, 999_999))); !got.IsKnown() {
+	// the fives were divided out one at a time. Counting them by squaring
+	// allocates what the numbers themselves weigh; dividing one at a time
+	// allocates a quotient for each of the million divisions.
+	edgeRat := new(big.Rat).SetFrac(one, pow(5, 999_999))
+	var before, after runtime.MemStats
+	runtime.GC()
+	runtime.ReadMemStats(&before)
+	got := encoded(t, edgeRat)
+	runtime.ReadMemStats(&after)
+	if !got.IsKnown() {
 		t.Errorf("1/5^999999 encoded as %v", got)
+	}
+	if grew, budget := after.TotalAlloc-before.TotalAlloc, uint64(64<<20); grew > budget {
+		t.Errorf("encoding 1/5^999999 allocated %d bytes, more than the %d it may", grew, budget)
 	}
 	wantEncodeFailure(t, "a rational one place below the window", new(big.Rat).SetFrac(one, pow(5, 1_000_001)),
 		wantDiag{tenon.CodeNumberOutOfRange, "."})
