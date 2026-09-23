@@ -91,6 +91,19 @@
   and takes the same bound with it. A value carrying a handful of marks, as
   nearly every value does, allocates nothing more than before.
 
+- `Equals` settles a known value compared with itself without comparing what
+  it holds, and a part that two values share the same way, as `Identical`
+  already did. A plan engine compares a prior configuration with a planned
+  one that shares every part that did not change, and paid for the shared
+  parts all the same: a configuration of 4,000 resources compared with
+  itself, or with a planned one sharing them, took about 100 microseconds and
+  takes about 70 nanoseconds, whatever its size. A value that is not known is
+  not known to equal itself, so the answer for one is what it was, and every
+  result carries the marks it carried. `CapsuleOps.Equals` now states what
+  the package already assumed of it: a capsule type's equality must be an
+  equivalence relation, and tenon may take a value to be equal to itself
+  without asking it.
+
 ## 0.4.0 (2026-09-21)
 
 Bounded work on input from outside. `Deserialize` now promises that its work

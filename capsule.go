@@ -8,7 +8,10 @@ import "hash/maphash"
 type CapsuleOps[E any] struct {
 	// Equals reports whether two encapsulated values are equal. Without it, two
 	// values are equal only when they encapsulate the same pointer. A capsule
-	// type that declares Equals must also declare Hash.
+	// type that declares Equals must also declare Hash. It must be an
+	// equivalence relation: every value equal to itself, a equal to b exactly
+	// when b is equal to a, and two values equal to a third equal to each
+	// other. tenon may take a value to be equal to itself without asking.
 	Equals func(a, b *E) bool
 
 	// Hash returns a hash of an encapsulated value. Values that Equals reports
