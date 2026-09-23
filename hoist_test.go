@@ -132,7 +132,11 @@ func TestConformance_ER008_ContainersHoistErrors(t *testing.T) {
 	// Many members, each failing once: every diagnostic is recorded, in
 	// element order. A list this long took seconds to build when each
 	// diagnostic was compared with every one recorded before it.
-	const many = 20_000
+	// Sized so that comparing each diagnostic with every one recorded, which
+	// is what this replaced, takes seconds rather than the milliseconds it
+	// takes now: there is no count to assert, a diagnostic being compared by
+	// the package itself, so the gate's own time is the signal.
+	const many = 40_000
 	members := make([]tenon.Value, many)
 	for i := range members {
 		members[i] = failed("member " + strconv.Itoa(i))

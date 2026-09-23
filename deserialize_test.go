@@ -413,38 +413,60 @@ func TestConformance_SE005_DecodingWorkIsBounded(t *testing.T) {
 // that grows with the square of what it is given.
 func TestConformance_SE005_ObjectsCostWhatTheyHold(t *testing.T) {
 	conformance.Covers(t, "SE-005", "SE-003")
-	// The type's text is eight bytes per object in the document, so a decoder
-	// that reads it per object does sixteen times the work for four times the
-	// document. Allocated bytes are the reading, being the same on every run
-	// where a wall clock is not.
-	var allocated []uint64
-	for _, size := range []int{250, 1000} {
-		name := strings.Repeat("a", 8*size)
-		attrs := map[string]tenon.Type{name: num}
-		objects := make([]tenon.Value, size)
-		for i := range objects {
-			objects[i] = obj(map[string]tenon.Value{name: tenon.NullVal(num)})
-		}
-		doc, failure, ok := tenon.Serialize(tenon.ListVal(tenon.Object(attrs), objects...))
-		if !ok {
-			t.Fatalf("Serialize(%d objects) failed: %v", size, failure)
-		}
-		var before, after runtime.MemStats
-		runtime.GC()
-		runtime.ReadMemStats(&before)
-		got, failure, ok := tenon.Deserialize(doc, decoders)
-		runtime.ReadMemStats(&after)
-		if !ok {
-			t.Fatalf("a document of %d objects came back as %v", size, failure)
-		}
-		if got.Len() != size {
-			t.Fatalf("a document of %d objects decoded to %d", size, got.Len())
-		}
-		allocated = append(allocated, after.TotalAlloc-before.TotalAlloc)
+	// A type is as long as its text, whether that is one long name or many
+	// short ones, so both shapes are decoded at a size and four times it. A
+	// decoder that reads the type again for every object does sixteen times
+	// the work for four times the document. Allocated bytes are the reading,
+	// being the same on every run where a wall clock is not.
+	shapes := []struct {
+		name  string
+		build func(size int) tenon.Value
+	}{
+		{"objects of a type naming one long attribute", func(size int) tenon.Value {
+			name := strings.Repeat("a", 8*size)
+			objects := make([]tenon.Value, size)
+			for i := range objects {
+				objects[i] = obj(map[string]tenon.Value{name: tenon.NullVal(num)})
+			}
+			return tenon.ListVal(tenon.Object(map[string]tenon.Type{name: num}), objects...)
+		}},
+		{"objects holding a null of a type of many attributes", func(size int) tenon.Value {
+			attrs := map[string]tenon.Type{}
+			for i := range size / 2 {
+				attrs[fmt.Sprintf("x%06d", i)] = num
+			}
+			inner := tenon.Object(attrs)
+			objects := make([]tenon.Value, size)
+			for i := range objects {
+				objects[i] = obj(map[string]tenon.Value{"a": tenon.NullVal(inner)})
+			}
+			return tenon.ListVal(tenon.Object(map[string]tenon.Type{"a": inner}), objects...)
+		}},
 	}
-	if grew := float64(allocated[1]) / float64(allocated[0]); grew > 5 {
-		t.Errorf("four times the document allocated %.1f times as much (%d bytes, then %d)",
-			grew, allocated[0], allocated[1])
+	for _, shape := range shapes {
+		var allocated []uint64
+		for _, size := range []int{250, 1000} {
+			doc, failure, ok := tenon.Serialize(shape.build(size))
+			if !ok {
+				t.Fatalf("Serialize(%d %s) failed: %v", size, shape.name, failure)
+			}
+			var before, after runtime.MemStats
+			runtime.GC()
+			runtime.ReadMemStats(&before)
+			got, failure, ok := tenon.Deserialize(doc, decoders)
+			runtime.ReadMemStats(&after)
+			if !ok {
+				t.Fatalf("a document of %d %s came back as %v", size, shape.name, failure)
+			}
+			if got.Len() != size {
+				t.Fatalf("a document of %d %s decoded to %d", size, shape.name, got.Len())
+			}
+			allocated = append(allocated, after.TotalAlloc-before.TotalAlloc)
+		}
+		if grew := float64(allocated[1]) / float64(allocated[0]); grew > 5 {
+			t.Errorf("four times a document of %s allocated %.1f times as much (%d bytes, then %d)",
+				shape.name, grew, allocated[0], allocated[1])
+		}
 	}
 
 	// A document of ordinary objects costs what its content holds, rather
