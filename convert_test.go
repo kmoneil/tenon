@@ -1329,20 +1329,22 @@ func TestConformance_CV033_FailuresCarryOnlyTheMarksTheyRead(t *testing.T) {
 // names, and nulls of such object types, to a list of anything: their element
 // type is the object type holding every attribute of every member. Each is
 // measured at a size and four times it, the growth from one to the other
-// being the reading, not the wall clock. The objects themselves grow as the
-// square of their number, each holding every attribute, where the nulls do
-// not: one null of the union is one value.
+// being the reading, not the wall clock. The objects are sized by the
+// attributes the converted list holds, which is the square of their number,
+// each of them holding every attribute: 500 objects hold 250,000 and 1,000
+// hold 1,000,000. The nulls are sized by their number, one null of the union
+// being one value.
 func BenchmarkObjectUnions(b *testing.B) {
 	oneAttribute := func(i int) tenon.Value {
 		return tenon.ObjectVal(map[string]tenon.Value{fmt.Sprintf("a%05d", i): n(int64(i))})
 	}
-	for _, size := range []int{500, 2000} {
-		members := make([]tenon.Value, size)
+	for _, objects := range []int{500, 1000} {
+		members := make([]tenon.Value, objects)
 		for i := range members {
 			members[i] = oneAttribute(i)
 		}
 		v := tenon.TupleVal(members...)
-		b.Run(fmt.Sprintf("objects/%d", size), func(b *testing.B) {
+		b.Run(fmt.Sprintf("objects/%d", objects*objects), func(b *testing.B) {
 			b.ReportAllocs()
 			for b.Loop() {
 				if got := tenon.Convert(v, tenon.ListOf(tenon.Any()), tenon.Unsafe); got.IsError() {
