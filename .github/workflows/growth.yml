@@ -1,0 +1,29 @@
+# The growth benchmarks each night, off the path of any change or release:
+# every benchmark measured at a size and at four times that size fails the run
+# where the larger allocates more than five times what the smaller does, which
+# is work growing faster than its input (make growth). Allocation decides
+# because it does not move with the load on the runner; time, which does, is
+# reported in the run's summary and decides nothing. A failed run is reported
+# to the repository's owner by GitHub. It is not a required check.
+name: growth
+
+on:
+  schedule:
+    - cron: '23 3 * * *'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  growth:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: '1.26.x'
+      - run: make growth

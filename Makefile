@@ -8,7 +8,7 @@
 # The tests run with -count=1 because a cached result records nothing.
 RULECOV := $(CURDIR)/.rulecov
 
-.PHONY: check check-slow determinism fuzz fuzz-parse fuzz-string fuzz-deserialize release-fuzz rules codes report
+.PHONY: check check-slow determinism fuzz fuzz-parse fuzz-string fuzz-deserialize release-fuzz growth rules codes report
 
 check:
 	@echo '==> gofmt'
@@ -75,4 +75,15 @@ fuzz-deserialize:
 # (.github/workflows/fuzz.yml), and keeps what it found from night to night.
 release-fuzz:
 	$(MAKE) -j3 fuzz FUZZTIME=5m
+
+# growth runs every benchmark once and reads the pairs among them, each a
+# benchmark measured at a size and at four times that size: where the larger
+# allocates more than five times the bytes of the smaller, or makes more than
+# five times its allocations, the work grows faster than its input and the
+# run fails. Time is reported beside them and decides nothing. CI runs this
+# every night (.github/workflows/growth.yml). BENCH narrows the run to the
+# benchmarks a regular expression matches, as go test -bench does.
+BENCH ?= .
+growth:
+	go run ./tools/growth -bench='$(BENCH)' ./...
 
