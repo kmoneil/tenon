@@ -424,6 +424,65 @@ func scanDeep(marks []Mark) []Mark {
 	return deep
 }
 
+// TestSameMarkSetIsTheScan holds sameMarkSet, whichever way it looks for a
+// mark, to the answer a scan of the other list gives, which is what it gave
+// before a set took over from the scan past manyMarks. The lists run from
+// none to four times manyMarks and are drawn from a pool small enough to
+// repeat, marks sharing an identifier among them. Two of every three lists
+// hold another's marks, shuffled or with one mark exchanged, since a pair of
+// lists picked at random is nearly always unequal in its first mark and would
+// leave the lookup untested.
+func TestSameMarkSetIsTheScan(t *testing.T) {
+	r := rand.New(rand.NewSource(1613))
+	pool := make([]Mark, 6*manyMarks)
+	for i := range pool {
+		if i%3 == 0 {
+			// Marks that share an identifier and are not the same mark, which
+			// is what makes two values hold one set of marks in two orders.
+			pool[i] = probe{id: fmt.Sprintf("t%02d", i%4), deep: i%2 == 0, redact: i%5 == 0}
+			continue
+		}
+		pool[i] = namedMark{id: fmt.Sprintf("m%03d", i), deep: i%7 == 0}
+	}
+	pick := func(n int) []Mark {
+		ms := make([]Mark, n)
+		for i := range ms {
+			ms[i] = pool[r.Intn(len(pool))]
+		}
+		return ms
+	}
+	for range conformance.Iterations(t, 1000) {
+		x := pick(r.Intn(4 * manyMarks))
+		y := slices.Clone(x)
+		switch r.Intn(3) {
+		case 0: // the same marks in another order
+			r.Shuffle(len(y), func(i, j int) { y[i], y[j] = y[j], y[i] })
+		case 1: // the same marks but one, which a scan finds last
+			if len(y) > 0 {
+				y[r.Intn(len(y))] = pool[r.Intn(len(pool))]
+			}
+		default: // marks of their own, of a length of their own
+			y = pick(r.Intn(4 * manyMarks))
+		}
+		if got, want := sameMarkSet(x, y), scanSame(x, y); got != want {
+			t.Fatalf("sameMarkSet(%v, %v) = %t, want %t", x, y, got, want)
+		}
+	}
+}
+
+// scanSame is sameMarkSet as a scan of the other list for every mark.
+func scanSame(x, y []Mark) bool {
+	if len(x) != len(y) {
+		return false
+	}
+	for _, m := range x {
+		if !slices.Contains(y, m) {
+			return false
+		}
+	}
+	return true
+}
+
 // namedMark is a mark told apart by its identifier, deep or not.
 type namedMark struct {
 	id   string

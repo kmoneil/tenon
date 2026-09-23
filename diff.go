@@ -410,16 +410,3 @@ func deepOf(ms []Mark) []Mark {
 	}
 	return out
 }
-
-// sameMarkSet reports whether two lists hold the same marks.
-func sameMarkSet(x, y []Mark) bool {
-	if len(x) != len(y) {
-		return false
-	}
-	for _, m := range x {
-		if !slices.Contains(y, m) {
-			return false
-		}
-	}
-	return true
-}

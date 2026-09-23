@@ -1,6 +1,9 @@
 package tenon_test
 
 import (
+	"fmt"
+	"runtime"
+	"slices"
 	"testing"
 
 	"github.com/kmoneil/tenon"
@@ -180,6 +183,142 @@ func TestConformance_EQ012_IdenticalDoesNotDependOnMapOrder(t *testing.T) {
 		}
 		if tenon.Identical(tenon.MapVal(num, attrs), tenon.MapVal(num, differs)) {
 			t.Fatalf("pass %d: two maps that differ in one entry are identical", i)
+		}
+	}
+}
+
+// TestConformance_EQ010_ManyMarksAreComparedThroughASet holds what comparing
+// two values carrying many marks costs. Marks are a set, so the comparison
+// asks of every mark one value carries whether the other carries it as well,
+// and asking by a scan of the other's marks costs the square of them. A value
+// can carry thousands: one arrives whenever a deep mark reaches it. A value
+// holds its marks in one order, so two that carry the same marks usually hold
+// them alike and one walk settles it; what does not line up is looked up
+// through a set of them, which a handful never builds.
+func TestConformance_EQ010_ManyMarksAreComparedThroughASet(t *testing.T) {
+	conformance.Covers(t, "EQ-010", "MK-001")
+	one := tenon.NumberFromInt(1)
+	// Marks in runs of a few that share an identifier, each carrying a
+	// payload of its own. Marks that share an identifier tie in the order a
+	// value holds them in, the one attached first coming first, so two values
+	// given them in opposite orders hold each run in opposite orders: the
+	// case where the lists do not line up and every mark is looked for.
+	marks := func(m, run int) []tenon.Mark {
+		ms := make([]tenon.Mark, m)
+		for i := range ms {
+			ms[i] = note{id: fmt.Sprintf("m%06d", i%max(m/run, 1)), text: fmt.Sprintf("p%06d", i)}
+		}
+		return ms
+	}
+	backwards := func(ms []tenon.Mark) []tenon.Mark {
+		r := slices.Clone(ms)
+		slices.Reverse(r)
+		return r
+	}
+	// The answer is what it was, on either side of the count past which the
+	// marks are looked up through a set rather than scanned for.
+	for _, m := range []int{4, 16, 17, 100} {
+		ms := marks(m, 2)
+		x := tenon.WithMarks(one, ms...)
+		if y := tenon.WithMarks(one, backwards(ms)...); !tenon.Identical(x, y) {
+			t.Errorf("two values carrying the same %d marks, attached in opposite orders, are not identical", m)
+		}
+		exchanged := slices.Clone(ms)
+		exchanged[m-1] = note{id: "zz", text: "z"}
+		if y := tenon.WithMarks(one, exchanged...); tenon.Identical(x, y) {
+			t.Errorf("%d marks and the same marks with one exchanged are identical", m)
+		}
+		if y := tenon.WithMarks(one, ms[:m-1]...); tenon.Identical(x, y) {
+			t.Errorf("%d marks and %d of them are identical", m, m-1)
+		}
+	}
+
+	// A handful of marks is scanned for, which allocates nothing.
+	few := marks(8, 4)
+	x, y := tenon.WithMarks(one, few...), tenon.WithMarks(one, backwards(few)...)
+	if allocs := testing.AllocsPerRun(100, func() { tenon.Identical(x, y) }); allocs != 0 {
+		t.Errorf("comparing two values carrying eight marks made %.0f allocations, want none", allocs)
+	}
+
+	// Two values holding their marks alike, which is every pair whose marks
+	// have identifiers of their own, are walked a mark at a time and build
+	// nothing, however many marks they carry.
+	lined := marks(1000, 1)
+	a, b := tenon.WithMarks(one, lined...), tenon.WithMarks(one, backwards(lined)...)
+	if !tenon.Identical(a, b) {
+		t.Fatal("two values carrying the same 1,000 marks, attached in opposite orders, are not identical")
+	}
+	if allocs := testing.AllocsPerRun(10, func() { tenon.Identical(a, b) }); allocs != 0 {
+		t.Errorf("comparing two values carrying 1,000 marks of identifiers of their own made %.0f allocations, want none: the two hold them alike", allocs)
+	}
+
+	// Past a handful the marks are looked up through a set, which takes a slot
+	// for each of them: the reading is the bytes, which are the same on every
+	// run where a wall clock is not. A scan allocates nothing and costs the
+	// square of the marks, so the floor is what tells the two apart, and the
+	// growth from a size to four times it says the set is built once rather
+	// than for every mark.
+	var allocated []uint64
+	for _, m := range []int{1000, 4000} {
+		ms := marks(m, 8)
+		x, y := tenon.WithMarks(one, ms...), tenon.WithMarks(one, backwards(ms)...)
+		if !tenon.Identical(x, y) {
+			t.Fatalf("two values carrying the same %d marks, attached in opposite orders, are not identical", m)
+		}
+		const rounds = 10
+		var before, after runtime.MemStats
+		runtime.GC()
+		runtime.ReadMemStats(&before)
+		for range rounds {
+			tenon.Identical(x, y)
+		}
+		runtime.ReadMemStats(&after)
+		grew := after.TotalAlloc - before.TotalAlloc
+		allocated = append(allocated, grew)
+		if floor := uint64(rounds * 4 * m); grew < floor {
+			t.Errorf("comparing two values carrying %d marks %d times allocated %d bytes, fewer than the %d a set of them takes: the marks are being scanned for, which costs the square of them",
+				m, rounds, grew, floor)
+		}
+	}
+	if grew := float64(allocated[1]) / float64(allocated[0]); grew > 5 {
+		t.Errorf("comparing two values carrying four times the marks allocated %.1f times as much (%d bytes, then %d)", grew, allocated[0], allocated[1])
+	}
+}
+
+// BenchmarkMarkComparisons measures comparing two values that carry the same
+// marks, attached in opposite orders, at a count of marks and four times it:
+// the growth from one to the other is the reading, not the wall clock. Marks
+// with identifiers of their own are held alike by both values, so the walk
+// settles them and nothing is looked up; marks sharing four identifiers are
+// held in opposite orders, so every one of them is.
+func BenchmarkMarkComparisons(b *testing.B) {
+	one := tenon.NumberFromInt(1)
+	for _, shape := range []struct {
+		name string
+		ids  func(m int) int
+	}{
+		{"distinct", func(m int) int { return m }},
+		{"shared", func(m int) int { return m / 8 }},
+	} {
+		for _, m := range []int{1000, 4000} {
+			ms := make([]tenon.Mark, m)
+			for i := range ms {
+				ms[i] = note{id: fmt.Sprintf("m%06d", i%shape.ids(m)), text: fmt.Sprintf("p%06d", i)}
+			}
+			backwards := slices.Clone(ms)
+			slices.Reverse(backwards)
+			x, y := tenon.WithMarks(one, ms...), tenon.WithMarks(one, backwards...)
+			if !tenon.Identical(x, y) {
+				b.Fatalf("two values carrying the same %d %s marks are not identical", m, shape.name)
+			}
+			b.Run(fmt.Sprintf("%s/%d", shape.name, m), func(b *testing.B) {
+				b.ReportAllocs()
+				for b.Loop() {
+					if !tenon.Identical(x, y) {
+						b.Fatal("the values differ")
+					}
+				}
+			})
 		}
 	}
 }

@@ -213,6 +213,34 @@ func (l *markLookup) holds(list []Mark, m Mark) bool {
 	return ok
 }
 
+// sameMarkSet reports whether two lists hold the same marks. Marks are a set:
+// what is there matters, the order they were attached in does not.
+//
+// A value holds its marks in one order, so two values carrying the same marks
+// hold them alike wherever no two of those marks share an identifier, and the
+// walk settles them a mark at a time. A mark that does not line up is looked
+// for among the other list's marks, by a scan while there are few and by a
+// set of them once there are many, as markLookup is used wherever marks are
+// looked up: a value can carry thousands, one arriving whenever a deep mark
+// reaches it, and scanning for each costs the square of them. The walk is a
+// shortcut for a mark that is certainly there, not a premise, so no answer
+// here depends on the order the marks are held in.
+func sameMarkSet(x, y []Mark) bool {
+	if len(x) != len(y) {
+		return false
+	}
+	var seen markLookup
+	for i, m := range x {
+		if m == y[i] {
+			continue
+		}
+		if !seen.holds(y, m) {
+			return false
+		}
+	}
+	return true
+}
+
 // isDeep reports whether m is a deep mark.
 func isDeep(m Mark) bool {
 	d, ok := m.(DeepMark)

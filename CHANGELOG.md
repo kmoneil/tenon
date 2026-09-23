@@ -78,6 +78,19 @@
   more per byte than one without marks, since each level attaches its mark to
   everything below it as it is read.
 
+- Comparing two values that carry many marks takes time in proportion to the
+  marks, where it took the square of them: `Identical` of two values carrying
+  16,000 marks took 0.91 seconds and takes 0.18 milliseconds. Every mark of
+  one value was looked for among the other's by scanning them. A value holds
+  its marks in one order, so the two lists are walked together, and a mark
+  that does not line up, which is one sharing its identifier with another, is
+  looked up through a set of them past sixteen, as attaching a mark has been
+  since 0.4.0. Two values carrying 4,000 marks in runs of eight that share an
+  identifier, so that none of them line up, were compared in 38 milliseconds
+  and are compared in 0.41. `Diff` compares the marks of every value it walks
+  and takes the same bound with it. A value carrying a handful of marks, as
+  nearly every value does, allocates nothing more than before.
+
 ## 0.4.0 (2026-09-21)
 
 Bounded work on input from outside. `Deserialize` now promises that its work

@@ -70,19 +70,10 @@ func identicalContent(a, b *node) bool {
 	return sameValue(a, b)
 }
 
-// sameMarks reports whether two values carry the same marks. Marks are a
-// set: what is there matters, the order it was attached in does not.
+// sameMarks reports whether two values carry the same marks, which is what
+// their mark sets holding the same marks amounts to.
 func sameMarks(a, b *node) bool {
-	x, y := a.markList(), b.markList()
-	if len(x) != len(y) {
-		return false
-	}
-	for _, m := range x {
-		if !slices.Contains(y, m) {
-			return false
-		}
-	}
-	return true
+	return sameMarkSet(a.markList(), b.markList())
 }
 
 // equal reports whether two constraints are the same constraint. Constraints
