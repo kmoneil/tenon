@@ -129,6 +129,14 @@ func constraintOf(n *node) Constraint {
 // Marks, when they arrive, are not part of this: equality compares values, not
 // what has been attached to them.
 func sameValue(a, b *node) bool {
+	if a == b {
+		// One node is one known value, which is equal to itself, so nothing
+		// within it is compared: not for a value compared with itself, and not
+		// for a part two values share, as a planned tree shares with the prior
+		// one every part that did not change. A capsule type's equality is an
+		// equivalence relation (TY-041), so this is the answer it would give.
+		return true
+	}
 	if a.state == stateNull || b.state == stateNull {
 		return a.state == b.state
 	}

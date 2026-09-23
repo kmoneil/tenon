@@ -1,6 +1,7 @@
 package tenon_test
 
 import (
+	"fmt"
 	"slices"
 	"testing"
 
@@ -798,5 +799,185 @@ func TestEqualsDecidesOnlyWhatCannotChange(t *testing.T) {
 	if nullMembers < 50 || nullRanges < 50 {
 		t.Errorf("too few null choices to say much: %d members chosen null, %d ranges against the null set",
 			nullMembers, nullRanges)
+	}
+}
+
+// TestConformance_EQ002_AKnownValueEqualsItselfAtOnce holds Equals to settling
+// a known value compared with itself without comparing anything it holds, and
+// a part that two values share the same way: a plan engine compares a prior
+// tree with a planned one sharing every part that did not change. The members
+// are values of a capsule type that counts how often its equality is asked,
+// which a walk would ask once for each of them.
+func TestConformance_EQ002_AKnownValueEqualsItselfAtOnce(t *testing.T) {
+	conformance.Covers(t, "EQ-002", "TY-041")
+	asked := 0
+	counted := tenon.Capsule("counted", tenon.CapsuleOps[int]{
+		Equals: func(a, b *int) bool { asked++; return *a == *b },
+		Hash:   func(v *int) uint64 { return uint64(*v) },
+	})
+	const size = 1000
+	built := func() []tenon.Value {
+		members := make([]tenon.Value, size)
+		for i := range members {
+			v := i
+			members[i] = tenon.CapsuleVal(counted, &v)
+		}
+		return members
+	}
+	members := built()
+	entries := make(map[string]tenon.Value, size)
+	for i, m := range members {
+		entries[fmt.Sprintf("a%04d", i)] = m
+	}
+	parts := map[string]tenon.Value{
+		"list":   tenon.ListVal(counted, members...),
+		"set":    tenon.SetVal(counted, members...),
+		"map":    tenon.MapVal(counted, entries),
+		"tuple":  tenon.TupleVal(members...),
+		"object": tenon.ObjectVal(entries),
+	}
+	whole := tenon.ObjectVal(parts)
+	// A prior value and two planned ones sharing its parts. Attributes are
+	// held in name order, so the parts are compared before the version.
+	prior := tenon.ObjectVal(map[string]tenon.Value{"parts": whole, "version": tenon.NumberFromInt(1)})
+	rewritten := tenon.ObjectVal(map[string]tenon.Value{"parts": whole, "version": tenon.NumberFromText("1.0")})
+	moved := tenon.ObjectVal(map[string]tenon.Value{"parts": whole, "version": tenon.NumberFromInt(2)})
+	for _, tt := range []struct {
+		name string
+		a, b tenon.Value
+		want string
+	}{
+		{"a capsule value compared with itself", members[0], members[0], "true"},
+		{"a list compared with itself", parts["list"], parts["list"], "true"},
+		{"a set compared with itself", parts["set"], parts["set"], "true"},
+		{"a map compared with itself", parts["map"], parts["map"], "true"},
+		{"a tuple compared with itself", parts["tuple"], parts["tuple"], "true"},
+		{"an object compared with itself", parts["object"], parts["object"], "true"},
+		{"a value holding all of them compared with itself", whole, whole, "true"},
+		{"two values sharing their parts", prior, rewritten, "true"},
+		{"two values sharing their parts and differing after them", prior, moved, "false"},
+	} {
+		asked = 0
+		if got := tenon.Equals(tt.a, tt.b).String(); got != tt.want {
+			t.Errorf("%s: Equals gave %s, want %s", tt.name, got, tt.want)
+		}
+		if asked != 0 {
+			t.Errorf("%s: the capsule type was asked %d times, want none: what the two share was compared", tt.name, asked)
+		}
+	}
+	// The count is real: the same members built apart are other values, and
+	// are compared one by one.
+	asked = 0
+	if got := tenon.Equals(parts["list"], tenon.ListVal(counted, built()...)).String(); got != "true" || asked < size {
+		t.Errorf("a list and its members built apart: Equals gave %s after asking %d times, want true after %d", got, asked, size)
+	}
+}
+
+// TestConformance_EQ003_AValueComparedWithItself holds Equals to answering for
+// a value compared with itself what it answers for the value and a twin built
+// apart, marks and all. A known value is equal to itself. One that is not
+// known is not known to be: each operand could still turn out to be any value
+// its range holds, so the two could turn out different, and the answer is the
+// one the ranges give. An error value is an error value whatever it is
+// compared with.
+func TestConformance_EQ003_AValueComparedWithItself(t *testing.T) {
+	conformance.Covers(t, "EQ-002", "EQ-003", "EQ-004", "MK-003")
+	num := tenon.NumberType()
+	n := func(i int64) tenon.Value { return tenon.NumberFromInt(i) }
+	unknown := tenon.Unknown(num)
+	for _, tt := range []struct {
+		name string
+		v    tenon.Value
+		want string
+	}{
+		{"a known value", tenon.ListVal(num, n(1), n(2)), "true"},
+		{"null", tenon.NullVal(num), "true"},
+		{"an unknown", unknown, "unknown(bool, not null)"},
+		{"an unknown that cannot be null", tenon.Narrow(unknown, tenon.NotNull()), "unknown(bool, not null)"},
+		{"a partly known list", tenon.ListVal(num, n(1), unknown), "unknown(bool, not null)"},
+		{"a partly known set", tenon.SetVal(num, n(1), unknown), "unknown(bool, not null)"},
+		{"a partly known object", tenon.ObjectVal(map[string]tenon.Value{"a": n(1), "b": unknown}), "unknown(bool, not null)"},
+		{
+			"a list holding a partly known list",
+			tenon.ListVal(tenon.List(num), tenon.ListVal(num, n(1)), tenon.ListVal(num, unknown)),
+			"unknown(bool, not null)",
+		},
+		{"a pending value", tenon.Pending(tenon.Any()), "unknown(bool, not null)"},
+	} {
+		if got := tenon.Equals(tt.v, tt.v).String(); got != tt.want {
+			t.Errorf("%s: %v equals itself is %s, want %s", tt.name, tt.v, got, tt.want)
+		}
+	}
+
+	// An error operand gives an error value, compared with itself as with
+	// anything else, and its diagnostic appears once.
+	bad := tenon.String("\xff")
+	if got := tenon.Equals(bad, bad); !got.IsError() || len(got.Diagnostics()) != 1 || got.Diagnostics()[0].Code != tenon.CodeStringInvalidUTF8 {
+		t.Errorf("an error value compared with itself gave %v, want its diagnostic once", got)
+	}
+
+	// The result carries the Propagate marks of the value and of what it
+	// holds, which equality reads, and not its Isolate mark.
+	own, held, iso := stamp{id: "own"}, stamp{id: "held"}, stamp{id: "iso", policy: tenon.Isolate}
+	marked := tenon.WithMarks(tenon.ListVal(num, n(1), tenon.WithMarks(n(2), held)), own, iso)
+	if got, marks := tenon.Unmark(tenon.Equals(marked, marked)); got.String() != "true" || !slices.Equal(marks, []tenon.Mark{held, own}) {
+		t.Errorf("a marked value compared with itself is %v carrying %v, want true carrying held and own", got, marks)
+	}
+
+	// Every shape the generator holds: the answer for a value and itself is,
+	// marks and all, the answer for the value and a twin built apart. A capsule
+	// value around a pointer of its own has no twin, and is left out.
+	twins, compared := values.All(), 0
+	for i, v := range values.All() {
+		w := twins[i]
+		if !tenon.Identical(v, w) {
+			continue
+		}
+		compared++
+		if self, apart := tenon.Equals(v, v), tenon.Equals(v, w); !tenon.Identical(self, apart) {
+			t.Errorf("%v compared with itself is %v, and with its twin %v", v, self, apart)
+		}
+	}
+	if skipped := len(twins) - compared; skipped > 1 {
+		t.Errorf("%d values have no twin, where only the capsule value around a pointer of its own should lack one", skipped)
+	}
+}
+
+// BenchmarkEqualsSharedParts measures Equals where what it compares is shared,
+// at a size and four times it: a configuration compared with itself, and with
+// a planned one sharing its resources. Neither reads what is shared, so the
+// time does not grow with it, and the growth from one size to the other is
+// the reading, not the wall clock.
+func BenchmarkEqualsSharedParts(b *testing.B) {
+	str := tenon.StringType()
+	for _, size := range []int{1000, 4000} {
+		resources := make([]tenon.Value, size)
+		for i := range resources {
+			resources[i] = tenon.ObjectVal(map[string]tenon.Value{
+				"name":  tenon.String(fmt.Sprintf("r%05d", i)),
+				"count": tenon.NumberFromInt(int64(i)),
+				"tags":  tenon.ListVal(str, tenon.String("a"), tenon.String("b")),
+			})
+		}
+		shared := tenon.ListVal(resources[0].Type(), resources...)
+		prior := tenon.ObjectVal(map[string]tenon.Value{"resources": shared, "version": tenon.NumberFromInt(1)})
+		planned := tenon.ObjectVal(map[string]tenon.Value{"resources": shared, "version": tenon.NumberFromText("1.0")})
+		for _, shape := range []struct {
+			name string
+			a, b tenon.Value
+		}{
+			{"itself", prior, prior},
+			{"shared", prior, planned},
+		} {
+			if got := tenon.Equals(shape.a, shape.b).String(); got != "true" {
+				b.Fatalf("%s at %d: Equals gave %s, want true", shape.name, size, got)
+			}
+			b.Run(fmt.Sprintf("%s/%d", shape.name, size), func(b *testing.B) {
+				b.ReportAllocs()
+				for b.Loop() {
+					tenon.Equals(shape.a, shape.b)
+				}
+			})
+		}
 	}
 }
