@@ -498,6 +498,32 @@ func TestConformance_GO003_FailuresAreRecordedOnce(t *testing.T) {
 	}
 }
 
+// TestConformance_GO003_FailuresReadInMemberOrder holds encoding failures to
+// member order: a struct's attributes by name, not by the order the struct
+// declares its fields, and a map's keys by their normalized form, not the
+// spelling the Go map holds. "e" with a combining acute normalizes to
+// "\U000000e9", which follows "f" where its raw spelling precedes it.
+func TestConformance_GO003_FailuresReadInMemberOrder(t *testing.T) {
+	conformance.Covers(t, "GO-003")
+	type declared struct {
+		B float64 `tenon:"b"`
+		A float64 `tenon:"a"`
+	}
+	wantEncodeFailure(t, "fields declared against name order", declared{B: math.NaN(), A: math.NaN()},
+		wantDiag{tenon.CodeEncodeNotANumber, ".a"},
+		wantDiag{tenon.CodeEncodeNotANumber, ".b"})
+	wantEncodeFailure(t, "map keys ordered by their normalized form",
+		map[string]float64{"e\U00000301": math.NaN(), "f": math.NaN()},
+		wantDiag{tenon.CodeEncodeNotANumber, `.["f"]`},
+		wantDiag{tenon.CodeEncodeNotANumber, ".[\"\U000000e9\"]"})
+	// A map of members whose types need not agree encodes as an object, its
+	// members located as attributes, in the same normalized order.
+	wantEncodeFailure(t, "an object's keys ordered by their normalized form",
+		map[string]any{"e\U00000301": math.NaN(), "f": math.NaN()},
+		wantDiag{tenon.CodeEncodeNotANumber, ".f"},
+		wantDiag{tenon.CodeEncodeNotANumber, ".\"\U000000e9\""})
+}
+
 // BenchmarkEncodeFailures measures encoding a slice of nil interfaces, each a
 // diagnostic at its own path, at a size and four times it: the growth from
 // one to the other is the reading, not the wall clock.

@@ -133,13 +133,15 @@ func scanMarks(m *goMapping, v tenon.Value, p tenon.Path, found *[]tenon.Diagnos
 		})
 	case m.kind == goStruct:
 		// A map converts to an object, whose attributes are located by name.
-		fields := map[string]*goMapping{}
-		for _, f := range m.fields {
-			fields[f.name] = f.m
-		}
+		// The entries come in name order, as the fields are held, so the
+		// field for each entry is found by walking both together.
+		i := 0
 		entries(v, func(name string, e tenon.Value) {
-			if fm, ok := fields[name]; ok {
-				scanMarks(fm, e, p.Attribute(name), found)
+			for i < len(m.fields) && m.fields[i].name < name {
+				i++
+			}
+			if i < len(m.fields) && m.fields[i].name == name {
+				scanMarks(m.fields[i].m, e, p.Attribute(name), found)
 			}
 		})
 	}
@@ -259,13 +261,15 @@ func (d *decoder) build(m *goMapping, dst reflect.Value, v tenon.Value, p tenon.
 		d.mapping(m, dst, v, p)
 	case goStruct:
 		// Attributes are taken in name order, so that failures read in member
-		// order.
-		fields := map[string]goField{}
-		for _, f := range m.fields {
-			fields[f.name] = f
-		}
+		// order; the fields are held in that order, so the field for each
+		// attribute is found by walking both together.
+		i := 0
 		for _, name := range v.Type().AttributeNames() {
-			if f, ok := fields[name]; ok {
+			for i < len(m.fields) && m.fields[i].name < name {
+				i++
+			}
+			if i < len(m.fields) && m.fields[i].name == name {
+				f := m.fields[i]
 				d.build(f.m, dst.Field(f.index), v.Attribute(name), p.Attribute(name), f.optional)
 			}
 		}

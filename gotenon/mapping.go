@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"math/big"
 	"reflect"
+	"slices"
 	"strings"
 	"sync"
 	"unicode/utf8"
@@ -64,7 +65,10 @@ type goMapping struct {
 	typ        tenon.Type
 	constraint tenon.Constraint
 	elem       *goMapping // the element of a slice, array, map or pointer
-	fields     []goField  // the mapped fields of a struct, in field order
+	// fields is the mapped fields of a struct, in attribute-name order, so
+	// that walking them reads, and fails, in member order (GO-003) and an
+	// entry walk in name order finds each field without a lookup.
+	fields []goField
 	// marshal and unmarshal say the Go type encodes or decodes itself, in
 	// place of its mapping in that direction.
 	marshal, unmarshal bool
@@ -258,6 +262,7 @@ func structMapping(m *goMapping, building map[reflect.Type]bool) {
 			attrs[normalized] = fm.typ
 		}
 	}
+	slices.SortFunc(m.fields, func(a, b goField) int { return strings.Compare(a.name, b.name) })
 	m.constraint = tenon.ObjectWith(fields, true)
 	if typed {
 		m.typ = tenon.Object(attrs)
