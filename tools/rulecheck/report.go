@@ -15,9 +15,10 @@ import (
 // order to it (Appendix A). It describes the implementation, so it changes with
 // the code that orders set members and capsule values.
 var orderings = []string{
-	"**Unknown set members** (`EQ-044`): after the known members, in the order " +
-		"of their display forms (`DI-010`), compared by code point. A set holds no " +
-		"pending value.",
+	"**Unknown set members** (`EQ-044`): after the known members, in the bytewise " +
+		"order of their encodings (`SE-001`), which hold no type. Members that encode " +
+		"alike only because a capsule value's type declares no encoding follow the " +
+		"canonical order of those capsule values (`EQ-045`). A set holds no pending value.",
 	"**Capsule values of a type that declares no ordering** (`EQ-045`): values " +
 		"the type's equality reports equal together; other values by the hash the " +
 		"type declares, if it declares one, and then by the order in which the run " +

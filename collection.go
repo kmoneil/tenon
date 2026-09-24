@@ -1,6 +1,7 @@
 package tenon
 
 import (
+	"bytes"
 	"maps"
 	"slices"
 	"strconv"
@@ -236,20 +237,38 @@ func distinctMembers(members []Value) []Value {
 
 // orderMembers puts the members of a set in the order it iterates in, which is
 // the order it holds them in: the known ones in canonical order, and then the
-// ones that are not known, ordered by how they read.
+// ones that are not known, in the bytewise order of their encodings.
 //
 // A member's place has to follow from the member, since two sets with the same
-// members are one value and one value iterates one way. Reading a value is a
-// rendering of everything it says about itself, which is the same from one run
-// to the next, and is all there is to go on for a member that is not known.
-// Where it tells two of them apart no further, which takes a capsule value
-// inside one of them whose type declares no order, they stay as they came.
+// members are one value and one value iterates one way. A member's encoding is
+// everything it says about itself, the same from one run to the next, and is
+// all there is to go on for a member that is not known. It holds no type,
+// which the set states once for all its members, where reading each member
+// would spell the type out again for every one. Two members encode alike
+// where they are identical, or where they are told apart only by a capsule
+// value whose type declares no encoding, since what stands in for it is the
+// same; compareAlike orders those by the capsule values.
 func orderMembers(members []Value) []Value {
-	reading := map[*node]string{}
+	// encoding is a member's encoding, and whether it stands in for a capsule
+	// value anywhere, which the encoder records as a failure.
+	type encoding struct {
+		bytes    []byte
+		standsIn bool
+	}
+	var e *encoder
+	encoded := map[*node]encoding{}
 	for _, m := range members {
-		if !m.n.isKnown() {
-			reading[m.n] = m.String()
+		if m.n.isKnown() {
+			continue
 		}
+		if _, ok := encoded[m.n]; ok {
+			continue
+		}
+		if e == nil {
+			e = newEncoder()
+		}
+		before := e.failures
+		encoded[m.n] = encoding{e.content(nil, m, 0, nil), e.failures > before}
 	}
 	slices.SortStableFunc(members, func(a, b Value) int {
 		known, other := a.n.isKnown(), b.n.isKnown()
@@ -261,9 +280,60 @@ func orderMembers(members []Value) []Value {
 		case other:
 			return 1
 		}
-		return strings.Compare(reading[a.n], reading[b.n])
+		x, y := encoded[a.n], encoded[b.n]
+		if c := bytes.Compare(x.bytes, y.bytes); c != 0 || !x.standsIn && !y.standsIn {
+			return c
+		}
+		return compareAlike(a.n, b.n)
 	})
 	return members
+}
+
+// compareAlike orders two values that encode alike where an encoding stands in
+// for a capsule value: by the first place, in the order the encodings take
+// them, that holds a capsule value in either, in the canonical order, which
+// is the order its type declares if it declares one. Their encodings being
+// alike, what stands at such a place in the other is a capsule value or
+// null, and every other place holds what the other does.
+func compareAlike(a, b *node) int {
+	if a == b {
+		return 0
+	}
+	if a.isCapsuleValue() || b.isCapsuleValue() {
+		return compareCanonical(a, b)
+	}
+	switch x := a.data.(type) {
+	case []Value:
+		if y, ok := b.data.([]Value); ok {
+			for i := range min(len(x), len(y)) {
+				if c := compareAlike(x[i].n, y[i].n); c != 0 {
+					return c
+				}
+			}
+		}
+	case []mapEntry:
+		if y, ok := b.data.([]mapEntry); ok {
+			for i := range min(len(x), len(y)) {
+				if c := compareAlike(x[i].val.n, y[i].val.n); c != 0 {
+					return c
+				}
+			}
+		}
+	case *rangeData:
+		if y, ok := b.data.(*rangeData); ok {
+			for i := range min(len(x.members), len(y.members)) {
+				if c := compareAlike(x.members[i].n, y.members[i].n); c != 0 {
+					return c
+				}
+			}
+		}
+	}
+	return 0
+}
+
+// isCapsuleValue reports whether n is a known value of a capsule type.
+func (n *node) isCapsuleValue() bool {
+	return n.state == stateKnown && n.typ.t.kind == KindCapsule
 }
 
 // withNothingLeftToBe returns these members of a set of type t, in the order
