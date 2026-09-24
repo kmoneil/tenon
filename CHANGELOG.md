@@ -95,17 +95,22 @@
   Numbers costs. A member that is not known beside the 243 values of such a
   type cost 0.37 milliseconds to decide and costs 0.6 microseconds.
 
-- Attaching a mark to a value that carries many of them takes the marks as
-  they are rather than building a set of them to look one up and sorting the
-  whole list again, and serializing asks each mark once whether it is deep
-  rather than once for every set of marks holding it. Both show where a value
-  is nested level upon level under deep marks, which a document can be: one
-  of 72 kilobytes holding sixteen such nests of 240 levels decoded in 3.0
-  seconds and allocated 4.1 gigabytes, and decodes in 0.73 seconds and
-  allocates 0.90; a list of 10,000 numbers under 250 levels of deep marks
-  decodes in 169 milliseconds where it took 375. Such a document still costs
-  more per byte than one without marks, since each level attaches its mark to
-  everything below it as it is read.
+- Decoding a value nested level upon level under deep marks, which a document
+  can be, takes time and memory in proportion to the marks the value holds,
+  where it took the cube of the levels. The decoder attached each level's deep
+  mark to everything below it as the level was read, so every value's marks
+  were merged again for each level above it, and each merge built a set of the
+  marks held to look one up and sorted the whole list again. It now reads each
+  value with the marks listed on it and, once the value is read, gives every
+  value within it the deep marks above it in one pass, merging each value's
+  marks once and taking them as they are. A document of 83 kilobytes holding
+  sixteen nests of 240 levels, each level carrying a deep mark of its own,
+  decoded in 2.3 seconds and allocated 4.1 gigabytes, and decodes in 65
+  milliseconds and allocates 53 megabytes; a list of 10,000 numbers under 250
+  levels of deep marks decoded in 309 milliseconds and decodes in 7.3.
+  Serializing asks each mark once whether it is deep rather than once for
+  every set of marks holding it. A value decodes carrying the marks it did,
+  in the order it did.
 
 - Comparing two values that carry many marks takes time in proportion to the
   marks, where it took the square of them: `Identical` of two values carrying
