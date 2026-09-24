@@ -108,6 +108,14 @@ func parseSpec(src []byte) ([]Rule, error) {
 			continue
 		}
 		if inFence {
+			// A fence is skipped whole, so a rule defined inside one would
+			// be invisible to the manifest; a line that begins as a
+			// definition does is refused rather than ignored, or a rule
+			// could hide there. A bare mention deeper in a fence line, as a
+			// grammar's comment makes, stays harmless.
+			if loc := canonicalID.FindStringIndex(line); loc != nil && loc[0] == 0 {
+				problems.add(n, "a rule definition inside a code fence, which the manifest does not read")
+			}
 			continue
 		}
 		heading := headingLine.MatchString(line)
