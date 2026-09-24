@@ -66,6 +66,68 @@ func mirrored(c tenon.Change) tenon.Change {
 	return m
 }
 
+// TestConformance_DI035_MembersThatReadAlikeMirror holds the mirror promise
+// where a member removal and a member addition read alike. Two sets each
+// hold a tuple of a capsule value and an unknown; the display forms tie, so
+// the display interleave says nothing, and the two are ordered as a set
+// holding the members of both sets orders members that encode alike
+// (EQ-044): by their encodings, and past a stand-in by the capsule values.
+// The key follows from the member and not from the side it came from, so
+// Diff(b, a) mirrors Diff(a, b), where each direction once put its own
+// removal first.
+func TestConformance_DI035_MembersThatReadAlikeMirror(t *testing.T) {
+	conformance.Covers(t, "DI-035", "EQ-044")
+	num := tenon.NumberType()
+	mirrorOf := func(t *testing.T, what string, a, b tenon.Value) tenon.Changes {
+		t.Helper()
+		forward, back := tenon.Diff(a, b), tenon.Diff(b, a)
+		turned := make(tenon.Changes, len(forward))
+		for i, c := range forward {
+			turned[i] = mirrored(c)
+		}
+		if turned.String() != back.String() {
+			t.Errorf("%s: the diff is\n%sand the other way\n%s", what, forward, back)
+		}
+		return forward
+	}
+
+	// A capsule type with no operations: nothing orders its values but the
+	// run's own bookkeeping, which EQ-045 leaves to the implementation, and
+	// the mirror holds through it.
+	blank := tenon.Capsule("blank", tenon.CapsuleOps[celsius]{})
+	blankTuple := tenon.Tuple(blank, num)
+	m1 := tenon.TupleVal(tenon.CapsuleVal(blank, &celsius{1}), tenon.Unknown(num))
+	m2 := tenon.TupleVal(tenon.CapsuleVal(blank, &celsius{2}), tenon.Unknown(num))
+	if m1.String() != m2.String() {
+		t.Fatalf("the members read %s and %s, not alike", m1, m2)
+	}
+	mirrorOf(t, "no operations", tenon.SetVal(blankTuple, m1), tenon.SetVal(blankTuple, m2))
+
+	// A capsule type that encodes but does not display: the members read
+	// alike and their encodings differ, so the one with the lesser encoding
+	// leads from either side, in any run.
+	coded := tenon.Capsule("coded", tenon.CapsuleOps[celsius]{
+		Equals: func(a, b *celsius) bool { return *a == *b },
+		Hash:   func(v *celsius) uint64 { return uint64(v.degrees) },
+		Encoding: &tenon.CapsuleEncoding[celsius]{
+			ID:     "t/coded",
+			Type:   num,
+			Encode: func(v *celsius) tenon.Value { return tenon.NumberFromInt(v.degrees) },
+			Decode: func(v tenon.Value) (*celsius, []tenon.Diagnostic) { i, _ := v.AsInt64(); return &celsius{i}, nil },
+		},
+	})
+	codedTuple := tenon.Tuple(coded, num)
+	lesser := tenon.TupleVal(tenon.CapsuleVal(coded, &celsius{1}), tenon.Unknown(num))
+	greater := tenon.TupleVal(tenon.CapsuleVal(coded, &celsius{2}), tenon.Unknown(num))
+	if lesser.String() != greater.String() {
+		t.Fatalf("the members read %s and %s, not alike", lesser, greater)
+	}
+	forward := mirrorOf(t, "encodings differ", tenon.SetVal(codedTuple, lesser), tenon.SetVal(codedTuple, greater))
+	if len(forward) != 2 || forward[0].Kind != tenon.ChangeMemberRemoved || !tenon.Identical(forward[0].Old, lesser) {
+		t.Errorf("the member with the lesser encoding does not lead: %s", forward)
+	}
+}
+
 func TestConformance_DI030_ChangesAndWhatTheyCarry(t *testing.T) {
 	conformance.Covers(t, "DI-030")
 	num, str := tenon.NumberType(), tenon.StringType()
