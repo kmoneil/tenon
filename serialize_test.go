@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -156,10 +157,9 @@ func TestConformance_SE032_Numbers(t *testing.T) {
 // number costs as the growth from a list of 100 to a list of 200, which leaves
 // out what a document costs whatever it holds. Writing an integer took five
 // allocations and reading any number nine more than writing it, since
-// Deserialize writes what it read again to check that its input is canonical.
-// What is left is the value each number read is, two allocations, and the
-// path the encoder builds to each member it writes, three, which is another
-// matter.
+// Deserialize writes what it read again to check that its input is canonical,
+// and three of each were the path to the member, which the encoder builds
+// only for a failure now. What is left is the value each number read is.
 func TestConformance_SE032_NumbersAreWrittenAndReadWithoutBigIntegers(t *testing.T) {
 	conformance.Covers(t, "SE-032", "NU-003")
 	for _, tt := range []struct {
@@ -186,11 +186,11 @@ func TestConformance_SE032_NumbersAreWrittenAndReadWithoutBigIntegers(t *testing
 		// The output grows by doubling, which is a hundredth of an
 		// allocation a number here, or two.
 		const slack = 0.05
-		if each := (written[1] - written[0]) / 100; each > 3+slack {
-			t.Errorf("writing %s costs %.2f allocations, want at most 3 (%v for 100, %v for 200)", tt.name, each, written[0], written[1])
+		if each := (written[1] - written[0]) / 100; each > slack {
+			t.Errorf("writing %s costs %.2f allocations, want none (%v for 100, %v for 200)", tt.name, each, written[0], written[1])
 		}
-		if each := (read[1] - read[0]) / 100; each > 5+slack {
-			t.Errorf("reading %s costs %.2f allocations, want at most 5 (%v for 100, %v for 200)", tt.name, each, read[0], read[1])
+		if each := (read[1] - read[0]) / 100; each > 2+slack {
+			t.Errorf("reading %s costs %.2f allocations, want at most the 2 of its value (%v for 100, %v for 200)", tt.name, each, read[0], read[1])
 		}
 	}
 }
@@ -484,6 +484,157 @@ func (pinned) Propagation() tenon.Propagation { return tenon.Propagate }
 func (pinned) Redacting() bool                { return false }
 func (m pinned) MarkPayload() (tenon.Value, bool) {
 	return tenon.CapsuleVal(unencodable, m.c), true
+}
+
+// TestConformance_SE050_AMemberCostsNoPathUnlessItFails holds the encoder and
+// the projector to building the path to a member only for a failure they
+// record there. Every member has a path, and nearly every member writes: a
+// path built for each cost three allocations for an element or an entry, a
+// node and the Number or String value its key is, and one for an attribute.
+// A member's cost is read as the growth from 100 members to 200, which leaves
+// out what the value costs whatever it holds.
+func TestConformance_SE050_AMemberCostsNoPathUnlessItFails(t *testing.T) {
+	conformance.Covers(t, "SE-050", "SE-061")
+	numbers := func(size int) []tenon.Value {
+		members := make([]tenon.Value, size)
+		for i := range members {
+			members[i] = n(int64(i))
+		}
+		return members
+	}
+	named := func(prefix string, size int) map[string]tenon.Value {
+		entries := make(map[string]tenon.Value, size)
+		for i, m := range numbers(size) {
+			entries[prefix+strconv.Itoa(1000+i)] = m
+		}
+		return entries
+	}
+	for _, tt := range []struct {
+		name  string
+		build func(size int) tenon.Value
+		// What a member may cost, written and projected: a set's member is
+		// written apart to be sorted, and a projected number is its text.
+		written, projected float64
+	}{
+		{"a list", func(size int) tenon.Value { return tenon.ListVal(num, numbers(size)...) }, 0, 2},
+		{"a set", func(size int) tenon.Value { return tenon.SetVal(num, numbers(size)...) }, 1, 2},
+		{"a map", func(size int) tenon.Value { return tenon.MapVal(num, named("k", size)) }, 0, 2},
+		{"an object", func(size int) tenon.Value { return obj(named("a", size)) }, 0, 2},
+	} {
+		var written, projected [2]float64
+		for k, size := range []int{100, 200} {
+			v := tt.build(size)
+			written[k] = testing.AllocsPerRun(50, func() { tenon.Serialize(v) })
+			projected[k] = testing.AllocsPerRun(50, func() { tenon.ProjectJSON(v) })
+		}
+		// The output grows by doubling, which is a hundredth of an
+		// allocation a member here, or two.
+		const slack = 0.05
+		if each := (written[1] - written[0]) / 100; each > tt.written+slack {
+			t.Errorf("writing %s costs %.2f allocations a member, want at most %v (%v for 100, %v for 200)",
+				tt.name, each, tt.written, written[0], written[1])
+		}
+		if each := (projected[1] - projected[0]) / 100; each > tt.projected+slack {
+			t.Errorf("projecting %s costs %.2f allocations a member, want at most %v (%v for 100, %v for 200)",
+				tt.name, each, tt.projected, projected[0], projected[1])
+		}
+	}
+}
+
+// TestConformance_SE050_FailuresUnderOneMemberShareItsPath holds a failure's
+// cost to what it adds to the path above it. The path to a failure is made
+// only when the failure is recorded, and failures under one member share the
+// path to it, as a path built on the way down shared it: made anew for each,
+// a hundred failures at the bottom of a hundred levels would cost ten thousand
+// steps. Each failure here is an unknown, which does not project, and a value
+// of a capsule type that declares no encoding, which does not serialize.
+func TestConformance_SE050_FailuresUnderOneMemberShareItsPath(t *testing.T) {
+	conformance.Covers(t, "SE-050", "SE-061")
+	const levels = 100
+	deep := func(bottom tenon.Value) tenon.Value {
+		v := bottom
+		for range levels {
+			v = tenon.ListVal(v.Type(), v)
+		}
+		return v
+	}
+	for _, tt := range []struct {
+		name   string
+		member tenon.Value
+		call   func(tenon.Value)
+		// What a failure cost when the path was built on the way down: the
+		// encoder also writes each diagnostic, path and all, to find one it
+		// has recorded already.
+		most float64
+	}{
+		{"projecting", tenon.Unknown(num), func(v tenon.Value) { tenon.ProjectJSON(v) }, 6},
+		{"serializing", tenon.CapsuleVal(unencodable, &celsius{}), func(v tenon.Value) { tenon.Serialize(v) }, 13},
+	} {
+		var made [2]float64
+		for k, failures := range []int{100, 200} {
+			members := make([]tenon.Value, failures)
+			for i := range members {
+				members[i] = tt.member
+			}
+			v := deep(tenon.ListVal(tt.member.Type(), members...))
+			made[k] = testing.AllocsPerRun(10, func() { tt.call(v) })
+		}
+		// A path of its own would cost a failure three allocations a level.
+		if each := (made[1] - made[0]) / 100; each > tt.most+0.05 {
+			t.Errorf("%s: a failure %d levels down costs %.2f allocations, want at most %v (%v for 100, %v for 200)",
+				tt.name, levels, each, tt.most, made[0], made[1])
+		}
+	}
+}
+
+// TestConformance_SE050_FailuresAreLocatedAtEveryKindOfMember pins the path of
+// a failure at each kind of member the encoder writes and the projector
+// renders, alone and nested: an element of a list, a tuple or a set, the entry
+// of a map and an attribute, and for the encoder the members a range records,
+// a mark and its payload, and a capsule's payload. Both build a path only for
+// a failure they record, and this holds that path to the one they would have
+// built on the way down.
+func TestConformance_SE050_FailuresAreLocatedAtEveryKindOfMember(t *testing.T) {
+	conformance.Covers(t, "SE-050", "SE-042", "SE-061")
+	c := func(d int64) tenon.Value { return tenon.CapsuleVal(unencodable, &celsius{d}) }
+	const capsule, mark = tenon.CodeSerializeUnencodableCapsule, tenon.CodeSerializeUnencodableMark
+	wrapper := tenon.Capsule("wrapper", tenon.CapsuleOps[celsius]{Encoding: &tenon.CapsuleEncoding[celsius]{
+		ID: "t/wrapper", Type: tenon.List(unencodable),
+		Encode: func(v *celsius) tenon.Value { return tenon.ListVal(unencodable, tenon.CapsuleVal(unencodable, v)) },
+		Decode: func(tenon.Value) (*celsius, []tenon.Diagnostic) { return nil, nil },
+	}})
+	// Where a type names the capsule type, the type fails at the path of the
+	// value it is the type of, which for these is the root.
+	wantSerializeFailure(t, "a tuple", tenon.TupleVal(n(1), c(1)), wantDiag{capsule, "."}, wantDiag{capsule, ".[1]"})
+	wantSerializeFailure(t, "a set", tenon.SetVal(unencodable, c(1), c(2)),
+		wantDiag{capsule, "."}, wantDiag{capsule, ".[0]"}, wantDiag{capsule, ".[1]"})
+	wantSerializeFailure(t, "a map", tenon.MapVal(unencodable, map[string]tenon.Value{"k": c(1)}),
+		wantDiag{capsule, "."}, wantDiag{capsule, `.["k"]`})
+	wantSerializeFailure(t, "a map in a list in an object", obj(map[string]tenon.Value{
+		"a": tenon.ListVal(tenon.Map(unencodable), tenon.MapVal(unencodable, map[string]tenon.Value{"k": c(1)})),
+	}), wantDiag{capsule, "."}, wantDiag{capsule, `.a[0]["k"]`})
+	wantSerializeFailure(t, "a member a range records", obj(map[string]tenon.Value{
+		"s": tenon.Narrow(tenon.Unknown(tenon.Set(unencodable)), tenon.Members(c(1))),
+	}), wantDiag{capsule, "."}, wantDiag{capsule, ".s"})
+	wantSerializeFailure(t, "a mark on an element", tenon.ListVal(num, n(1), tenon.WithMarks(n(2), stamp{id: "plain"})),
+		wantDiag{mark, ".[1]"})
+	// A container's marks are written after its members, and a mark that
+	// fails there is located at the container, not at the member last
+	// written.
+	wantSerializeFailure(t, "a mark on a list", obj(map[string]tenon.Value{
+		"a": tenon.WithMarks(tenon.ListVal(num, n(1), n(2)), stamp{id: "plain"}),
+	}), wantDiag{mark, ".a"})
+	wantSerializeFailure(t, "a mark's payload on an element", tenon.ListVal(num, n(1), tenon.WithMarks(n(2), pinned{&celsius{2}})),
+		wantDiag{capsule, ".[1]"})
+	wantSerializeFailure(t, "a capsule's payload", obj(map[string]tenon.Value{"x": tenon.CapsuleVal(wrapper, &celsius{1})}),
+		wantDiag{capsule, ".x"}, wantDiag{capsule, ".x[0]"})
+
+	unknown := tenon.Unknown(num)
+	wantProjectionFailure(t, "a tuple", tenon.TupleVal(n(1), unknown), wantDiag{tenon.CodeSerializeNotKnown, ".[1]"})
+	wantProjectionFailure(t, "a set", tenon.SetVal(num, n(1), unknown), wantDiag{tenon.CodeSerializeNotKnown, ".[1]"})
+	wantProjectionFailure(t, "a map in a list in an object", obj(map[string]tenon.Value{
+		"a": tenon.ListVal(tenon.Map(num), tenon.MapVal(num, map[string]tenon.Value{"k": unknown})),
+	}), wantDiag{tenon.CodeSerializeNotKnown, `.a[0]["k"]`})
 }
 
 // nullNote is a mark whose payload is a null, which breaks the contract of an

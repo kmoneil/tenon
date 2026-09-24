@@ -80,13 +80,17 @@ type encoder struct {
 	// that once and for all and the marks of an enclosing value are in the
 	// mark set of every value under it.
 	deepMarks map[Mark]bool
+	// trail holds the steps to the member being written. Each function that
+	// writes a member takes at, the depth of that member in the trail, which
+	// is 0 for the value Serialize is given.
+	trail trail
 }
 
-// fail records a diagnostic for what is at path p, unless an identical one is
+// fail records a diagnostic for what at locates, unless an identical one is
 // recorded already.
-func (e *encoder) fail(p Path, code Code, message string) {
+func (e *encoder) fail(at int, code Code, message string) {
 	e.failures++
-	d := Diagnostic{Code: code, Message: message, Path: p}
+	d := Diagnostic{Code: code, Message: message, Path: e.trail.path(at)}
 	key := string(appendDiagnostic(nil, d))
 	if _, dup := e.recorded[key]; dup {
 		return
@@ -104,14 +108,14 @@ func (e *encoder) item(b []byte, v Value) []byte {
 	if n.state.resolved() {
 		b = cbor.AppendArray(b, 3)
 		b = cbor.AppendUint(b, itemResolved)
-		b = e.typ(b, n.typ, Path{})
-		return e.content(b, v, Path{}, nil)
+		b = e.typ(b, n.typ, 0)
+		return e.content(b, v, 0, nil)
 	}
 	var inner []byte
 	if n.state == statePending {
 		inner = cbor.AppendArray(inner, 3)
 		inner = cbor.AppendUint(inner, itemPending)
-		inner = e.constraint(inner, n.data.(Constraint), Path{})
+		inner = e.constraint(inner, n.data.(Constraint), 0)
 		inner = cbor.AppendUint(inner, uint64(nullnessCode(n.null)))
 	} else {
 		diags := n.data.([]Diagnostic)
@@ -128,7 +132,7 @@ func (e *encoder) item(b []byte, v Value) []byte {
 	b = cbor.AppendTag(b, tagMarked)
 	b = cbor.AppendArray(b, 2)
 	b = append(b, inner...)
-	return e.marks(b, n.markList(), Path{})
+	return e.marks(b, n.markList(), 0)
 }
 
 // nullnessCode returns the code of a pending value's nullness fact.
@@ -163,8 +167,8 @@ func appendDiagnostic(b []byte, d Diagnostic) []byte {
 	return b
 }
 
-// typ appends the encoding of a type, which p locates within the value.
-func (e *encoder) typ(b []byte, t Type, p Path) []byte {
+// typ appends the encoding of a type, which at locates within the value.
+func (e *encoder) typ(b []byte, t Type, at int) []byte {
 	d := t.t
 	switch d.kind {
 	case KindBool, KindNumber, KindString:
@@ -172,13 +176,13 @@ func (e *encoder) typ(b []byte, t Type, p Path) []byte {
 	case KindList, KindSet, KindMap:
 		b = cbor.AppendArray(b, 2)
 		b = cbor.AppendUint(b, uint64(d.kind))
-		return e.typ(b, d.elem, p)
+		return e.typ(b, d.elem, at)
 	case KindTuple:
 		b = cbor.AppendArray(b, 2)
 		b = cbor.AppendUint(b, uint64(d.kind))
 		b = cbor.AppendArray(b, len(d.elems))
 		for _, elem := range d.elems {
-			b = e.typ(b, elem, p)
+			b = e.typ(b, elem, at)
 		}
 		return b
 	case KindObject:
@@ -188,26 +192,26 @@ func (e *encoder) typ(b []byte, t Type, p Path) []byte {
 		for _, a := range d.attrs {
 			b = cbor.AppendArray(b, 2)
 			b = cbor.AppendText(b, a.name)
-			b = e.typ(b, a.typ, p)
+			b = e.typ(b, a.typ, at)
 		}
 		return b
 	}
 	b = cbor.AppendArray(b, 2)
 	b = cbor.AppendUint(b, uint64(d.kind))
-	return cbor.AppendText(b, e.capsuleID(t, p))
+	return cbor.AppendText(b, e.capsuleID(t, at))
 }
 
 // capsuleID returns the identifier a capsule type declares, recording a
 // failure where it declares none or another type met already declares it.
-func (e *encoder) capsuleID(t Type, p Path) string {
+func (e *encoder) capsuleID(t Type, at int) string {
 	d := t.t.capsule
 	if d.encoding == nil {
-		e.fail(p, CodeSerializeUnencodableCapsule, "capsule type "+quoted(d.name)+" declares no encoding")
+		e.fail(at, CodeSerializeUnencodableCapsule, "capsule type "+quoted(d.name)+" declares no encoding")
 		return ""
 	}
 	id := d.encoding.id
 	if other, ok := e.ids[id]; ok && other != t {
-		e.fail(p, CodeSerializeUnencodableCapsule, "two capsule types, both named "+quoted(d.name)+
+		e.fail(at, CodeSerializeUnencodableCapsule, "two capsule types, both named "+quoted(d.name)+
 			" or "+quoted(other.t.capsule.name)+", declare the identifier "+quoted(id))
 		return id
 	}
@@ -216,20 +220,20 @@ func (e *encoder) capsuleID(t Type, p Path) string {
 }
 
 // constraint appends the encoding of a constraint.
-func (e *encoder) constraint(b []byte, c Constraint, p Path) []byte {
+func (e *encoder) constraint(b []byte, c Constraint, at int) []byte {
 	d := c.c
 	switch d.kind {
 	case ConstraintExactly:
 		b = cbor.AppendArray(b, 2)
 		b = cbor.AppendUint(b, uint64(d.kind))
-		return e.typ(b, d.typ, p)
+		return e.typ(b, d.typ, at)
 	case ConstraintAny:
 		b = cbor.AppendArray(b, 1)
 		return cbor.AppendUint(b, uint64(d.kind))
 	case ConstraintListOf, ConstraintSetOf, ConstraintMapOf:
 		b = cbor.AppendArray(b, 2)
 		b = cbor.AppendUint(b, uint64(d.kind))
-		return e.constraint(b, d.elem, p)
+		return e.constraint(b, d.elem, at)
 	case ConstraintObjectWith:
 		b = cbor.AppendArray(b, 3)
 		b = cbor.AppendUint(b, uint64(d.kind))
@@ -238,7 +242,7 @@ func (e *encoder) constraint(b []byte, c Constraint, p Path) []byte {
 			b = cbor.AppendArray(b, 3)
 			b = cbor.AppendText(b, f.name)
 			b = cbor.AppendBool(b, f.Required)
-			b = e.constraint(b, f.Constraint, p)
+			b = e.constraint(b, f.Constraint, at)
 		}
 		return cbor.AppendBool(b, d.closed)
 	}
@@ -246,7 +250,7 @@ func (e *encoder) constraint(b []byte, c Constraint, p Path) []byte {
 	b = cbor.AppendUint(b, uint64(d.kind))
 	b = cbor.AppendArray(b, len(d.members))
 	for _, m := range d.members {
-		b = e.constraint(b, m, p)
+		b = e.constraint(b, m, at)
 	}
 	return b
 }
@@ -328,32 +332,32 @@ func (e *encoder) implies(ms *markSet) *impliedMarks {
 	return im
 }
 
-// content appends the content of the resolved value v, which p locates. The
+// content appends the content of the resolved value v, which at locates. The
 // value is held by a container implying deep marks on it, which v carries
 // because the container does, and which are therefore not listed on v.
-func (e *encoder) content(b []byte, v Value, p Path, implied *impliedMarks) []byte {
+func (e *encoder) content(b []byte, v Value, at int, implied *impliedMarks) []byte {
 	own := v.n.markList()
 	if own != nil && implied != nil {
 		own = implied.listed(v.n.marks)
 	}
 	if len(own) == 0 {
-		return e.bare(b, v, p)
+		return e.bare(b, v, at)
 	}
 	b = cbor.AppendTag(b, tagMarked)
 	b = cbor.AppendArray(b, 2)
-	b = e.bare(b, v, p)
-	return e.marks(b, own, p)
+	b = e.bare(b, v, at)
+	return e.marks(b, own, at)
 }
 
 // bare appends the content of the resolved value v without its marks.
-func (e *encoder) bare(b []byte, v Value, p Path) []byte {
+func (e *encoder) bare(b []byte, v Value, at int) []byte {
 	n := v.n
 	switch n.state {
 	case stateNull:
 		return cbor.AppendNull(b)
 	case stateUnknown:
 		b = cbor.AppendTag(b, tagUnknown)
-		return e.rng(b, n.data.(*rangeData), p)
+		return e.rng(b, n.data.(*rangeData), at)
 	}
 	switch n.typ.t.kind {
 	case KindBool:
@@ -367,14 +371,14 @@ func (e *encoder) bare(b []byte, v Value, p Path) []byte {
 		implied := e.implies(n.marks)
 		b = cbor.AppendArray(b, len(members))
 		for i, m := range members {
-			b = e.content(b, m, p.extend(indexStep(NumberFromInt(int64(i)))), implied)
+			b = e.content(b, m, e.trail.down(at, element(i)), implied)
 		}
 		return b
 	case KindSet:
 		// The members of a set carry no marks in storage ([MK-006]), so a
 		// deep mark on the set implies nothing on them: it stays on the set.
 		members := n.data.([]Value)
-		return e.members(b, members, func(i int) Path { return p.extend(indexStep(NumberFromInt(int64(i)))) })
+		return e.members(b, members, at, true)
 	case KindMap:
 		entries := n.data.([]mapEntry)
 		implied := e.implies(n.marks)
@@ -382,7 +386,7 @@ func (e *encoder) bare(b []byte, v Value, p Path) []byte {
 		for _, entry := range entries {
 			b = cbor.AppendArray(b, 2)
 			b = cbor.AppendText(b, entry.key)
-			b = e.content(b, entry.val, p.extend(indexStep(String(entry.key))), implied)
+			b = e.content(b, entry.val, e.trail.down(at, mapElement(entry.key)), implied)
 		}
 		return b
 	case KindObject:
@@ -390,19 +394,25 @@ func (e *encoder) bare(b []byte, v Value, p Path) []byte {
 		implied := e.implies(n.marks)
 		b = cbor.AppendArray(b, len(attrs))
 		for i, m := range attrs {
-			b = e.content(b, m, p.extend(attributeStep(n.typ.t.attrs[i].name)), implied)
+			b = e.content(b, m, e.trail.down(at, attributeNamed(n.typ.t.attrs[i].name)), implied)
 		}
 		return b
 	}
-	return e.capsule(b, n, p)
+	return e.capsule(b, n, at)
 }
 
 // members appends the members of a set, or those a range records, in the
-// bytewise order of their encodings. at locates member i.
-func (e *encoder) members(b []byte, members []Value, at func(i int) Path) []byte {
+// bytewise order of their encodings. at locates the set or the range: a set's
+// member is a step below it, by its index, and a member a range records is
+// where the range is.
+func (e *encoder) members(b []byte, members []Value, at int, indexed bool) []byte {
 	encoded := make([][]byte, len(members))
 	for i, m := range members {
-		encoded[i] = e.content(nil, m, at(i), nil)
+		here := at
+		if indexed {
+			here = e.trail.down(at, element(i))
+		}
+		encoded[i] = e.content(nil, m, here, nil)
 	}
 	slices.SortFunc(encoded, bytes.Compare)
 	b = cbor.AppendArray(b, len(encoded))
@@ -414,10 +424,10 @@ func (e *encoder) members(b []byte, members []Value, at func(i int) Path) []byte
 
 // capsule appends the content of a known capsule value: the value its type
 // serializes it as.
-func (e *encoder) capsule(b []byte, n *node, p Path) []byte {
+func (e *encoder) capsule(b []byte, n *node, at int) []byte {
 	d := n.typ.t.capsule
 	if d.encoding == nil {
-		e.fail(p, CodeSerializeUnencodableCapsule, "capsule type "+quoted(d.name)+" declares no encoding")
+		e.fail(at, CodeSerializeUnencodableCapsule, "capsule type "+quoted(d.name)+" declares no encoding")
 		return cbor.AppendNull(b)
 	}
 	payload := d.encoding.encode(n.data)
@@ -426,12 +436,12 @@ func (e *encoder) capsule(b []byte, n *node, p Path) []byte {
 			d.name, payload, d.encoding.typ)
 	}
 	b = cbor.AppendArray(b, 2)
-	b = e.typ(b, d.encoding.typ, p)
-	return e.content(b, payload, p, nil)
+	b = e.typ(b, d.encoding.typ, at)
+	return e.content(b, payload, at, nil)
 }
 
 // rng appends a range: a map from keys to the narrowings it records.
-func (e *encoder) rng(b []byte, r *rangeData, p Path) []byte {
+func (e *encoder) rng(b []byte, r *rangeData, at int) []byte {
 	keys := 0
 	for _, set := range []bool{r.null == nullNo, r.lo.set, r.hi.set, r.pfx != "", r.lenLo > 0, r.lenHi.set, len(r.members) > 0} {
 		if set {
@@ -465,7 +475,7 @@ func (e *encoder) rng(b []byte, r *rangeData, p Path) []byte {
 	}
 	if len(r.members) > 0 {
 		b = cbor.AppendUint(b, 6)
-		b = e.members(b, r.members, func(int) Path { return p })
+		b = e.members(b, r.members, at, false)
 	}
 	return b
 }
@@ -477,7 +487,7 @@ func (e *encoder) rng(b []byte, r *rangeData, p Path) []byte {
 // leave the same placeholder, so they are left out of the duplicate check
 // below: what [SE-041] forbids is two unequal marks with one encoding, and
 // these have none.
-func (e *encoder) marks(b []byte, marks []Mark, p Path) []byte {
+func (e *encoder) marks(b []byte, marks []Mark, at int) []byte {
 	encoded := make([][]byte, 0, len(marks))
 	for _, m := range marks {
 		id := m.MarkID()
@@ -486,7 +496,7 @@ func (e *encoder) marks(b []byte, marks []Mark, p Path) []byte {
 		}
 		em, ok := m.(EncodableMark)
 		if !ok {
-			e.fail(p, CodeSerializeUnencodableMark, "the mark "+quoted(id)+" declares no encoding")
+			e.fail(at, CodeSerializeUnencodableMark, "the mark "+quoted(id)+" declares no encoding")
 			continue
 		}
 		payload, has := em.MarkPayload()
@@ -501,8 +511,8 @@ func (e *encoder) marks(b []byte, marks []Mark, p Path) []byte {
 			before := e.failures
 			enc = cbor.AppendArray(enc, 3)
 			enc = cbor.AppendText(enc, id)
-			enc = e.typ(enc, payload.n.typ, p)
-			enc = e.content(enc, payload, p, nil)
+			enc = e.typ(enc, payload.n.typ, at)
+			enc = e.content(enc, payload, at, nil)
 			if e.failures > before {
 				continue
 			}
