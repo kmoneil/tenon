@@ -4,6 +4,9 @@
 
 ### Changed
 
+- The module's Go directive is `go 1.26.0`, the floor `golang.org/x/text`
+  v0.42.0 sets, where it named the toolchain's patch release and demanded
+  more of consumers than anything in tenon needs.
 - `gotenon`'s boundary messages stay readable and its contracts panic as
   usage errors. A message that embeds a value cuts it to 32 bytes at a
   character boundary: decoding the widest in-window number into an int64
