@@ -240,3 +240,60 @@ func attributeStep(name string) Step {
 func indexStep(key Value) Step {
 	return Step{kind: StepIndex, key: key}
 }
+
+// trail is the path to where a walk is, held as the steps the walk took rather
+// than as a Path. The encoder and the projector pass down the depth they are
+// at, record the step to a member at that depth before they descend to it, and
+// make a Path of the steps only where they record a failure: nearly every
+// member writes, and a Path built for each costs a node a step, and a Number
+// or String value for each key. A depth and a slice of steps hold no pointer
+// from one level to the one above, which a chain of steps on the stack would,
+// and which the compiler would then place on the heap.
+type trail struct {
+	steps []memberName
+	// made holds the Path to each of the first len(made) steps, made where a
+	// failure was recorded under them and kept while they stand, so that
+	// failures under one member share the path to it, as a Path built on the
+	// way down would have: made anew for each, a hundred failures a hundred
+	// levels down would cost ten thousand steps.
+	made []Path
+}
+
+// down records step as the one from what depth locates to a member of it, and
+// returns the depth of that member. The paths made under the step it replaces
+// no longer stand.
+func (t *trail) down(depth int, step memberName) int {
+	t.steps = append(t.steps[:depth], step)
+	if len(t.made) > depth {
+		t.made = t.made[:depth]
+	}
+	return depth + 1
+}
+
+// path returns the Path to what depth locates, made from the path above it
+// where that is made already.
+func (t *trail) path(depth int) Path {
+	for k := len(t.made); k < depth; k++ {
+		var above Path
+		if k > 0 {
+			above = t.made[k-1]
+		}
+		t.made = append(t.made, above.extend(t.steps[k].pathStep()))
+	}
+	if depth == 0 {
+		return Path{}
+	}
+	return t.made[depth-1]
+}
+
+// pathStep returns the step a path takes to the member m names: an element by
+// its index, an attribute by its name, and a map's element by its key.
+func (m memberName) pathStep() Step {
+	switch m.kind {
+	case attributeOf:
+		return attributeStep(m.name)
+	case elementOfKey:
+		return indexStep(String(m.name))
+	}
+	return indexStep(NumberFromInt(int64(m.index)))
+}

@@ -32,7 +32,7 @@ func ProjectJSON(v Value) ([]byte, Value, bool) {
 		return nil, v, false
 	}
 	var p projector
-	b := p.value(nil, v, Path{})
+	b := p.value(nil, v, 0)
 	if len(p.diags) > 0 {
 		return nil, errorValue(p.diags...), false
 	}
@@ -47,14 +47,18 @@ func ProjectJSON(v Value) ([]byte, Value, bool) {
 // recorded for every member that fails.
 type projector struct {
 	diags []Diagnostic
+	// trail holds the steps to the member being projected, of which value
+	// is given the depth.
+	trail trail
 }
 
-func (p *projector) fail(at Path, code Code, message string) {
-	p.diags = append(p.diags, Diagnostic{Code: code, Message: message, Path: at})
+func (p *projector) fail(at int, code Code, message string) {
+	p.diags = append(p.diags, Diagnostic{Code: code, Message: message, Path: p.trail.path(at)})
 }
 
-// value appends the projection of v, which at locates.
-func (p *projector) value(b []byte, v Value, at Path) []byte {
+// value appends the projection of v, which at locates: the depth of v in the
+// trail, 0 for the value ProjectJSON is given.
+func (p *projector) value(b []byte, v Value, at int) []byte {
 	n := v.n
 	if ms := n.redactingMarks(); ms != nil {
 		p.fail(at, CodeSerializeRedacted, "the value carries the redacting mark "+redactedText(ms)+", and is not projected")
@@ -86,7 +90,7 @@ func (p *projector) value(b []byte, v Value, at Path) []byte {
 			if i > 0 {
 				b = append(b, ',')
 			}
-			b = p.value(b, m, at.extend(indexStep(NumberFromInt(int64(i)))))
+			b = p.value(b, m, p.trail.down(at, element(i)))
 		}
 		return append(b, ']')
 	case KindMap:
@@ -97,7 +101,7 @@ func (p *projector) value(b []byte, v Value, at Path) []byte {
 			}
 			b = appendJSONString(b, e.key)
 			b = append(b, ':')
-			b = p.value(b, e.val, at.extend(indexStep(String(e.key))))
+			b = p.value(b, e.val, p.trail.down(at, mapElement(e.key)))
 		}
 		return append(b, '}')
 	case KindObject:
@@ -109,7 +113,7 @@ func (p *projector) value(b []byte, v Value, at Path) []byte {
 			name := n.typ.t.attrs[i].name
 			b = appendJSONString(b, name)
 			b = append(b, ':')
-			b = p.value(b, m, at.extend(attributeStep(name)))
+			b = p.value(b, m, p.trail.down(at, attributeNamed(name)))
 		}
 		return append(b, '}')
 	}

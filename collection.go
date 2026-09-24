@@ -462,10 +462,12 @@ func MapVal(elem Type, entries map[string]Value) Value {
 	return Value{&node{state: stateKnown, partial: partial, markedWithin: marked, typ: t, data: out}}
 }
 
-// memberName names a member of a container in a panic message. A constructor
-// names each member it checks and nearly every check passes, so the name is
-// written only when a message uses it: written for each member, it would be
-// an allocation or two for each that nothing reads.
+// memberName names a member of a container, for a panic message or as a step
+// of a path. A constructor names each member it checks and nearly every check
+// passes, so the name is written only when a message uses it: written for
+// each member, it would be an allocation or two for each that nothing reads.
+// The encoder and the projector make a path step of it only for a failure,
+// for the same reason.
 type memberName struct {
 	kind  memberKind
 	index int    // the index of an element of a list, set or tuple

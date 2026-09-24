@@ -118,9 +118,20 @@
   every number's do. Writing an integer took two allocations for that and
   reading any number four, and `Deserialize` pays for both, since it writes
   the value it read again to check that its input is canonical. A list of 100
-  small integers took 508 allocations to serialize and takes 309, and 1,119
-  to deserialize and takes 523; a list of 100 fractions took 925 to
-  deserialize and takes 525. Every encoding is what it was.
+  small integers took 508 allocations to serialize and 1,119 to deserialize,
+  which this change alone brings to 309 and 523, and the next to 10 and 224.
+  Every encoding is what it was.
+
+- Writing a value builds the path to a member only where the member fails to
+  write. `Serialize` built the path to every member it wrote, for a
+  diagnostic nearly no member needs: three allocations for an element of a
+  list, a set or a tuple, or an entry of a map, and one for an attribute.
+  `Deserialize` paid it again, since it writes what it read to check that
+  its input is canonical, and `ProjectJSON` paid it too. A list of 100 small
+  numbers serializes in 10 allocations where it took 309, deserializes in 224
+  where it took 523, two for each number, which is the value it is, and
+  projects in 107 where it took 406. Every diagnostic is located where it
+  was, and failures under one member still share the path to it.
 
 ## 0.4.0 (2026-09-21)
 
