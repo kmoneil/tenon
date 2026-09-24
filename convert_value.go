@@ -295,15 +295,19 @@ func (x converter) primitive(v Value, s Type) Value {
 		return errorValue(Diagnostic{Code: CodeBoolInvalidSyntax, Message: x.text(v) + ` is neither "true" nor "false"`})
 	}
 	d, err := decimal.Parse(text)
-	switch err {
-	case nil:
+	if err == nil {
 		return numberValue(d)
-	case decimal.ErrOutOfRange:
-		return errorValue(Diagnostic{Code: CodeNumberOutOfRange, Message: x.text(v) + " is outside the range of numbers"})
-	case decimal.ErrTooLong:
+	}
+	switch code := numberCode(err.(decimal.Error)); code {
+	case CodeNumberInvalidSyntax:
+		return errorValue(Diagnostic{Code: code, Message: x.text(v) + " is not a number"})
+	case CodeNumberOutOfRange:
+		return errorValue(Diagnostic{Code: code, Message: x.text(v) + " is outside the range of numbers"})
+	case CodeNumberTooLong:
 		return errorValue(tooLong(len(text)))
 	}
-	return errorValue(Diagnostic{Code: CodeNumberInvalidSyntax, Message: x.text(v) + " is not a number"})
+	internalPanic("Parse reported %v, which it does not report", err)
+	return Value{}
 }
 
 // capsule converts a known value between its type and the type s, where

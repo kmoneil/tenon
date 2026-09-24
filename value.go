@@ -147,15 +147,19 @@ func NumberFromBigInt(i *big.Int) Value {
 // digits is still a number, and arithmetic and Deserialize make one.
 func NumberFromText(s string) Value {
 	d, err := decimal.Parse(s)
-	switch err {
-	case nil:
+	if err == nil {
 		return numberValue(d)
-	case decimal.ErrOutOfRange:
-		return errorValue(Diagnostic{Code: CodeNumberOutOfRange, Message: quoted(s) + " is outside the range of numbers"})
-	case decimal.ErrTooLong:
+	}
+	switch code := numberCode(err.(decimal.Error)); code {
+	case CodeNumberInvalidSyntax:
+		return errorValue(Diagnostic{Code: code, Message: quoted(s) + " is not a number"})
+	case CodeNumberOutOfRange:
+		return errorValue(Diagnostic{Code: code, Message: quoted(s) + " is outside the range of numbers"})
+	case CodeNumberTooLong:
 		return errorValue(tooLong(len(s)))
 	}
-	return errorValue(Diagnostic{Code: CodeNumberInvalidSyntax, Message: quoted(s) + " is not a number"})
+	internalPanic("Parse reported %v, which it does not report", err)
+	return Value{}
 }
 
 // tooLong is the diagnostic for number text of n characters, longer than
@@ -182,6 +186,27 @@ func String(s string) Value {
 		})
 	}
 	return stringValue(c)
+}
+
+// numberCode returns the diagnostic code for a decimal error, one arm per
+// constant the package declares, so a constant it gains without an arm here
+// panics at the first failure rather than falling to whichever code a call
+// site's default named.
+func numberCode(err decimal.Error) Code {
+	switch err {
+	case decimal.ErrSyntax:
+		return CodeNumberInvalidSyntax
+	case decimal.ErrOutOfRange:
+		return CodeNumberOutOfRange
+	case decimal.ErrDivideByZero:
+		return CodeNumberDivideByZero
+	case decimal.ErrModuloByZero:
+		return CodeNumberModuloByZero
+	case decimal.ErrTooLong:
+		return CodeNumberTooLong
+	}
+	internalPanic("no diagnostic code maps %v", err)
+	return ""
 }
 
 // stringValue returns the String value of s, which must be in its canonical
