@@ -667,6 +667,11 @@ func TestConformance_EQ045_KnownMembersAreComparedInTheirOrder(t *testing.T) {
 		return tenon.SetVal(counting, append(members(0, size-1), value(extra), tenon.Unknown(counting))...)
 	}
 	listing := tenon.Narrow(tenon.Unknown(tenon.Set(set)), tenon.Members(partly(size), partly(size+1)))
+	// A set that must hold every member of a, beside one that holds them and
+	// a member that is not known: whether the second could be the first asks
+	// the second about each value the first lists.
+	holdingA := tenon.Narrow(tenon.Unknown(set), tenon.Members(forwards...))
+	partlyA := tenon.SetVal(counting, append(members(0, size), tenon.Unknown(counting))...)
 	listed, failure, ok := tenon.Serialize(listing)
 	if !ok {
 		t.Fatalf("Serialize(a listing of two partly known sets) failed: %v", failure)
@@ -704,6 +709,7 @@ func TestConformance_EQ045_KnownMembersAreComparedInTheirOrder(t *testing.T) {
 		{"Identical of two sets of the same members", "true", func() string { return fmt.Sprint(tenon.Identical(a, b)) }, 4 * size},
 		{"Identical of two sets differing in one member", "false", func() string { return fmt.Sprint(tenon.Identical(a, c)) }, 4 * size},
 		{"Contains", "true", func() string { return tenon.Contains(a, value(size/2)).String() }, 4 * size},
+		{"Equals of a set listing a's members and a partly known set holding them", "unknown(bool, not null)", func() string { return tenon.Equals(holdingA, partlyA).String() }, 4 * size},
 		{"decoding a document of two sets holding the same members", string(tenon.CodeSerializeNotCanonical), func() string {
 			_, failure, ok := tenon.Deserialize(pair, read)
 			if ok {

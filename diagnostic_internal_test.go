@@ -101,3 +101,21 @@ func TestDiagnosticLookupIsTheScan(t *testing.T) {
 		}
 	}
 }
+
+// TestContainerFailuresAreLookedUpPastAHandful holds a container collecting
+// its error members' diagnostics to the lookup: past manyDiagnostics of them,
+// each is looked for by its key rather than compared with every one collected.
+// The comparisons a scan makes are the package's own, and nothing outside it
+// can count them, since a diagnostic holds no value whose equality a caller's
+// code decides; so this asks the lookup what it holds, which a collection
+// comparing each diagnostic with every one leaves empty (T-1601). The members
+// fail alike, each where it is, as the nulls of a JSON array do.
+func TestContainerFailuresAreLookedUpPastAHandful(t *testing.T) {
+	var errs containerErrors
+	for i := range 3 * manyDiagnostics {
+		errs.add(indexStep(NumberFromInt(int64(i))), ErrorVal(Diagnostic{Code: "app.failed", Message: "it failed"}))
+	}
+	if len(errs.diags) != 3*manyDiagnostics || errs.seen.set == nil {
+		t.Errorf("%d failing members were collected as %d diagnostics, looked up by key: %v", 3*manyDiagnostics, len(errs.diags), errs.seen.set != nil)
+	}
+}

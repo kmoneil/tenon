@@ -98,3 +98,20 @@ func TestFailuresCollectAsTheScan(t *testing.T) {
 		}
 	}
 }
+
+// TestFailuresPastAHandfulAreLookedUp holds failures to its set of keys past
+// manyFailures: each diagnostic is then looked for by its key rather than
+// compared with every one collected. The comparisons a scan makes are the
+// package's own, and nothing outside it can count them, so this asks failures
+// what it holds, which a collection comparing each diagnostic with every one
+// leaves without a set (T-1601). The failures are alike but for where they
+// are, as those of a JSON array of nulls are.
+func TestFailuresPastAHandfulAreLookedUp(t *testing.T) {
+	var f failures
+	for i := range 3 * manyFailures {
+		f.add(tenon.Diagnostic{Code: "app.failed", Message: "it failed", Path: tenon.Path{}.Index(tenon.NumberFromInt(int64(i)))})
+	}
+	if len(f.list) != 3*manyFailures || f.seen == nil {
+		t.Errorf("%d failures were collected as %d, looked up by key: %v", 3*manyFailures, len(f.list), f.seen != nil)
+	}
+}
