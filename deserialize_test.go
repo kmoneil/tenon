@@ -411,6 +411,26 @@ func TestConformance_SE005_DecodingWorkIsBounded(t *testing.T) {
 				listing.Type(), len(members), compared, len(members)*(len(members)-1)/2)
 		}
 	}
+	// A range listing two sets that each hold 1,000 of those members, which a
+	// listing tells apart by whether they are one: neither the least length
+	// of each set nor the pairs of their members are counted to find out.
+	half := len(members) / 2
+	sets := tenon.Narrow(tenon.Unknown(tenon.Set(tenon.Set(elem))),
+		tenon.Members(tenon.SetVal(elem, members[:half]...), tenon.SetVal(elem, members[half:]...)))
+	b, failure, ok = tenon.Serialize(sets)
+	if !ok {
+		t.Fatalf("Serialize(the listing of two sets) failed: %v", failure)
+	}
+	countingCompared = 0
+	got, failure, ok = tenon.Deserialize(b, withCounting)
+	compared = countingCompared
+	if !ok || !tenon.Identical(got, sets) {
+		t.Fatalf("the listing of two sets came back as %v, %v", got, failure)
+	}
+	if compared > 4*len(members) {
+		t.Errorf("decoding a listing of two sets of %d members that are not known compared them %d times, where every pair of one is %d",
+			half, compared, half*(half-1)/2)
+	}
 
 	// A value carrying 4,000 marks decodes, which took 36 ms and grew with
 	// the square of the marks.

@@ -171,6 +171,18 @@
   marks took 84 and takes 1.3. A value carrying a handful of marks, as nearly
   every value does, allocates less than before.
 
+- Decoding a range that lists sets holding many members that are not known
+  takes time in proportion to them, where it took the square of them: two
+  listed sets of 1,000 such members, 22 kilobytes, made a million
+  comparisons of those members, and make one. The listing asked whether two
+  listed sets are one value by counting each set's least length, which
+  compares every pair of the members that are not known, although only known
+  values are ever settled equal; and `Identical` counted each such member's
+  repeats in both sets. A set holds those members in an order that puts
+  identical ones together, so `Identical` walks two sets' members side by
+  side: two sets of the same 400 such members, given in two orders, are
+  compared in 400 comparisons where they took 319,200.
+
 ## 0.4.0 (2026-09-21)
 
 Bounded work on input from outside. `Deserialize` now promises that its work

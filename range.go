@@ -1025,9 +1025,16 @@ func listingLeast(members []Value) int {
 // which two unknowns with one range are. A set value keeps identical unknown
 // members apart, since each may resolve its own way, but a range records
 // requirements, and two identical ones require the same thing.
+//
+// Equality settles that two values are one only where both are known, so it
+// is not asked otherwise: of two sets holding members that are not known, it
+// would count each set's least length (EQ-042), comparing every pair of
+// those members, to answer what it cannot settle.
 func oneMember(k, v Value) bool {
-	if eq, settled := equality(k.n, v.n); settled && eq {
-		return true
+	if k.n.isKnown() && v.n.isKnown() {
+		if eq, settled := equality(k.n, v.n); settled && eq {
+			return true
+		}
 	}
 	return Identical(k, v)
 }
