@@ -126,9 +126,6 @@ func (r *Reader) Offset() int { return r.pos }
 // Remaining returns how many bytes are left to read.
 func (r *Reader) Remaining() int { return len(r.data) - r.pos }
 
-// Consumed returns the bytes read from offset start to the current offset.
-func (r *Reader) Consumed(start int) []byte { return r.data[start:r.pos] }
-
 func (r *Reader) fail(at int, format string, args ...any) error {
 	return &Error{Offset: at, Message: fmt.Sprintf(format, args...)}
 }

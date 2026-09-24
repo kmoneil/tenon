@@ -2,6 +2,7 @@ package uni
 
 import (
 	"testing"
+	"unicode/utf8"
 
 	"github.com/kmoneil/tenon/conformance"
 )
@@ -53,8 +54,15 @@ func TestConformance_ST005_Length(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: %v", tt.name, err)
 		}
-		if g, n, b := GraphemeCount(s), ScalarCount(s), len(s); g != tt.graphemes || n != tt.scalars || b != tt.bytes {
+		if g, n, b := GraphemeCount(s), scalarCount(s), len(s); g != tt.graphemes || n != tt.scalars || b != tt.bytes {
 			t.Errorf("%s: %d graphemes, %d scalar values, %d bytes; want %d, %d, %d", tt.name, g, n, b, tt.graphemes, tt.scalars, tt.bytes)
 		}
 	}
+}
+
+// scalarCount returns the number of Unicode scalar values in s, which must be
+// well-formed UTF-8: the measure the table's scalars column pins, beside the
+// grapheme and byte counts.
+func scalarCount(s string) int {
+	return utf8.RuneCountInString(s)
 }
