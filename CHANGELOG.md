@@ -104,6 +104,15 @@
   equivalence relation, and tenon may take a value to be equal to itself
   without asking it.
 
+- Building a container no longer names every member it checks. `ListVal`,
+  `SetVal`, `TupleVal`, `ObjectVal` and `MapVal` wrote a name for each member,
+  as in element 3 or attribute "name", for the panic they would give were the
+  member wrong, which it nearly never is: a list of 100 numbers made 106
+  allocations, 100 of them names, and makes 6, at any length. At 100 members,
+  a tuple makes 12 allocations where it made 112, a set 125 where it made 225,
+  an object 41 where it made 241, and a map 18 where it made 218. A name is
+  written only when a constructor panics, and every message reads as before.
+
 ## 0.4.0 (2026-09-21)
 
 Bounded work on input from outside. `Deserialize` now promises that its work
