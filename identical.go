@@ -103,36 +103,15 @@ func (c Constraint) equal(d Constraint) bool {
 // sameMultiset reports whether two sets hold identical members, each as many
 // times in one as in the other. A set holds the known ones first, in the
 // canonical order, and holds each of them once, so those line up and one walk
-// decides them; the members that are not known are counted, since a set keeps
-// identical ones apart and what makes two of them one member is what they
-// could turn out to be.
+// decides them. It holds the ones that are not known after them, identical
+// ones as many times as it was given them, in the order of their encodings
+// (orderMembers), which ties only identical members: two sets holding the
+// same members hold those alike too, repeats and all, and the same walk
+// decides them, where counting each member's repeats in both compared every
+// pair.
 func sameMultiset(x, y []Value) bool {
-	if len(x) != len(y) {
+	if len(x) != len(y) || knownMembers(x) != knownMembers(y) {
 		return false
 	}
-	kx, ky := knownMembers(x), knownMembers(y)
-	if kx != ky {
-		return false
-	}
-	for i := range kx {
-		if !Identical(x[i], y[i]) {
-			return false
-		}
-	}
-	x, y = x[kx:], y[ky:]
-	count := func(members []Value, m Value) int {
-		n := 0
-		for _, k := range members {
-			if Identical(k, m) {
-				n++
-			}
-		}
-		return n
-	}
-	for _, m := range x {
-		if count(x, m) != count(y, m) {
-			return false
-		}
-	}
-	return true
+	return slices.EqualFunc(x, y, Identical)
 }

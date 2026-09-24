@@ -593,6 +593,54 @@ func slicesEqualValues(a, b []tenon.Value) bool {
 // them first and ties exactly the ones that are equal, rather than to the
 // pairs they make. A capsule type counts what its values are compared with,
 // which only two known values of it ever are.
+// TestConformance_EQ041_UnknownMembersAreComparedInTheirOrder holds Identical
+// over sets holding members that are not known to comparing each member with
+// the one beside it. A set holds those members in the order of their
+// encodings, which puts identical ones together and ties only identical ones,
+// so two sets holding the same members hold them alike, repeats and all;
+// counting each member's repeats in both compared every pair.
+func TestConformance_EQ041_UnknownMembersAreComparedInTheirOrder(t *testing.T) {
+	conformance.Covers(t, "EQ-041", "EQ-044", "EQ-010")
+	const size = 400
+	num := tenon.NumberType()
+	elem := tenon.Tuple(counting, num)
+	member := func(i int64) tenon.Value {
+		return tenon.TupleVal(tenon.CapsuleVal(counting, &i), tenon.Unknown(num))
+	}
+	members := func(from int64) []tenon.Value {
+		out := make([]tenon.Value, size)
+		for i := range out {
+			// Every member twice: a set keeps members that are not known
+			// apart, however alike.
+			out[i] = member(from + int64(i/2))
+		}
+		return out
+	}
+	forwards := members(0)
+	backwards := slices.Clone(forwards)
+	slices.Reverse(backwards)
+	a, b := tenon.SetVal(elem, forwards...), tenon.SetVal(elem, backwards...)
+	c := tenon.SetVal(elem, append(members(0)[:size-1], member(size))...)
+	for _, tt := range []struct {
+		name string
+		x, y tenon.Value
+		want bool
+	}{
+		{"the same members given in two orders", a, b, true},
+		{"members differing in one", a, c, false},
+	} {
+		countingCompared = 0
+		got := tenon.Identical(tt.x, tt.y)
+		compared := countingCompared
+		if got != tt.want {
+			t.Errorf("%s: Identical is %t, want %t", tt.name, got, tt.want)
+		}
+		if compared > 2*size {
+			t.Errorf("%s: %d comparisons over %d members, want at most %d", tt.name, compared, size, 2*size)
+		}
+	}
+}
+
 func TestConformance_EQ045_KnownMembersAreComparedInTheirOrder(t *testing.T) {
 	conformance.Covers(t, "EQ-044", "EQ-045", "EQ-003", "EQ-010", "SE-005")
 	const size = 400
