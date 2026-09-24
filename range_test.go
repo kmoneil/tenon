@@ -160,7 +160,7 @@ func TestConformance_UN003_NarrowingIsMonotone(t *testing.T) {
 }
 
 func TestConformance_UN004_ContradictionIsAnErrorValue(t *testing.T) {
-	conformance.Covers(t, "UN-004")
+	conformance.Covers(t, "UN-004", "UN-002")
 	one, two, three, five := tenon.NumberFromInt(1), tenon.NumberFromInt(2), tenon.NumberFromInt(3), tenon.NumberFromInt(5)
 	str, num := tenon.StringType(), tenon.NumberType()
 	lst := tenon.List(str)
@@ -179,6 +179,14 @@ func TestConformance_UN004_ContradictionIsAnErrorValue(t *testing.T) {
 		ns   []tenon.Narrowing
 		want string
 	}{
+		{
+			// Listed values that are not known force no more than one member
+			// (UN-002), so the least length here is the LengthMin's, however
+			// provably distinct the listed values are.
+			"a least length a listing does not force", tenon.Unknown(tenon.Set(num)),
+			[]tenon.Narrowing{tenon.LengthMin(2), tenon.Members(atLeastFive, between("-9", "0")), tenon.LengthMax(1)},
+			"no value of type set(number) satisfies both length >= 2 and length <= 1",
+		},
 		{
 			"a lower bound above an upper bound", tenon.Unknown(num),
 			[]tenon.Narrowing{tenon.NumberMin(five, true), tenon.NumberMax(three, true)},
@@ -1115,11 +1123,12 @@ func TestConformance_UN002_MembersNarrowing(t *testing.T) {
 		t.Errorf("Length is %s, want %s", got, want)
 	}
 
-	// Listed values raise the least length only where they are provably
-	// distinct, and a pair with identical ranges is recorded once.
+	// Listed values that are not known imply one member between them,
+	// however provably distinct they are, and a pair with identical ranges is
+	// recorded once. Only known values count one member each.
 	distinct := tenon.Narrow(tenon.Unknown(set), tenon.Members(atLeast(5), atMostZero))
 	if got, want := distinct.String(),
-		"unknown(set(number), length >= 2, members {unknown(number, not null, >= 5), unknown(number, not null, <= 0)})"; got != want {
+		"unknown(set(number), length >= 1, members {unknown(number, not null, >= 5), unknown(number, not null, <= 0)})"; got != want {
 		t.Errorf("provably distinct members render as %s, want %s", got, want)
 	}
 	// The same two ranges while each still holds null are not provably
@@ -1167,18 +1176,19 @@ func TestConformance_UN002_MembersNarrowing(t *testing.T) {
 		}
 	}
 
-	// As many provably distinct members as the greatest length allows leaves
-	// exactly the set holding them: known members make a known set, members
-	// that are not known make the set that holds them, still not known, and
-	// members that could turn out to be one member leave the range standing.
+	// As many known members as the greatest length allows leaves exactly the
+	// set holding them, which is known. A listing holding a value that is not
+	// known leaves the range standing, even where it describes the sets the
+	// set holding its values does, since telling that compares every pair.
 	full := tenon.Narrow(tenon.Unknown(set), tenon.NotNull(), tenon.Members(one, two), tenon.LengthMax(2))
 	if !full.IsKnown() || !tenon.Identical(full, tenon.SetVal(num, one, two)) {
 		t.Errorf("a full listing of known members produced %v, want the set holding them", full)
 	}
 	held := tenon.Narrow(tenon.Unknown(set), tenon.NotNull(),
 		tenon.Members(atLeast(5), atMostZero), tenon.LengthMax(2))
-	if held.IsKnown() || !tenon.Identical(held, tenon.SetVal(num, atLeast(5), atMostZero)) {
-		t.Errorf("a full listing of distinct unknowns produced %v, want the set holding them", held)
+	if got, want := held.String(),
+		"unknown(set(number), not null, length >= 1, length <= 2, members {unknown(number, not null, >= 5), unknown(number, not null, <= 0)})"; got != want {
+		t.Errorf("a full listing of distinct unknowns produced %s, want %s", got, want)
 	}
 	loose := tenon.Narrow(tenon.Unknown(set), tenon.NotNull(),
 		tenon.Members(atLeast(5), atLeast(6)), tenon.LengthMax(2))

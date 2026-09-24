@@ -706,9 +706,14 @@ func narrowPartialSet(v Value, ns []Narrowing) Value {
 			// The listed values alone, and the set holding them beside the
 			// members, each count a least length. The second can come out
 			// lower, when a member that is not known sorts ahead of them.
+			// Values listed for a set value are counted provably distinct,
+			// where a range counts only its known ones (UN-002): a document
+			// never narrows a set value, and what the set holds is a number
+			// of members, whose length this decides.
 			listed.addMembers(nw.members)
 			together := orderMembers(append(slices.Clone(members), listed.members...))
-			fromListings = max(fromListings, listed.lenLo, int64(provablyDistinct(together)))
+			fromListings = max(fromListings, listed.lenLo,
+				int64(provablyDistinct(listed.members)), int64(provablyDistinct(together)))
 		default:
 			if !nw.holdsFor(n) {
 				return contradiction("the value " + valueText(v) + " does not satisfy " + nw.message())
@@ -968,8 +973,7 @@ func (r *rangeData) apply(nw Narrowing, ceiling lengthBound) (string, bool) {
 // record is canonical, however the listings arrive: values that are one
 // member appear once, a value whose range excludes nothing is dropped, the
 // rest are held in the order a set iterates them, and the least length rises
-// to the count of members that are provably distinct, or to one, since any
-// listing promises a member.
+// to what the listing implies (listingLeast).
 func (r *rangeData) addMembers(vs []Value) {
 	if len(vs) == 0 {
 		return
@@ -995,13 +999,25 @@ func (r *rangeData) addMembers(vs []Value) {
 		kept = append(kept, v)
 	}
 	r.members = kept
-	lo := int64(provablyDistinct(r.members))
-	if lo == 0 {
-		lo = 1
-	}
-	if lo > r.lenLo {
+	if lo := int64(listingLeast(r.members)); lo > r.lenLo {
 		r.lenLo = lo
 	}
+}
+
+// listingLeast returns the least length a listing recorded as members implies
+// (UN-002): the number of known values among them, or one, since any listing
+// promises a member, the vacuous ones dropped from the record among them. The
+// record holds each value once, so its known values are distinct. A value
+// that is not known could still turn out to be one the record holds already,
+// and finding which of them are provably distinct would compare every pair.
+func listingLeast(members []Value) int {
+	known := 0
+	for _, m := range members {
+		if m.n.isKnown() {
+			known++
+		}
+	}
+	return max(known, 1)
 }
 
 // oneMember reports whether a set holding k needs no separate note that it
@@ -1027,14 +1043,15 @@ func vacuousMember(v Value) bool {
 
 // memberSet returns the set that r has come down to, and whether it has come
 // down to one: null excluded, as many members recorded as the greatest length
-// allows, and every pair of them provably distinct, so that the sets r
-// describes are exactly the sets holding one value from each member's range.
-// A pair that could yet be one member would leave room for a set of fewer,
-// other values, which no set holding the members describes.
+// allows, and every one of them known, so that r describes exactly the set
+// holding them, which UN-005 makes known. The record holds each value once, so
+// its known values are distinct. A listing holding a value that is not known
+// is left a range (UN-002), though it may describe the sets a set holding its
+// values does: telling that would compare every pair of those values.
 func (r *rangeData) memberSet(t Type) (Value, bool) {
 	if t.t.kind != KindSet || r.null != nullNo || len(r.members) == 0 ||
 		!r.lenHi.set || r.lenHi.n != int64(len(r.members)) ||
-		provablyDistinct(r.members) != len(r.members) {
+		slices.ContainsFunc(r.members, func(m Value) bool { return !m.n.isKnown() }) {
 		return Value{}, false
 	}
 	return SetVal(t.t.elem, r.members...), true
@@ -1064,7 +1081,7 @@ func (r *rangeData) lengthMinText() string {
 	if r.pfx != "" && int64(uni.GraphemeCount(r.pfx)) >= r.lenLo {
 		return "prefix " + quoted(r.pfx)
 	}
-	if len(r.members) > 0 && int64(provablyDistinct(r.members)) >= r.lenLo {
+	if len(r.members) > 0 && int64(listingLeast(r.members)) >= r.lenLo {
 		return membersText(r.members)
 	}
 	return "length >= " + strconv.FormatInt(r.lenLo, 10)
