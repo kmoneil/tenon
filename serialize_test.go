@@ -150,6 +150,51 @@ func TestConformance_SE032_Numbers(t *testing.T) {
 	}
 }
 
+// TestConformance_SE032_NumbersAreWrittenAndReadWithoutBigIntegers holds
+// writing and reading a number whose coefficient fits an int64, as nearly
+// every number's does, to work that builds no big.Int for it. It reads what a
+// number costs as the growth from a list of 100 to a list of 200, which leaves
+// out what a document costs whatever it holds. Writing an integer took five
+// allocations and reading any number nine more than writing it, since
+// Deserialize writes what it read again to check that its input is canonical.
+// What is left is the value each number read is, two allocations, and the
+// path the encoder builds to each member it writes, three, which is another
+// matter.
+func TestConformance_SE032_NumbersAreWrittenAndReadWithoutBigIntegers(t *testing.T) {
+	conformance.Covers(t, "SE-032", "NU-003")
+	for _, tt := range []struct {
+		name   string
+		number func(i int) tenon.Value
+	}{
+		{"an integer", func(i int) tenon.Value { return n(int64(i)) }},
+		{"a fraction", func(i int) tenon.Value { return tenon.NumberFromText(fmt.Sprintf("%d.25", i)) }},
+	} {
+		var written, read [2]float64
+		for k, size := range []int{100, 200} {
+			members := make([]tenon.Value, size)
+			for i := range members {
+				members[i] = tt.number(i)
+			}
+			list := tenon.ListVal(num, members...)
+			data, failure, ok := tenon.Serialize(list)
+			if !ok {
+				t.Fatalf("%s: %v", tt.name, failure)
+			}
+			written[k] = testing.AllocsPerRun(50, func() { tenon.Serialize(list) })
+			read[k] = testing.AllocsPerRun(50, func() { tenon.Deserialize(data, tenon.Decoders{}) })
+		}
+		// The output grows by doubling, which is a hundredth of an
+		// allocation a number here, or two.
+		const slack = 0.05
+		if each := (written[1] - written[0]) / 100; each > 3+slack {
+			t.Errorf("writing %s costs %.2f allocations, want at most 3 (%v for 100, %v for 200)", tt.name, each, written[0], written[1])
+		}
+		if each := (read[1] - read[0]) / 100; each > 5+slack {
+			t.Errorf("reading %s costs %.2f allocations, want at most 5 (%v for 100, %v for 200)", tt.name, each, read[0], read[1])
+		}
+	}
+}
+
 func TestConformance_SE033_SetMembersInEncodingOrder(t *testing.T) {
 	conformance.Covers(t, "SE-033")
 	// 1 is 01 and -1 is 20: the order of the bytes, not of the numbers.

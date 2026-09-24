@@ -3,6 +3,7 @@ package tenon
 import (
 	"bytes"
 	"math/big"
+	"math/bits"
 	"slices"
 	"unicode/utf8"
 
@@ -523,11 +524,52 @@ func (e *encoder) marks(b []byte, marks []Mark, p Path) []byte {
 
 // appendNumber appends a number: an integer where it is one that CBOR's
 // integers hold, and otherwise a decimal fraction.
+//
+// A coefficient that fits an int64, as nearly every number's does, is written
+// without a big.Int. A coefficient has no trailing zero, so the number is an
+// integer exactly where its exponent is not negative, and a CBOR integer where
+// its magnitude also fits in 64 bits. The one CBOR integer that does not,
+// -2^64, has a coefficient no int64 holds.
 func appendNumber(b []byte, d decimal.Dec) []byte {
 	small, c, exp := d.Parts()
-	if c == nil {
-		c = big.NewInt(small)
+	if c != nil {
+		return appendBigNumber(b, c, exp)
 	}
+	if exp >= 0 {
+		if m, ok := scaledMagnitude(small, exp); ok {
+			if small < 0 {
+				// A negative integer n is written as the argument -1 - n.
+				return cbor.AppendHead(b, cbor.MajorNeg, m-1)
+			}
+			return cbor.AppendUint(b, m)
+		}
+	}
+	b = cbor.AppendTag(b, tagDecimal)
+	b = cbor.AppendArray(b, 2)
+	b = cbor.AppendInt(b, exp)
+	return cbor.AppendInt(b, small)
+}
+
+// scaledMagnitude returns |c| × 10^exp, and whether it fits in 64 bits. It
+// multiplies at most twenty times, since 10^20 does not fit.
+func scaledMagnitude(c, exp int64) (uint64, bool) {
+	m := uint64(c)
+	if c < 0 {
+		m = -m
+	}
+	for ; exp > 0; exp-- {
+		hi, lo := bits.Mul64(m, 10)
+		if hi != 0 {
+			return 0, false
+		}
+		m = lo
+	}
+	return m, true
+}
+
+// appendBigNumber appends the number c × 10^exp, whose coefficient does not
+// fit an int64.
+func appendBigNumber(b []byte, c *big.Int, exp int64) []byte {
 	// Every integer that CBOR's integers hold has fewer than 21 digits.
 	if exp >= 0 && exp <= 20 {
 		v := new(big.Int).Mul(c, new(big.Int).Exp(big.NewInt(10), big.NewInt(exp), nil))

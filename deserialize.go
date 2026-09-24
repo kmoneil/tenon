@@ -823,85 +823,101 @@ func (d *decoder) narrowing(t Type, key uint64, at int) (Narrowing, *decodeError
 // number reads a number: an integer, a decimal fraction, or a bignum.
 func (d *decoder) number() (Value, *decodeError) {
 	at := d.r.Offset()
-	c, exp, derr := d.numberParts()
+	small, c, exp, derr := d.numberParts()
 	if derr != nil {
 		return Value{}, derr
 	}
-	dec, err := decimal.FromParts(c, exp)
+	var dec decimal.Dec
+	var err error
+	if c == nil {
+		dec, err = decimal.FromInt64Parts(small, exp)
+	} else {
+		dec, err = decimal.FromParts(c, exp)
+	}
 	if err != nil {
 		return Value{}, d.malformed(at, "a number outside the range of numbers")
 	}
 	return numberValue(dec), nil
 }
 
-// numberParts reads a number's coefficient and exponent.
-func (d *decoder) numberParts() (*big.Int, int64, *decodeError) {
+// numberParts reads a number's coefficient and exponent. The coefficient is
+// in small where c is nil, as it is wherever it fits an int64, so that a
+// number needing no big.Int is read without one.
+func (d *decoder) numberParts() (small int64, c *big.Int, exp int64, derr *decodeError) {
 	at := d.r.Offset()
 	h, err := d.r.PeekHead()
 	if err != nil {
-		return nil, 0, d.cborError(err)
+		return 0, nil, 0, d.cborError(err)
 	}
 	switch {
 	case h.Major == cbor.MajorUint || h.Major == cbor.MajorNeg:
-		c, derr := d.integer()
-		return c, 0, derr
+		small, c, derr = d.integer()
+		return small, c, 0, derr
 	case h.Major == cbor.MajorTag && (h.Arg == tagBignum || h.Arg == tagNegBignum):
-		c, derr := d.integer()
-		return c, 0, derr
+		small, c, derr = d.integer()
+		return small, c, 0, derr
 	case h.Major == cbor.MajorTag && h.Arg == tagDecimal:
 		d.r.ReadTag()
 		if err := d.array(2, "a decimal fraction"); err != nil {
-			return nil, 0, err
+			return 0, nil, 0, err
 		}
 		eat := d.r.Offset()
 		neg, arg, err := d.r.ReadInt()
 		if err != nil {
-			return nil, 0, d.cborError(err)
+			return 0, nil, 0, d.cborError(err)
 		}
 		if arg > math.MaxInt64 {
-			return nil, 0, d.malformed(eat, "a number outside the range of numbers")
+			return 0, nil, 0, d.malformed(eat, "a number outside the range of numbers")
 		}
-		exp := int64(arg)
+		exp = int64(arg)
 		if neg {
 			exp = -1 - exp
 		}
-		c, derr := d.integer()
-		return c, exp, derr
+		small, c, derr = d.integer()
+		return small, c, exp, derr
 	}
-	return nil, 0, d.malformed(at, "expected a number")
+	return 0, nil, 0, d.malformed(at, "expected a number")
 }
 
-// integer reads a CBOR integer or a bignum.
-func (d *decoder) integer() (*big.Int, *decodeError) {
+// integer reads a CBOR integer or a bignum: into small where it is a CBOR
+// integer that fits an int64, with c nil, and into c otherwise.
+func (d *decoder) integer() (small int64, c *big.Int, derr *decodeError) {
 	at := d.r.Offset()
 	h, err := d.r.PeekHead()
 	if err != nil {
-		return nil, d.cborError(err)
+		return 0, nil, d.cborError(err)
 	}
 	if h.Major == cbor.MajorTag {
 		tag, _ := d.r.ReadTag()
 		if tag != tagBignum && tag != tagNegBignum {
-			return nil, d.malformed(at, "expected an integer")
+			return 0, nil, d.malformed(at, "expected an integer")
 		}
 		p, err := d.r.ReadBytes()
 		if err != nil {
-			return nil, d.cborError(err)
+			return 0, nil, d.cborError(err)
 		}
 		c := new(big.Int).SetBytes(p)
 		if tag == tagNegBignum {
 			c.Neg(c.Add(c, big.NewInt(1)))
 		}
-		return c, nil
+		return 0, c, nil
 	}
 	neg, arg, err := d.r.ReadInt()
 	if err != nil {
-		return nil, d.cborError(err)
+		return 0, nil, d.cborError(err)
 	}
-	c := new(big.Int).SetUint64(arg)
+	if arg <= math.MaxInt64 {
+		if neg {
+			// The argument of a negative integer n is -1 - n.
+			return -1 - int64(arg), nil, nil
+		}
+		return int64(arg), nil, nil
+	}
+	c = new(big.Int).SetUint64(arg)
 	if neg {
 		c.Neg(c.Add(c, big.NewInt(1)))
 	}
-	return c, nil
+	return 0, c, nil
 }
 
 // markList reads a list of marks, which is not empty.

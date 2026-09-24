@@ -84,3 +84,28 @@ func TestPartsAndFromParts(t *testing.T) {
 		}
 	}
 }
+
+// TestFromInt64PartsIsFromParts holds FromInt64Parts to what FromParts gives
+// for the same coefficient as a big.Int, the representation and the error
+// alike: at the ends of an int64 and of the window, where stripping trailing
+// zeros brings the exponent back inside the window or leaves it outside, and
+// at exponents no arithmetic should be done on. 10^18 has the most trailing
+// zeros an int64 can, which is what the guard below the window counts on.
+func TestFromInt64PartsIsFromParts(t *testing.T) {
+	const e18 = 1_000_000_000_000_000_000
+	cs := []int64{0, 1, -1, 7, 10, -10, 1000, e18, -e18, math.MaxInt64, math.MinInt64}
+	exps := []int64{0, 1, -1, 18, -18, MaxAdjustedExponent, MaxAdjustedExponent + 1, -MaxAdjustedExponent,
+		-MaxAdjustedExponent - 1, -MaxAdjustedExponent - 18, -MaxAdjustedExponent - 19, math.MaxInt64, math.MinInt64}
+	for _, c := range cs {
+		for _, exp := range exps {
+			got, gotErr := FromInt64Parts(c, exp)
+			want, wantErr := FromParts(big.NewInt(c), exp)
+			if gotErr != wantErr || got != want {
+				t.Errorf("FromInt64Parts(%d, %d) = %v, %v; FromParts gives %v, %v", c, exp, got, gotErr, want, wantErr)
+			}
+		}
+	}
+	if d, err := FromInt64Parts(e18, -MaxAdjustedExponent-18); err != nil || d.String() != "1e-999999" {
+		t.Errorf("FromInt64Parts(10^18, %d) = %v, %v, want 1e-999999", -MaxAdjustedExponent-18, d, err)
+	}
+}
