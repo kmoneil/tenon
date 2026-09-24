@@ -151,6 +151,10 @@ func Capsule[E any](name string, ops CapsuleOps[E]) Type {
 			typ:    enc.Type,
 			encode: func(v any) Value { return encode(v.(*E)) },
 			decode: func(v Value) (any, []Diagnostic) {
+				// A nil *E put into an any is not nil to the == the decoder
+				// asks, so a Decode that returned neither a value nor a
+				// diagnostic is handed on as a plain nil, which the decoder
+				// refuses as a broken contract rather than encapsulating.
 				p, diags := decode(v)
 				if p == nil {
 					return nil, diags
@@ -168,15 +172,10 @@ func Capsule[E any](name string, ops CapsuleOps[E]) Type {
 			return func(v any) Value { return conv(v.(*E)) }, safe
 		}
 	}
-	if f := ops.ConvertFrom; f != nil {
-		d.convertFrom = func(t Type) (func(Value) Value, bool) {
-			conv, safe := f(t)
-			if conv == nil {
-				return nil, false
-			}
-			return conv, safe
-		}
-	}
+	// ConvertFrom already has the adapted signature, its values arriving as
+	// Values, so it is taken as it is; capsuleConversion reads safe only
+	// beside a non-nil conversion, so nothing normalizes the nil case.
+	d.convertFrom = ops.ConvertFrom
 	t := &typeData{id: newTypeID(), kind: KindCapsule, capsule: d}
 	t.shape = shapeOf(t)
 	return Type{t}

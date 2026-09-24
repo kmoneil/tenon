@@ -19,9 +19,6 @@ var (
 	uns  = tenon.Unsafe
 )
 
-// is returns Exactly(t).
-func is(t tenon.Type) tenon.Constraint { return tenon.Exactly(t) }
-
 // obj returns an object value.
 func obj(attrs map[string]tenon.Value) tenon.Value { return tenon.ObjectVal(attrs) }
 
