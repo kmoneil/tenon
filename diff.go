@@ -386,14 +386,18 @@ func withMarksOf(a, b *node) Value {
 	return Value{&c}
 }
 
-// marksAside returns the marks of list other than those in aside.
+// marksAside returns the marks of list other than those in aside, which are
+// looked up by markLookup: a value under a part carrying many deep marks
+// carries them all, and scanning aside for each would cost the square of
+// them.
 func marksAside(list, aside []Mark) []Mark {
 	if aside == nil {
 		return list
 	}
 	var out []Mark
+	var set markLookup
 	for _, m := range list {
-		if !slices.Contains(aside, m) {
+		if !set.holds(aside, m) {
 			out = append(out, m)
 		}
 	}

@@ -569,15 +569,11 @@ func Narrow(v Value, ns ...Narrowing) Value {
 // boundMarks returns the Propagate marks of the values that narrowings were
 // taken from, each once, or nil when there are none.
 func boundMarks(ns []Narrowing) []Mark {
-	var ms []Mark
+	var g propagating
 	for _, nw := range ns {
-		for _, m := range nw.marks {
-			if m.Propagation() == Propagate && !slices.Contains(ms, m) {
-				ms = append(ms, m)
-			}
-		}
+		g.add(nw.marks)
 	}
-	return ms
+	return g.marks
 }
 
 // narrowValue is Narrow before marks are carried over.

@@ -1,6 +1,8 @@
 package tenon_test
 
 import (
+	"fmt"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -913,6 +915,144 @@ func TestConformance_MK010_ErrorValuesCarryMarks(t *testing.T) {
 		}
 		if !slices.Equal(ids, tt.marks) {
 			t.Errorf("%s: the error value carries %v, want %v", tt.name, ids, tt.marks)
+		}
+	}
+}
+
+// manyStamps returns m Propagate marks, their identifiers in the order the
+// marks are listed, deep ones where deep says.
+func manyStamps(m int, deep bool) []tenon.Mark {
+	marks := make([]tenon.Mark, m)
+	for i := range marks {
+		marks[i] = stamp{id: fmt.Sprintf("m%05d", i), deep: deep}
+	}
+	return marks
+}
+
+// TestConformance_MK003_ManyMarksAreGatheredEachOnce holds what gathers the
+// Propagate marks of what it consumes to taking each once and no Isolate mark,
+// on either side of the count past which marks are looked up through a set: an
+// operation over its operands, a container built from marked error members,
+// and a narrowing over its bounds. Diff sets a container's deep marks aside
+// from each value within it the same way.
+func TestConformance_MK003_ManyMarksAreGatheredEachOnce(t *testing.T) {
+	conformance.Covers(t, "MK-003", "ER-008", "DI-034")
+	num := tenon.NumberType()
+	kept := stamp{id: "kept", policy: tenon.Isolate}
+	carries := func(what string, v tenon.Value, want []tenon.Mark) {
+		t.Helper()
+		if _, got := tenon.Unmark(v); !slices.Equal(got, want) {
+			t.Errorf("%s carries %d marks, want the %d gathered: %v", what, len(got), len(want), got)
+		}
+	}
+	for _, m := range []int{4, 16, 17, 100} {
+		marks := manyStamps(m, false)
+		// The operands share half of their marks.
+		a := tenon.WithMarks(n(1), append(marks[:m*3/4:m*3/4], kept)...)
+		b := tenon.WithMarks(n(2), marks[m/4:]...)
+		carries(fmt.Sprintf("the sum of operands carrying %d marks", m), tenon.Add(a, b), marks)
+		// Each error member carries its own mark and its neighbour's.
+		members := make([]tenon.Value, m)
+		for i := range members {
+			failed := tenon.ErrorVal(tenon.Diagnostic{Code: "app.failed", Message: fmt.Sprintf("member %d", i)})
+			members[i] = tenon.WithMarks(failed, marks[i], marks[(i+1)%m], kept)
+		}
+		carries(fmt.Sprintf("a list of %d marked error members", m), tenon.ListVal(num, members...), marks)
+		// The bounds share half of their marks.
+		lo, hi := tenon.WithMarks(n(1), marks[:m*3/4]...), tenon.WithMarks(n(9), marks[m/4:]...)
+		carries(fmt.Sprintf("a narrowing by bounds carrying %d marks", m),
+			tenon.Narrow(tenon.Unknown(num), tenon.NumberMin(lo, true), tenon.NumberMax(hi, true)), marks)
+		// A list's deep marks are set aside from its members, so a member
+		// that gains a mark of its own has changed by that mark alone.
+		deep, extra := manyStamps(m, true), stamp{id: "extra"}
+		before := tenon.WithMarks(tenon.ListVal(num, n(1)), deep...)
+		after := tenon.WithMarks(tenon.ListVal(num, tenon.WithMarks(n(1), extra)), deep...)
+		changes := tenon.Diff(before, after)
+		if len(changes) != 1 || changes[0].Kind != tenon.ChangeMarks || len(changes[0].OldMarks) != 0 ||
+			!slices.Equal(changes[0].NewMarks, []tenon.Mark{extra}) {
+			t.Errorf("a member gaining a mark under %d deep marks: %v", m, changes)
+		}
+	}
+}
+
+// TestConformance_MK003_GatheringManyMarksGrowsWithThem holds gathering the
+// Propagate marks of what is consumed to work in proportion to the marks, as
+// the growth job reads the benchmark pairs: what an operation, a container of
+// error members, a narrowing and a diff allocate at 4,000 marks is under five
+// times what they allocate at 1,000. Scanning the gathered marks for each
+// costs the square of them in time, which no count shows; a list grown a mark
+// at a time costs more than five times the bytes here, which this does.
+func TestConformance_MK003_GatheringManyMarksGrowsWithThem(t *testing.T) {
+	conformance.Covers(t, "MK-003", "DI-034")
+	num := tenon.NumberType()
+	shapes := func(m int) map[string]func() {
+		marks, deep := manyStamps(m, false), manyStamps(m, true)
+		members := make([]tenon.Value, m)
+		for i := range members {
+			members[i] = tenon.WithMarks(tenon.ErrorVal(tenon.Diagnostic{Code: "app.failed", Message: fmt.Sprintf("member %d", i)}), marks[i])
+		}
+		lo, hi := tenon.WithMarks(n(1), marks[:m/2]...), tenon.WithMarks(n(9), marks[m/2:]...)
+		before := tenon.WithMarks(tenon.ListVal(num, n(1)), deep...)
+		after := tenon.WithMarks(tenon.ListVal(num, tenon.WithMarks(n(1), stamp{id: "extra"})), deep...)
+		return map[string]func(){
+			"an operation": func() { tenon.Add(lo, hi) },
+			"a container":  func() { tenon.ListVal(num, members...) },
+			"a narrowing":  func() { tenon.Narrow(tenon.Unknown(num), tenon.NumberMin(lo, true), tenon.NumberMax(hi, true)) },
+			"a diff":       func() { tenon.Diff(before, after) },
+		}
+	}
+	allocated := func(f func()) uint64 {
+		const rounds = 5
+		var before, after runtime.MemStats
+		runtime.GC()
+		runtime.ReadMemStats(&before)
+		for range rounds {
+			f()
+		}
+		runtime.ReadMemStats(&after)
+		return after.TotalAlloc - before.TotalAlloc
+	}
+	small, large := shapes(1000), shapes(4000)
+	for _, name := range []string{"an operation", "a container", "a narrowing", "a diff"} {
+		a, b := allocated(small[name]), allocated(large[name])
+		if grew := float64(b) / float64(a); grew > 5 {
+			t.Errorf("%s over four times the marks allocated %.2f times the bytes (%d, then %d)", name, grew, a, b)
+		}
+	}
+}
+
+// BenchmarkMarkUnions measures gathering the Propagate marks of what is
+// consumed, at a count of marks and four times it: an operation over two
+// operands carrying them between them, a list of error members each carrying
+// one, a narrowing by two bounds carrying them between them, and a diff that
+// sets a list's deep marks aside from its member. The growth from one count to
+// the other is the reading, not the wall clock.
+func BenchmarkMarkUnions(b *testing.B) {
+	num := tenon.NumberType()
+	for _, m := range []int{1000, 4000} {
+		marks, deep := manyStamps(m, false), manyStamps(m, true)
+		members := make([]tenon.Value, m)
+		for i := range members {
+			members[i] = tenon.WithMarks(tenon.ErrorVal(tenon.Diagnostic{Code: "app.failed", Message: fmt.Sprintf("member %d", i)}), marks[i])
+		}
+		lo, hi := tenon.WithMarks(n(1), marks[:m/2]...), tenon.WithMarks(n(9), marks[m/2:]...)
+		before := tenon.WithMarks(tenon.ListVal(num, n(1)), deep...)
+		after := tenon.WithMarks(tenon.ListVal(num, tenon.WithMarks(n(1), stamp{id: "extra"})), deep...)
+		for _, shape := range []struct {
+			name string
+			run  func()
+		}{
+			{"operation", func() { tenon.Add(lo, hi) }},
+			{"container", func() { tenon.ListVal(num, members...) }},
+			{"narrowing", func() { tenon.Narrow(tenon.Unknown(num), tenon.NumberMin(lo, true), tenon.NumberMax(hi, true)) }},
+			{"diff", func() { tenon.Diff(before, after) }},
+		} {
+			b.Run(fmt.Sprintf("%s/%d", shape.name, m), func(b *testing.B) {
+				b.ReportAllocs()
+				for b.Loop() {
+					shape.run()
+				}
+			})
 		}
 	}
 }
