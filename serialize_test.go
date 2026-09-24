@@ -438,6 +438,23 @@ func TestConformance_SE040_Capsules(t *testing.T) {
 	wantDecodeFailure(t, "a capsule value serialized as a null", document+"83 00 82 09 63 742f63 82 02 f6", tenon.CodeSerializeMalformed)
 }
 
+// TestConformance_SE040_CapsuleIdentifiersAreText pins where an encoding
+// identifier that is not valid UTF-8 is refused: at the declaration, as a
+// usage error. The document format writes the identifier as CBOR text, so
+// v0.1.0, which accepted it, wrote bytes that Deserialize refused as
+// serialize.malformed, and what Serialize wrote did not decode (SE-003).
+func TestConformance_SE040_CapsuleIdentifiersAreText(t *testing.T) {
+	conformance.Covers(t, "SE-040", "SE-003", "ER-001")
+	mustPanicUsage(t, "whose identifier is not valid UTF-8", func() {
+		tenon.Capsule("x", tenon.CapsuleOps[celsius]{Encoding: &tenon.CapsuleEncoding[celsius]{
+			ID:     "t/\xff",
+			Type:   num,
+			Encode: func(v *celsius) tenon.Value { return n(v.degrees) },
+			Decode: func(tenon.Value) (*celsius, []tenon.Diagnostic) { return &celsius{}, nil },
+		}})
+	})
+}
+
 func TestConformance_SE042_UnencodableMarks(t *testing.T) {
 	conformance.Covers(t, "SE-042", "SE-050", "SE-051", "MK-009")
 	plain := stamp{id: "plain"}

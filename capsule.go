@@ -1,6 +1,9 @@
 package tenon
 
-import "hash/maphash"
+import (
+	"hash/maphash"
+	"unicode/utf8"
+)
 
 // CapsuleOps declares the optional operations of a capsule type whose values
 // encapsulate pointers of type *E. A nil function is an operation that the
@@ -104,7 +107,9 @@ type capsuleEncoding struct {
 // type whatever its name and operations. The name describes the type in
 // messages.
 //
-// Capsule panics if ops declares Equals but not Hash.
+// Capsule panics if ops declares Equals but not Hash, or declares an encoding
+// with no identifier, an identifier that is not valid UTF-8, the zero Type,
+// or without both Encode and Decode.
 func Capsule[E any](name string, ops CapsuleOps[E]) Type {
 	if ops.Equals != nil && ops.Hash == nil {
 		usagePanic("capsule type %q declares Equals but not Hash", name)
@@ -130,6 +135,11 @@ func Capsule[E any](name string, ops CapsuleOps[E]) Type {
 		switch {
 		case enc.ID == "":
 			usagePanic("capsule type %q declares an encoding with no identifier", name)
+		case !utf8.ValidString(enc.ID):
+			// The document format writes the identifier as CBOR text, which
+			// holds well-formed UTF-8, so what an invalid identifier would
+			// serialize as could not be decoded.
+			usagePanic("capsule type %q declares an encoding whose identifier is not valid UTF-8", name)
 		case enc.Type.t == nil:
 			usagePanic("capsule type %q declares an encoding with the zero Type", name)
 		case enc.Encode == nil || enc.Decode == nil:

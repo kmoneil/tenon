@@ -1,5 +1,22 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- `Capsule` refuses an encoding identifier that is not valid UTF-8, as a
+  usage error at the declaration, as serializing a mark whose identifier is
+  not valid UTF-8 is refused. Through 0.5.0 the declaration was accepted,
+  `Serialize` wrote the bytes as CBOR text, and `Deserialize` refused what it
+  wrote as `serialize.malformed`.
+
+### Fixed
+
+- `ProjectJSON` of a capsule value whose declared display form returns text
+  that is not well-formed UTF-8 writes each ill-formed byte as U+FFFD, as the
+  display form writes it, so the projection is the JSON text it promises.
+  Through 0.5.0 the bytes were copied into the output as they were.
+
 ## 0.5.0 (2026-09-24)
 
 Bounded work, kept. 0.4.0 promised that `Deserialize` does work that grows no

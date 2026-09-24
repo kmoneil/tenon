@@ -1,6 +1,9 @@
 package tenon
 
 import (
+	"strings"
+	"unicode/utf8"
+
 	"github.com/kmoneil/tenon/internal/decimal"
 )
 
@@ -14,7 +17,9 @@ import (
 // requires: quotation mark, reverse solidus and the characters below U+0020.
 // Lists, sets and tuples are arrays, a set's members in the order it
 // iterates, and maps and objects are objects with their names in order. A
-// capsule value is the display form its type declares, as a string. The text
+// capsule value is the display form its type declares, as a string; each byte
+// of it that is not well-formed UTF-8 is written as U+FFFD, as the display
+// form writes it. The text
 // has no whitespace between tokens, so one value always projects to the same
 // bytes.
 //
@@ -122,7 +127,32 @@ func (p *projector) value(b []byte, v Value, at int) []byte {
 		p.fail(at, CodeSerializeUnencodableCapsule, "capsule type "+quoted(d.name)+" declares no display form")
 		return b
 	}
-	return appendJSONString(b, d.display(n.data))
+	return appendJSONString(b, wellFormedUTF8(d.display(n.data)))
+}
+
+// wellFormedUTF8 returns s with each byte that does not begin well-formed
+// UTF-8 replaced by U+FFFD. A declared display form is ordinary Go
+// code, so nothing holds what it returns to UTF-8 the way String holds its
+// text, and the projection is JSON text (RFC 8259), which UTF-8 spells. One
+// replacement per byte, not strings.ToValidUTF8's one per run: ranging over a
+// string is how the display form's quoting reads it, and the two renderings
+// agree character for character.
+func wellFormedUTF8(s string) string {
+	if utf8.ValidString(s) {
+		return s
+	}
+	var b strings.Builder
+	b.Grow(len(s))
+	for i := 0; i < len(s); {
+		r, size := utf8.DecodeRuneInString(s[i:])
+		if r == utf8.RuneError && size == 1 {
+			b.WriteRune(utf8.RuneError)
+		} else {
+			b.WriteString(s[i : i+size])
+		}
+		i += size
+	}
+	return b.String()
 }
 
 // appendJSONString appends s as a JSON string: quotation mark and reverse
