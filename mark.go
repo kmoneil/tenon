@@ -145,12 +145,16 @@ func comparableMark(m Mark) (ok bool) {
 // mergeMarks returns held with marks added, each once, sorted by identifier,
 // and whether any of them was not held already. held itself is left as it is.
 //
-// held is sorted already, so each mark is looked for among the marks sharing
-// its identifier and put where it belongs, rather than the whole list being
-// searched and then sorted again. A value can carry thousands of marks, and
-// one more arrives whenever a deep mark reaches it, so both of those cost
-// more than the merge itself.
+// held is sorted already, so a few marks are each looked for among the marks
+// sharing its identifier and put where it belongs, rather than the whole list
+// being searched and then sorted again. A value can carry thousands of marks,
+// and one more arrives whenever a deep mark reaches it, so both of those cost
+// more than the merge itself. Many marks at once, as a document gives a value,
+// are merged in one pass instead (mergeMany).
 func mergeMarks(held, marks []Mark) ([]Mark, bool) {
+	if len(marks) > manyMarks {
+		return mergeMany(held, marks)
+	}
 	merged, grew := held, false
 	for i, m := range marks {
 		at, found := placeMark(merged, m)
@@ -166,6 +170,43 @@ func mergeMarks(held, marks []Mark) ([]Mark, bool) {
 		merged = slices.Insert(merged, at, m)
 	}
 	return merged, grew
+}
+
+// mergeMany is mergeMarks for many marks. Looking each up among the marks
+// sharing its identifier costs the square of them where many share one, and
+// putting each in its place moves the rest of the list along, which costs the
+// square of them where they interleave with those held. So the marks not
+// held already are found through markLookup, sorted by identifier with the
+// order they came in breaking ties, and merged with held in one pass, where a
+// held mark comes first among those sharing an identifier, as it does when
+// the marks are put in place one at a time.
+func mergeMany(held, marks []Mark) ([]Mark, bool) {
+	all := make([]Mark, len(held), len(held)+len(marks))
+	copy(all, held)
+	var seen markLookup
+	for _, m := range marks {
+		if !seen.holds(all, m) {
+			all = append(all, m)
+		}
+	}
+	fresh := all[len(held):]
+	if len(fresh) == 0 {
+		return held, false
+	}
+	sortMarks(fresh)
+	merged := make([]Mark, 0, len(all))
+	i, j := 0, 0
+	for i < len(held) && j < len(fresh) {
+		if fresh[j].MarkID() < held[i].MarkID() {
+			merged = append(merged, fresh[j])
+			j++
+			continue
+		}
+		merged = append(merged, held[i])
+		i++
+	}
+	merged = append(merged, held[i:]...)
+	return append(merged, fresh[j:]...), true
 }
 
 // placeMark returns where m belongs in a list of marks sorted by identifier,

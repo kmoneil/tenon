@@ -403,7 +403,45 @@ func TestConformance_SE005_DecodingWorkIsBounded(t *testing.T) {
 	if got, failure, ok := tenon.Deserialize(b, read); !ok || !tenon.Identical(got, marked) {
 		t.Errorf("the value with 4,000 marks came back as %v, %v", got, failure)
 	}
+
+	// 4,000 marks sharing one identifier, told apart by their payloads, which
+	// one mark decoder reads. Each was looked for among all those sharing its
+	// identifier, asking each for it, which is eight million times in all;
+	// sorting them asks about twenty-six times a mark.
+	shared := make([]tenon.Mark, 4000)
+	for i := range shared {
+		shared[i] = tallied{fmt.Sprintf("t%05d", i)}
+	}
+	one := tenon.WithMarks(tenon.NumberFromInt(1), shared...)
+	b, _, _ = tenon.Serialize(one)
+	talliedIDs = 0
+	got, failure, ok = tenon.Deserialize(b, tallyDecoders)
+	if asked := talliedIDs; asked > 64*len(shared) {
+		t.Errorf("decoding %d marks that share an identifier asked for it %d times, more than 64 a mark", len(shared), asked)
+	}
+	if !ok || !tenon.Identical(got, one) {
+		t.Errorf("the value with %d marks sharing an identifier came back as %v, %v", len(shared), got, failure)
+	}
 }
+
+// tallied is a mark whose identifier every one of them shares, told apart by
+// its payload, and which counts how often it is asked for its identifier:
+// looking a mark up among those that share its identifier asks each of them.
+type tallied struct{ text string }
+
+var talliedIDs int
+
+func (tallied) MarkID() string                     { talliedIDs++; return "tallied" }
+func (tallied) Propagation() tenon.Propagation     { return tenon.Propagate }
+func (tallied) Redacting() bool                    { return false }
+func (m tallied) MarkPayload() (tenon.Value, bool) { return tenon.String(m.text), true }
+
+// tallyDecoders reads tallied marks.
+var tallyDecoders = tenon.Decoders{Marks: map[string]tenon.MarkDecoder{
+	"tallied": func(payload tenon.Value, _ bool) (tenon.Mark, []tenon.Diagnostic) {
+		return tallied{payload.AsString()}, nil
+	},
+}}
 
 // TestConformance_SE005_ObjectsCostWhatTheyHold holds decoding a document of
 // many objects of one type to work that grows with the document. A document
@@ -688,6 +726,59 @@ func BenchmarkManyMarks(b *testing.B) {
 				}
 			}
 		})
+	}
+}
+
+// BenchmarkMarkDocuments measures decoding a value carrying many marks whose
+// order in a document is not the order a value holds them in, at a count and
+// four times it: marks that share one identifier, told apart by their
+// payloads, which a value holds in the order they came, and marks whose
+// identifiers are of two lengths, which a document lists shorter first and a
+// value holds in the order of their text, so that the two interleave.
+func BenchmarkMarkDocuments(b *testing.B) {
+	interleaved := func(m int) (tenon.Value, tenon.Decoders) {
+		marks := make([]tenon.Mark, 0, m)
+		read := tenon.Decoders{Marks: map[string]tenon.MarkDecoder{}}
+		for i := range m / 2 {
+			for _, id := range []string{fmt.Sprintf("m%06d", i), fmt.Sprintf("m%06d_", i)} {
+				mark := signal{id: id}
+				marks = append(marks, mark)
+				read.Marks[id] = func(tenon.Value, bool) (tenon.Mark, []tenon.Diagnostic) { return mark, nil }
+			}
+		}
+		return tenon.WithMarks(tenon.NumberFromInt(1), marks...), read
+	}
+	shared := func(m int) (tenon.Value, tenon.Decoders) {
+		marks := make([]tenon.Mark, m)
+		for i := range marks {
+			marks[i] = tallied{fmt.Sprintf("t%06d", i)}
+		}
+		return tenon.WithMarks(tenon.NumberFromInt(1), marks...), tallyDecoders
+	}
+	for _, shape := range []struct {
+		name  string
+		sizes []int
+		build func(m int) (tenon.Value, tenon.Decoders)
+	}{
+		{"shared", []int{1000, 4000}, shared},
+		{"interleaved", []int{16000, 64000}, interleaved},
+	} {
+		for _, m := range shape.sizes {
+			v, read := shape.build(m)
+			data, failure, ok := tenon.Serialize(v)
+			if !ok {
+				b.Fatalf("%s/%d: %v", shape.name, m, failure)
+			}
+			if got, failure, ok := tenon.Deserialize(data, read); !ok || !tenon.Identical(got, v) {
+				b.Fatalf("%s/%d came back as %v, %v", shape.name, m, got, failure)
+			}
+			b.Run(fmt.Sprintf("%s/%d", shape.name, m), func(b *testing.B) {
+				b.ReportAllocs()
+				for b.Loop() {
+					tenon.Deserialize(data, read)
+				}
+			})
+		}
 	}
 }
 
