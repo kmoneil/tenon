@@ -342,3 +342,86 @@ func TestContainersHoldMembersThatAreNotKnown(t *testing.T) {
 		t.Errorf("a list with an error member is %v, want an error value", got)
 	}
 }
+
+// usagePanicMessage runs f and returns the message it panics with, or "" if it
+// does not panic.
+func usagePanicMessage(f func()) (msg string) {
+	defer func() { msg, _ = recover().(string) }()
+	f()
+	return ""
+}
+
+// TestConformance_ER001_ContainerConstructorsNameTheMemberAtFault pins the
+// whole message of every panic a container constructor gives for a member it
+// cannot hold, in each way it names one: an element by its index, an attribute
+// by its name as a display form quotes it, and a map element by its key in
+// ASCII, a name or a key shortened past 32 bytes.
+func TestConformance_ER001_ContainerConstructorsNameTheMemberAtFault(t *testing.T) {
+	conformance.Covers(t, "ER-001")
+	str, num := tenon.StringType(), tenon.NumberType()
+	a, one := tenon.String("a"), tenon.NumberFromInt(1)
+	pending := tenon.Pending(tenon.Any())
+	long := strings.Repeat("x", 30) + "yz-and-more"
+	const noType = " is a pending value, which has no type; Resolve it to one first"
+	for _, tt := range []struct {
+		want string
+		f    func()
+	}{
+		{"ListVal: element 1 has type number, not string", func() { tenon.ListVal(str, a, one) }},
+		{"ListVal: element 2" + noType, func() { tenon.ListVal(str, a, a, pending) }},
+		{"SetVal: element 1 has type number, not string", func() { tenon.SetVal(str, a, one) }},
+		{"SetVal: element 0" + noType, func() { tenon.SetVal(str, pending) }},
+		{"TupleVal: element 1" + noType, func() { tenon.TupleVal(a, pending) }},
+		{`ObjectVal: attribute "name"` + noType, func() { tenon.ObjectVal(map[string]tenon.Value{"name": pending}) }},
+		{`ObjectVal: attribute "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxyz"...` + noType, func() { tenon.ObjectVal(map[string]tenon.Value{long: pending}) }},
+		{`ObjectVal: attribute "a\"b\tc"` + noType, func() { tenon.ObjectVal(map[string]tenon.Value{"a\"b\tc": pending}) }},
+		{"ObjectVal: attribute \"caf\xc3\xa9\"" + noType, func() { tenon.ObjectVal(map[string]tenon.Value{"caf\xc3\xa9": pending}) }},
+		{`MapVal: the element of key "k" has type string, not number`, func() { tenon.MapVal(num, map[string]tenon.Value{"k": a}) }},
+		{`MapVal: the element of key "\xff" has type string, not number`, func() { tenon.MapVal(num, map[string]tenon.Value{"\xff": a}) }},
+		{`MapVal: the element of key "k"` + noType, func() { tenon.MapVal(num, map[string]tenon.Value{"k": pending}) }},
+		{
+			`MapVal: the element of key "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxyz"... has type string, not number`,
+			func() { tenon.MapVal(num, map[string]tenon.Value{long: a}) },
+		},
+		{
+			`MapVal: the element of key "caf` + "\\" + `u00e9" has type string, not number`,
+			func() { tenon.MapVal(num, map[string]tenon.Value{"caf\xc3\xa9": a}) },
+		},
+	} {
+		if got, want := usagePanicMessage(tt.f), "tenon: usage: "+tt.want; got != want {
+			t.Errorf("got the panic %q, want %q", got, want)
+		}
+	}
+}
+
+// TestConformance_ER001_AConstructorNamesAMemberOnlyToPanic holds the
+// container constructors to naming a member only for a panic that uses the
+// name. Each checks every member it is given, nearly every check passes, and
+// a name built for each is an allocation or two for each that nothing reads:
+// a list of 100 numbers made 106 allocations, 100 of them names.
+func TestConformance_ER001_AConstructorNamesAMemberOnlyToPanic(t *testing.T) {
+	conformance.Covers(t, "ER-001")
+	num := tenon.NumberType()
+	const size = 100
+	members := make([]tenon.Value, size)
+	named := make(map[string]tenon.Value, size)
+	for i := range members {
+		members[i] = tenon.NumberFromInt(int64(i))
+		named["a"+strconv.Itoa(1000+i)] = members[i]
+	}
+	for _, tt := range []struct {
+		name string
+		most float64 // what it made before, less the names: 106, 112, 225, 241 and 218
+		f    func()
+	}{
+		{"ListVal", 6, func() { tenon.ListVal(num, members...) }},
+		{"TupleVal", 12, func() { tenon.TupleVal(members...) }},
+		{"SetVal", 125, func() { tenon.SetVal(num, members...) }},
+		{"ObjectVal", 41, func() { tenon.ObjectVal(named) }},
+		{"MapVal", 18, func() { tenon.MapVal(num, named) }},
+	} {
+		if got := testing.AllocsPerRun(100, tt.f); got > tt.most {
+			t.Errorf("%s of %d members makes %v allocations, want at most %v", tt.name, size, got, tt.most)
+		}
+	}
+}

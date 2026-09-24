@@ -121,7 +121,7 @@ func sequenceValue(t Type, fn string, elems []Value) Value {
 			errs.add(indexStep(NumberFromInt(int64(i))), e)
 			continue
 		}
-		requireMember(fn, "element "+strconv.Itoa(i), e, t.t.elem)
+		requireMember(fn, element(i), e, t.t.elem)
 		if t.t.kind == KindSet && e.n.isMarked() {
 			usagePanic("%s: element %d is %s, and a set's members carry no marks; %s",
 				fn, i, e.n.describeMarked(), unmarkForSet)
@@ -154,7 +154,7 @@ func TupleVal(elems ...Value) Value {
 			errs.add(indexStep(NumberFromInt(int64(i))), e)
 			continue
 		}
-		types[i] = memberType("TupleVal", "element "+strconv.Itoa(i), e)
+		types[i] = memberType("TupleVal", element(i), e)
 	}
 	if v, ok := errs.value(); ok {
 		return v
@@ -181,7 +181,7 @@ func ObjectVal(attrs map[string]Value) Value {
 			errs.add(attributeStep(e.name), e.value)
 			continue
 		}
-		types[e.name] = memberType("ObjectVal", "attribute "+quoted(e.original), e.value)
+		types[e.name] = memberType("ObjectVal", attributeNamed(e.original), e.value)
 		vals[i] = e.value
 	}
 	if v, ok := errs.value(); ok {
@@ -391,7 +391,7 @@ func MapVal(elem Type, entries map[string]Value) Value {
 	for _, key := range slices.Sorted(maps.Keys(entries)) {
 		val := entries[key]
 		if !isError(val) {
-			requireMember("MapVal", "the element of key "+quotedASCII(key), val, elem)
+			requireMember("MapVal", mapElement(key), val, elem)
 		}
 		normalized, err := uni.Canonical(key)
 		if err != nil {
@@ -462,12 +462,53 @@ func MapVal(elem Type, entries map[string]Value) Value {
 	return Value{&node{state: stateKnown, partial: partial, markedWithin: marked, typ: t, data: out}}
 }
 
+// memberName names a member of a container in a panic message. A constructor
+// names each member it checks and nearly every check passes, so the name is
+// written only when a message uses it: written for each member, it would be
+// an allocation or two for each that nothing reads.
+type memberName struct {
+	kind  memberKind
+	index int    // the index of an element of a list, set or tuple
+	name  string // the name of an attribute, or the key of a map element
+}
+
+// memberKind is the way a memberName names its member.
+type memberKind uint8
+
+const (
+	elementAt    memberKind = iota // an element, by its index
+	attributeOf                    // an attribute of an object, by its name
+	elementOfKey                   // an element of a map, by its key
+)
+
+// element names element i of a list, set or tuple.
+func element(i int) memberName { return memberName{kind: elementAt, index: i} }
+
+// attributeNamed names the attribute of an object with the name given.
+func attributeNamed(name string) memberName { return memberName{kind: attributeOf, name: name} }
+
+// mapElement names the element of a map under the key given.
+func mapElement(key string) memberName { return memberName{kind: elementOfKey, name: key} }
+
+// String writes the name as a message uses it: an attribute's name as a
+// display form quotes it, and a key in ASCII, so that spellings that normalize
+// alike stay distinguishable.
+func (m memberName) String() string {
+	switch m.kind {
+	case attributeOf:
+		return "attribute " + quoted(m.name)
+	case elementOfKey:
+		return "the element of key " + quotedASCII(m.name)
+	}
+	return "element " + strconv.Itoa(m.index)
+}
+
 // memberType returns the type of a member of a container, panicking if v is not
 // a resolved value. A member that is null or unknown has a type all the same,
 // and the container holds it: what a member leaves open is the container's
 // range, which partial records. fn and what name the caller and the member for
 // the message.
-func memberType(fn, what string, v Value) Type {
+func memberType(fn string, what memberName, v Value) Type {
 	n := v.data()
 	if n.state == statePending {
 		usagePanic("%s: %s is a pending value, which has no type; Resolve it to one first", fn, what)
@@ -479,7 +520,7 @@ func memberType(fn, what string, v Value) Type {
 }
 
 // requireMember panics unless v is a resolved value of type want.
-func requireMember(fn, what string, v Value, want Type) {
+func requireMember(fn string, what memberName, v Value, want Type) {
 	if got := memberType(fn, what, v); got != want {
 		usagePanic("%s: %s has type %s, not %s", fn, what, got, want)
 	}
