@@ -53,12 +53,21 @@ const maxDepth = 512
 // 512 levels, each item, type, constraint or content counting one, is the only
 // thing refused for its size.
 //
-// Deserialize panics if decoders names a capsule type that declares no
-// encoding, or two that declare one identifier, and on a mark decoder that
-// breaks its contract: one returning neither a mark nor a diagnostic, a mark of
-// another identifier, or diagnostics that ErrorVal refuses.
+// Deserialize panics if decoders names a type that is not a capsule type, a
+// capsule type that declares no encoding, or two that declare one identifier,
+// and if it holds a nil mark decoder. It panics on a decoder that breaks its
+// contract: a mark decoder returning neither a mark nor a diagnostic, a mark
+// of another identifier, a mark whose type declares no encoding, or
+// diagnostics that ErrorVal refuses, and a capsule type's Decode returning
+// neither a pointer nor a diagnostic, or a pointer the type does not
+// encapsulate.
 func Deserialize(data []byte, decoders Decoders) (Value, Value, bool) {
 	d := &decoder{r: cbor.NewReader(data), capsules: map[string]Type{}, marks: decoders.Marks}
+	for id, decode := range decoders.Marks {
+		if decode == nil {
+			usagePanic("Deserialize: the decoder for the mark %q is nil", id)
+		}
+	}
 	for _, t := range decoders.Capsules {
 		enc := t.mustKind(KindCapsule, "Deserialize").capsule.encoding
 		if enc == nil {
@@ -349,7 +358,10 @@ func (d *decoder) diagnostic() (Diagnostic, *decodeError) {
 		}
 		switch h.Major {
 		case cbor.MajorText:
-			name, _ := d.r.ReadText()
+			name, err := d.r.ReadText()
+			if err != nil {
+				return Diagnostic{}, d.cborError(err)
+			}
 			if name == "" {
 				return Diagnostic{}, d.malformed(at, "a path step naming the empty attribute")
 			}
@@ -1001,6 +1013,9 @@ func (d *decoder) mark() (Mark, *decodeError) {
 		usagePanic("the decoder of the mark %q returned neither a mark nor a diagnostic", id)
 	case m.MarkID() != id:
 		usagePanic("the decoder of the mark %q returned the mark %q", id, m.MarkID())
+	}
+	if _, ok := m.(EncodableMark); !ok {
+		usagePanic("the decoder of the mark %q returned a mark whose type declares no encoding, which cannot serialize again", id)
 	}
 	return m, nil
 }
