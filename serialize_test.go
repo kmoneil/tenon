@@ -861,3 +861,21 @@ func BenchmarkSerializeFailures(b *testing.B) {
 		})
 	}
 }
+
+// TestConformance_SE050_FailuresFollowTheEncoding pins the order of an
+// encoding's failures where the value itself and its members each have some:
+// the diagnostics come in the order the encoding meets what fails, a value's
+// type, and the types within it, before its content, and within the content
+// each member, its content then its marks, before the marks of the value
+// holding them, which the encoding writes last.
+func TestConformance_SE050_FailuresFollowTheEncoding(t *testing.T) {
+	conformance.Covers(t, "SE-050")
+	opaque := tenon.Capsule("opaque_in_se050", tenon.CapsuleOps[celsius]{})
+	member := tenon.WithMarks(tenon.CapsuleVal(opaque, &celsius{1}), stamp{id: "inner"})
+	list := tenon.WithMarks(tenon.ListVal(opaque, member), stamp{id: "outer"})
+	wantSerializeFailure(t, "a type, a member and two marks that do not encode", list,
+		wantDiag{tenon.CodeSerializeUnencodableCapsule, "."},
+		wantDiag{tenon.CodeSerializeUnencodableCapsule, ".[0]"},
+		wantDiag{tenon.CodeSerializeUnencodableMark, ".[0]"},
+		wantDiag{tenon.CodeSerializeUnencodableMark, "."})
+}

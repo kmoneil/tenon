@@ -218,3 +218,17 @@ func BenchmarkProjectJSON(b *testing.B) {
 		})
 	}
 }
+
+// TestConformance_SE061_RedactionPrecedesKnownness holds the projection's
+// precedence: a value that carries a redacting mark and is unknown or
+// pending fails as serialize.redacted alone, the mark judged before the
+// state, so what is withheld stays withheld even where there is nothing yet
+// to show, and the failure says nothing more of the value (MK-011).
+func TestConformance_SE061_RedactionPrecedesKnownness(t *testing.T) {
+	conformance.Covers(t, "SE-061", "MK-011")
+	secret := stamp{id: "secret", redact: true}
+	wantProjectionFailure(t, "a redacted unknown", tenon.WithMarks(tenon.Unknown(tenon.NumberType()), secret),
+		wantDiag{tenon.CodeSerializeRedacted, "."})
+	wantProjectionFailure(t, "a redacted pending value", tenon.WithMarks(tenon.Pending(tenon.Any()), secret),
+		wantDiag{tenon.CodeSerializeRedacted, "."})
+}
