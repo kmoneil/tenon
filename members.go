@@ -1,5 +1,7 @@
 package tenon
 
+import "sync/atomic"
+
 // Length returns how many members a value has, as a Number value: the count of
 // extended grapheme clusters of a String, the elements of a list, the members
 // of a set or the entries of a map. Those are the kinds a length narrowing
@@ -63,7 +65,7 @@ var lengthOp = register(&op{
 		ns := []Narrowing{NumberMin(NumberFromInt(0), true)}
 		switch n := args[0].n; {
 		case n.state == stateKnown:
-			low, high := setLengthBounds(n.typ, n.data.([]Value))
+			low, high := setLengthBounds(n)
 			ns = append(ns,
 				NumberMin(NumberFromInt(int64(low)), true),
 				NumberMax(NumberFromInt(int64(high)), true))
@@ -86,20 +88,34 @@ var lengthOp = register(&op{
 	},
 })
 
-// setLengthBounds returns how few and how many members a set of type t holding
-// these members could turn out to have: the members that are provably distinct
-// from every member counted before them, and all of them, or as many as the
-// element type has values, null among them, where it has fewer.
-func setLengthBounds(t Type, members []Value) (low, high int) {
+// setLengthBounds returns how few and how many members the set node n could
+// turn out to have: the members that are provably distinct from every member
+// counted before them, and all of them, or as many as the element type has
+// values, null among them, where it has fewer. The distinct count is made
+// once for the node's lifetime and cached, since it follows from the
+// members, which never change.
+func setLengthBounds(n *node) (low, high int) {
+	members := n.data.([]Value)
 	high = len(members)
 	// Every element type has at least one value, so it bounds nothing until a
 	// set holds two members, and equality asks this of every set it compares.
 	if high > 1 {
-		if c := setCeiling(t); c.set && c.n < int64(high) {
+		if c := setCeiling(n.typ); c.set && c.n < int64(high) {
 			high = int(c.n)
 		}
 	}
-	return provablyDistinct(members), high
+	return cachedDistinct(n), high
+}
+
+// cachedDistinct returns the count of the set node n's members that are
+// provably distinct, counting on the first ask and reading the count after.
+func cachedDistinct(n *node) int {
+	if c := atomic.LoadInt32(&n.distinct); c > 0 {
+		return int(c - 1)
+	}
+	c := provablyDistinct(n.data.([]Value))
+	atomic.StoreInt32(&n.distinct, int32(c)+1)
+	return c
 }
 
 // provablyDistinct returns how many of these members are provably distinct
@@ -110,14 +126,20 @@ func setLengthBounds(t Type, members []Value) (low, high int) {
 // first and ties exactly the ones that are equal (EQ-045), so a known member
 // is one already counted exactly when it is the one counted last. A member
 // that is not known is compared with every member counted, since what tells it
-// apart is what it could still turn out to be.
+// apart is what it could still turn out to be; one identical to the member
+// before it, which the order puts beside it, is answered as that member was,
+// since equality settles a pair of identical members exactly as it settles
+// either against anything else, and is not asked again.
 func provablyDistinct(members []Value) int {
 	var known, others []Value
+	var prev Value
 	for _, m := range members {
 		if !m.n.isKnown() {
-			if distinctFromAll(known, m) && distinctFromAll(others, m) {
+			if (prev.n == nil || !Identical(prev, m)) &&
+				distinctFromAll(known, m) && distinctFromAll(others, m) {
 				others = append(others, m)
 			}
+			prev = m
 			continue
 		}
 		if last := len(known) - 1; last >= 0 && sameValue(known[last].n, m.n) {

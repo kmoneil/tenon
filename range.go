@@ -661,18 +661,22 @@ func narrowPartialSet(v Value, ns []Narrowing) Value {
 	// the count of those that are provably distinct, the listings beside
 	// them, and a LengthMin. The greatest is the fewest of the members held, a
 	// LengthMax, and the values the element type holds, null among them, since
-	// a set holds each of them once at most.
-	held, count := int64(provablyDistinct(members)), int64(len(members))
+	// a set holds each of them once at most. The members are counted only
+	// where a bound could actually bite: their count never exceeds their
+	// number, so while the greatest length is that number, the members go
+	// uncounted, and a narrowing that moves no bound costs no comparison.
+	count := int64(len(members))
+	held := func() int64 { return int64(cachedDistinct(n)) }
 	ceiling := setCeiling(n.typ)
 	var fromListings int64
 	var listed rangeData          // the listings, recorded as a range records them
 	var atLeast, atMost Narrowing // the greatest LengthMin and the least LengthMax
-	least := func() int64 { return max(held, fromListings, atLeast.n) }
+	least := func() int64 { return max(held(), fromListings, atLeast.n) }
 	// lowerText names what sets the least length, and is empty where the
 	// members set it, since the value shows them.
 	lowerText := func() string {
 		switch l := least(); {
-		case held >= l:
+		case held() >= l:
 			return ""
 		case fromListings >= l:
 			return membersText(listed.members)
@@ -689,6 +693,22 @@ func narrowPartialSet(v Value, ns []Narrowing) Value {
 		}
 		return m
 	}
+	// within reports least() <= most() without counting the members where
+	// the count could not decide it: it never exceeds their number.
+	within := func() bool {
+		m := most()
+		if fromListings > m || atLeast.n > m {
+			return false
+		}
+		return count <= m || held() <= m
+	}
+	// isMember tells a listed value that is one of the set's own members, the
+	// same value, from the rest. Such a value narrows nothing by itself: it
+	// is not lacking, and every value it says the set must hold, the set
+	// holds. A program narrowing a set by values taken from Elements lists
+	// only these, and the narrowing then costs no comparison at all.
+	var isMember map[*node]bool
+	anyNovel := false
 	for _, nw := range ns {
 		switch nw.kind {
 		case narrowLengthMin:
@@ -700,7 +720,20 @@ func narrowPartialSet(v Value, ns []Narrowing) Value {
 				atMost = nw
 			}
 		case narrowMembers:
-			if lacksSome(n, nw.members) {
+			if isMember == nil {
+				isMember = make(map[*node]bool, len(members))
+				for _, m := range members {
+					isMember[m.n] = true
+				}
+			}
+			var novel []Value
+			for _, l := range nw.members {
+				if !isMember[l.n] {
+					novel = append(novel, l)
+				}
+			}
+			anyNovel = anyNovel || len(novel) > 0
+			if lacksSome(n, novel) {
 				return contradiction("the value " + valueText(v) + " does not satisfy " + nw.message())
 			}
 			// The listed values alone, and the set holding them beside the
@@ -709,17 +742,23 @@ func narrowPartialSet(v Value, ns []Narrowing) Value {
 			// Values listed for a set value are counted provably distinct,
 			// where a range counts only its known ones (UN-002): a document
 			// never narrows a set value, and what the set holds is a number
-			// of members, whose length this decides.
+			// of members, whose length this decides. While every value
+			// listed so far is a member, neither count can exceed the
+			// members' own, which least() holds already, so neither is made.
 			listed.addMembers(nw.members)
-			together := orderMembers(append(slices.Clone(members), listed.members...))
-			fromListings = max(fromListings, listed.lenLo,
-				int64(provablyDistinct(listed.members)), int64(provablyDistinct(together)))
+			if anyNovel {
+				together := orderMembers(append(slices.Clone(members), listed.members...))
+				fromListings = max(fromListings, listed.lenLo,
+					int64(provablyDistinct(listed.members)), int64(provablyDistinct(together)))
+			} else {
+				fromListings = max(fromListings, listed.lenLo)
+			}
 		default:
 			if !nw.holdsFor(n) {
 				return contradiction("the value " + valueText(v) + " does not satisfy " + nw.message())
 			}
 		}
-		if least() <= most() {
+		if within() {
 			continue
 		}
 		// nw moved one bound past the other. The message names it, and what

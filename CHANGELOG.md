@@ -12,6 +12,17 @@
 
 ### Fixed
 
+- A partly known set's least length is counted once for the value's
+  lifetime: the count follows from the members, which never change, so
+  asking `Length`, `Equals` or a conversion again reads the count already
+  made, where each ask counted every pair of members that are not known.
+  Narrowing such a set by a listing of its own members costs one comparison
+  a listed value, where the members and the listed values were counted
+  pairwise: 3,004,181 comparisons at 1,000 members, 2,228 now. Counting a
+  member identical to the one beside it asks nothing more, and equal
+  encodings hold identical members side by side. What remains pairwise is
+  the first count of a value's members, whose answer EQ-042 promises
+  exactly, and membership between two such sets under `Equals`.
 - `Diff` of two sets whose changed members read alike mirrors. A member
   removal and a member addition whose display forms tie are ordered by the
   members themselves, with the comparison a set uses for members that encode
