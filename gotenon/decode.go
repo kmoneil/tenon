@@ -5,6 +5,7 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/kmoneil/tenon"
 )
@@ -66,6 +67,43 @@ type decoder struct {
 	// by looking at a value before it is converted, since the conversion drops
 	// a mark that does not propagate, and a dropped mark must still be refused.
 	marked map[string]tenon.Diagnostic
+	// typeTexts holds each tenon type's rendered text, once per Decode,
+	// for the messages that name one.
+	typeTexts map[tenon.Type]string
+}
+
+// valueText renders v for a message, cut to 32 bytes at a character
+// boundary: the widest in-window number is a million digits, and a message
+// is for reading, not for carrying the value.
+func valueText(v tenon.Value) string { return shortText(v.String()) }
+
+// shortText returns s, or its first 32 bytes to a character boundary and an
+// ellipsis where s is longer.
+func shortText(s string) string {
+	const limit = 32
+	if len(s) <= limit {
+		return s
+	}
+	cut := limit
+	for cut > 0 && !utf8.RuneStart(s[cut]) {
+		cut--
+	}
+	return s[:cut] + "..."
+}
+
+// typeText renders a tenon type for a message, once for the run of one
+// Decode however many parts name it: a value holding many unknown members
+// of one large type would otherwise pay the type's text for every one.
+func (d *decoder) typeText(t tenon.Type) string {
+	if d.typeTexts == nil {
+		d.typeTexts = map[tenon.Type]string{}
+	}
+	s, ok := d.typeTexts[t]
+	if !ok {
+		s = t.String()
+		d.typeTexts[t] = s
+	}
+	return s
 }
 
 func (d *decoder) fail(p tenon.Path, code tenon.Code, message string) {
@@ -223,7 +261,7 @@ func (d *decoder) build(m *goMapping, dst reflect.Value, v tenon.Value, p tenon.
 		d.fail(p, tenon.CodeDecodeNotKnown, "a pending value cannot be decoded into a Go "+m.rt.String())
 		return
 	case !v.HasContent():
-		d.fail(p, tenon.CodeDecodeNotKnown, "an unknown value of type "+v.Type().String()+" cannot be decoded into a Go "+m.rt.String())
+		d.fail(p, tenon.CodeDecodeNotKnown, "an unknown value of type "+d.typeText(v.Type())+" cannot be decoded into a Go "+m.rt.String())
 		return
 	}
 	switch m.kind {
@@ -243,7 +281,7 @@ func (d *decoder) build(m *goMapping, dst reflect.Value, v tenon.Value, p tenon.
 		}
 		f, err := strconv.ParseFloat(v.String(), bits)
 		if err != nil {
-			d.fail(p, tenon.CodeDecodeOutOfRange, "the number "+v.String()+" is beyond the range of a Go "+m.rt.String())
+			d.fail(p, tenon.CodeDecodeOutOfRange, "the number "+valueText(v)+" is beyond the range of a Go "+m.rt.String())
 			return
 		}
 		dst.SetFloat(f)
@@ -277,6 +315,8 @@ func (d *decoder) build(m *goMapping, dst reflect.Value, v tenon.Value, p tenon.
 		ptr := reflect.New(m.elem.rt)
 		d.build(m.elem, ptr.Elem(), v, p, false)
 		dst.Set(ptr)
+	default:
+		usagePanic("Decode met the mapping kind %d of %s, which no arm of build handles; this is a defect in gotenon, not in the caller", m.kind, m.rt)
 	}
 }
 
@@ -284,7 +324,7 @@ func (d *decoder) build(m *goMapping, dst reflect.Value, v tenon.Value, p tenon.
 // to be an integer the type holds.
 func (d *decoder) integer(m *goMapping, dst reflect.Value, v tenon.Value, p tenon.Path) {
 	fail := func() {
-		d.fail(p, tenon.CodeDecodeOutOfRange, "the number "+v.String()+" is not an integer that a Go "+m.rt.String()+" holds")
+		d.fail(p, tenon.CodeDecodeOutOfRange, "the number "+valueText(v)+" is not an integer that a Go "+m.rt.String()+" holds")
 	}
 	switch m.kind {
 	case goInt:
@@ -319,7 +359,7 @@ func (d *decoder) sequence(m *goMapping, dst reflect.Value, v tenon.Value, p ten
 	dynamic := !m.typed()
 	switch k := v.Type().Kind(); {
 	case !dynamic && k != tenon.KindList, dynamic && k != tenon.KindList && k != tenon.KindSet && k != tenon.KindTuple:
-		d.fail(p, tenon.CodeConvertNoConversion, v.Type().String()+" does not decode into a Go "+m.rt.String())
+		d.fail(p, tenon.CodeConvertNoConversion, d.typeText(v.Type())+" does not decode into a Go "+m.rt.String())
 		return
 	}
 	members := v.Elements()
@@ -361,7 +401,7 @@ func (d *decoder) mapping(m *goMapping, dst reflect.Value, v tenon.Value, p teno
 			names, members, steps = append(names, name), append(members, v.Attribute(name)), append(steps, p.Attribute(name))
 		}
 	default:
-		d.fail(p, tenon.CodeConvertNoConversion, v.Type().String()+" does not decode into a Go "+m.rt.String())
+		d.fail(p, tenon.CodeConvertNoConversion, d.typeText(v.Type())+" does not decode into a Go "+m.rt.String())
 		return
 	}
 	target := reflect.MakeMapWithSize(m.rt, len(members))
