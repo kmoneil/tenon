@@ -249,27 +249,7 @@ func distinctMembers(members []Value) []Value {
 // value whose type declares no encoding, since what stands in for it is the
 // same; compareAlike orders those by the capsule values.
 func orderMembers(members []Value) []Value {
-	// encoding is a member's encoding, and whether it stands in for a capsule
-	// value anywhere, which the encoder records as a failure.
-	type encoding struct {
-		bytes    []byte
-		standsIn bool
-	}
-	var e *encoder
-	encoded := map[*node]encoding{}
-	for _, m := range members {
-		if m.n.isKnown() {
-			continue
-		}
-		if _, ok := encoded[m.n]; ok {
-			continue
-		}
-		if e == nil {
-			e = newEncoder()
-		}
-		before := e.failures
-		encoded[m.n] = encoding{e.content(nil, m, 0, nil), e.failures > before}
-	}
+	alike := notKnownOrder()
 	slices.SortStableFunc(members, func(a, b Value) int {
 		known, other := a.n.isKnown(), b.n.isKnown()
 		switch {
@@ -280,13 +260,47 @@ func orderMembers(members []Value) []Value {
 		case other:
 			return 1
 		}
-		x, y := encoded[a.n], encoded[b.n]
+		return alike(a.n, b.n)
+	})
+	return members
+}
+
+// notKnownOrder returns a comparison ordering members that are not known as
+// a set iterates them: by their encodings, and where two encode alike
+// because a capsule value stands in, by the capsule values (compareAlike).
+// Each member is encoded once, the first time it is asked about, so a caller
+// that never meets two such members builds no encoder. The diff orders a
+// member removal and a member addition that read alike by the same
+// comparison, so that the order follows from the members and Diff(b, a)
+// mirrors Diff(a, b).
+func notKnownOrder() func(a, b *node) int {
+	// encoding is a member's encoding, and whether it stands in for a capsule
+	// value anywhere, which the encoder records as a failure.
+	type encoding struct {
+		bytes    []byte
+		standsIn bool
+	}
+	var e *encoder
+	encoded := map[*node]encoding{}
+	of := func(n *node) encoding {
+		enc, ok := encoded[n]
+		if !ok {
+			if e == nil {
+				e = newEncoder()
+			}
+			before := e.failures
+			enc = encoding{e.content(nil, Value{n}, 0, nil), e.failures > before}
+			encoded[n] = enc
+		}
+		return enc
+	}
+	return func(a, b *node) int {
+		x, y := of(a), of(b)
 		if c := bytes.Compare(x.bytes, y.bytes); c != 0 || !x.standsIn && !y.standsIn {
 			return c
 		}
-		return compareAlike(a.n, b.n)
-	})
-	return members
+		return compareAlike(a, b)
+	}
 }
 
 // compareAlike orders two values that encode alike where an encoding stands in

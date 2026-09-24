@@ -12,6 +12,12 @@
 
 ### Fixed
 
+- `Diff` of two sets whose changed members read alike mirrors. A member
+  removal and a member addition whose display forms tie are ordered by the
+  members themselves, with the comparison a set uses for members that encode
+  alike, so `Diff(b, a)` is `Diff(a, b)` with the sides exchanged, in the
+  same order. Through 0.5.0 each direction put its own removal first, and
+  the two disagreed.
 - `gotenon.Encode` of a rational that does not terminate fails with
   `encode.inexact` however large its denominator. Through 0.5.0 a
   denominator of more bits than the digit window has places was refused as

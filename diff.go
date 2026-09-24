@@ -285,10 +285,32 @@ func (d *differ) members(x, y []Value, p Path) {
 			added = append(added, m)
 		}
 	}
-	// Removals and additions interleave by display form, a removal first
-	// where the two read alike.
+	// Removals and additions interleave by display form. A removal and an
+	// addition that read alike are ordered by the members themselves, as a
+	// set holding the members of both sets orders members that encode alike
+	// (DI-035, EQ-044): the key follows from the member and not from the
+	// side it came from, so Diff(b, a) mirrors Diff(a, b), where putting the
+	// removal first put a different member first each way. A removal still
+	// leads where even that comparison ties, which only members told apart
+	// by what EQ-045 leaves unordered reach.
+	var alike func(a, b *node) int
 	for len(removed) > 0 || len(added) > 0 {
-		if len(added) == 0 || len(removed) > 0 && removed[0].String() <= added[0].String() {
+		c := 0
+		switch {
+		case len(added) == 0:
+			c = -1
+		case len(removed) == 0:
+			c = 1
+		default:
+			c = strings.Compare(removed[0].String(), added[0].String())
+			if c == 0 {
+				if alike == nil {
+					alike = notKnownOrder()
+				}
+				c = alike(removed[0].n, added[0].n)
+			}
+		}
+		if c <= 0 {
 			d.add(Change{Kind: ChangeMemberRemoved, Path: p, Old: removed[0]})
 			removed = removed[1:]
 		} else {
