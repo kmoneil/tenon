@@ -21,10 +21,10 @@ func TestReport(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	enforced, _, err := resolveActive(m.Rules, list)
-	if err != nil {
-		t.Fatal(err)
-	}
+	// Built by hand: resolveActive refuses a list that leaves BB-002
+	// unenforced, and the report must still say why a rule it is given as
+	// unenforced is unsatisfied.
+	enforced := []string{"BB-001", "AA-001", "AA-003"}
 	covered := map[string]string{"AA-001": "TestOne", "BB-001": "TestTwo"}
 	got := report(m, list, enforced, covered)
 	for _, want := range []string{

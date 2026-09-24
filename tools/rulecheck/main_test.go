@@ -44,7 +44,9 @@ func TestRunManifest(t *testing.T) {
 	active := filepath.Join(dir, "active-areas.txt")
 	registry := registryFixture(t, dir)
 	conformanceReport := filepath.Join(dir, "CONFORMANCE.md")
-	writeFile(t, active, nil)
+	writeFile(t, active, []byte("AA\n"))
+	writeFile(t, filepath.Join(dir, "cover", "cover-x.jsonl"),
+		[]byte(`{"rule":"AA-001","test":"TestConformance_AA001_X"}`+"\n"+`{"rule":"AA-002","test":"TestConformance_AA002_X"}`+"\n"))
 	t.Setenv("TENON_SPEC", "")
 	c := cli{t}
 	inputs := []string{"-manifest", manifest, "-active", active, "-cover", filepath.Join(dir, "cover"), "-codes", registry, "-report", conformanceReport}

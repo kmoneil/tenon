@@ -123,6 +123,19 @@ func resolveActive(rules []Rule, list activeList) (enforced, deferred []string, 
 			problems.add(list.line[id], "deferred rule %s is not in an active area", id)
 		}
 	}
+	// An enforceable rule that no line reaches would fall out of enforcement
+	// without a word: with every area commented out, v0.1.0's rulecheck said
+	// "no rules enforced yet" and exited zero. Every enforceable rule must be
+	// reached by an area, its own identifier, or a deferral, which says why.
+	unenforced := map[string]int{}
+	for _, r := range rules {
+		if _, isDeferred := list.deferred[r.ID]; enforceableRule(r) && !activeArea[r.Area] && !single[r.ID] && !isDeferred {
+			unenforced[r.Area]++
+		}
+	}
+	for _, a := range slices.Sorted(maps.Keys(unenforced)) {
+		problems.add(0, "area %s has %d enforceable rule(s) that no line enforces; activate the area, list the rules, or defer them with a reason", a, unenforced[a])
+	}
 	if err := problems.err(); err != nil {
 		return nil, nil, err
 	}
