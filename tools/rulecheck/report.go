@@ -25,6 +25,10 @@ var orderings = []string{
 		"first compared them, which holds for the rest of the run.",
 	"**Capsule types of one name** (`EQ-045`): by the order in which the run " +
 		"created them.",
+	"**Ties among unknown members** (`EQ-044`): members that the orders above " +
+		"leave together, which only members told apart by nothing but capsule " +
+		"values their type reports equal can be, keep the order the set was " +
+		"given them in.",
 }
 
 // report renders the conformance report: what Appendix A requires, from the

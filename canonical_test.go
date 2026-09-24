@@ -2,6 +2,7 @@ package tenon_test
 
 import (
 	"slices"
+	"strconv"
 	"testing"
 
 	"github.com/kmoneil/tenon"
@@ -161,6 +162,83 @@ func TestConformance_EQ045_CapsuleFallbackOrdersByEqualityClass(t *testing.T) {
 	}
 	if got := tenon.Diff(first, second); len(got) != 0 {
 		t.Errorf("two identical sets differ: %s", got)
+	}
+}
+
+// TestConformance_EQ045_ThePublishedOrderings pins the direction of each
+// implementation-defined ordering that CONFORMANCE.md publishes, which the
+// tests above hold to be orders without saying which way they run: a
+// sabotage that reverses one is a different implementation publishing the
+// same sentences.
+func TestConformance_EQ045_ThePublishedOrderings(t *testing.T) {
+	conformance.Covers(t, "EQ-045", "EQ-044")
+	num := tenon.NumberType()
+
+	// Values of a type that declares a hash and no Compare order by the
+	// hash. The first comparison meets the larger hash first, so the
+	// numbering fallback alone would give the reverse of this answer.
+	hashed := tenon.Capsule("hashed_in_canonical_test", tenon.CapsuleOps[point]{
+		Equals: func(a, b *point) bool { return *a == *b },
+		Hash:   func(p *point) uint64 { return uint64(p.x) },
+	})
+	big, small := tenon.CapsuleVal(hashed, &point{9, 0}), tenon.CapsuleVal(hashed, &point{1, 0})
+	if got := tenon.CanonicalCompare(big, small); got <= 0 {
+		t.Errorf("the larger declared hash sorts %d against the smaller, want after it", got)
+	}
+
+	// Where the hashes collide, the value the run compared first sorts
+	// first, for the rest of the run.
+	numbered := tenon.Capsule("numbered_in_canonical_test", tenon.CapsuleOps[point]{
+		Equals: func(a, b *point) bool { return *a == *b },
+		Hash:   func(*point) uint64 { return 7 },
+	})
+	early, late := tenon.CapsuleVal(numbered, &point{1, 0}), tenon.CapsuleVal(numbered, &point{2, 0})
+	if got := tenon.CanonicalCompare(early, late); got >= 0 {
+		t.Errorf("the value compared first sorts %d against the later one, want before it", got)
+	}
+	if got := tenon.CanonicalCompare(late, early); got <= 0 {
+		t.Error("the numbering did not hold for the run")
+	}
+	// A value the run first compares later sorts after both, which tells a
+	// numbering by first comparison from one that merely stays consistent:
+	// reversing the comparison and its operands together answers fresh
+	// pairs as the original does, and parts from it only here.
+	third := tenon.CapsuleVal(numbered, &point{3, 0})
+	if got := tenon.CanonicalCompare(third, late); got <= 0 {
+		t.Errorf("a value first compared later sorts %d against an earlier one, want after it", got)
+	}
+
+	// Two capsule types of one name are told apart by which was made first.
+	older := tenon.Capsule("same_name_in_canonical_test", tenon.CapsuleOps[point]{})
+	newer := tenon.Capsule("same_name_in_canonical_test", tenon.CapsuleOps[point]{})
+	shared := &point{1, 1}
+	if got := tenon.CanonicalCompare(tenon.CapsuleVal(older, shared), tenon.CapsuleVal(newer, shared)); got >= 0 {
+		t.Errorf("the type made first sorts %d against the one made after, want before it", got)
+	}
+
+	// Unknown members that even the capsule values' order leaves together,
+	// which only values their type reports equal can be, keep the order the
+	// set was given them in. The type shows y, which its equality ignores,
+	// so the order is visible although the members count as one value.
+	shown := tenon.Capsule("shown_equal_in_canonical_test", tenon.CapsuleOps[point]{
+		Equals:  func(a, b *point) bool { return a.x == b.x },
+		Hash:    func(p *point) uint64 { return uint64(p.x) },
+		Display: func(p *point) string { return "p" + strconv.Itoa(p.x) + "." + strconv.Itoa(p.y) },
+	})
+	tup := tenon.Tuple(shown, num)
+	mu := tenon.TupleVal(tenon.CapsuleVal(shown, &point{1, 1}), tenon.Unknown(num))
+	mv := tenon.TupleVal(tenon.CapsuleVal(shown, &point{1, 2}), tenon.Unknown(num))
+	for _, tt := range []struct {
+		given []tenon.Value
+		want  string
+	}{
+		{[]tenon.Value{mu, mv}, `capsule("shown_equal_in_canonical_test", "p1.1")`},
+		{[]tenon.Value{mv, mu}, `capsule("shown_equal_in_canonical_test", "p1.2")`},
+	} {
+		first := tenon.SetVal(tup, tt.given...).Elements()[0].Index(0).String()
+		if first != tt.want {
+			t.Errorf("built with %s first, the set iterates %s first", tt.want, first)
+		}
 	}
 }
 
