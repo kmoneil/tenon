@@ -284,6 +284,32 @@ func TestConformance_SE002_OnlyTheEncodingDecodes(t *testing.T) {
 	wantDecodeFailure(t, "version 2", "da74656e00 82 02 83 00 01 f5", tenon.CodeSerializeUnsupportedVersion)
 }
 
+// TestConformance_SE051_TheCodesOfSerialization produces each code the
+// section's table names, one row a code, the two the JSON projection mints
+// included.
+func TestConformance_SE051_TheCodesOfSerialization(t *testing.T) {
+	conformance.Covers(t, "SE-051")
+	wantDecodeFailure(t, "serialize.malformed", document+"83 03 01 f5", tenon.CodeSerializeMalformed)
+	wantDecodeFailure(t, "serialize.not_canonical", document+"83 00 02 18 01", tenon.CodeSerializeNotCanonical)
+	wantDecodeFailure(t, "serialize.unsupported_version", "da74656e00 82 02 83 00 01 f5", tenon.CodeSerializeUnsupportedVersion)
+	wantDecodeFailure(t, "serialize.too_large", document+"83 00 "+strings.Repeat("82 04 ", 600)+"02 f6", tenon.CodeSerializeTooLarge)
+	wantDecodeFailure(t, "serialize.unknown_capsule", document+"83 00 82 09 63 782f79 f6", tenon.CodeSerializeUnknownCapsule)
+	wantDecodeFailure(t, "serialize.unknown_mark", document+"83 00 01 da74656e02 82 f5 81 81 617a", tenon.CodeSerializeUnknownMark)
+	opaque := tenon.Capsule("opaque", tenon.CapsuleOps[int]{})
+	held := 1
+	wantSerializeFailure(t, "serialize.unencodable_capsule", tenon.CapsuleVal(opaque, &held),
+		wantDiag{tenon.CodeSerializeUnencodableCapsule, "."})
+	wantSerializeFailure(t, "serialize.unencodable_mark", tenon.WithMarks(tenon.NumberFromInt(1), stamp{id: "x"}),
+		wantDiag{tenon.CodeSerializeUnencodableMark, "."})
+	if _, failure, ok := tenon.ProjectJSON(tenon.Unknown(tenon.NumberType())); ok || failure.Diagnostics()[0].Code != tenon.CodeSerializeNotKnown {
+		t.Errorf("projecting an unknown gave %v, want serialize.not_known", failure)
+	}
+	redacted := tenon.WithMarks(tenon.NumberFromInt(1), stamp{id: "secret", redact: true})
+	if _, failure, ok := tenon.ProjectJSON(redacted); ok || failure.Diagnostics()[0].Code != tenon.CodeSerializeRedacted {
+		t.Errorf("projecting a redacted value gave %v, want serialize.redacted", failure)
+	}
+}
+
 // TestConformance_SE002_TwoByteSimpleValues holds documents spelling false,
 // true or null in two bytes to serialize.malformed: RFC 8949 3.3 says f8
 // followed by a byte below 32 is not well-formed, so such input is not CBOR,

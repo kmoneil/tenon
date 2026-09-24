@@ -175,7 +175,7 @@ func TestConformance_GO041_TheBoundaryRefusesWhatGoCannotHold(t *testing.T) {
 	wantDecodeFailures[int](t, "a pending null int", pendingNull, safe, wantDiag{tenon.CodeDecodeNull, "."})
 }
 
-func TestMarksAreRefusedWhereTheConversionPutsThem(t *testing.T) {
+func TestConformance_GO041_MarksAreRefusedWhereTheConversionPutsThem(t *testing.T) {
 	conformance.Covers(t, "GO-041")
 	iso := stamp{id: "iso", policy: tenon.Isolate}
 	prop := stamp{id: "prop"}
@@ -211,7 +211,7 @@ func TestMarksAreRefusedWhereTheConversionPutsThem(t *testing.T) {
 		wantDiag{tenon.CodeDecodeLengthMismatch, "."})
 }
 
-func TestDecodingValuesOfManyTypes(t *testing.T) {
+func TestConformance_GO013_DecodingValuesOfManyTypes(t *testing.T) {
 	conformance.Covers(t, "GO-012", "GO-013", "GO-022")
 	// A slice of values takes a list, a set or a tuple, members as they are.
 	members := []tenon.Value{n(1), s("x"), tenon.Unknown(boo)}

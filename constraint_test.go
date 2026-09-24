@@ -298,7 +298,7 @@ func TestZeroConstraint(t *testing.T) {
 	mustPanicUsage(t, "zero Constraint", func() { tenon.ObjectWith(map[string]tenon.Field{"a": {}}, true) })
 }
 
-// TestSharedTypeDecidesEveryConstraint holds sharedType to its answers. A type
+// TestConformance_UN023_SharedTypeDecidesEveryConstraint holds sharedType to its answers. A type
 // it finds must satisfy every constraint it was given. Where it finds none, no
 // example of any of them may satisfy them all, nor any example of what they
 // have in common, which meet writes out part by part: those examples reach
@@ -306,7 +306,7 @@ func TestZeroConstraint(t *testing.T) {
 // positions open on opposite sides. It must agree with admitsNone, which asks
 // the question of one constraint, and a constraint that soleType gives a type
 // for may have no other example.
-func TestSharedTypeDecidesEveryConstraint(t *testing.T) {
+func TestConformance_UN023_SharedTypeDecidesEveryConstraint(t *testing.T) {
 	conformance.Covers(t, "UN-023", "EQ-005")
 	capsule := tenon.Capsule("cap", tenon.CapsuleOps[celsius]{})
 	open := []tenon.Type{

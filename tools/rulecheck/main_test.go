@@ -114,6 +114,12 @@ func TestRunCoverage(t *testing.T) {
 	c.fails("1 enforced rule(s) have no passing conformance test:\n  AA-002", check...)
 
 	t.Run("covers AA-002", func(t *testing.T) { conformance.Covers(t, "AA-002") })
+	// The records the subtests wrote carry this test's name, which is not
+	// named for either rule, so coverage alone is not enough.
+	c.fails("AA-001 is covered only by tests not named for it, TestRunCoverage/covers_AA-001 among them; name one TestConformance_AA001_", check...)
+	writeFile(t, filepath.Join(cover, "cover-named.jsonl"), []byte(
+		`{"rule":"AA-001","test":"TestConformance_AA001_One"}`+"\n"+
+			`{"rule":"AA-002","test":"TestConformance_AA002_Two"}`+"\n"))
 	c.fails("CONFORMANCE.md is stale", check...)
 	c.ok("wrote", append([]string{"report"}, inputs...)...)
 	c.ok("all 2 enforced rules covered, 0 deferred", check...)

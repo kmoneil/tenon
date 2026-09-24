@@ -438,6 +438,84 @@ func TestConformance_SE040_Capsules(t *testing.T) {
 	wantDecodeFailure(t, "a capsule value serialized as a null", document+"83 00 82 09 63 742f63 82 02 f6", tenon.CodeSerializeMalformed)
 }
 
+// TestConformance_MK009_AMarkTypeMayDeclareAnEncoding pins the two sides of
+// the choice: a mark whose type declares an encoding travels through a
+// document, and a value carrying one whose type declares none is refused
+// with serialize.unencodable_mark, as a capsule type without one is.
+func TestConformance_MK009_AMarkTypeMayDeclareAnEncoding(t *testing.T) {
+	conformance.Covers(t, "MK-009")
+	wantSerializeFailure(t, "a mark that declares no encoding",
+		tenon.WithMarks(n(1), stamp{id: "undeclared"}),
+		wantDiag{tenon.CodeSerializeUnencodableMark, "."})
+	v := tenon.WithMarks(n(1), note{id: "p", text: "kept"})
+	b, failure, ok := tenon.Serialize(v)
+	if !ok {
+		t.Fatalf("Serialize(%v) failed: %v", v, failure)
+	}
+	if got, _, ok := tenon.Deserialize(b, decoders); !ok || !tenon.Identical(got, v) {
+		t.Errorf("the declared mark came back as %v", got)
+	}
+}
+
+// TestConformance_SE010_ItemsEncodeByState pins the item shapes: a resolved
+// value is [0, type, content], a pending value [1, constraint, nullness],
+// and an error value [2, [diagnostics]], each read back as itself.
+func TestConformance_SE010_ItemsEncodeByState(t *testing.T) {
+	conformance.Covers(t, "SE-010")
+	for _, tt := range []struct {
+		name string
+		v    tenon.Value
+		item string
+	}{
+		{"a resolved value", tenon.Bool(true), "83 00 01 f5"},
+		{"a pending value", tenon.Pending(tenon.Any()), "83 01 81 02 00"},
+		{"an error value", tenon.ErrorVal(tenon.Diagnostic{Code: "app.x", Message: "m"}), "82 02 81 83 65 6170702e78 61 6d 80"},
+	} {
+		wantEncoding(t, tt.name, tt.v, tt.item)
+		if got, _, ok := tenon.Deserialize(fromHex(t, document+tt.item), decoders); !ok || !tenon.Identical(got, tt.v) {
+			t.Errorf("%s came back as %v", tt.name, got)
+		}
+	}
+}
+
+// TestConformance_SE020_TypesEncodeByKind pins a row of each shape in the
+// type table: a scalar by its number, a collection as [kind, element], a
+// tuple as [7, [types]] and an object as [8, [[name, type]]] in name order,
+// through the null value, whose content says nothing more.
+func TestConformance_SE020_TypesEncodeByKind(t *testing.T) {
+	conformance.Covers(t, "SE-020")
+	for _, tt := range []struct {
+		name string
+		v    tenon.Value
+		item string
+	}{
+		{"a scalar", tenon.NullVal(num), "83 00 02 f6"},
+		{"a list of numbers", tenon.NullVal(tenon.List(num)), "83 00 82 04 02 f6"},
+		{"a tuple", tenon.NullVal(tenon.Tuple(num, str)), "83 00 82 07 82 02 03 f6"},
+		{"an object, attributes in name order", tenon.NullVal(tenon.Object(map[string]tenon.Type{"b": str, "a": num})),
+			"83 00 82 08 82 82 6161 02 82 6162 03 f6"},
+	} {
+		wantEncoding(t, tt.name, tt.v, tt.item)
+	}
+}
+
+// TestConformance_SE041_MarksEncodeWithAndWithoutAPayload pins the two mark
+// encodings: [id] for a mark without a payload and [id, type, content] for
+// one with, both read back as marks that equal what was written.
+func TestConformance_SE041_MarksEncodeWithAndWithoutAPayload(t *testing.T) {
+	conformance.Covers(t, "SE-041")
+	one := tenon.WithMarks(n(1), markPlain)
+	wantEncoding(t, "a mark without a payload", one, "83 00 02 da74656e02 82 01 81 81 616d")
+	two := tenon.WithMarks(n(1), note{id: "p", text: "x"})
+	wantEncoding(t, "a mark with a payload", two, "83 00 02 da74656e02 82 01 81 83 6170 03 6178")
+	for _, v := range []tenon.Value{one, two} {
+		b, _, _ := tenon.Serialize(v)
+		if got, _, ok := tenon.Deserialize(b, decoders); !ok || !tenon.Identical(got, v) {
+			t.Errorf("%v came back as %v", v, got)
+		}
+	}
+}
+
 // TestConformance_SE040_CapsuleIdentifiersAreText pins where an encoding
 // identifier that is not valid UTF-8 is refused: at the declaration, as a
 // usage error. The document format writes the identifier as CBOR text, so
