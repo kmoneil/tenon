@@ -78,6 +78,14 @@ type node struct {
 	// marks is the set of marks on the value: nil when there are none, so a
 	// value that is never marked pays a nil pointer and nothing else.
 	marks *markSet
+	// distinct caches, for a set holding members that are not known, one more
+	// than the count of members provably distinct (EQ-042), zero while it has
+	// not been counted. The count follows from the members, which never
+	// change, so it is counted once for the value's lifetime; marks do not
+	// move it, so a copy that re-marks the members keeps it. Read and written
+	// with atomic loads and stores: values are shared between goroutines, and
+	// two counting at once store the same number.
+	distinct int32
 	// data is the []Diagnostic of an error value, the Constraint of a pending
 	// value, the *rangeData of an unknown value, or nil for a null value. For
 	// a known value it is the content that the kind of its type calls for: a

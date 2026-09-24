@@ -252,6 +252,64 @@ func TestConformance_EQ041_MembersThatAreNotKnownAreKept(t *testing.T) {
 	}
 }
 
+// TestConformance_EQ042_TheCountIsAskedOncePerValue holds the cost of a
+// partly known set's least length. The members provably distinct are counted
+// once for the value's lifetime, not once per ask: the count follows from
+// the members, which never change, so asking again is reading it. And
+// narrowing the set by a listing of its own members asks the members
+// nothing: each listed value is a member, the same value, so it is not
+// lacking, it adds no member the set does not hold, and no bound moves.
+// What is asked is recording the listing itself, which deduplicates by
+// adjacency in the order a set holds members, one comparison a value; the
+// members and the listed values were counted pairwise besides, over a
+// million comparisons at a thousand members.
+func TestConformance_EQ042_TheCountIsAskedOncePerValue(t *testing.T) {
+	conformance.Covers(t, "EQ-042", "EQ-010")
+	num := tenon.NumberType()
+	asked := 0
+	counted := tenon.Capsule("counted", tenon.CapsuleOps[int]{
+		Equals: func(a, b *int) bool { asked++; return *a == *b },
+		Hash:   func(v *int) uint64 { return uint64(*v) },
+		Encoding: &tenon.CapsuleEncoding[int]{
+			ID:     "t/counted",
+			Type:   num,
+			Encode: func(v *int) tenon.Value { return tenon.NumberFromInt(int64(*v)) },
+			Decode: func(v tenon.Value) (*int, []tenon.Diagnostic) {
+				i, _ := v.AsInt64()
+				n := int(i)
+				return &n, nil
+			},
+		},
+	})
+	const size = 400
+	tup := tenon.Tuple(counted, num)
+	members := make([]tenon.Value, size)
+	for i := range members {
+		v := i
+		members[i] = tenon.TupleVal(tenon.CapsuleVal(counted, &v), tenon.Unknown(num))
+	}
+	set := tenon.SetVal(tup, members...)
+
+	// The first ask counts the members; the second reads the count made.
+	if got := tenon.Length(set).String(); got != "400" {
+		t.Fatalf("Length = %s, want 400", got)
+	}
+	asked = 0
+	if got := tenon.Length(set).String(); got != "400" {
+		t.Fatalf("Length asked again = %s, want 400", got)
+	}
+	if asked != 0 {
+		t.Errorf("the second Length asked the capsule type %d times, want none", asked)
+	}
+	asked = 0
+	if got := tenon.Narrow(set, tenon.Members(set.Elements()...)); !tenon.Identical(got, set) {
+		t.Errorf("narrowing by its own members gave %v", got)
+	}
+	if asked > size {
+		t.Errorf("narrowing by the set's own members asked the capsule type %d times, want at most one a value", asked)
+	}
+}
+
 func TestConformance_EQ042_TheLengthOfASetHoldingUnknowns(t *testing.T) {
 	conformance.Covers(t, "EQ-042")
 	num, str, boolType := tenon.NumberType(), tenon.StringType(), tenon.BoolType()

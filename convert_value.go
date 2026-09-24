@@ -461,7 +461,7 @@ func (x converter) collection(v Value, c Constraint) Value {
 	if from == KindSet && n.partial && d.kind == ConstraintListOf {
 		// A set holding members that are not known has no settled order and
 		// no settled count, so the list it becomes is not known either.
-		low, high := setLengthBounds(n.typ, n.data.([]Value))
+		low, high := setLengthBounds(n)
 		return Narrow(Unknown(List(elem)), NotNull(), LengthMin(int64(low)), LengthMax(int64(high)))
 	}
 	for i, r := range converted {
@@ -536,7 +536,7 @@ func (x converter) tuple(v Value, c Constraint) Value {
 // length the conversion fails already.
 func (x converter) partialSetTuple(v Value, c Constraint) Value {
 	n, d := v.n, c.c
-	low, high := setLengthBounds(n.typ, n.data.([]Value))
+	low, high := setLengthBounds(n)
 	if want := len(d.members); want < low || want > high {
 		message := "a set of " + strconv.Itoa(low) + " to " + count(high, "member")
 		if x.within(n).withheld != nil {
@@ -679,7 +679,7 @@ func (x converter) fitKnown(m Value, e Type) Value {
 	switch to.kind {
 	case KindList, KindSet, KindMap:
 		if n.typ.t.kind == KindSet && n.partial && to.kind == KindList {
-			low, high := setLengthBounds(n.typ, n.data.([]Value))
+			low, high := setLengthBounds(n)
 			return Narrow(Unknown(e), NotNull(), LengthMin(int64(low)), LengthMax(int64(high)))
 		}
 		vals := h.vals
