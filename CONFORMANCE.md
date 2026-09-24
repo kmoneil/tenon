@@ -22,6 +22,7 @@ None. Every normative rule is enforced, and a passing conformance test covers it
 - **Unknown set members** (`EQ-044`): after the known members, in the bytewise order of their encodings (`SE-001`), which hold no type. Members that encode alike only because a capsule value's type declares no encoding follow the canonical order of those capsule values (`EQ-045`). A set holds no pending value.
 - **Capsule values of a type that declares no ordering** (`EQ-045`): values the type's equality reports equal together; other values by the hash the type declares, if it declares one, and then by the order in which the run first compared them, which holds for the rest of the run.
 - **Capsule types of one name** (`EQ-045`): by the order in which the run created them.
+- **Ties among unknown members** (`EQ-044`): members that the orders above leave together, which only members told apart by nothing but capsule values their type reports equal can be, keep the order the set was given them in.
 
 ## Optional areas
 
