@@ -354,10 +354,12 @@ func TestConformance_SE031_DeepMarksAreDecidedOncePerMarkSet(t *testing.T) {
 		t.Errorf("decoding a value nested %d levels asked %d times whether a mark is deep, want at most %d", levels, asked, 4*levels)
 	}
 	// What such a document costs to decode is held to a budget as well, since
-	// every level attaches its mark to the values below it and what that
-	// costs is how the marks are held: building a set of them for each merge
-	// allocated 17 KB for every byte of this document, where it now takes
-	// 4.8 KB and the budget is 10.
+	// every value holds the marks of the levels above it. Attaching each
+	// level's mark to the values below it as the level was read merged every
+	// value's marks once for each level above it: 17 KB for every byte of
+	// this document while each merge built a set of the marks, and 3.7 KB
+	// once merges took them in order. Giving each value its marks once, when
+	// the value is read, takes 0.5 KB, and the budget is 1.
 	var before, after runtime.MemStats
 	runtime.GC()
 	runtime.ReadMemStats(&before)
@@ -365,7 +367,7 @@ func TestConformance_SE031_DeepMarksAreDecidedOncePerMarkSet(t *testing.T) {
 		t.Fatalf("the nested document did not decode a second time")
 	}
 	runtime.ReadMemStats(&after)
-	if grew, budget := after.TotalAlloc-before.TotalAlloc, uint64(10<<10)*uint64(len(nestedDoc)); grew > budget {
+	if grew, budget := after.TotalAlloc-before.TotalAlloc, uint64(1<<10)*uint64(len(nestedDoc)); grew > budget {
 		t.Errorf("decoding a value nested %d levels, %d bytes of document, allocated %d bytes, more than the %d it may",
 			levels, len(nestedDoc), grew, budget)
 	}

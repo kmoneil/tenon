@@ -209,6 +209,33 @@ func mergeMany(held, marks []Mark) ([]Mark, bool) {
 	return append(merged, fresh[j:]...), true
 }
 
+// mergeDistinct is mergeMarks for marks that are sorted and distinct already,
+// as the deep marks an attachment gives are: each is looked for among held
+// alone, by markLookup, and the two lists are merged in one pass, a held mark
+// first among those sharing an identifier. It builds a set only where held is
+// long, where mergeMarks, given many marks, builds one of them all.
+func mergeDistinct(held, marks []Mark) ([]Mark, bool) {
+	var seen markLookup
+	var merged []Mark
+	i := 0
+	for _, m := range marks {
+		if seen.holds(held, m) {
+			continue
+		}
+		if merged == nil {
+			merged = make([]Mark, 0, len(held)+len(marks))
+		}
+		for ; i < len(held) && held[i].MarkID() <= m.MarkID(); i++ {
+			merged = append(merged, held[i])
+		}
+		merged = append(merged, m)
+	}
+	if merged == nil {
+		return held, false
+	}
+	return append(merged, held[i:]...), true
+}
+
 // placeMark returns where m belongs in a list of marks sorted by identifier,
 // which is after the marks that share its identifier, so that marks arriving
 // later sit behind those held already, and whether the list holds m already.
@@ -308,7 +335,9 @@ func deepMarks(marks []Mark) []Mark {
 // attachment attaches deep marks to everything within a value. It relies on
 // what it keeps: a value carrying a deep mark has it on every value within
 // it, except the members of a set, which carry no marks. Attaching a mark to
-// a value that carries it already can therefore stop there.
+// a value that carries it already can therefore stop there. A value the
+// decoder is reading does not keep it until it is settled, so settleDeep
+// walks that value itself and takes from an attachment only the mark sets.
 //
 // Values that held the same marks before the attachment hold the same marks
 // after it, so they share one mark set rather than each holding a copy. Most
@@ -387,7 +416,7 @@ func (a *attachment) merged(held *markSet) (*markSet, bool) {
 	if set, ok := a.sets[held]; ok {
 		return set, set != held
 	}
-	list, grew := mergeMarks(held.list, a.deep)
+	list, grew := mergeDistinct(held.list, a.deep)
 	set := held
 	if grew {
 		set = &markSet{list: list}
@@ -397,6 +426,107 @@ func (a *attachment) merged(held *markSet) (*markSet, bool) {
 	}
 	a.sets[held] = set
 	return set, grew
+}
+
+// withOwnMarks returns v carrying marks on itself alone, as WithMarks does but
+// for a deep mark, which it leaves for settleDeep to give the values within v.
+// The decoder reads a value this way, part by part, and settles it once read.
+func withOwnMarks(v Value, marks []Mark) Value {
+	for i, m := range marks {
+		if m == nil || !comparableMark(m) {
+			usagePanic("WithMarks called with mark %d of type %T, which cannot be told from other marks", i, m)
+		}
+	}
+	merged, grew := mergeMarks(v.n.markList(), marks)
+	if !grew {
+		return v
+	}
+	nn := *v.n
+	nn.marks = &markSet{list: merged}
+	return Value{&nn}
+}
+
+// settleDeep gives n, and every value within it but a set's members, the deep
+// marks the values above it carry: those a attaches, nil where n is the value
+// read. The decoder gives each part of a value only the marks listed on it,
+// and makes this one pass when the value is read, outside in, so that each
+// value's marks are merged once. Attached level by level as each level is
+// read, a value's marks were merged once for every deep mark above it, which
+// for a nest of d levels comes to the cube of d.
+//
+// Among marks sharing an identifier, a value holds its own first, then those
+// of the value nearest above it, and so on out, which is the order attaching
+// them level by level gives. It walks every value rather than stopping at one
+// that holds the marks already, as attach does: until this pass nothing has
+// given the values within a value its deep marks, so holding them says
+// nothing of those values.
+func settleDeep(n *node, a *attachment) *node {
+	own := n.markList()
+	out, holds := n, own
+	if a != nil {
+		if marks, grew := a.merged(n.marks); grew {
+			nn := *n
+			nn.marks = marks
+			out, holds = &nn, marks.list
+		}
+	}
+	// What the values within n are given: n's own deep marks, then those n
+	// was given. Where every mark of n's own is deep, that is the list n now
+	// holds, which they share rather than each level making it twice.
+	below := a
+	switch deep := deepMarks(own); {
+	case deep == nil:
+	case len(deep) == len(own):
+		below = &attachment{deep: holds}
+	case a == nil:
+		below = &attachment{deep: deep}
+	default:
+		list, _ := mergeDistinct(deep, a.deep)
+		below = &attachment{deep: list}
+	}
+	if n.state != stateKnown || n.typ.t.kind == KindSet || below == nil && !n.markedWithin {
+		// A set keeps its deep marks, and Elements gives them to a member as
+		// it returns it. With no deep mark to give, only a value holding a
+		// marked value can hold one that has deep marks of its own to give.
+		return out
+	}
+	switch data := n.data.(type) {
+	case []Value:
+		var members []Value
+		for i, m := range data {
+			if r := settleDeep(m.n, below); r != m.n {
+				if members == nil {
+					members = slices.Clone(data)
+				}
+				members[i] = Value{r}
+			}
+		}
+		if members != nil {
+			if out == n {
+				nn := *n
+				out = &nn
+			}
+			out.data, out.markedWithin = members, true
+		}
+	case []mapEntry:
+		var entries []mapEntry
+		for i, e := range data {
+			if r := settleDeep(e.val.n, below); r != e.val.n {
+				if entries == nil {
+					entries = slices.Clone(data)
+				}
+				entries[i].val = Value{r}
+			}
+		}
+		if entries != nil {
+			if out == n {
+				nn := *n
+				out = &nn
+			}
+			out.data, out.markedWithin = entries, true
+		}
+	}
+	return out
 }
 
 // retrievedMembers returns the members of a known set as a caller retrieves

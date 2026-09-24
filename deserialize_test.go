@@ -284,6 +284,32 @@ func TestConformance_SE002_OnlyTheEncodingDecodes(t *testing.T) {
 	wantDecodeFailure(t, "version 2", "da74656e00 82 02 83 00 01 f5", tenon.CodeSerializeUnsupportedVersion)
 }
 
+// TestConformance_SE031_AMarkListedAgainIsRefusedWhereItFirstIs holds the
+// refusal of a document that lists a deep mark on a value whose container
+// carries it already to name the first value listing it again: the byte where
+// the input departs from the encoding of the value it describes. A list lists
+// the deep mark of the list holding it again, beside a plain mark, and a
+// number two levels within it lists the mark again as well, which the input
+// holds ahead of the list's marks. The number's listing repeats a mark it
+// carries already, since a deep mark reaches every value within the value
+// carrying it (MK-008), past a list that carries the mark itself.
+func TestConformance_SE031_AMarkListedAgainIsRefusedWhereItFirstIs(t *testing.T) {
+	conformance.Covers(t, "SE-031", "SE-002", "MK-008")
+	// A list of lists of lists of numbers carrying the deep mark, holding a
+	// list carrying it again and the plain mark, which holds a list holding
+	// the number, which carries it again too.
+	before := document + "83 00 82 04 82 04 82 04 02 da74656e02 82 81 da74656e02 82 81 81"
+	input := before + "da74656e02 82 01 81 81 6164 82 81 6164 81 616d 81 81 6164"
+	_, failure, ok := tenon.Deserialize(fromHex(t, input), decoders)
+	if ok {
+		t.Fatal("a document listing a deep mark again decoded")
+	}
+	want := fmt.Sprintf("differs from byte %d", len(fromHex(t, before)))
+	if d := failure.Diagnostics(); len(d) != 1 || d[0].Code != tenon.CodeSerializeNotCanonical || !strings.Contains(d[0].Message, want) {
+		t.Errorf("%v, want %s saying it %s", failure, tenon.CodeSerializeNotCanonical, want)
+	}
+}
+
 func TestConformance_SE043_DecodersAreSupplied(t *testing.T) {
 	conformance.Covers(t, "SE-043", "SE-051")
 	wantDecodeFailure(t, "an unknown capsule", document+"83 00 82 09 63 782f79 f6", tenon.CodeSerializeUnknownCapsule)
@@ -464,6 +490,53 @@ func TestConformance_SE005_DecodingWorkIsBounded(t *testing.T) {
 	}
 	if !ok || !tenon.Identical(got, one) {
 		t.Errorf("the value with %d marks sharing an identifier came back as %v, %v", len(shared), got, failure)
+	}
+}
+
+// TestConformance_SE005_DeepMarksNestedLevelUponLevel holds decoding a nest of
+// lists, each level carrying a deep mark of its own, to work in proportion to
+// the marks it gives: every value holds the deep marks of every level above
+// it, so a nest of d levels holds about d*d/2 of them, and a document four
+// times as deep a little over sixteen times as many. Attaching each level's
+// mark to everything below it as the level was read merged every value's
+// marks once for each level above it, the cube of d. The marks share one
+// identifier and are told apart by their payloads, which one mark decoder is
+// enough to read. Allocated bytes are the reading.
+func TestConformance_SE005_DeepMarksNestedLevelUponLevel(t *testing.T) {
+	conformance.Covers(t, "SE-005", "MK-008", "SE-031")
+	read := tenon.Decoders{Marks: map[string]tenon.MarkDecoder{
+		"level": func(p tenon.Value, _ bool) (tenon.Mark, []tenon.Diagnostic) {
+			return deepNote{"level", p.AsString()}, nil
+		},
+	}}
+	var allocated [2]uint64
+	for k, levels := range []int{60, 240} {
+		nest := n(0)
+		for level := range levels {
+			nest = tenon.WithMarks(tenon.ListVal(nest.Type(), nest), deepNote{"level", fmt.Sprintf("level %d", level)})
+		}
+		nests := make([]tenon.Value, 16)
+		for i := range nests {
+			nests[i] = nest
+		}
+		v := tenon.ListVal(nest.Type(), nests...)
+		doc, failure, ok := tenon.Serialize(v)
+		if !ok {
+			t.Fatalf("Serialize(16 nests of %d levels) failed: %v", levels, failure)
+		}
+		var before, after runtime.MemStats
+		runtime.GC()
+		runtime.ReadMemStats(&before)
+		got, failure, ok := tenon.Deserialize(doc, read)
+		runtime.ReadMemStats(&after)
+		if !ok || !tenon.Identical(got, v) {
+			t.Fatalf("16 nests of %d levels came back as %v, %v", levels, got, failure)
+		}
+		allocated[k] = after.TotalAlloc - before.TotalAlloc
+	}
+	if grew := float64(allocated[1]) / float64(allocated[0]); grew > 20 {
+		t.Errorf("nests four times as deep allocated %.1f times as much (%d bytes, then %d), where the marks they hold are a little over sixteen times as many",
+			grew, allocated[0], allocated[1])
 	}
 }
 

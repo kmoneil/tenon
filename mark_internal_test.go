@@ -5,6 +5,7 @@ import (
 	"math/rand"
 	"slices"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/kmoneil/tenon/conformance"
@@ -399,6 +400,13 @@ func TestMergeMarksIsTheScan(t *testing.T) {
 		if grew != (len(want) > len(held)) || !slices.Equal(got, want) {
 			t.Fatalf("mergeMarks(%v, %v) = %v, %v; want %v", held, marks, got, grew, want)
 		}
+		// Marks sorted and distinct already, as an attachment's deep marks
+		// are, merge in one pass to what mergeMarks gives them.
+		distinct := scanMerge(nil, marks)
+		want, wantGrew := mergeMarks(held, distinct)
+		if got, grew := mergeDistinct(held, distinct); grew != wantGrew || !slices.Equal(got, want) {
+			t.Fatalf("mergeDistinct(%v, %v) = %v, %v; want %v, %v", held, distinct, got, grew, want, wantGrew)
+		}
 		// Many marks that are all held already add nothing, however they
 		// are ordered, and the list held comes back as it was.
 		again := slices.Clone(held)
@@ -607,4 +615,123 @@ func scanAside(list, aside []Mark) []Mark {
 		}
 	}
 	return out
+}
+
+// payloadMark is an encodable mark for the internal tests, deep or not, told
+// apart from the others of its identifier by its payload, which says whether
+// it is deep so that a decoder can make it again.
+type payloadMark struct {
+	id, text string
+}
+
+func (m payloadMark) MarkID() string             { return m.id }
+func (payloadMark) Propagation() Propagation     { return Propagate }
+func (payloadMark) Redacting() bool              { return false }
+func (m payloadMark) Deep() bool                 { return strings.HasPrefix(m.text, "deep") }
+func (m payloadMark) MarkPayload() (Value, bool) { return String(m.text), true }
+
+// TestDecodedDeepMarksAreHeldAsAttached holds what the decoder gives every
+// value within a value it reads to what attaching the marks level by level
+// gives: the same marks, each value's sorted by identifier, and the same
+// claims to hold a marked value. The order of marks that share an identifier
+// is not held: an encoding lists a value's marks in the order of their
+// encodings and leaves out a deep mark its container carries, so no reading
+// can know the order they were attached in. Values of every kind are nested
+// under marks of two identifiers, deep and not, drawn with repeats, so that
+// ties are met, and deep marks a value carries that its container carries
+// too.
+func TestDecodedDeepMarksAreHeldAsAttached(t *testing.T) {
+	r := rand.New(rand.NewSource(1608))
+	read := Decoders{Marks: map[string]MarkDecoder{}}
+	for _, id := range []string{"a", "b"} {
+		read.Marks[id] = func(p Value, _ bool) (Mark, []Diagnostic) { return payloadMark{id, p.AsString()}, nil }
+	}
+	mark := func() Mark {
+		kind := []string{"deep", "flat"}[r.Intn(2)]
+		return payloadMark{[]string{"a", "b"}[r.Intn(2)], fmt.Sprintf("%s %d", kind, r.Intn(3))}
+	}
+	marked := func(v Value) Value {
+		ms := make([]Mark, r.Intn(3))
+		for i := range ms {
+			ms[i] = mark()
+		}
+		return WithMarks(v, ms...)
+	}
+	num := Type{numberType}
+	var build func(depth int) Value
+	build = func(depth int) Value {
+		if depth == 0 {
+			switch r.Intn(3) {
+			case 0:
+				return marked(NumberFromInt(int64(r.Intn(4))))
+			case 1:
+				return marked(Unknown(num))
+			}
+			// A set keeps a deep mark on itself, and its members carry none.
+			return marked(SetVal(num, NumberFromInt(1), NumberFromInt(2)))
+		}
+		inner := build(depth - 1)
+		var v Value
+		switch r.Intn(4) {
+		case 0:
+			// Two elements of one type, one of them marked again.
+			v = ListVal(inner.Type(), inner, marked(inner))
+		case 1:
+			v = TupleVal(inner, NumberFromInt(7))
+		case 2:
+			v = ObjectVal(map[string]Value{"a": inner, "b": marked(String("x"))})
+		default:
+			v = MapVal(inner.Type(), map[string]Value{"k": inner})
+		}
+		return marked(v)
+	}
+	// sameThroughout reports whether two values hold the same marks at every
+	// place, sorted by identifier.
+	var sameThroughout func(a, b *node) bool
+	sameThroughout = func(a, b *node) bool {
+		x, y := a.markList(), b.markList()
+		sorted := func(ms []Mark) bool {
+			return slices.IsSortedFunc(ms, func(p, q Mark) int { return strings.Compare(p.MarkID(), q.MarkID()) })
+		}
+		if !sameMarkSet(x, y) || !sorted(x) || !sorted(y) || a.markedWithin != b.markedWithin {
+			return false
+		}
+		switch x := a.data.(type) {
+		case []Value:
+			y, ok := b.data.([]Value)
+			if !ok || len(x) != len(y) {
+				return false
+			}
+			for i := range x {
+				if !sameThroughout(x[i].n, y[i].n) {
+					return false
+				}
+			}
+		case []mapEntry:
+			y, ok := b.data.([]mapEntry)
+			if !ok || len(x) != len(y) {
+				return false
+			}
+			for i := range x {
+				if !sameThroughout(x[i].val.n, y[i].val.n) {
+					return false
+				}
+			}
+		}
+		return true
+	}
+	for range conformance.Iterations(t, 200) {
+		v := build(1 + r.Intn(5))
+		b, failure, ok := Serialize(v)
+		if !ok {
+			t.Fatalf("Serialize(%v) failed: %v", v, failure)
+		}
+		got, failure, ok := Deserialize(b, read)
+		if !ok {
+			t.Fatalf("Deserialize(Serialize(%v)) failed: %v", v, failure)
+		}
+		if !sameThroughout(got.n, v.n) || !Identical(got, v) {
+			t.Fatalf("%v came back as %v, holding its marks otherwise", v, got)
+		}
+	}
 }

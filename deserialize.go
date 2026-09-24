@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"math/big"
+	"slices"
 
 	"github.com/kmoneil/tenon/internal/cbor"
 	"github.com/kmoneil/tenon/internal/decimal"
@@ -116,6 +117,9 @@ type decoder struct {
 	capsules map[string]Type
 	marks    map[string]MarkDecoder
 	depth    int
+	// deferred says a deep mark was read, which the decoder gives only the
+	// value it is listed on until the value read is settled (settleDeep).
+	deferred bool
 }
 
 // malformed returns the error of input that is not a document of a value, at
@@ -259,7 +263,13 @@ func (d *decoder) item() (Value, *decodeError) {
 		if err != nil {
 			return Value{}, err
 		}
-		return d.content(t)
+		v, err := d.content(t)
+		if err != nil || !d.deferred {
+			return v, err
+		}
+		// Each part was given the marks listed on it and no more; one pass
+		// gives every value the deep marks of the values above it.
+		return Value{settleDeep(v.n, nil)}, nil
 	case k == itemPending && n == 3:
 		c, err := d.constraint()
 		if err != nil {
@@ -576,7 +586,13 @@ func (d *decoder) content(t Type) (Value, *decodeError) {
 		if derr != nil {
 			return Value{}, derr
 		}
-		return WithMarks(v, marks...), nil
+		// A deep mark reaches the values within v when the value read is
+		// settled, which merges each value's marks once, rather than here,
+		// which would merge them again at every level a nest has.
+		if !d.deferred && slices.ContainsFunc(marks, isDeep) {
+			d.deferred = true
+		}
+		return withOwnMarks(v, marks), nil
 	}
 	switch t.t.kind {
 	case KindBool:
