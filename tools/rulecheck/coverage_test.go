@@ -81,19 +81,24 @@ func TestCheckCoverage(t *testing.T) {
 		wantErr bool
 		want    string // a substring of the error if wantErr, else of the output
 	}{
-		{"nothing enforced", "", nil, false, "no rules enforced yet"},
-		{"whole area covered", "AA\n", coveredBy("AA-001", "AA-002"), false, "all 2 enforced rules covered, 0 deferred"},
-		{"withdrawn rule not enforced", "BB\n", coveredBy("BB-001"), false, "all 1 enforced rules covered, 0 deferred"},
-		{"single rule", "AA-002\n", coveredBy("AA-002"), false, "all 1 enforced rules covered"},
-		{"deferred rule", "AA\ndefer AA-002 needs values\n", coveredBy("AA-001"), false, "all 1 enforced rules covered, 1 deferred"},
-		{"coverage beyond the enforced rules", "AA-001\n", coveredBy("AA-001", "BB-001"), false, "all 1 enforced rules covered"},
-		{"covered but not named", "AA-002\n", map[string]string{"AA-002": "TestConformance_AA001_Other"}, true, "AA-002 is covered only by tests not named for it, TestConformance_AA001_Other among them"},
+		{"nothing enforced fails loudly", "", nil, true, "area AA has 2 enforceable rule(s) that no line enforces"},
+		{"an area left out", "AA\n", coveredBy("AA-001", "AA-002"), true, "area BB has 1 enforceable rule(s) that no line enforces"},
+		{"whole areas covered", "AA\nBB\n", coveredBy("AA-001", "AA-002", "BB-001"), false, "all 3 enforced rules covered, 0 deferred"},
+		{"withdrawn rule not enforced", "AA\nBB\n", coveredBy("AA-001", "AA-002", "BB-001"), false, "all 3 enforced rules covered, 0 deferred"},
+		{"single rules", "AA-001\nAA-002\nBB-001\n", coveredBy("AA-001", "AA-002", "BB-001"), false, "all 3 enforced rules covered"},
+		{"deferred rule", "AA\nBB\ndefer AA-002 needs values\n", coveredBy("AA-001", "BB-001"), false, "all 2 enforced rules covered, 1 deferred"},
+		{"coverage beyond the enforced rules", "AA\nBB\n", coveredBy("AA-001", "AA-002", "BB-001", "CC-001"), false, "all 3 enforced rules covered"},
+		{"covered but not named", "AA\nBB\n", func() map[string]string {
+			m := coveredBy("AA-001", "BB-001")
+			m["AA-002"] = "TestConformance_AA001_Other"
+			return m
+		}(), true, "AA-002 is covered only by tests not named for it, TestConformance_AA001_Other among them"},
 
-		{"uncovered rule", "AA\n", coveredBy("AA-002"), true, "1 enforced rule(s) have no passing conformance test:\n  AA-001"},
-		{"no records at all", "AA\n", nil, true, "no coverage records found in /cover"},
-		{"covered deferral", "AA\ndefer AA-002 needs values\n", coveredBy("AA-001", "AA-002"), true, "AA-002 is deferred, but TestConformance_AA002_X covers it; remove the deferral"},
-		{"record for a rule not in the manifest", "", coveredBy("ZZ-001"), true, "TestConformance_ZZ001_X covers ZZ-001, which is not in the manifest"},
-		{"record for a withdrawn rule", "", coveredBy("BB-002"), true, "TestConformance_BB002_X covers BB-002, which is withdrawn"},
+		{"uncovered rule", "AA\nBB\n", coveredBy("AA-002", "BB-001"), true, "1 enforced rule(s) have no passing conformance test:\n  AA-001"},
+		{"no records at all", "AA\nBB\n", nil, true, "no coverage records found in /cover"},
+		{"covered deferral", "AA\nBB\ndefer AA-002 needs values\n", coveredBy("AA-001", "AA-002", "BB-001"), true, "AA-002 is deferred, but TestConformance_AA002_X covers it; remove the deferral"},
+		{"record for a rule not in the manifest", "AA\nBB\n", coveredBy("AA-001", "AA-002", "BB-001", "ZZ-001"), true, "TestConformance_ZZ001_X covers ZZ-001, which is not in the manifest"},
+		{"record for a withdrawn rule", "AA\nBB\n", coveredBy("AA-001", "AA-002", "BB-001", "BB-002"), true, "TestConformance_BB002_X covers BB-002, which is withdrawn"},
 		{"area without enforceable rules", "CC\n", nil, true, "line 1: area CC has no enforceable rules in the manifest"},
 		{"rule not in the manifest", "AA-009\n", nil, true, "line 1: rule AA-009 is not in the manifest"},
 		{"outline rule", "AA-003\n", nil, true, "line 1: rule AA-003 is outline and cannot be enforced"},
