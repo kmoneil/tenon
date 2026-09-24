@@ -1228,3 +1228,28 @@ func TestConformance_UN002_MembersNarrowing(t *testing.T) {
 		tenon.Members(tenon.ErrorVal(tenon.Diagnostic{Code: "app.x", Message: "m"}))
 	})
 }
+
+// TestConformance_ER001_NarrowChecksUsageFirst holds Narrow to judging every
+// narrowing before it answers anything: a narrowing that could never apply
+// panics wherever it stands, ahead of a contradiction among the others, and
+// an error operand does not swallow the zero Narrowing. Applicability needs
+// a type, which an error value does not have, so an error operand still
+// propagates past narrowings whose kinds are well formed.
+func TestConformance_ER001_NarrowChecksUsageFirst(t *testing.T) {
+	conformance.Covers(t, "ER-001", "UN-002")
+	n := tenon.NumberFromInt
+	min := tenon.NumberMin(n(1), true)
+	mustPanicUsage(t, "does not apply to a pending value", func() {
+		tenon.Narrow(tenon.Pending(tenon.Any()), tenon.NotNull(), tenon.Null(), min)
+	})
+	mustPanicUsage(t, "does not apply to a pending value", func() {
+		tenon.Narrow(tenon.Pending(tenon.Any()), min, tenon.NotNull(), tenon.Null())
+	})
+	failed := tenon.ErrorVal(tenon.Diagnostic{Code: "app.x", Message: "m"})
+	mustPanicUsage(t, "the zero Narrowing", func() {
+		tenon.Narrow(failed, tenon.Narrowing{})
+	})
+	if got := tenon.Narrow(failed, min); !tenon.Identical(got, failed) {
+		t.Errorf("an error operand under a well-formed narrowing gave %v, want itself", got)
+	}
+}

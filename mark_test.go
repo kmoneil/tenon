@@ -2,6 +2,7 @@ package tenon_test
 
 import (
 	"fmt"
+	"math"
 	"runtime"
 	"slices"
 	"strings"
@@ -1089,3 +1090,27 @@ func TestConformance_VA003_TheFlagsAgreeWithAFullWalk(t *testing.T) {
 		t.Errorf("only %d values were checked; the corpus holds more", checked)
 	}
 }
+
+// TestConformance_MK001_AMarkMustEqualItself holds WithMarks to refusing a
+// mark that Go equality cannot tell from other marks: a mark of a type that
+// is not comparable, and one that compares and still fails, holding a NaN,
+// the one way a Go value is unequal to itself. Either would vanish from
+// every lookup that stored it.
+func TestConformance_MK001_AMarkMustEqualItself(t *testing.T) {
+	conformance.Covers(t, "MK-001", "ER-001")
+	one := tenon.NumberFromInt(1)
+	mustPanicUsage(t, "holding a value that does not equal itself", func() {
+		tenon.WithMarks(one, nanMark{value: math.NaN()})
+	})
+	if v := tenon.WithMarks(one, nanMark{value: 1}); len(marksOf(v)) != 1 {
+		t.Errorf("a mark holding an ordinary number was refused: %v", v)
+	}
+}
+
+// nanMark is a mark holding a float, so that one holding a NaN is a mark
+// unequal to itself.
+type nanMark struct{ value float64 }
+
+func (nanMark) MarkID() string                 { return "nan" }
+func (nanMark) Propagation() tenon.Propagation { return tenon.Propagate }
+func (nanMark) Redacting() bool                { return false }
