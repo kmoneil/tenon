@@ -1056,3 +1056,36 @@ func BenchmarkMarkUnions(b *testing.B) {
 		}
 	}
 }
+
+// TestConformance_VA003_TheFlagsAgreeWithAFullWalk holds the two flags every
+// construction site must set, partial and markedWithin, to what a full walk
+// of the value finds: a collection or structural value holds a member that
+// is not known exactly where partial says so, which is what makes its range
+// more than a singleton and the value not known (VA-002, VA-003), and holds
+// a marked value exactly where markedWithin says so. It walks the whole
+// corpus and its deep-marked, unmarked, decoded and converted forms, so a
+// site that mis-sets a flag fails here whichever way the value was built.
+func TestConformance_VA003_TheFlagsAgreeWithAFullWalk(t *testing.T) {
+	conformance.Covers(t, "VA-003", "VA-002")
+	deep, shallow := stamp{id: "deep", deep: true}, stamp{id: "shallow"}
+	checked := 0
+	for _, v := range values.All() {
+		checked += tenon.FlagsChecked(t, v)
+		marked := tenon.WithMarks(v, deep, shallow)
+		checked += tenon.FlagsChecked(t, marked)
+		unmarked, _ := tenon.UnmarkDeep(marked)
+		checked += tenon.FlagsChecked(t, unmarked)
+		if b, _, ok := tenon.Serialize(v); ok {
+			if decoded, _, ok := tenon.Deserialize(b, decoders); ok {
+				checked += tenon.FlagsChecked(t, decoded)
+			}
+		}
+		if converted := tenon.Convert(v, tenon.Any(), tenon.Unsafe); !converted.IsError() {
+			checked += tenon.FlagsChecked(t, converted)
+		}
+	}
+	// A corpus that shrank to a handful of values would pass as cleanly.
+	if checked < 500 {
+		t.Errorf("only %d values were checked; the corpus holds more", checked)
+	}
+}
