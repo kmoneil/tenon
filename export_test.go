@@ -1,5 +1,7 @@
 package tenon
 
+import "testing"
+
 // RegisteredOperation describes a registered operation to the operand matrix,
 // which lives outside the package.
 type RegisteredOperation struct {
@@ -56,3 +58,8 @@ func SharedType(cs ...Constraint) (Type, bool) { return sharedType(cs...) }
 func SoleType(c Constraint) (Type, bool) { return soleType(c) }
 
 func AdmitsNone(c Constraint) bool { return admitsNone(c) }
+
+// FlagsChecked verifies, for tests outside the package, that v and every
+// value within it carry the partial and markedWithin flags a full walk
+// finds, and returns how many values it checked.
+func FlagsChecked(t *testing.T, v Value) int { return checkFlags(t, v) }

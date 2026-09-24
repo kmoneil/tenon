@@ -157,17 +157,21 @@ func TestMarkedWithinAgreesWithTheMembers(t *testing.T) {
 		Narrow(Unknown(Set(num)), NotNull(), Members(one), LengthMax(1)),
 		Narrow(Unknown(Tuple(Tuple())), NotNull()),
 	} {
-		checkMarkedWithin(t, v)
+		checkFlags(t, v)
 	}
 	if !nested.n.markedWithin || !ownTaken.n.markedWithin || allTaken.n.markedWithin {
 		t.Error("taking a value's own marks or all of them left the flag wrong")
 	}
 }
 
-// checkMarkedWithin fails t unless v, and every value v holds, says it holds a
-// marked member exactly when one of its members carries a mark or holds one.
-func checkMarkedWithin(t *testing.T, v Value) {
+// checkFlags fails t unless v, and every value within it, carries the flags
+// a full walk finds: partial exactly where a collection or structural value
+// holds a member that is not known, so that its range is not a singleton and
+// the value is not known (VA-003), and markedWithin exactly where it holds a
+// marked value. It returns how many values it checked, itself included.
+func checkFlags(t *testing.T, v Value) int {
 	t.Helper()
+	checked := 1
 	var members []Value
 	if v.n.state == stateKnown {
 		switch data := v.n.data.(type) {
@@ -179,14 +183,19 @@ func checkMarkedWithin(t *testing.T, v Value) {
 			}
 		}
 	}
-	want := false
+	wantMarked, wantPartial := false, false
 	for _, member := range members {
-		checkMarkedWithin(t, member)
-		want = want || member.n.marks != nil || member.n.markedWithin
+		checked += checkFlags(t, member)
+		wantMarked = wantMarked || member.n.marks != nil || member.n.markedWithin
+		wantPartial = wantPartial || !member.n.isKnown()
 	}
-	if v.n.markedWithin != want {
-		t.Errorf("%v says it holds a marked member: %t, want %t", v, v.n.markedWithin, want)
+	if v.n.markedWithin != wantMarked {
+		t.Errorf("%v says it holds a marked member: %t, want %t", v, v.n.markedWithin, wantMarked)
 	}
+	if v.n.partial != wantPartial {
+		t.Errorf("%v says it holds a member that is not known: %t, want %t", v, v.n.partial, wantPartial)
+	}
+	return checked
 }
 
 // TestPlainWritesOutNoMark holds plain to its doc, including in a state no
@@ -212,7 +221,7 @@ func TestPlainWritesOutNoMark(t *testing.T) {
 		if got := p.String(); got != tt.want {
 			t.Errorf("%v reads %s, want %s", tt.v, got, tt.want)
 		}
-		checkMarkedWithin(t, p)
+		checkFlags(t, p)
 	}
 	if a.n.plain() != a.n {
 		t.Error("a value with no mark was copied")
@@ -249,7 +258,7 @@ func TestDeepMarksAreAppliedAllTheWayDown(t *testing.T) {
 		Narrow(WithMarks(Unknown(Set(num)), deep), NotNull(), Members(one), LengthMax(1)),
 	} {
 		checkDeepMarks(t, v)
-		checkMarkedWithin(t, v)
+		checkFlags(t, v)
 	}
 	// Values that take a mark together share one mark set rather than holding
 	// a copy each.
