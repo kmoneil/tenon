@@ -999,3 +999,38 @@ func BenchmarkObjectDocuments(b *testing.B) {
 		})
 	}
 }
+
+// TestConformance_SE043_DecoderContracts holds the decoder hooks to their
+// contracts. Input that is wrong is data: a path step that is not
+// well-formed text reports the text failure, where dropping ReadText's
+// error once read it as an empty name. A caller that is wrong is a usage
+// error, refused up front where possible: a nil mark decoder before any
+// byte is read, a type in Capsules that is not a capsule type, and a mark
+// decoder returning a mark whose type declares no encoding, which could
+// never serialize again and once surfaced as serialize.not_canonical.
+func TestConformance_SE043_DecoderContracts(t *testing.T) {
+	conformance.Covers(t, "SE-043", "ER-001")
+	input := document + "82 02 81 83 65 6170702e78 61 6d 81 61ff"
+	got, failure, ok := tenon.Deserialize(fromHex(t, input), decoders)
+	if ok {
+		t.Fatalf("an ill-formed path step decoded: %v", got)
+	}
+	if d := failure.Diagnostics(); len(d) != 1 || d[0].Code != tenon.CodeSerializeMalformed ||
+		!strings.Contains(d[0].Message, "UTF-8") {
+		t.Errorf("an ill-formed path step reports %v, want serialize.malformed naming UTF-8", failure)
+	}
+
+	mustPanicUsage(t, `the decoder for the mark "m" is nil`, func() {
+		tenon.Deserialize(nil, tenon.Decoders{Marks: map[string]tenon.MarkDecoder{"m": nil}})
+	})
+	mustPanicUsage(t, "not Capsule", func() {
+		tenon.Deserialize(nil, tenon.Decoders{Capsules: []tenon.Type{tenon.NumberType()}})
+	})
+	marked := document + "83 00 01 da74656e02 82 f5 81 81 616d"
+	plain := tenon.Decoders{Marks: map[string]tenon.MarkDecoder{
+		"m": func(tenon.Value, bool) (tenon.Mark, []tenon.Diagnostic) { return stamp{id: "m"}, nil },
+	}}
+	mustPanicUsage(t, "declares no encoding, which cannot serialize again", func() {
+		tenon.Deserialize(fromHex(t, marked), plain)
+	})
+}

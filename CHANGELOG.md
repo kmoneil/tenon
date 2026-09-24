@@ -4,6 +4,13 @@
 
 ### Changed
 
+- `Deserialize` refuses a nil mark decoder up front as a usage error, and
+  panics on a mark decoder returning a mark whose type declares no
+  encoding, a broken contract that once surfaced as
+  `serialize.not_canonical` after the round trip failed. A path step that
+  is not well-formed text reports the text failure as
+  `serialize.malformed`, where it was read as an empty name. Deserialize's
+  doc now names every panic.
 - `Capsule` refuses an encoding identifier that is not valid UTF-8, as a
   usage error at the declaration, as serializing a mark whose identifier is
   not valid UTF-8 is refused. Through 0.5.0 the declaration was accepted,
