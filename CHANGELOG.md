@@ -12,6 +12,16 @@
 
 ### Fixed
 
+- `gotenon.Encode` of a rational that does not terminate fails with
+  `encode.inexact` however large its denominator. Through 0.5.0 a
+  denominator of more bits than the digit window has places was refused as
+  `number.out_of_range` without being factored, so `1/3^2100000` was called
+  out of range where `1/3` is inexact. Whether the number terminates is now
+  established from the denominator's bits alone, at no allocation, before
+  its size refuses it; only a denominator whose fives hide another factor is
+  still refused for its places. The inexact message writes the rational only
+  while it is small, since turning megabytes of bits into digits costs more
+  than a refusal may.
 - `gotenon.Encode` reports a value's failures in member order: a struct's
   attributes by name, and a map's keys by their normalized spelling. Through
   0.5.0 a struct's failures came in the order its fields are declared, and a
