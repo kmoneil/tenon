@@ -1234,6 +1234,13 @@ func TestConformance_CV027_TheTypeAConstraintGives(t *testing.T) {
 	serverType := tenon.Object(map[string]tenon.Type{
 		"name": str, "port": num, "tags": tenon.List(tenon.Object(map[string]tenon.Type{"k": str})),
 	})
+	// A field no attribute can fill is left out of the type a closed
+	// ObjectWith gives, even where its constraint is an ObjectWith of its
+	// own whose required field admits no type: the field is left out, as
+	// server's "none" is, rather than the whole giving none.
+	unfillable := tenon.ObjectWith(map[string]tenon.Field{
+		"o": tenon.Optional(tenon.ObjectWith(map[string]tenon.Field{"x": tenon.Required(tenon.OneOf())}, true)),
+	}, true)
 	// Where a constraint gives a type, whatever a pending value turns out to
 	// be converts to that type.
 	for _, tt := range []struct {
@@ -1246,6 +1253,7 @@ func TestConformance_CV027_TheTypeAConstraintGives(t *testing.T) {
 		{server, serverType},
 		{tenon.MapOf(server), tenon.Map(serverType)},
 		{tenon.OneOf(tenon.ListOf(is(str)), is(tenon.List(str)), tenon.OneOf()), tenon.List(str)},
+		{unfillable, tenon.Object(nil)},
 	} {
 		wantValue(t, "Convert(pending, "+tt.c.String()+")", tenon.Convert(pendingAny, tt.c, uns), tenon.Unknown(tt.want))
 	}
@@ -1276,6 +1284,9 @@ func TestConformance_CV027_TheTypeAConstraintGives(t *testing.T) {
 	wantValue(t, "unknown map, optional any", tenon.Convert(tenon.Unknown(tenon.Map(str)), loose, uns), tenon.Pending(loose))
 	// An empty tuple takes the element type the constraint gives.
 	wantValue(t, "empty tuple", tenon.Convert(tenon.TupleVal(), tenon.ListOf(server), safe), tenon.ListVal(serverType))
+	// The empty object converts to the unfillable constraint as it is: the
+	// conversion has no attribute to add.
+	wantValue(t, "an empty object against an unfillable optional field", tenon.Convert(obj(nil), unfillable, uns), obj(nil))
 }
 
 func TestConformance_CV002_ValuesInFullShapeConvertToThemselves(t *testing.T) {

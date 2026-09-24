@@ -185,6 +185,18 @@ func TestConformance_CV043_CanonicalForm(t *testing.T) {
 			[]tenon.Constraint{fields(false, "a", opt(anyC)), fields(false, "a", opt(anyC), "b", opt(anyC))}},
 		{"open before closed", []tenon.Constraint{fields(true, "a", opt(anyC)), fields(false, "a", opt(anyC))},
 			[]tenon.Constraint{fields(false, "a", opt(anyC)), fields(true, "a", opt(anyC))}},
+		// Two OneOf constraints meet the order only within another
+		// constraint, a canonical OneOf flattening its own: list elements
+		// here. They order by their members in turn, the shorter first
+		// where one's members are a prefix of the other's.
+		{"OneOf members in turn, shorter first", []tenon.Constraint{
+			tenon.ListOf(tenon.OneOf(is(boo), is(str))),
+			tenon.ListOf(tenon.OneOf(is(boo), is(num), is(str))),
+			tenon.ListOf(tenon.OneOf(is(boo), is(num)))},
+			[]tenon.Constraint{
+				tenon.ListOf(tenon.OneOf(is(boo), is(num))),
+				tenon.ListOf(tenon.OneOf(is(boo), is(num), is(str))),
+				tenon.ListOf(tenon.OneOf(is(boo), is(str)))}},
 	} {
 		got := unifyOK(t, safe, tenon.OneOf(tt.given...))
 		if want := tenon.OneOf(tt.want...); !got.Equal(want) {
