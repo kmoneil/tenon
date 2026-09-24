@@ -55,3 +55,21 @@ func FromParts(c *big.Int, exp int64) (Dec, error) {
 	}
 	return fromBig(new(big.Int).Set(c), exp)
 }
+
+// FromInt64Parts returns the number c × 10^exp, as FromParts does, for a
+// coefficient that is an int64: the same Dec or the same error, without a
+// big.Int.
+func FromInt64Parts(c, exp int64) (Dec, error) {
+	if c == 0 {
+		return Dec{}, nil
+	}
+	// An exponent above the window puts the leading digit above it, and one
+	// further below the window than an int64 has trailing zeros, eighteen,
+	// leaves a digit below it however many are stripped. Both are refused
+	// before the exponent takes part in a sum, which near the top of an int64
+	// would overflow and could read as in range.
+	if exp > MaxAdjustedExponent || exp < -MaxAdjustedExponent-18 {
+		return Dec{}, ErrOutOfRange
+	}
+	return fromSmall(c, exp)
+}

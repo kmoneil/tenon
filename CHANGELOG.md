@@ -113,6 +113,15 @@
   an object 41 where it made 241, and a map 18 where it made 218. A name is
   written only when a constructor panics, and every message reads as before.
 
+- Writing and reading a number builds no big integer for it unless it needs
+  one: where its digits, without trailing zeros, fit in 64 bits, as nearly
+  every number's do. Writing an integer took two allocations for that and
+  reading any number four, and `Deserialize` pays for both, since it writes
+  the value it read again to check that its input is canonical. A list of 100
+  small integers took 508 allocations to serialize and takes 309, and 1,119
+  to deserialize and takes 523; a list of 100 fractions took 925 to
+  deserialize and takes 525. Every encoding is what it was.
+
 ## 0.4.0 (2026-09-21)
 
 Bounded work on input from outside. `Deserialize` now promises that its work
