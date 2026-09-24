@@ -182,6 +182,13 @@ func (r *Reader) ReadHead() (Head, error) {
 			r.pos = start
 			return Head{}, r.fail(start, "a floating-point number, which the encoding does not use")
 		}
+		// RFC 8949 3.3: f8 followed by a byte below 32 is not well-formed,
+		// so a two-byte spelling of false, true or null is refused here, not
+		// read as the value.
+		if info == 24 && arg < 32 {
+			r.pos = start
+			return Head{}, r.fail(start, "a two-byte simple value below 32, which is not well-formed")
+		}
 		if arg != SimpleFalse && arg != SimpleTrue && arg != SimpleNull {
 			r.pos = start
 			return Head{}, r.fail(start, "the simple value %d, which the encoding does not use", arg)
@@ -312,12 +319,15 @@ func (r *Reader) ReadBool() (bool, error) {
 }
 
 // ReadNull reads null, reporting whether the next item was null; any other
-// item is left unread.
+// item, a head that cannot be read included, is left unread. It advances
+// past the whole head it read, not one byte, so no byte of the head is read
+// again as the next item.
 func (r *Reader) ReadNull() bool {
-	h, err := r.PeekHead()
+	start := r.pos
+	h, err := r.ReadHead()
 	if err != nil || h.Major != MajorSimple || h.Arg != SimpleNull {
+		r.pos = start
 		return false
 	}
-	r.pos++
 	return true
 }

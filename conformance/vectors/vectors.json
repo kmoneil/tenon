@@ -95,6 +95,7 @@
     {"name":"deep mark listed on a member","hex":"da74656e0082018300820402da74656e028281da74656e0282018181616481816164","code":"serialize.not_canonical"},
     {"name":"marks out of order","hex":"da74656e008201830001da74656e0282f58283617003617681616d","code":"serialize.not_canonical"},
     {"name":"indefinite-length array","hex":"da74656e00820183008204029f01ff","code":"serialize.not_canonical"},
+    {"name":"two-byte simple value","hex":"da74656e008201830001f816","code":"serialize.malformed"},
     {"name":"no document tag","hex":"d9d9f78201830001f5","code":"serialize.malformed"},
     {"name":"byte after the document","hex":"da74656e008201830001f500","code":"serialize.malformed"},
     {"name":"tuple of the wrong length","hex":"da74656e00820183008207810182f5f5","code":"serialize.malformed"},

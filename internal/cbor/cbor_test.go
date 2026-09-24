@@ -114,6 +114,14 @@ func TestReaderRefusesWhatTheSubsetDoesNotWrite(t *testing.T) {
 		{"a break", "ff", func(r *Reader) error { _, err := r.ReadHead(); return err }, false, "31"},
 		{"a float", "f9 0000", func(r *Reader) error { _, err := r.ReadHead(); return err }, false, "floating-point"},
 		{"undefined", "f7", func(r *Reader) error { _, err := r.ReadHead(); return err }, false, "simple value 23"},
+		// RFC 8949 3.3: a two-byte sequence f8 with a byte below 0x20 is not
+		// well-formed, the spellings of false, true and null included.
+		{"false in two bytes", "f8 14", func(r *Reader) error { _, err := r.ReadHead(); return err }, false, "not well-formed"},
+		{"true in two bytes", "f8 15", func(r *Reader) error { _, err := r.ReadHead(); return err }, false, "not well-formed"},
+		{"null in two bytes", "f8 16", func(r *Reader) error { _, err := r.ReadHead(); return err }, false, "not well-formed"},
+		{"the last two-byte value below 32", "f8 1f", func(r *Reader) error { _, err := r.ReadHead(); return err }, false, "not well-formed"},
+		// f8 20 is well-formed: simple value 32, which the subset does not use.
+		{"an unused two-byte simple value", "f8 20", func(r *Reader) error { _, err := r.ReadHead(); return err }, false, "simple value 32"},
 		{"the wrong major type", "01", func(r *Reader) error { _, err := r.ReadText(); return err }, false, "expected a text string"},
 		{"a long text", "63 6162", func(r *Reader) error { _, err := r.ReadText(); return err }, false, "longer than"},
 		{"invalid UTF-8", "61 ff", func(r *Reader) error { _, err := r.ReadText(); return err }, false, "UTF-8"},
@@ -136,6 +144,28 @@ func TestReaderRefusesWhatTheSubsetDoesNotWrite(t *testing.T) {
 		}
 		if r.Offset() != 0 {
 			t.Errorf("%s: the refusal left the reader at byte %d", tt.name, r.Offset())
+		}
+	}
+}
+
+// TestReadNullAdvancesPastTheWholeHead pins where ReadNull leaves the reader:
+// past every byte of a null it reads, and at the byte it started on for
+// anything else, a head it cannot read included. Before the reader refused
+// f8 16, ReadNull advanced one byte past it and the second byte was read
+// again as the next item.
+func TestReadNullAdvancesPastTheWholeHead(t *testing.T) {
+	r := NewReader(mustHex(t, "f6"))
+	if !r.ReadNull() || r.Offset() != 1 {
+		t.Errorf("reading null left the reader at byte %d", r.Offset())
+	}
+	for _, input := range []string{"f8 16", "f5", "01", ""} {
+		r := NewReader(mustHex(t, input))
+		if r.ReadNull() {
+			t.Errorf("%q: read as null", input)
+			continue
+		}
+		if r.Offset() != 0 {
+			t.Errorf("%q: ReadNull left the reader at byte %d", input, r.Offset())
 		}
 	}
 }

@@ -284,6 +284,24 @@ func TestConformance_SE002_OnlyTheEncodingDecodes(t *testing.T) {
 	wantDecodeFailure(t, "version 2", "da74656e00 82 02 83 00 01 f5", tenon.CodeSerializeUnsupportedVersion)
 }
 
+// TestConformance_SE002_TwoByteSimpleValues holds documents spelling false,
+// true or null in two bytes to serialize.malformed: RFC 8949 3.3 says f8
+// followed by a byte below 32 is not well-formed, so such input is not CBOR,
+// not a longer spelling of the value. v0.1.0 read f8 16 as null and its
+// second byte again as the next item, and reported what it then made of the
+// input as serialize.not_canonical.
+func TestConformance_SE002_TwoByteSimpleValues(t *testing.T) {
+	conformance.Covers(t, "SE-002", "SE-051")
+	for _, tt := range []struct{ name, input string }{
+		{"false in two bytes", document + "83 00 01 f8 14"},
+		{"true in two bytes", document + "83 00 01 f8 15"},
+		{"null in two bytes", document + "83 00 01 f8 16"},
+		{"null in two bytes in a list of numbers", document + "83 00 82 04 02 82 f8 16 01"},
+	} {
+		wantDecodeFailure(t, tt.name, tt.input, tenon.CodeSerializeMalformed)
+	}
+}
+
 // TestConformance_SE031_AMarkListedAgainIsRefusedWhereItFirstIs holds the
 // refusal of a document that lists a deep mark on a value whose container
 // carries it already to name the first value listing it again: the byte where

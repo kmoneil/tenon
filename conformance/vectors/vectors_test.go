@@ -288,6 +288,7 @@ var invalid = []invalidVector{
 	{"deep mark listed on a member", document + "8300820402da74656e028281da74656e02820181816164818161 64", "serialize.not_canonical"},
 	{"marks out of order", document + "830001da74656e0282f58283617003617681616d", "serialize.not_canonical"},
 	{"indefinite-length array", document + "83008204029f01ff", "serialize.not_canonical"},
+	{"two-byte simple value", document + "830001f816", "serialize.malformed"},
 	{"no document tag", "d9d9f78201830001f5", "serialize.malformed"},
 	{"byte after the document", document + "830001f500", "serialize.malformed"},
 	{"tuple of the wrong length", document + "830082078101 82f5f5", "serialize.malformed"},
