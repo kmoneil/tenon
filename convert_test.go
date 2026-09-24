@@ -1380,3 +1380,80 @@ func BenchmarkObjectUnions(b *testing.B) {
 		})
 	}
 }
+
+// FuzzConvert holds Convert to ER-002 and CV-001 over both policies: it
+// never panics, a result that is neither an error nor pending satisfies its
+// target, and the same call gives the same result twice. The value and the
+// constraint arrive as documents, the constraint riding a pending value, so
+// the fuzzer mutates real encodings structurally rather than opaque seeds;
+// the corpus seeds every serializable corpus and generated value against
+// generated constraints, and the nested shape whose pending member once
+// dereferenced a nil type, so that fix cannot be undone quietly.
+func FuzzConvert(f *testing.F) {
+	valueBytes := func(v tenon.Value) ([]byte, bool) {
+		b, _, ok := tenon.Serialize(v)
+		return b, ok
+	}
+	constraintBytes := func(c tenon.Constraint) ([]byte, bool) {
+		b, _, ok := tenon.Serialize(tenon.Pending(c))
+		return b, ok
+	}
+	var constraints [][]byte
+	cr := rand.New(rand.NewSource(20260924))
+	for range 8 {
+		if b, ok := constraintBytes(randomConstraint(cr, 3, degrees)); ok {
+			constraints = append(constraints, b)
+		}
+	}
+	nested := tenon.ObjectWith(map[string]tenon.Field{
+		"a": tenon.Required(tenon.OneOf(is(num), is(boo))),
+	}, false)
+	if b, ok := constraintBytes(tenon.ListOf(tenon.ListOf(nested))); ok {
+		constraints = append(constraints, b)
+	}
+	var seeds [][]byte
+	g := generator{rand.New(rand.NewSource(2))}
+	for range 32 {
+		if b, ok := valueBytes(g.top()); ok {
+			seeds = append(seeds, b)
+		}
+	}
+	for _, v := range values.All() {
+		if b, ok := valueBytes(v); ok {
+			seeds = append(seeds, b)
+		}
+	}
+	deep := tenon.TupleVal(
+		tenon.ListVal(tenon.Object(map[string]tenon.Type{"a": num}), obj(map[string]tenon.Value{"a": n(1)})),
+		tenon.Unknown(tenon.Tuple(tenon.Map(num), tenon.Map(boo))))
+	if b, ok := valueBytes(deep); ok {
+		seeds = append(seeds, b)
+	}
+	for i, vb := range seeds {
+		f.Add(vb, constraints[i%len(constraints)])
+	}
+	last := len(seeds) - 1
+	f.Add(seeds[last], constraints[len(constraints)-1])
+	f.Fuzz(func(t *testing.T, vb, cb []byte) {
+		v, _, ok := tenon.Deserialize(vb, decoders)
+		if !ok {
+			return
+		}
+		carrier, _, ok := tenon.Deserialize(cb, decoders)
+		if !ok || !carrier.IsPending() {
+			return
+		}
+		c := carrier.Constraint()
+		for _, p := range []tenon.Policy{tenon.Safe, tenon.Unsafe} {
+			got := tenon.Convert(v, c, p)
+			switch {
+			case got.IsError() || got.IsPending():
+			case !tenon.Satisfies(c, got.Type()):
+				t.Fatalf("Convert(%v, %v, %v) = %v, whose type does not satisfy the constraint", v, c, p, got)
+			}
+			if again := tenon.Convert(v, c, p); got.String() != again.String() {
+				t.Fatalf("Convert(%v, %v, %v) answered %v and then %v", v, c, p, got, again)
+			}
+		}
+	})
+}
