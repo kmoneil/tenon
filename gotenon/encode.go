@@ -138,7 +138,12 @@ func join(p, q tenon.Path) tenon.Path {
 // otherwise a diagnostic of code whose message is the error's text.
 func (f *failures) withError(p tenon.Path, code tenon.Code, err error) {
 	var de *DiagnosticError
-	if errors.As(err, &de) && de.Value != (tenon.Value{}) && de.Value.IsError() {
+	if errors.As(err, &de) {
+		if de.Value == (tenon.Value{}) || !de.Value.IsError() {
+			// Rendering such an error panics inside Error, so the broken
+			// contract is named here, as the zero Value from MarshalValue is.
+			usagePanic("the method returned a *DiagnosticError whose Value is not an error value, which breaks its contract")
+		}
 		f.within(p, de.Value.Diagnostics())
 		return
 	}
@@ -295,14 +300,17 @@ func (e *encoder) encode(m *goMapping, rv reflect.Value, p tenon.Path) (tenon.Va
 		return e.mapping(m, rv, p)
 	case goStruct:
 		return e.structure(m, rv, p)
-	}
-	if rv.IsNil() {
-		if m.typed() {
-			return tenon.NullVal(m.typ), true
+	case goPointer:
+		if rv.IsNil() {
+			if m.typed() {
+				return tenon.NullVal(m.typ), true
+			}
+			return tenon.NullVal(nullType(m.elem)), true
 		}
-		return tenon.NullVal(nullType(m.elem)), true
+		return e.encode(m.elem, rv.Elem(), p)
 	}
-	return e.encode(m.elem, rv.Elem(), p)
+	usagePanic("Encode met the mapping kind %d of %s, which no arm handles; this is a defect in gotenon, not in the caller", m.kind, m.rt)
+	return tenon.Value{}, false
 }
 
 // fromData returns v, or records its diagnostics where it is an error value
@@ -380,7 +388,7 @@ func (e *encoder) bigNumber(m *goMapping, rv reflect.Value, p tenon.Path) (tenon
 		c, ok = x, true
 	case *big.Float:
 		if x.IsInf() {
-			e.fail(p, tenon.CodeEncodeNotANumber, x.String()+" is not a number")
+			e.fail(p, tenon.CodeEncodeNotANumber, shortText(x.String())+" is not a number")
 			return tenon.Value{}, false
 		}
 		c, exp, ok = exactBigFloat(x)
@@ -592,13 +600,13 @@ func (e *encoder) mapping(m *goMapping, rv reflect.Value, p tenon.Path) (tenon.V
 	for _, key := range keys {
 		sv := tenon.String(key)
 		if sv.IsError() {
-			e.fail(p, tenon.CodeStringInvalidUTF8, "the map key "+strconv.QuoteToASCII(key)+" is not well-formed UTF-8")
+			e.fail(p, tenon.CodeStringInvalidUTF8, "the map key "+shortText(strconv.QuoteToASCII(key))+" is not well-formed UTF-8")
 			ok = false
 			continue
 		}
 		canonical := sv.AsString()
 		if other, dup := normalized[canonical]; dup {
-			e.fail(p, tenon.CodeMapDuplicateKey, "the map keys "+strconv.QuoteToASCII(other)+" and "+strconv.QuoteToASCII(key)+" are the same key after normalization")
+			e.fail(p, tenon.CodeMapDuplicateKey, "the map keys "+shortText(strconv.QuoteToASCII(other))+" and "+shortText(strconv.QuoteToASCII(key))+" are the same key after normalization")
 			ok = false
 			continue
 		}

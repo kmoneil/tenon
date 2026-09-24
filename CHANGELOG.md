@@ -4,6 +4,15 @@
 
 ### Changed
 
+- `gotenon`'s boundary messages stay readable and its contracts panic as
+  usage errors. A message that embeds a value cuts it to 32 bytes at a
+  character boundary: decoding the widest in-window number into an int64
+  reported about two megabytes of digits. A marshaler or unmarshaler
+  returning a `*DiagnosticError` holding no error value is named a broken
+  contract where rendering it once panicked inside `Error`. The kind
+  switches of decoding and encoding end in a panicking arm naming gotenon
+  as the defect's home, and a message naming a tenon type renders the
+  type once per call however many parts name it.
 - `Narrow` judges every narrowing before it answers anything: a narrowing
   that could never apply panics as a usage error wherever it stands, where
   a contradiction among the narrowings before it once answered first, and

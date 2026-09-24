@@ -1,6 +1,7 @@
 package gotenon_test
 
 import (
+	"errors"
 	"math"
 	"math/big"
 	"testing"
@@ -157,4 +158,39 @@ func TestConformance_GO050_TheCodesOfTheBoundary(t *testing.T) {
 	wantEncodeFailure(t, "encode.marshal_failed", moment{}, wantDiag{tenon.CodeEncodeMarshalFailed, "."})
 	wantEncodeFailure(t, "encode.not_a_number", math.NaN(), wantDiag{tenon.CodeEncodeNotANumber, "."})
 	wantEncodeFailure(t, "encode.untyped_nil", []any{nil}, wantDiag{tenon.CodeEncodeUntypedNil, ".[0]"})
+}
+
+// brokenMarshaler returns a *DiagnosticError holding no error value, which
+// breaks the marshaler contract: rendering it would panic inside Error.
+type brokenMarshaler struct{}
+
+func (brokenMarshaler) MarshalValue() (tenon.Value, error) {
+	return tenon.Value{}, &gotenon.DiagnosticError{}
+}
+
+// TestConformance_DI003_BoundaryMessagesAndContracts holds the boundary's
+// failure text to being readable and its contracts to panicking as usage
+// errors: the widest in-window number decoded into an int64 reports a
+// message cut to a character boundary, not the million digits it holds, and
+// a marshaler returning a *DiagnosticError holding no error value is named
+// a broken contract rather than panicking inside Error.
+func TestConformance_DI003_BoundaryMessagesAndContracts(t *testing.T) {
+	conformance.Covers(t, "DI-003", "GO-003", "ER-001")
+	widest := tenon.Sub(tenon.NumberFromText("1e999999"), tenon.NumberFromInt(1))
+	if widest.IsError() {
+		t.Fatalf("building the widest number: %v", widest)
+	}
+	_, err := gotenon.Decode[int64](widest, uns)
+	var de *gotenon.DiagnosticError
+	if !errors.As(err, &de) {
+		t.Fatalf("decoding the widest number gave %v, want a *DiagnosticError", err)
+	}
+	d := de.Diagnostics()
+	if len(d) != 1 || d[0].Code != tenon.CodeDecodeOutOfRange {
+		t.Fatalf("decoding the widest number gave %v", d)
+	}
+	if n := len(d[0].Message); n > 200 {
+		t.Errorf("the message is %d bytes, more than the 200 it may be", n)
+	}
+	mustPanicUsage(t, "breaks its contract", func() { gotenon.Encode(brokenMarshaler{}) })
 }
