@@ -1,6 +1,46 @@
 # Changelog
 
-## Unreleased
+## 0.5.0 (2026-09-24)
+
+Bounded work, kept. 0.4.0 promised that `Deserialize` does work that grows no
+faster than n log n in the length of what it is given, however that is shaped,
+and four shapes of document broke the promise; `gotenon.Encode`, which
+SECURITY.md holds to the same standard, took the square of a JSON array of
+nulls and of a rational's length. This release fixes each of them, and the
+amplifications inside the bound that the same audit measured, and holds every
+fix to a test that fails if the fix is undone. It implements version 0.4.0 of
+the tenon specification, which amends `TY-041`, `UN-002` and `UN-004`: 195
+rules, as before.
+
+**Upgrade if you decode documents or encode Go values from input you do not
+trust.** In 0.4.0 a document of 40 KB holding objects of a type that names one
+long attribute took 1.75 seconds to decode; one of 79 KB listing two sets whose
+members are partly known, which is canonical and decodes, made 256 million
+comparisons and took 2.46 seconds; a set of 4,000 unknown members over a long
+type held 234 MB live while it decoded; and `gotenon.Encode` of the 32,000
+nulls `encoding/json` reads from 160 KB of JSON took 8 seconds. Each costs time
+in proportion to its input here.
+
+The minor version moves because two changes alter what a program sees. A set
+holds, and iterates, its members that are not known in the order of their
+encodings, which is the order `Elements`, the display form and `Diff` give
+them; and the least length a `Members` narrowing implies for a set that is not
+known counts only the distinct known values it lists. Both are under Changed
+below.
+
+**Upgrading from 0.4.0.** Documents 0.4.0 wrote decode as they did. A range
+listing values that are not known records a least length of one where 0.4.0
+recorded more, so the document 0.5.0 writes for it is not the encoding 0.4.0
+writes, and 0.4.0 refuses it as not canonical: upgrade whatever reads such
+documents before whatever writes them. `CapsuleOps.Equals` must be an
+equivalence relation, as tenon already assumed of it, and tenon may take a
+capsule value to equal itself without asking.
+
+**What `CONFORMANCE.md` still overstates.** As in 0.4.0: it reports 195 of
+195, and every rule does have a passing test, but for `UN-004` and `UN-005`
+(what a narrowing leaves when only null remains) and `DI-011` (path keys that
+carry marks) the test exercises a narrower case than the rule states. Both
+wait on a decision about what the rule should say.
 
 ### Changed
 
