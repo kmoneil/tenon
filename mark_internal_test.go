@@ -493,3 +493,99 @@ func (m namedMark) MarkID() string         { return m.id }
 func (namedMark) Propagation() Propagation { return Propagate }
 func (namedMark) Redacting() bool          { return false }
 func (m namedMark) Deep() bool             { return m.deep }
+
+// keptMark is a mark whose policy is Isolate, which nothing gathers.
+type keptMark struct{ id string }
+
+func (m keptMark) MarkID() string         { return m.id }
+func (keptMark) Propagation() Propagation { return Isolate }
+func (keptMark) Redacting() bool          { return false }
+
+// TestGatheringMarksIsTheScan holds the gathering of Propagate marks, which an
+// operation, a container of error members and a narrowing's bounds each do,
+// to the scan it replaces: every Propagate mark once, in the order met, and
+// no Isolate mark. It holds marksAside to its scan as well. The lists are
+// drawn with repeats from more marks than the count past which marks are
+// looked up through a set, so both sides of it are taken, and a gathering
+// past it holds its set.
+func TestGatheringMarksIsTheScan(t *testing.T) {
+	r := rand.New(rand.NewSource(1615))
+	pool := make([]Mark, 4*manyMarks)
+	for i := range pool {
+		if i%5 == 0 {
+			pool[i] = keptMark{id: fmt.Sprintf("k%03d", i)}
+			continue
+		}
+		pool[i] = namedMark{id: fmt.Sprintf("m%03d", i)}
+	}
+	pick := func(n int) []Mark {
+		ms := make([]Mark, n)
+		for i := range ms {
+			ms[i] = pool[r.Intn(len(pool))]
+		}
+		return ms
+	}
+	for range conformance.Iterations(t, 1000) {
+		var g propagating
+		var want []Mark
+		for range 1 + r.Intn(4) {
+			ms := pick(r.Intn(3 * manyMarks))
+			g.add(ms)
+			want = scanGather(want, ms)
+		}
+		if !slices.Equal(g.marks, want) {
+			t.Fatalf("gathered %v, want %v", g.marks, want)
+		}
+		// A mark past the first beyond the count was looked for among more
+		// than the count, which is where the set is made.
+		if len(want) > manyMarks+1 && g.seen.set == nil {
+			t.Fatalf("%d marks were gathered by scanning for each", len(want))
+		}
+		list, aside := pick(r.Intn(3*manyMarks)), pick(r.Intn(3*manyMarks))
+		if got, want := marksAside(list, aside), scanAside(list, aside); !slices.Equal(got, want) {
+			t.Fatalf("marksAside(%v, %v) = %v, want %v", list, aside, got, want)
+		}
+	}
+
+	// A container's error members have their marks gathered the same way.
+	var errs containerErrors
+	for i := range 3 * manyMarks {
+		failed := WithMarks(ErrorVal(Diagnostic{Code: "app.failed", Message: "it failed"}), namedMark{id: fmt.Sprintf("e%03d", i)})
+		errs.add(indexStep(NumberFromInt(int64(i))), failed)
+	}
+	if len(errs.marks.marks) != 3*manyMarks || errs.marks.seen.set == nil {
+		t.Errorf("the marks of %d error members were gathered as %d marks, with a set: %v", 3*manyMarks, len(errs.marks.marks), errs.marks.seen.set != nil)
+	}
+	// Every mark set aside leaves nothing to list, so the set that looks them
+	// up is all marksAside allocates, where a scan for each would allocate
+	// nothing.
+	all := pool[1 : 3*manyMarks]
+	if allocs := testing.AllocsPerRun(10, func() { marksAside(all, all) }); allocs == 0 {
+		t.Errorf("marksAside looked for each of %d marks by scanning those set aside", len(all))
+	}
+}
+
+// scanGather is the gathering of Propagate marks as a scan of those gathered
+// for every mark.
+func scanGather(gathered, ms []Mark) []Mark {
+	for _, m := range ms {
+		if m.Propagation() == Propagate && !slices.Contains(gathered, m) {
+			gathered = append(gathered, m)
+		}
+	}
+	return gathered
+}
+
+// scanAside is marksAside as a scan of aside for every mark.
+func scanAside(list, aside []Mark) []Mark {
+	if aside == nil {
+		return list
+	}
+	var out []Mark
+	for _, m := range list {
+		if !slices.Contains(aside, m) {
+			out = append(out, m)
+		}
+	}
+	return out
+}

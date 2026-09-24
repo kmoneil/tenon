@@ -133,6 +133,15 @@
   projects in 107 where it took 406. Every diagnostic is located where it
   was, and failures under one member still share the path to it.
 
+- An operation, a container built from error values, a narrowing by bounds,
+  and `Diff` take the marks of what they consume in time proportional to the
+  marks, where each looked for every mark among those it had taken already,
+  which cost the square of them. At 4,000 marks an operation over two
+  operands carrying them took 38 milliseconds and takes 1.3, a list of 4,000
+  marked error values took 42 and takes 2.9, and a diff under 4,000 deep
+  marks took 84 and takes 1.3. A value carrying a handful of marks, as nearly
+  every value does, allocates less than before.
+
 ## 0.4.0 (2026-09-21)
 
 Bounded work on input from outside. `Deserialize` now promises that its work

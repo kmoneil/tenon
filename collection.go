@@ -24,7 +24,7 @@ type mapEntry struct {
 // over its members, and the error value says nothing of them.
 type containerErrors struct {
 	diags []Diagnostic
-	marks []Mark
+	marks propagating
 	seen  diagnosticLookup
 }
 
@@ -49,11 +49,7 @@ func (c *containerErrors) addUnlocated(member Value) {
 
 // addMarks records the Propagate marks of an error member.
 func (c *containerErrors) addMarks(member Value) {
-	for _, m := range member.n.markList() {
-		if m.Propagation() == Propagate && !slices.Contains(c.marks, m) {
-			c.marks = append(c.marks, m)
-		}
-	}
+	c.marks.add(member.n.markList())
 }
 
 // addDiagnostic records d unless it is already there.
@@ -69,7 +65,7 @@ func (c *containerErrors) value() (Value, bool) {
 	if len(c.diags) == 0 {
 		return Value{}, false
 	}
-	return WithMarks(errorValue(c.diags...), c.marks...), true
+	return WithMarks(errorValue(c.diags...), c.marks.marks...), true
 }
 
 // isError reports whether v is an error value, for constructors sorting their

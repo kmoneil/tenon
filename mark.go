@@ -152,13 +152,16 @@ func comparableMark(m Mark) (ok bool) {
 // more than the merge itself.
 func mergeMarks(held, marks []Mark) ([]Mark, bool) {
 	merged, grew := held, false
-	for _, m := range marks {
+	for i, m := range marks {
 		at, found := placeMark(merged, m)
 		if found {
 			continue
 		}
 		if !grew {
-			merged, grew = slices.Clone(held), true
+			// Room for every mark still to come, in one list, where
+			// growing it a mark at a time would make it again and again.
+			merged, grew = make([]Mark, len(held), len(held)+len(marks)-i), true
+			copy(merged, held)
 		}
 		merged = slices.Insert(merged, at, m)
 	}
@@ -508,32 +511,53 @@ func HasMark(v Value, m Mark) bool {
 // Propagate marks of the values within an operand that the operation reads,
 // which it consumes along with the operand.
 func (o *op) propagated(args []Value) []Mark {
-	var ms []Mark
-	var add func(n *node, within bool)
-	add = func(n *node, within bool) {
-		for _, m := range n.markList() {
-			if m.Propagation() == Propagate && !slices.Contains(ms, m) {
-				ms = append(ms, m)
-			}
-		}
-		if !within || !n.markedWithin {
-			return
-		}
-		switch data := n.data.(type) {
-		case []Value:
-			for _, member := range data {
-				add(member.n, true)
-			}
-		case []mapEntry:
-			for _, e := range data {
-				add(e.val.n, true)
-			}
-		}
-	}
+	var g propagating
 	for i, a := range args {
-		add(a.data(), o.operands[i].within)
+		g.gather(a.data(), o.operands[i].within)
 	}
-	return ms
+	return g.marks
+}
+
+// propagating gathers the Propagate marks of what is consumed, each once, in
+// the order they are met: the operands of an operation and what it reads
+// within them, the error members of a container, the bounds of a narrowing. A
+// mark is looked for among those gathered by markLookup, by a scan while there
+// are few and through a set once there are many: a value can carry thousands,
+// and scanning for each would cost the square of them.
+type propagating struct {
+	marks []Mark
+	seen  markLookup
+}
+
+// add gathers the Propagate marks among ms not gathered already. It makes
+// room for all of them at once, which a value carrying thousands needs: grown
+// a mark at a time, the list would be made again and again.
+func (g *propagating) add(ms []Mark) {
+	g.marks = slices.Grow(g.marks, len(ms))
+	for _, m := range ms {
+		if m.Propagation() == Propagate && !g.seen.holds(g.marks, m) {
+			g.marks = append(g.marks, m)
+		}
+	}
+}
+
+// gather gathers the marks of n, and where within says that what is consumed
+// reads the values within n, theirs as well, at any depth.
+func (g *propagating) gather(n *node, within bool) {
+	g.add(n.markList())
+	if !within || !n.markedWithin {
+		return
+	}
+	switch data := n.data.(type) {
+	case []Value:
+		for _, member := range data {
+			g.gather(member.n, true)
+		}
+	case []mapEntry:
+		for _, e := range data {
+			g.gather(e.val.n, true)
+		}
+	}
 }
 
 // carryMarks returns r carrying every mark of v. A narrowing or a resolution
