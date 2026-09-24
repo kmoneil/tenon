@@ -16,6 +16,21 @@
   order of those capsule values, which is their type's order where it
   declares one.
 
+- The least length a `Members` narrowing implies for a set that is not known
+  is the number of distinct known values it lists, or one where it lists only
+  values that are not known. It was the number of listed values that are
+  provably distinct, which compares every pair of the values that are not
+  known: decoding a range listing 8,000 of them made 32 million comparisons
+  and makes 16,000. The range is wider where such values are provably
+  distinct, and three things follow. A range listing them records a least
+  length of one where it recorded more, so a document this version writes for
+  it is not the encoding 0.4.0 writes, and 0.4.0 refuses it as not canonical;
+  documents 0.4.0 wrote still decode. A listing of as many such values as the
+  greatest length allows stays a range, where it became the set holding them.
+  And a narrowing those values could satisfy in no set within its lengths,
+  only because they are provably distinct, is no longer refused as a
+  contradiction. A set value narrowed by a listing is judged as before.
+
 ### Fixed
 
 - Collecting the diagnostics of a value that fails in many places takes time

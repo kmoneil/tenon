@@ -402,8 +402,15 @@ func TestConformance_EQ003_NullIsDecidedBeforeRangesAreCompared(t *testing.T) {
 	if got, want := tenon.Length(tenon.SetVal(num, an, bn)).String(), "2"; got != want {
 		t.Errorf("the length of a set of two that cannot be null is %s, want %s", got, want)
 	}
-	if got := tenon.Narrow(tenon.Unknown(set), tenon.Members(an, bn), tenon.LengthMax(1)); !got.IsError() {
-		t.Errorf("listing two members that cannot be one is %v, want a contradiction", got)
+	// Two listed values that cannot be one need two members, which a set
+	// holding one has not got; the same two while each could still be null
+	// could both be null, which is one member.
+	one := tenon.SetVal(num, tenon.Unknown(num))
+	if got := tenon.Narrow(one, tenon.Members(an, bn)); !got.IsError() {
+		t.Errorf("a set of one narrowed by two members that cannot be one is %v, want a contradiction", got)
+	}
+	if got := tenon.Narrow(one, tenon.Members(a, b)); got.IsError() {
+		t.Errorf("a set of one narrowed by two members that could both be null is %v, want the set", got)
 	}
 }
 

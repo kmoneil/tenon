@@ -388,6 +388,29 @@ func TestConformance_SE005_DecodingWorkIsBounded(t *testing.T) {
 		t.Errorf("building, encoding and decoding a set of %d members that are not known compared them %d times, where every pair is %d",
 			len(members), compared, len(members)*(len(members)-1)/2)
 	}
+	// A range listing the same 2,000 values, and a range listing them as all
+	// its members, null excluded. The least length a listing of values that
+	// are not known implies is one, and such a listing is left a range, so
+	// neither compares every pair to count the values provably distinct.
+	for _, listing := range []tenon.Value{
+		tenon.Narrow(tenon.Unknown(tenon.Set(elem)), tenon.Members(members...)),
+		tenon.Narrow(tenon.Unknown(tenon.Set(elem)), tenon.NotNull(), tenon.LengthMax(int64(len(members))), tenon.Members(members...)),
+	} {
+		b, failure, ok := tenon.Serialize(listing)
+		if !ok {
+			t.Fatalf("Serialize(the listing) failed: %v", failure)
+		}
+		countingCompared = 0
+		got, failure, ok := tenon.Deserialize(b, withCounting)
+		compared := countingCompared
+		if !ok || !tenon.Identical(got, listing) {
+			t.Fatalf("the listing came back as %v, %v", got, failure)
+		}
+		if compared > 4*len(members) {
+			t.Errorf("decoding %v compared its %d listed values %d times, where every pair is %d",
+				listing.Type(), len(members), compared, len(members)*(len(members)-1)/2)
+		}
+	}
 
 	// A value carrying 4,000 marks decodes, which took 36 ms and grew with
 	// the square of the marks.

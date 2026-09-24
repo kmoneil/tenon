@@ -300,7 +300,7 @@ func TestConformance_DI017_OrderWithinADisplayForm(t *testing.T) {
 		{"string facts", tenon.Narrow(tenon.Unknown(str), tenon.LengthMax(5), tenon.StringPrefix("ab-"), tenon.NotNull(), tenon.LengthMin(3)),
 			`unknown(string, not null, prefix "ab-", length >= 3, length <= 5)`},
 		{"members last", tenon.Narrow(tenon.Unknown(tenon.Set(num)), tenon.Members(n(2), tenon.Narrow(tenon.Unknown(num), tenon.NumberMin(n(5), true)), n(1)), tenon.LengthMax(4)),
-			`unknown(set(number), length >= 3, length <= 4, members {1, 2, unknown(number, >= 5)})`},
+			`unknown(set(number), length >= 2, length <= 4, members {1, 2, unknown(number, >= 5)})`},
 	} {
 		wantDisplay(t, tt.name, tt.v, tt.want)
 	}
