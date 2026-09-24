@@ -79,6 +79,7 @@ type paths struct {
 	active   string // the list of enforced coverage
 	cover    string // the directory of coverage records
 	codes    string // the registry of diagnostic codes
+	record   string // the committed record of codes ever declared
 	report   string // the conformance report
 }
 
@@ -99,6 +100,7 @@ func run(args []string, stdout io.Writer) error {
 	flags.StringVar(&p.active, "active", "", "enforced coverage `file`; defaults to conformance/active-areas.txt in the module root")
 	flags.StringVar(&p.cover, "cover", os.Getenv(coverEnv), "coverage record `directory`; defaults to $"+coverEnv+", else .rulecov in the module root")
 	flags.StringVar(&p.codes, "codes", "", "diagnostic code registry `file`; defaults to codes.go in the module root")
+	flags.StringVar(&p.record, "coderecord", "", "committed code record `file`; defaults to conformance/codes.json in the module root")
 	flags.StringVar(&p.report, "report", "", "conformance report `file`; defaults to CONFORMANCE.md in the module root")
 	if err := flags.Parse(args); err != nil {
 		return err
@@ -106,7 +108,7 @@ func run(args []string, stdout io.Writer) error {
 	if flags.NArg() > 0 {
 		return fmt.Errorf("unexpected arguments: %s", strings.Join(flags.Args(), " "))
 	}
-	if p.manifest == "" || p.active == "" || p.cover == "" || p.codes == "" || p.report == "" {
+	if p.manifest == "" || p.active == "" || p.cover == "" || p.codes == "" || p.record == "" || p.report == "" {
 		root, err := moduleRoot()
 		if err != nil {
 			return err
@@ -122,6 +124,9 @@ func run(args []string, stdout io.Writer) error {
 		}
 		if p.codes == "" {
 			p.codes = filepath.Join(root, "codes.go")
+		}
+		if p.record == "" {
+			p.record = filepath.Join(root, "conformance", "codes.json")
 		}
 		if p.report == "" {
 			p.report = filepath.Join(root, "CONFORMANCE.md")
@@ -152,6 +157,17 @@ func runCheck(w io.Writer, p paths) error {
 		return err
 	}
 	if err := checkCodes(w, p); err != nil {
+		return err
+	}
+	registry, err := registryCodes(p.codes)
+	if err != nil {
+		return err
+	}
+	record, err := readCodeRecord(p.record)
+	if err != nil {
+		return err
+	}
+	if err := checkCodeRecord(w, registry, record, p.record); err != nil {
 		return err
 	}
 	active, err := os.ReadFile(p.active)

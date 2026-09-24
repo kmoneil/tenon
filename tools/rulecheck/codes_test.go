@@ -135,7 +135,7 @@ func TestRunCodes(t *testing.T) {
 		[]byte(`{"rule":"AA-001","test":"TestConformance_AA001_X"}`+"\n"))
 	t.Setenv("TENON_SPEC", "")
 	c := cli{t}
-	inputs := []string{"-manifest", manifest, "-active", active, "-cover", filepath.Join(dir, "cover"), "-codes", registry, "-report", filepath.Join(dir, "CONFORMANCE.md")}
+	inputs := []string{"-manifest", manifest, "-active", active, "-cover", filepath.Join(dir, "cover"), "-codes", registry, "-coderecord", filepath.Join(dir, "codes.json"), "-report", filepath.Join(dir, "CONFORMANCE.md")}
 	noSpec := append([]string{"check"}, inputs...)
 	check := append([]string{"check", "-spec", spec}, inputs...)
 
@@ -146,25 +146,40 @@ func TestRunCodes(t *testing.T) {
 
 	// Until the appendix is written, check finds it stale.
 	c.fails("stale; regenerate it with `make codes`", check...)
-	c.ok("wrote the appendix", "codes", "-spec", spec, "-codes", registry)
-	c.ok("already up to date", "codes", "-spec", spec, "-codes", registry)
+	c.ok("wrote the appendix", "codes", "-spec", spec, "-codes", registry, "-coderecord", filepath.Join(dir, "codes.json"))
+	c.ok("already up to date", "codes", "-spec", spec, "-codes", registry, "-coderecord", filepath.Join(dir, "codes.json"))
 	c.ok("diagnostic codes up to date (1 codes)", check...)
 
 	// Editing the appendix by hand makes it stale again.
 	edited := strings.Replace(string(readFile(t, spec)), "| `aa.one` |", "| `aa.one`, by hand |", 1)
 	writeFile(t, spec, []byte(edited))
 	c.fails("appendix of diagnostic codes in "+spec+" is stale", check...)
-	c.ok("wrote the appendix", "codes", "-spec", spec, "-codes", registry)
+	c.ok("wrote the appendix", "codes", "-spec", spec, "-codes", registry, "-coderecord", filepath.Join(dir, "codes.json"))
 
 	// A code in the registry that no rule names, or the other way about, is
 	// refused by both commands.
 	registryFixture(t, dir, "aa.one", "aa.two")
 	c.fails("the registry declares aa.two, which no rule names", check...)
-	c.fails("the registry declares aa.two, which no rule names", "codes", "-spec", spec, "-codes", registry)
+	c.fails("the registry declares aa.two, which no rule names", "codes", "-spec", spec, "-codes", registry, "-coderecord", filepath.Join(dir, "codes.json"))
 	registryFixture(t, dir)
 	c.fails("AA-001 names aa.one, which the registry does not declare", check...)
 
-	// Without a specification, check skips the codes, and codes refuses to run.
+	// Without a specification, check skips the appendix, and codes refuses
+	// to run; the code record is checked either way, so the registry goes
+	// back to what the record holds first.
+	registryFixture(t, dir, "aa.one")
 	c.ok("skipping the diagnostic code check", noSpec...)
-	c.fails("set TENON_SPEC", "codes", "-codes", registry)
+	c.ok("code record up to date (1 codes, 0 withdrawn)", noSpec...)
+
+	// The record is permanent, specification or none: a code that leaves
+	// the registry must be marked withdrawn, and a withdrawn code cannot
+	// come back.
+	registryFixture(t, dir)
+	c.fails("code aa.one has disappeared from the registry; mark it withdrawn", noSpec...)
+	writeFile(t, filepath.Join(dir, "codes.json"), []byte(`{"format":1,"codes":[{"code":"aa.one","withdrawn":true}]}`+"\n"))
+	c.ok("code record up to date (0 codes, 1 withdrawn)", noSpec...)
+	registryFixture(t, dir, "aa.one")
+	c.fails("code aa.one was withdrawn and cannot be reinstated", noSpec...)
+	registryFixture(t, dir)
+	c.fails("set TENON_SPEC", "codes", "-codes", registry, "-coderecord", filepath.Join(dir, "codes.json"))
 }

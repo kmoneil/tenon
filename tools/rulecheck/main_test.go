@@ -45,17 +45,18 @@ func TestRunManifest(t *testing.T) {
 	registry := registryFixture(t, dir)
 	conformanceReport := filepath.Join(dir, "CONFORMANCE.md")
 	writeFile(t, active, []byte("AA\n"))
+	writeFile(t, filepath.Join(dir, "codes.json"), []byte(`{"format":1,"codes":[]}`+"\n"))
 	writeFile(t, filepath.Join(dir, "cover", "cover-x.jsonl"),
 		[]byte(`{"rule":"AA-001","test":"TestConformance_AA001_X"}`+"\n"+`{"rule":"AA-002","test":"TestConformance_AA002_X"}`+"\n"))
 	t.Setenv("TENON_SPEC", "")
 	c := cli{t}
-	inputs := []string{"-manifest", manifest, "-active", active, "-cover", filepath.Join(dir, "cover"), "-codes", registry, "-report", conformanceReport}
+	inputs := []string{"-manifest", manifest, "-active", active, "-cover", filepath.Join(dir, "cover"), "-codes", registry, "-coderecord", filepath.Join(dir, "codes.json"), "-report", conformanceReport}
 	check := func(extra ...string) []string {
 		return append(append([]string{"check"}, inputs...), extra...)
 	}
 
 	writeFile(t, spec, fixture("## 2. Alpha", "", "`[AA-001]` One.", "", "`[AA-002]` Two."))
-	c.ok("wrote the appendix", "codes", "-spec", spec, "-codes", registry)
+	c.ok("wrote the appendix", "codes", "-spec", spec, "-codes", registry, "-coderecord", filepath.Join(dir, "codes.json"))
 
 	// Generating writes the manifest, and regenerating changes nothing.
 	c.ok("wrote", "manifest", "-spec", spec, "-manifest", manifest)

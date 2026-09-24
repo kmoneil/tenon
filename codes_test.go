@@ -1,9 +1,11 @@
 package tenon_test
 
 import (
+	"encoding/json"
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"os"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -138,6 +140,35 @@ func TestConformance_DI002_TheRegistryListsEveryCode(t *testing.T) {
 	// a code that codes.go gains or loses has to be accounted for here too.
 	if got := stringLiterals(t, "codes.go"); !slices.Equal(got, specCodes) {
 		t.Errorf("codes.go defines\n%q\nwant\n%q", got, specCodes)
+	}
+	// The committed record holds every code ever declared, `make codes`
+	// keeping it, and rulecheck refuses a code that disappears or returns
+	// from withdrawal; here the record's codes that are not withdrawn must
+	// be exactly the registry's.
+	var record struct {
+		Format int    `json:"format"`
+		About  string `json:"about"`
+		Codes  []struct {
+			Code      string `json:"code"`
+			Withdrawn bool   `json:"withdrawn"`
+		} `json:"codes"`
+	}
+	data, err := os.ReadFile(filepath.Join("conformance", "codes.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(data, &record); err != nil || record.Format != 1 {
+		t.Fatalf("conformance/codes.json is not a code record: %v", err)
+	}
+	var current []string
+	for _, c := range record.Codes {
+		if !c.Withdrawn {
+			current = append(current, c.Code)
+		}
+	}
+	slices.Sort(current)
+	if !slices.Equal(current, specCodes) {
+		t.Errorf("conformance/codes.json records\n%q\nwant\n%q", current, specCodes)
 	}
 	// Each condition is reported with its code.
 	num := tenon.NumberType()

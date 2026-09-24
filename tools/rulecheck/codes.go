@@ -223,11 +223,38 @@ func runCodes(w io.Writer, p paths) error {
 	}
 	if bytes.Equal(fresh, current) {
 		fmt.Fprintf(w, "rulecheck: the appendix of diagnostic codes is already up to date (%d codes)\n", n)
-		return nil
+		return updateRecordFile(w, p)
 	}
 	if err := os.WriteFile(p.spec, fresh, 0o644); err != nil {
 		return err
 	}
 	fmt.Fprintf(w, "rulecheck: wrote the appendix of diagnostic codes to %s (%d codes)\n", display(p.spec), n)
+	return updateRecordFile(w, p)
+}
+
+// updateRecordFile brings the committed record of codes up to the registry,
+// creating it on the first run and appending codes it has not seen. A
+// missing code or a withdrawn one returning refuses the update, as the check
+// refuses the state.
+func updateRecordFile(w io.Writer, p paths) error {
+	registry, err := registryCodes(p.codes)
+	if err != nil {
+		return err
+	}
+	record, err := readCodeRecord(p.record)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	updated, err := updateCodeRecord(registry, record)
+	if err != nil {
+		return err
+	}
+	if slices.Equal(updated, record) {
+		return nil
+	}
+	if err := writeCodeRecord(p.record, updated); err != nil {
+		return err
+	}
+	fmt.Fprintf(w, "rulecheck: recorded %d codes in %s\n", len(updated), display(p.record))
 	return nil
 }
