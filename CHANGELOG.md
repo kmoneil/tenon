@@ -12,6 +12,13 @@
 
 ### Fixed
 
+- `gotenon.Encode` reports a value's failures in member order: a struct's
+  attributes by name, and a map's keys by their normalized spelling. Through
+  0.5.0 a struct's failures came in the order its fields are declared, and a
+  map key that normalization moves (an `e` with a combining acute normalizes
+  to `é`, which follows `f` where its raw spelling precedes it) was reported
+  on the wrong side of its neighbors. Only the order of diagnostics moves;
+  the values encoding gives are as they were.
 - `Deserialize` refuses a two-byte simple value (`f8` followed by a byte
   below 32) as `serialize.malformed` at its own byte, since RFC 8949 §3.3
   says such a sequence is not well-formed CBOR. Through 0.5.0 the reader

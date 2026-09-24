@@ -544,7 +544,14 @@ func (e *encoder) mapping(m *goMapping, rv reflect.Value, p tenon.Path) (tenon.V
 		keys = append(keys, k.String())
 	}
 	slices.Sort(keys)
-	entries := make(map[string]tenon.Value, len(keys))
+	// The keys are normalized before the members are walked, and the walk
+	// follows the normalized spellings: they name the members, so member
+	// order (GO-003) is their order, not the order of the spellings the Go
+	// map holds, which raw sorting can reverse. The keys that fail here fail
+	// at the map itself, in the raw order, which keeps the pair a duplicate
+	// names stable.
+	type mapKey struct{ canonical, raw string }
+	canon := make([]mapKey, 0, len(keys))
 	normalized := map[string]string{}
 	ok := true
 	for _, key := range keys {
@@ -561,6 +568,12 @@ func (e *encoder) mapping(m *goMapping, rv reflect.Value, p tenon.Path) (tenon.V
 			continue
 		}
 		normalized[canonical] = key
+		canon = append(canon, mapKey{canonical, key})
+	}
+	slices.SortFunc(canon, func(a, b mapKey) int { return strings.Compare(a.canonical, b.canonical) })
+	entries := make(map[string]tenon.Value, len(canon))
+	for _, k := range canon {
+		canonical, key := k.canonical, k.raw
 		at := p.Index(tenon.String(canonical))
 		if !m.typed() {
 			if canonical == "" {
