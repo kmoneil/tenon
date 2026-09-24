@@ -12,6 +12,14 @@
 
 ### Fixed
 
+- `Deserialize` refuses a two-byte simple value (`f8` followed by a byte
+  below 32) as `serialize.malformed` at its own byte, since RFC 8949 §3.3
+  says such a sequence is not well-formed CBOR. Through 0.5.0 the reader
+  accepted `f8 14` and `f8 15` as false and true, and `f8 16` shifted it one
+  byte, so the second byte was read again as the next item; every such
+  document was still refused, but as `serialize.not_canonical` at whatever
+  byte the re-encoding first differed. No document that decoded before is
+  refused now.
 - `ProjectJSON` of a capsule value whose declared display form returns text
   that is not well-formed UTF-8 writes each ill-formed byte as U+FFFD, as the
   display form writes it, so the projection is the JSON text it promises.
