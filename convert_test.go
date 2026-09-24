@@ -1193,9 +1193,9 @@ func TestConformance_CV026_EverySpellingConvertsAlike(t *testing.T) {
 	}
 }
 
-// TestConversionMessagesWithholdRedactedShape checks that a length or a key
+// TestConformance_MK011_ConversionMessagesWithholdRedactedShape checks that a length or a key
 // that a redacting mark withholds stays out of conversion messages.
-func TestConversionMessagesWithholdRedactedShape(t *testing.T) {
+func TestConformance_MK011_ConversionMessagesWithholdRedactedShape(t *testing.T) {
 	conformance.Covers(t, "MK-011")
 	secret := stamp{id: "secret", redact: true}
 	for _, tt := range []struct {

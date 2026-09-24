@@ -182,7 +182,11 @@ func readCoverage(dir string) (map[string]string, error) {
 			if err := dec.Decode(&rec); err != nil || !ruleID.MatchString(rec.Rule) || rec.Test == "" {
 				return nil, fmt.Errorf("%s:%d: malformed coverage record %q", path, n, strings.TrimSpace(line))
 			}
-			if _, seen := covered[rec.Rule]; !seen {
+			// The record kept is a named one where any exists, so a rule
+			// covered by a named test and others shows the named one, and
+			// only a rule no named test covers shows another.
+			if current, seen := covered[rec.Rule]; !seen ||
+				!namedFor(rec.Rule, current) && namedFor(rec.Rule, rec.Test) {
 				covered[rec.Rule] = rec.Test
 			}
 		}
@@ -190,9 +194,18 @@ func readCoverage(dir string) (map[string]string, error) {
 	return covered, nil
 }
 
+// namedFor reports whether the test is named for the rule by the operating
+// loop's convention: TestConformance_<XXnnn>_ begins its name, so running
+// the rule's identifier runs a test, and deleting that test is visible
+// however many other tests still cover the rule.
+func namedFor(rule, test string) bool {
+	return strings.HasPrefix(test, "TestConformance_"+strings.ReplaceAll(rule, "-", "")+"_")
+}
+
 // checkCoverage checks the coverage records: every enforced rule must be
-// covered, no record may name a rule that the manifest lacks or has
-// withdrawn, and no covered rule may stay deferred.
+// covered, at least once by a test named for it, no record may name a rule
+// that the manifest lacks or has withdrawn, and no covered rule may stay
+// deferred.
 func checkCoverage(w io.Writer, rules []Rule, enforced, deferred []string, covered map[string]string, coverDir string) error {
 	byID := make(map[string]Rule, len(rules))
 	for _, r := range rules {
@@ -214,8 +227,15 @@ func checkCoverage(w io.Writer, rules []Rule, enforced, deferred []string, cover
 	}
 	var missing []string
 	for _, id := range enforced {
-		if _, ok := covered[id]; !ok {
+		test, ok := covered[id]
+		if !ok {
 			missing = append(missing, id)
+			continue
+		}
+		if !namedFor(id, test) {
+			problems = append(problems, fmt.Sprintf(
+				"%s is covered only by tests not named for it, %s among them; name one TestConformance_%s_...",
+				id, test, strings.ReplaceAll(id, "-", "")))
 		}
 	}
 	if len(missing) > 0 {

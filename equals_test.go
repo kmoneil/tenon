@@ -567,12 +567,12 @@ func TestConformance_UN023_EqualsWithAPendingOperand(t *testing.T) {
 	}
 }
 
-// TestEqualsDecidesOnlyWhatCannotChange holds Equals to its promise: where it
+// TestConformance_EQ003_EqualsDecidesOnlyWhatCannotChange holds Equals to its promise: where it
 // answers true or false although an operand is not known, every value that
 // operand could turn out to be gives the same answer. It checks pending
 // operands against the values they can resolve to, and sets holding bounded
 // unknowns, and unknown sets, against every set they could turn out to be.
-func TestEqualsDecidesOnlyWhatCannotChange(t *testing.T) {
+func TestConformance_EQ003_EqualsDecidesOnlyWhatCannotChange(t *testing.T) {
 	conformance.Covers(t, "EQ-003", "EQ-042", "EQ-043", "UN-007")
 	bl, num, str := tenon.BoolType(), tenon.NumberType(), tenon.StringType()
 	n := func(i int64) tenon.Value { return tenon.NumberFromInt(i) }

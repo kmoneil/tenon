@@ -122,7 +122,7 @@ func (o *observer) UnmarshalValue(v tenon.Value) error {
 	return nil
 }
 
-func TestMarshalersAtTheBoundary(t *testing.T) {
+func TestConformance_GO040_MarshalersAtTheBoundary(t *testing.T) {
 	conformance.Covers(t, "GO-040")
 	// An unmarshaler is given the value as it is: unknown, marked or null.
 	marked := tenon.WithMarks(tenon.Unknown(num), stamp{id: "iso", policy: tenon.Isolate})
@@ -156,7 +156,7 @@ type encodesOnly struct {
 
 func (e encodesOnly) MarshalValue() (tenon.Value, error) { return tenon.NumberFromInt(int64(e.N)), nil }
 
-func TestMarshalingOneWay(t *testing.T) {
+func TestConformance_GO040_MarshalingOneWay(t *testing.T) {
 	conformance.Covers(t, "GO-040")
 	wantValue(t, "encoding by the method", encoded(t, encodesOnly{N: 3}), n(3))
 	if got := decoded[encodesOnly](t, obj(map[string]tenon.Value{"n": n(4)}), tenon.Safe); got.N != 4 {

@@ -6,7 +6,7 @@ import (
 	"github.com/kmoneil/tenon/conformance"
 )
 
-// TestEqualsReadsNothingWithinWhatItShares holds Equals to settling a known
+// TestConformance_EQ002_EqualsReadsNothingWithinWhatItShares holds Equals to settling a known
 // node compared with itself without reading what it holds. A comparison that
 // walked the node and asked its members nothing, as one comparing each member
 // with itself would, costs the whole value all the same, and no count of what
@@ -15,7 +15,7 @@ import (
 // comparison that reads it fails whatever it would have answered: one that
 // walks through it, one that stops only at what it holds, and one that stops
 // at its members but still goes through them.
-func TestEqualsReadsNothingWithinWhatItShares(t *testing.T) {
+func TestConformance_EQ002_EqualsReadsNothingWithinWhatItShares(t *testing.T) {
 	conformance.Covers(t, "EQ-002")
 	numbers := List(NumberType())
 	unreadable := Value{&node{state: stateKnown, typ: numbers, data: "not a list"}}

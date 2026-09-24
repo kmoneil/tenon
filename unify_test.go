@@ -449,10 +449,10 @@ func TestConformance_CV041_UnificationIsOrderIndependent(t *testing.T) {
 	}
 }
 
-// TestUnificationAgreesWithTypeUnification holds unification of the Exactly
+// TestConformance_CV044_UnificationAgreesWithTypeUnification holds unification of the Exactly
 // constraints of two types to the type unification that conversion uses,
 // which differs only for objects whose attributes differ.
-func TestUnificationAgreesWithTypeUnification(t *testing.T) {
+func TestConformance_CV044_UnificationAgreesWithTypeUnification(t *testing.T) {
 	conformance.Covers(t, "CV-044")
 	objA := obj(map[string]tenon.Value{"a": n(1)})
 	objB := obj(map[string]tenon.Value{"b": s("x")})
