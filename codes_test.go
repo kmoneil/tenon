@@ -86,22 +86,33 @@ func TestConformance_ER007_DiagnosticCodes(t *testing.T) {
 		}
 	}
 
-	// Codes are defined in codes.go and spelled out nowhere else. Test files
-	// are left out: they hold file names, such as that of usage.go, which read
-	// like codes.
+	// Codes are defined in codes.go and spelled out nowhere else, gotenon
+	// included, which sits at the boundary and mints nothing of its own.
+	// Test files are left out: they hold file names, such as that of
+	// usage.go, which read like codes.
 	files, err := filepath.Glob("*.go")
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range files {
+	gotenonFiles, err := filepath.Glob(filepath.Join("gotenon", "*.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	scanned := 0
+	for _, name := range append(files, gotenonFiles...) {
 		if name == "codes.go" || strings.HasSuffix(name, "_test.go") {
 			continue
 		}
+		scanned++
 		for _, lit := range stringLiterals(t, name) {
 			if codePattern.MatchString(lit) {
 				t.Errorf("%s spells out the code %q; use the constant from codes.go", name, lit)
 			}
 		}
+	}
+	// A glob that stopped matching would pass as cleanly.
+	if scanned < 20 {
+		t.Errorf("only %d files were scanned; the packages hold more", scanned)
 	}
 }
 
