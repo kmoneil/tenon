@@ -480,3 +480,96 @@ func TestConformance_CV044_UnificationAgreesWithTypeUnification(t *testing.T) {
 		}
 	}
 }
+
+// TestConformance_CV044_NestedUnificationAgreesWithConversion holds the two
+// unification algorithms together over nested inputs: Unify of Exactly
+// constraints against the type unification that converting a tuple to a
+// list performs, under both policies, in both orders, and across grouping.
+// The flat sweep above holds ten flat values; here the types nest, drawn by
+// the value generator and reshaped by related, kept where the reshaped
+// constraint still admits exactly one type.
+func TestConformance_CV044_NestedUnificationAgreesWithConversion(t *testing.T) {
+	conformance.Covers(t, "CV-044", "CV-041")
+	r := rand.New(rand.NewSource(20260924))
+	g := generator{rand.New(rand.NewSource(20260925))}
+	var unified, refused int
+	for draw := 0; draw < 40_000 && (unified < 500 || refused < 500); draw++ {
+		t1 := g.typ(3)
+		t2, ok := tenon.SoleType(related(r, constraintOfType(t1), degrees))
+		if !ok {
+			t2 = g.typ(3)
+		}
+		va, vb := g.known(t1, 2), g.known(t2, 2)
+		for _, p := range []tenon.Policy{safe, uns} {
+			u, _, uok := tenon.Unify(p, is(t1), is(t2))
+			if flipped, _, ok := tenon.Unify(p, is(t2), is(t1)); ok != uok || (uok && !u.Equal(flipped)) {
+				t.Fatalf("under %s, %v and %v unify differently by order: %v and %v", p, t1, t2, u, flipped)
+			}
+			list := tenon.Convert(tenon.TupleVal(va, vb), tenon.ListOf(tenon.Any()), p)
+			backward := tenon.Convert(tenon.TupleVal(vb, va), tenon.ListOf(tenon.Any()), p)
+			if list.IsError() != backward.IsError() {
+				t.Fatalf("under %s, a tuple of %v and %v converts to %v one way and %v the other", p, t1, t2, list, backward)
+			}
+			switch {
+			case uok == list.IsError():
+				t.Fatalf("under %s, %v and %v unify: %t, but a tuple of them converts to %v", p, t1, t2, uok, list)
+			case !uok:
+				refused++
+				continue
+			}
+			unified++
+			elem := is(list.Type().ElementType())
+			if u.Kind() == tenon.ConstraintExactly && !u.Equal(elem) {
+				t.Fatalf("under %s, %v and %v unify to %v, but the element type is %v", p, t1, t2, u, elem)
+			}
+			if !tenon.Satisfies(u, list.Type().ElementType()) {
+				t.Fatalf("under %s, %v and %v unify to %v, which the element type %v does not satisfy", p, t1, t2, u, elem)
+			}
+			// Grouping: a third type joins on either side and the results
+			// agree.
+			t3, ok := tenon.SoleType(related(r, constraintOfType(t1), degrees))
+			if !ok {
+				continue
+			}
+			left, _, lok := tenon.Unify(p, u, is(t3))
+			u23, _, ok23 := tenon.Unify(p, is(t2), is(t3))
+			var right tenon.Constraint
+			rok := false
+			if ok23 {
+				right, _, rok = tenon.Unify(p, is(t1), u23)
+			}
+			if lok != rok || (lok && !left.Equal(right)) {
+				t.Fatalf("under %s, (%v, %v) then %v gives %v, but %v then (%v, %v) gives %v", p, t1, t2, t3, left, t1, t2, t3, right)
+			}
+		}
+	}
+	if unified < 500 || refused < 500 {
+		t.Fatalf("only %d unifications succeeded and %d were refused; the draw must reach 500 of each", unified, refused)
+	}
+}
+
+// constraintOfType writes t as the constraint tree that admits exactly its
+// values: Exactly at the scalars and capsules, the structure above them.
+func constraintOfType(t tenon.Type) tenon.Constraint {
+	switch t.Kind() {
+	case tenon.KindList:
+		return tenon.ListOf(constraintOfType(t.ElementType()))
+	case tenon.KindSet:
+		return tenon.SetOf(constraintOfType(t.ElementType()))
+	case tenon.KindMap:
+		return tenon.MapOf(constraintOfType(t.ElementType()))
+	case tenon.KindTuple:
+		members := make([]tenon.Constraint, t.TupleLength())
+		for i := range members {
+			members[i] = constraintOfType(t.TupleElementType(i))
+		}
+		return tenon.TupleOf(members...)
+	case tenon.KindObject:
+		fields := map[string]tenon.Field{}
+		for _, name := range t.AttributeNames() {
+			fields[name] = tenon.Required(constraintOfType(t.AttributeType(name)))
+		}
+		return tenon.ObjectWith(fields, true)
+	}
+	return is(t)
+}
