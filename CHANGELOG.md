@@ -4,6 +4,14 @@
 
 ### Changed
 
+- `Narrow` judges every narrowing before it answers anything: a narrowing
+  that could never apply panics as a usage error wherever it stands, where
+  a contradiction among the narrowings before it once answered first, and
+  an error operand no longer swallows the zero Narrowing. `WithMarks`
+  refuses a mark that does not equal itself, one holding a NaN, which
+  would vanish from every lookup that stored it; a mark of a type that is
+  not comparable was already refused, and the message now says which
+  defect it met.
 - `Deserialize` refuses a nil mark decoder up front as a usage error, and
   panics on a mark decoder returning a mark whose type declares no
   encoding, a broken contract that once surfaced as

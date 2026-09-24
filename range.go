@@ -578,15 +578,20 @@ func boundMarks(ns []Narrowing) []Mark {
 
 // narrowValue is Narrow before marks are carried over.
 func narrowValue(v Value, ns []Narrowing) Value {
-	if e, ok := propagate(v); ok {
-		return e
-	}
-	n := v.data()
+	// Usage is checked before anything is answered, so a call that is wrong
+	// panics whatever its operand holds and wherever the wrong narrowing
+	// stands: an error operand does not swallow a zero Narrowing, and a
+	// contradiction among the first narrowings does not hide one that could
+	// never apply.
 	for _, nw := range ns {
 		if nw.kind == 0 {
 			usagePanic("Narrow called with the zero Narrowing")
 		}
 	}
+	if e, ok := propagate(v); ok {
+		return e
+	}
+	n := v.data()
 	if n.state == statePending {
 		return narrowPending(v, n, ns)
 	}
@@ -895,6 +900,14 @@ func soleValue(t Type) (Value, bool) {
 // no type, so the only narrowings it can take are the two that say nothing
 // about one: whether it will be null.
 func narrowPending(v Value, n *node, ns []Narrowing) Value {
+	// Every narrowing is judged for usage before any is answered, so the
+	// one that could never apply panics wherever it stands, ahead of a
+	// contradiction among the others.
+	for _, nw := range ns {
+		if nw.kind != narrowNotNull && nw.kind != narrowNull {
+			usagePanic("Narrow called with %s, which does not apply to a pending value, whose type is not determined", nw)
+		}
+	}
 	null := n.null
 	for _, nw := range ns {
 		switch nw.kind {
@@ -908,8 +921,6 @@ func narrowPending(v Value, n *node, ns []Narrowing) Value {
 				return contradiction("no pending value satisfies both " + NotNull().String() + " and " + nw.String())
 			}
 			null = nullOnly
-		default:
-			usagePanic("Narrow called with %s, which does not apply to a pending value, whose type is not determined", nw)
 		}
 	}
 	if null == n.null {

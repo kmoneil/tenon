@@ -111,8 +111,11 @@ func WithMarks(v Value, marks ...Mark) Value {
 		if m == nil {
 			usagePanic("WithMarks called with a nil Mark as mark %d", i)
 		}
-		if !comparableMark(m) {
+		switch comparable, self := comparableMark(m); {
+		case !comparable:
 			usagePanic("WithMarks called with a mark of type %T, which is not comparable and so cannot be told from other marks", m)
+		case !self:
+			usagePanic("WithMarks called with a mark of type %T holding a value that does not equal itself, so it cannot be told from other marks", m)
 		}
 	}
 	merged, grew := mergeMarks(n.markList(), marks)
@@ -129,17 +132,19 @@ func WithMarks(v Value, marks ...Mark) Value {
 	return Value{&nn}
 }
 
-// comparableMark reports whether m is of a type Go equality can compare, which
-// telling marks apart needs. Comparing a value of a type that is not comparable
-// panics, and the panic is the answer.
-func comparableMark(m Mark) (ok bool) {
+// comparableMark reports whether Go equality can compare m at all, and
+// whether it finds m equal to itself, both of which telling marks apart
+// needs. Comparing a value of a type that is not comparable panics, and the
+// panic is the answer; a mark holding a NaN compares and still fails, the
+// one way a Go value is unequal to itself, and would vanish from every
+// lookup that stored it.
+func comparableMark(m Mark) (comparable, self bool) {
 	defer func() {
 		if recover() != nil {
-			ok = false
+			comparable, self = false, false
 		}
 	}()
-	_ = m == m
-	return true
+	return true, m == m
 }
 
 // mergeMarks returns held with marks added, each once, sorted by identifier,
@@ -433,7 +438,10 @@ func (a *attachment) merged(held *markSet) (*markSet, bool) {
 // The decoder reads a value this way, part by part, and settles it once read.
 func withOwnMarks(v Value, marks []Mark) Value {
 	for i, m := range marks {
-		if m == nil || !comparableMark(m) {
+		if m == nil {
+			usagePanic("WithMarks called with mark %d of type %T, which cannot be told from other marks", i, m)
+		}
+		if comparable, self := comparableMark(m); !comparable || !self {
 			usagePanic("WithMarks called with mark %d of type %T, which cannot be told from other marks", i, m)
 		}
 	}
