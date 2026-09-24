@@ -228,7 +228,7 @@ func (d *differ) compare(a, b Value, p Path, asideA, asideB []Mark) {
 
 // members adds the member changes between two sets at p, whose members are as
 // the sets hold them, in iteration order: known members first, in canonical
-// order, and then the rest, in the order of their display forms.
+// order, and then the rest, in the order of their encodings.
 func (d *differ) members(x, y []Value, p Path) {
 	firstUnknown := func(members []Value) int {
 		if i := slices.IndexFunc(members, func(m Value) bool { return !m.n.isKnown() }); i >= 0 {

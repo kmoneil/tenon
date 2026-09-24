@@ -49,7 +49,7 @@ const (
 // serialize alike.
 func Serialize(v Value) ([]byte, Value, bool) {
 	v.data()
-	e := &encoder{ids: map[string]Type{}, implied: map[*markSet]*impliedMarks{}}
+	e := newEncoder()
 	body := e.item(nil, v)
 	if failure, failed := e.errs.value(); failed {
 		return nil, failure, false
@@ -84,6 +84,11 @@ type encoder struct {
 	// writes a member takes at, the depth of that member in the trail, which
 	// is 0 for the value Serialize is given.
 	trail trail
+}
+
+// newEncoder returns an encoder for one value.
+func newEncoder() *encoder {
+	return &encoder{ids: map[string]Type{}, implied: map[*markSet]*impliedMarks{}}
 }
 
 // fail records a diagnostic for what at locates, unless an identical one is

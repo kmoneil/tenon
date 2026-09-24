@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+### Changed
+
+- A set holds, and iterates, its members that are not known in the order of
+  their encodings, where it ordered them by their display forms. A display
+  form spells out the member's type, so a document stating one large element
+  type and listing many unknown members of a few bytes each cost the type's
+  text for every member: 54 kilobytes of such a document decoded in 1.2
+  seconds and allocated 620 megabytes, and decodes in 1.8 milliseconds and
+  2.8 megabytes. The order `Elements`, the display form and `Diff` give those
+  members changes; known members, and every encoding, do not. Members told
+  apart only by a capsule value whose type declares no encoding follow the
+  order of those capsule values, which is their type's order where it
+  declares one.
+
 ### Fixed
 
 - Collecting the diagnostics of a value that fails in many places takes time

@@ -450,7 +450,7 @@ var tallyDecoders = tenon.Decoders{Marks: map[string]tenon.MarkDecoder{
 // object, by rendering it or by gathering its attributes afresh, does work
 // that grows with the square of what it is given.
 func TestConformance_SE005_ObjectsCostWhatTheyHold(t *testing.T) {
-	conformance.Covers(t, "SE-005", "SE-003")
+	conformance.Covers(t, "SE-005", "SE-003", "EQ-044")
 	// A type is as long as its text, whether that is one long name or many
 	// short ones, so both shapes are decoded at a size and four times it. A
 	// decoder that reads the type again for every object does sixteen times
@@ -479,6 +479,16 @@ func TestConformance_SE005_ObjectsCostWhatTheyHold(t *testing.T) {
 				objects[i] = obj(map[string]tenon.Value{"a": tenon.NullVal(inner)})
 			}
 			return tenon.ListVal(tenon.Object(map[string]tenon.Type{"a": inner}), objects...)
+		}},
+		// A set orders its members that are not known by what they are,
+		// which reading them type and all spells the type out for each.
+		{"unknown members of a set of a type naming one long attribute", func(size int) tenon.Value {
+			elem := tenon.Object(map[string]tenon.Type{strings.Repeat("a", 8*size): num})
+			members := make([]tenon.Value, size)
+			for i := range members {
+				members[i] = tenon.Unknown(elem)
+			}
+			return tenon.SetVal(elem, members...)
 		}},
 	}
 	for _, shape := range shapes {

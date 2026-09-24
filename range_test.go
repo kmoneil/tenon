@@ -1119,7 +1119,7 @@ func TestConformance_UN002_MembersNarrowing(t *testing.T) {
 	// distinct, and a pair with identical ranges is recorded once.
 	distinct := tenon.Narrow(tenon.Unknown(set), tenon.Members(atLeast(5), atMostZero))
 	if got, want := distinct.String(),
-		"unknown(set(number), length >= 2, members {unknown(number, not null, <= 0), unknown(number, not null, >= 5)})"; got != want {
+		"unknown(set(number), length >= 2, members {unknown(number, not null, >= 5), unknown(number, not null, <= 0)})"; got != want {
 		t.Errorf("provably distinct members render as %s, want %s", got, want)
 	}
 	// The same two ranges while each still holds null are not provably
@@ -1128,7 +1128,7 @@ func TestConformance_UN002_MembersNarrowing(t *testing.T) {
 		tenon.Narrow(tenon.Unknown(num), tenon.NumberMin(n(5), true)),
 		tenon.Narrow(tenon.Unknown(num), tenon.NumberMax(n(0), true))))
 	if got, want := nullable.String(),
-		"unknown(set(number), length >= 1, members {unknown(number, <= 0), unknown(number, >= 5)})"; got != want {
+		"unknown(set(number), length >= 1, members {unknown(number, >= 5), unknown(number, <= 0)})"; got != want {
 		t.Errorf("members that could each be null render as %s, want %s", got, want)
 	}
 	overlap := tenon.Narrow(tenon.Unknown(set), tenon.Members(atLeast(5), atLeast(6)))

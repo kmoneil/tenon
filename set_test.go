@@ -542,6 +542,38 @@ func TestConformance_EQ044_SetIterationOrder(t *testing.T) {
 	}
 }
 
+// TestConformance_EQ044_MembersToldApartOnlyByACapsule holds members that are
+// not known, and that differ only by a capsule value whose type declares no
+// encoding, to an order that follows from those capsule values. The two
+// encode alike, since what stands in for each capsule value does, so their
+// encodings cannot place them; the capsule values' canonical order does, which
+// is the order the type declares.
+func TestConformance_EQ044_MembersToldApartOnlyByACapsule(t *testing.T) {
+	conformance.Covers(t, "EQ-044", "EQ-045")
+	num := tenon.NumberType()
+	ranked := tenon.Capsule("ranked", tenon.CapsuleOps[int]{
+		Equals:  func(a, b *int) bool { return *a == *b },
+		Hash:    func(v *int) uint64 { return uint64(*v) },
+		Compare: func(a, b *int) int { return *a - *b },
+	})
+	member := func(i int) tenon.Value {
+		return tenon.TupleVal(tenon.CapsuleVal(ranked, &i), tenon.Unknown(num))
+	}
+	given := []tenon.Value{member(3), member(1), member(2)}
+	for _, order := range [][]int{{0, 1, 2}, {2, 1, 0}, {1, 2, 0}} {
+		members := make([]tenon.Value, len(order))
+		for i, at := range order {
+			members[i] = given[at]
+		}
+		elems := tenon.SetVal(tenon.Tuple(ranked, num), members...).Elements()
+		for i, want := range []int{1, 2, 3} {
+			if !tenon.Identical(elems[i], member(want)) {
+				t.Errorf("built in order %v, member %d of the set is %v, want the one ranked %d", order, i, elems[i], want)
+			}
+		}
+	}
+}
+
 // slicesEqualValues reports whether two slices hold the same values in the
 // same places.
 func slicesEqualValues(a, b []tenon.Value) bool {
