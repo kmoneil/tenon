@@ -11,6 +11,7 @@ RULECOV := $(CURDIR)/.rulecov
 .PHONY: check check-slow determinism fuzz fuzz-parse fuzz-string fuzz-deserialize fuzz-convert release-fuzz growth rules codes report
 
 check:
+	@test -z "$$TENON_UPDATE_VECTORS" || { echo 'check: TENON_UPDATE_VECTORS is set, which rewrites both corpora and passes; unset it'; exit 1; }
 	@echo '==> gofmt'
 	@test -z "$$(gofmt -l .)" || { echo 'gofmt: these files need formatting:'; gofmt -l .; exit 1; }
 	@echo '==> go vet'
@@ -53,7 +54,7 @@ determinism:
 	rm -rf '$(EMIT)'
 	TENON_EMIT_DIR='$(EMIT)/first' go test -count=1 -shuffle=on ./...
 	TENON_EMIT_DIR='$(EMIT)/second' GOMAXPROCS=1 go test -count=1 -shuffle=on ./...
-	@test -n "$$(find '$(EMIT)/first' -type f)" || { echo 'determinism: the tests emitted nothing'; exit 1; }
+	@n="$$(find '$(EMIT)/first' -type f | wc -l | tr -d ' ')"; test "$$n" -eq 11 || { echo "determinism: the tests emitted $$n outputs, not the 11 they emit; a silenced emitter would otherwise pass"; exit 1; }
 	diff -r '$(EMIT)/first' '$(EMIT)/second'
 	@echo "determinism: $$(find '$(EMIT)/first' -type f | wc -l | tr -d ' ') outputs came out the same in both runs"
 

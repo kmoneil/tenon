@@ -1,6 +1,7 @@
 package tenon_test
 
 import (
+	"math/rand/v2"
 	"slices"
 	"strconv"
 	"testing"
@@ -317,12 +318,14 @@ func TestCanonicalOrderIsATotalOrder(t *testing.T) {
 	if together < 3 {
 		t.Errorf("only %d pairs of distinct values sorted together", together)
 	}
-	// Sorting is repeatable: the same values, shuffled, come back in one order.
+	// Sorting is repeatable: the same values, shuffled anew each time, come
+	// back in one order.
 	first := slices.Clone(all)
 	slices.SortFunc(first, tenon.CanonicalCompare)
+	rng := rand.New(rand.NewPCG(24, 9))
 	for range 20 {
 		again := slices.Clone(all)
-		slices.Reverse(again)
+		rng.Shuffle(len(again), func(i, j int) { again[i], again[j] = again[j], again[i] })
 		slices.SortFunc(again, tenon.CanonicalCompare)
 		for i := range first {
 			if !tenon.Identical(first[i], again[i]) {

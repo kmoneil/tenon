@@ -33,8 +33,8 @@ func fixture(body ...string) []byte {
 }
 
 // sampleSpec exercises every convention: definitions and references, a
-// reference wrapped to the start of a line, a code fence, a withdrawn rule, an
-// outline section and an appendix.
+// reference wrapped to the start of a line, a code fence holding no
+// identifiers, a withdrawn rule, an outline section and an appendix.
 var sampleSpec = fixture(
 	"## 2. Alpha",
 	"",
@@ -46,7 +46,7 @@ var sampleSpec = fixture(
 	"> **Rationale.** `[AA-001]` is referenced from a note.",
 	"",
 	"```",
-	"`[AA-009]` inside a code fence is ignored.",
+	"item = [0, type, content]  ; grammar text, no identifiers",
 	"```",
 	"",
 	"## 3. Beta",
@@ -65,6 +65,18 @@ var sampleSpec = fixture(
 	"",
 	"`[BB-005]` begins a paragraph in an appendix, which mentions `[AA-001]`.",
 )
+
+// TestParseSpecRefusesFencedIdentifiers holds parseSpec to refusing a line
+// that begins as a rule definition inside a code fence: a fence is skipped
+// whole, so a rule could otherwise hide there, invisible to the manifest. A
+// bare mention deeper in a fence line, as a grammar's comment makes, stays
+// harmless, which the specification's own tag grammar relies on.
+func TestParseSpecRefusesFencedIdentifiers(t *testing.T) {
+	_, err := parseSpec(fixture("## 2. Alpha", "", "`[AA-001]` One.", "", "```", "`[AA-009]` hides here.", "```"))
+	if err == nil || !strings.Contains(err.Error(), "a rule definition inside a code fence") {
+		t.Fatalf("a fenced identifier parsed: %v", err)
+	}
+}
 
 func TestParseSpec(t *testing.T) {
 	got, err := parseSpec(sampleSpec)

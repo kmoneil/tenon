@@ -1,7 +1,6 @@
 package tenon_test
 
 import (
-	"math/rand/v2"
 	"sync"
 	"testing"
 
@@ -105,13 +104,23 @@ func TestConformance_TY021_DeterministicEquality(t *testing.T) {
 	}
 
 	want := build([]int{0, 1, 2, 3, 4, 5})
-	rng := rand.New(rand.NewPCG(21, 21))
-	for range 100 {
-		order := rng.Perm(len(names))
-		if got := build(order); got != want {
-			t.Fatalf("construction order %v gave %v, which is not the interned %v", order, got, want)
+	// Every one of the 720 construction orders, not a sample of them.
+	var enumerate func(order, rest []int)
+	enumerate = func(order, rest []int) {
+		if len(rest) == 0 {
+			if got := build(order); got != want {
+				t.Fatalf("construction order %v gave %v, which is not the interned %v", order, got, want)
+			}
+			return
+		}
+		for i, pick := range rest {
+			remaining := make([]int, 0, len(rest)-1)
+			remaining = append(remaining, rest[:i]...)
+			remaining = append(remaining, rest[i+1:]...)
+			enumerate(append(order, pick), remaining)
 		}
 	}
+	enumerate(nil, []int{0, 1, 2, 3, 4, 5})
 
 	// Equality is decided at once, however deep the types.
 	deep, deeper := tenon.StringType(), tenon.StringType()
