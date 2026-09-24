@@ -23,6 +23,53 @@ func (m probe) Propagation() Propagation { return Propagate }
 func (m probe) Redacting() bool          { return m.redact }
 func (m probe) Deep() bool               { return m.deep }
 
+// TestConformance_MK007_PropagatedPaysNothingUnmarked holds the gathering of
+// Propagate marks to allocating nothing over unmarked operands, for every
+// registered operation, a template expanded to each of its samples. Every
+// operation funnels through (*op).propagated, so one early allocation there,
+// such as making room for marks no operand carries, taxes every unmarked
+// call of every operation, which the constructor pins below would never see.
+func TestConformance_MK007_PropagatedPaysNothingUnmarked(t *testing.T) {
+	conformance.Covers(t, "MK-007")
+	num := Type{numberType}
+	plain := NumberFromInt(1)
+	held := ListVal(num, NumberFromInt(2))
+	checked := 0
+	for _, o := range operations {
+		bound := []*op{o}
+		if o.bind != nil {
+			bound = bound[:0]
+			for _, p := range o.samples {
+				bound = append(bound, o.with(p))
+			}
+		}
+		for _, b := range bound {
+			args := make([]Value, len(b.operands))
+			for i, od := range b.operands {
+				// An operand read within gets a container, so the walk into
+				// its members is on the measured path.
+				if od.within {
+					args[i] = held
+				} else {
+					args[i] = plain
+				}
+			}
+			name := b.name
+			if b.param != nil {
+				name += " " + b.param.String()
+			}
+			if got := testing.AllocsPerRun(200, func() { b.propagated(args) }); got != 0 {
+				t.Errorf("%s: propagated allocates %v times over unmarked operands, want none", name, got)
+			}
+		}
+		checked++
+	}
+	// A registry that lost its operations would pass as cleanly.
+	if checked < 14 {
+		t.Errorf("only %d operations were checked; every registered operation must be", checked)
+	}
+}
+
 func TestConformance_MK007_UnmarkedValuesPayNothing(t *testing.T) {
 	conformance.Covers(t, "MK-007")
 	str, num := Type{stringType}, Type{numberType}
