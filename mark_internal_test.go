@@ -379,6 +379,11 @@ func TestMergeMarksIsTheScan(t *testing.T) {
 	for i := range 2 * manyMarks {
 		pool = append(pool, probe{id: fmt.Sprintf("t%02d", i%4), deep: i%2 == 0, redact: i%3 == 0})
 	}
+	// A long run of marks that share one identifier, as a document can give a
+	// value, which many marks merged at once take in one pass.
+	for i := range 3 * manyMarks {
+		pool = append(pool, runMark{i})
+	}
 	pick := func(n int) []Mark {
 		ms := make([]Mark, n)
 		for i := range ms {
@@ -394,11 +399,25 @@ func TestMergeMarksIsTheScan(t *testing.T) {
 		if grew != (len(want) > len(held)) || !slices.Equal(got, want) {
 			t.Fatalf("mergeMarks(%v, %v) = %v, %v; want %v", held, marks, got, grew, want)
 		}
+		// Many marks that are all held already add nothing, however they
+		// are ordered, and the list held comes back as it was.
+		again := slices.Clone(held)
+		slices.Reverse(again)
+		if got, grew := mergeMarks(held, again); grew || !slices.Equal(got, held) {
+			t.Fatalf("merging the %d marks held again gave %v, %v", len(held), got, grew)
+		}
 		if d, want := deepMarks(marks), scanDeep(marks); !slices.Equal(d, want) {
 			t.Fatalf("deepMarks(%v) = %v, want %v", marks, d, want)
 		}
 	}
 }
+
+// runMark is one of many marks that share an identifier, told apart by n.
+type runMark struct{ n int }
+
+func (runMark) MarkID() string           { return "run" }
+func (runMark) Propagation() Propagation { return Propagate }
+func (runMark) Redacting() bool          { return false }
 
 // scanMerge is mergeMarks as a scan of the list for every mark.
 func scanMerge(held, marks []Mark) []Mark {
