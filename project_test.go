@@ -90,6 +90,30 @@ func TestConformance_SE063_ProjectedStrings(t *testing.T) {
 	}
 }
 
+// TestConformance_SE060_DisplayTextProjectsAsText holds the projection to
+// JSON text where a capsule's display form returns text that is not
+// well-formed UTF-8: each ill-formed byte is written as U+FFFD, as the
+// display form writes it, so what SE-062 renders as a JSON string is the
+// JSON text SE-060 promises. A String cannot hold such bytes, so
+// SE-063 never meets them; the declared display form is ordinary Go code,
+// which nothing holds to UTF-8.
+func TestConformance_SE060_DisplayTextProjectsAsText(t *testing.T) {
+	conformance.Covers(t, "SE-060", "SE-062", "SE-063")
+	shows := func(text string) tenon.Value {
+		typ := tenon.Capsule("shows", tenon.CapsuleOps[celsius]{
+			Display: func(*celsius) string { return text },
+		})
+		return tenon.CapsuleVal(typ, &celsius{})
+	}
+	wantProjection(t, "an ill-formed byte", shows("x\xffy"), "\"x\U0000FFFDy\"")
+	// One U+FFFD for each ill-formed byte, as ranging over a Go string gives
+	// them: three for a surrogate's three bytes, not one for the run.
+	wantProjection(t, "a surrogate's bytes", shows("a\xed\xa0\x80b"), "\"a\U0000FFFD\U0000FFFD\U0000FFFDb\"")
+	// Well-formed display text gains no replacement characters, and one
+	// already there stays.
+	wantProjection(t, "a replacement character already there", shows("x\U0000FFFDy"), "\"x\U0000FFFDy\"")
+}
+
 func TestConformance_SE061_WhatDoesNotProject(t *testing.T) {
 	conformance.Covers(t, "SE-061", "SE-060", "SE-051")
 	secret := stamp{id: "secret", redact: true}
