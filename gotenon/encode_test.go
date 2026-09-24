@@ -252,6 +252,11 @@ func TestConformance_GO030_NumbersEncodeExactly(t *testing.T) {
 	if msg := err.Error(); msg == "" || !errors.As(err, new(*gotenon.DiagnosticError)) {
 		t.Errorf("the error reads %q", msg)
 	}
+	// A rational that does not terminate is inexact however large its
+	// denominator, with the code a small one gets.
+	wantEncodeFailure(t, "one third to the thousandth",
+		new(big.Rat).SetFrac(big.NewInt(1), new(big.Int).Exp(big.NewInt(3), big.NewInt(1000), nil)),
+		wantDiag{tenon.CodeEncodeInexact, "."})
 	wantValue(t, "a string in normal form", encoded(t, "cafe\U00000301"), s("caf\U000000e9"))
 }
 
@@ -627,8 +632,32 @@ func TestConformance_GO030_NumbersAtTheEdgeOfTheWindow(t *testing.T) {
 	// A denominator that is below the window and has a factor that is neither
 	// two nor five is out of range rather than inexact: the window is decided
 	// from the places, before what is left over is looked at, as a
-	// denominator too large to factor at all has always been.
+	// denominator whose fives hide what else it holds has always been.
 	wantEncodeFailure(t, "a rational below the window that does not terminate",
 		new(big.Rat).SetFrac(one, new(big.Int).Mul(big.NewInt(3), pow(5, 1_000_001))),
 		wantDiag{tenon.CodeNumberOutOfRange, "."})
+
+	// A rational that does not terminate is inexact at any size: whether the
+	// denominator holds a factor besides two and five is established before
+	// its size refuses it, from its trailing zero bits and its remainder by
+	// five, so the answer costs no copy of a denominator too large to factor
+	// (v0.1.0 refused 1/3^2100000 as out of range). Only a denominator whose
+	// fives hide the factor is refused for its places, as the counted case
+	// above is.
+	huge := new(big.Rat).SetFrac(one, pow(3, 2_100_000))
+	wantEncodeFailure(t, "a huge rational that does not terminate", huge,
+		wantDiag{tenon.CodeEncodeInexact, "."})
+	wantEncodeFailure(t, "a huge even rational that does not terminate",
+		new(big.Rat).SetFrac(one, new(big.Int).Lsh(big.NewInt(3), 4_000_000)),
+		wantDiag{tenon.CodeEncodeInexact, "."})
+	wantEncodeFailure(t, "a huge power of two",
+		new(big.Rat).SetFrac(one, new(big.Int).Lsh(one, 4_000_000)),
+		wantDiag{tenon.CodeNumberOutOfRange, "."})
+	runtime.GC()
+	runtime.ReadMemStats(&before)
+	gotenon.Encode(huge)
+	runtime.ReadMemStats(&after)
+	if grew := after.TotalAlloc - before.TotalAlloc; grew > 64<<10 {
+		t.Errorf("refusing a huge rational that does not terminate allocated %d bytes, more than the 65,536 it may", grew)
+	}
 }
