@@ -87,15 +87,22 @@ func decOf(v Value) decimal.Dec { return v.n.data.(decimal.Dec) }
 // arithmetic returns the value of an arithmetic result, or the error value
 // saying why there is none.
 func arithmetic(d decimal.Dec, err error) Value {
-	switch err {
-	case nil:
+	if err == nil {
 		return numberValue(d)
-	case decimal.ErrDivideByZero:
-		return errorValue(Diagnostic{Code: CodeNumberDivideByZero, Message: "a number cannot be divided by zero"})
-	case decimal.ErrModuloByZero:
-		return errorValue(Diagnostic{Code: CodeNumberModuloByZero, Message: "a number has no remainder modulo zero"})
 	}
-	return errorValue(Diagnostic{Code: CodeNumberOutOfRange, Message: "the result is outside the range of numbers"})
+	code := numberCode(err.(decimal.Error))
+	var message string
+	switch code {
+	case CodeNumberDivideByZero:
+		message = "a number cannot be divided by zero"
+	case CodeNumberModuloByZero:
+		message = "a number has no remainder modulo zero"
+	case CodeNumberOutOfRange:
+		message = "the result is outside the range of numbers"
+	default:
+		internalPanic("an arithmetic operation reported %v, which none reports", err)
+	}
+	return errorValue(Diagnostic{Code: code, Message: message})
 }
 
 // addBounds bounds the result of Add by the bounds of its operands: a sum lies
