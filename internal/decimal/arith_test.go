@@ -4,6 +4,7 @@ import (
 	"math"
 	"math/big"
 	"math/rand/v2"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -492,5 +493,67 @@ func TestDivBound(t *testing.T) {
 		if lo.Cmp(x) > 0 || hi.Cmp(x) < 0 {
 			t.Fatalf("%s / %s is not between %s and %s", x, y, down, up)
 		}
+	}
+}
+
+// TestConformance_NU016_QuotientsRefuseBeforeComputing holds Div to refusing
+// a terminating quotient whose last digit lies below the window before the
+// power of ten as long as the answer is built: 1 / 2^3000000 has its last
+// digit at 10^-3000000, and v0.4.0 built ten million digits to refuse it.
+// The refusal is decided from the denominator's twos and fives alone, so a
+// quotient that rounds is left to the rounding path, since 1 / (3 x 2^k)
+// rounds into the window while 1 / 2^k does not, and a divisor inside the
+// window still divides exactly.
+func TestConformance_NU016_QuotientsRefuseBeforeComputing(t *testing.T) {
+	conformance.Covers(t, "NU-016", "NU-011", "NU-012")
+	one := mustParse(t, "1")
+	fromInt := func(c *big.Int) Dec {
+		d, err := fromBig(c, 0)
+		if err != nil {
+			t.Fatalf("building the divisor: %v", err)
+		}
+		return d
+	}
+	pow2 := func(k int64) Dec { return fromInt(new(big.Int).Lsh(big.NewInt(1), uint(k))) }
+
+	// Refused from the places alone, within an allocation budget the old
+	// computation exceeded a hundredfold.
+	huge := pow2(3_000_000)
+	var before, after runtime.MemStats
+	runtime.GC()
+	runtime.ReadMemStats(&before)
+	_, err := one.Div(huge)
+	runtime.ReadMemStats(&after)
+	if err != ErrOutOfRange {
+		t.Fatalf("1 / 2^3000000 gave %v, want ErrOutOfRange", err)
+	}
+	if grew, budget := after.TotalAlloc-before.TotalAlloc, uint64(2<<20); grew > budget {
+		t.Errorf("refusing 1 / 2^3000000 allocated %d bytes, more than the %d it may", grew, budget)
+	}
+
+	// The same structure with a three beside it rounds into the window, at a
+	// size that computes quickly.
+	rough := noErr(t)(mustParse(t, "3").Mul(pow2(20_000)))
+	if _, err := one.Div(rough); err != nil {
+		t.Errorf("1 / (3 x 2^20000) gave %v, want a rounded quotient in the window", err)
+	}
+
+	// A divisor inside the window still divides, exactly: the quotient times
+	// the divisor is one again.
+	small := pow2(1500)
+	q := noErr(t)(one.Div(small))
+	if back := noErr(t)(q.Mul(small)); !back.Equal(one) {
+		t.Errorf("1 / 2^1500 times 2^1500 is %v, want 1", back)
+	}
+
+	// The fives side of the same refusal, counted rather than divided out.
+	deepFives := fromInt(new(big.Int).Exp(big.NewInt(5), big.NewInt(1_400_000), nil))
+	if _, err := one.Div(deepFives); err != ErrOutOfRange {
+		t.Errorf("1 / 5^1400000 gave %v, want ErrOutOfRange", err)
+	}
+	inFives := fromInt(new(big.Int).Exp(big.NewInt(5), big.NewInt(2000), nil))
+	q = noErr(t)(one.Div(inFives))
+	if back := noErr(t)(q.Mul(inFives)); !back.Equal(one) {
+		t.Errorf("1 / 5^2000 times 5^2000 is %v, want 1", back)
 	}
 }
