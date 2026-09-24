@@ -12,6 +12,12 @@
 
 ### Fixed
 
+- Division refuses a terminating quotient whose last digit lies below the
+  digit window before computing it: `1 / 2^3000000` is refused from the
+  denominator's twos and fives where it was refused after ten million
+  digits were built, 755 milliseconds at 0.4.0. A quotient that rounds is
+  left to the rounding path, since it can round into the window however
+  deep its denominator, and a divisor inside the window divides as before.
 - A partly known set's least length is counted once for the value's
   lifetime: the count follows from the members, which never change, so
   asking `Length`, `Equals` or a conversion again reads the count already

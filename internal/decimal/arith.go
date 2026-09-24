@@ -101,6 +101,9 @@ func (d Dec) Div(e Dec) (Dec, error) {
 	neg := x.Sign() != y.Sign()
 	x.Abs(x)
 	y.Abs(y)
+	if quotientBelowWindow(x, y, d.exp-e.exp) {
+		return Dec{}, ErrOutOfRange
+	}
 	q, shift := exactQuotient(x, y)
 	if q == nil {
 		q, shift = roundedQuotient(x, y, DivisionPrecision)
@@ -134,6 +137,76 @@ func (d Dec) Mod(e Dec) (Dec, error) {
 	}
 	x := d.scaledCoefficient(d.exp - exp)
 	return fromBig(x.Rem(x, e.scaledCoefficient(e.exp-exp)), exp)
+}
+
+// quotientBelowWindow reports whether x/y × 10^e is certainly a terminating
+// decimal whose last digit lies below the window, so that Div refuses it
+// before exactQuotient builds a power of ten as long as the answer: at three
+// million bits of denominator that power alone is ten million digits.
+//
+// It decides only where the denominator's factors past the twos and fives it
+// shares with x are certainly gone: the quotient then terminates whatever x
+// holds, its coefficient in lowest terms carries no trailing zero, since a
+// power of five is odd and a doubling is no multiple of five, and its last
+// digit sits exactly at 10^(e - max(a, b)) for a twos and b fives. A
+// denominator with anything else left, or with more fives than the window
+// has places, is left to the paths below: a quotient that rounds may round
+// into the window however deep its denominator, so refusing it here would
+// be wrong, and counting a million fives is the cost this check exists to
+// avoid.
+func quotientBelowWindow(x, y *big.Int, e int64) bool {
+	// A small denominator cannot put the last digit far below its own
+	// magnitude, and the paths below are already cheap for it.
+	if y.BitLen() < 1024 {
+		return false
+	}
+	twosY := int64(y.TrailingZeroBits())
+	a := twosY - min(twosY, int64(x.TrailingZeroBits()))
+	odd := new(big.Int).Rsh(y, uint(twosY))
+	b := int64(0)
+	if odd.Cmp(bigOne) != 0 {
+		const limit = MaxAdjustedExponent + 2
+		fivesY, rest := fives(odd, limit)
+		if rest.Cmp(bigOne) != 0 || fivesY > limit {
+			return false
+		}
+		fivesX, _ := fives(x, fivesY)
+		b = fivesY - min(fivesY, fivesX)
+	}
+	return e-max(a, b) < -MaxAdjustedExponent
+}
+
+var bigOne = big.NewInt(1)
+
+// fives returns how many times five divides z, stopping once the count
+// passes limit, and what is left of z with them taken out at that point. It
+// divides by five, then by that squared, and so on while each divides, then
+// takes the smaller powers out on the way down, so a power of n fives costs
+// the logarithm of n divisions rather than n of them.
+func fives(z *big.Int, limit int64) (int64, *big.Int) {
+	rest := new(big.Int).Set(z)
+	powers := []*big.Int{big.NewInt(5)}
+	steps := []int64{1}
+	q, rem := new(big.Int), new(big.Int)
+	var n int64
+	for i := 0; n <= limit; i++ {
+		if q.QuoRem(rest, powers[i], rem); rem.Sign() != 0 {
+			break
+		}
+		rest.Set(q)
+		n += steps[i]
+		if i+1 == len(powers) {
+			powers = append(powers, new(big.Int).Mul(powers[i], powers[i]))
+			steps = append(steps, 2*steps[i])
+		}
+	}
+	for i := len(powers) - 2; i >= 0 && n <= limit; i-- {
+		if q.QuoRem(rest, powers[i], rem); rem.Sign() == 0 {
+			rest.Set(q)
+			n += steps[i]
+		}
+	}
+	return n, rest
 }
 
 // exactQuotient returns q and k with x/y = q × 10^-k when x/y terminates, and
