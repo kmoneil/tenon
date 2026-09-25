@@ -12,6 +12,22 @@
 
 ### Changed
 
+- Narrowings that leave a value that may be null no other value leave it
+  null. `Narrow(Unknown(NumberType()), NumberMin(5), NumberMax(3))` is
+  `null(number)`, where it was `range.contradiction`: bounds, prefixes,
+  lengths and listings say nothing about null, so null satisfies them, and
+  narrowing the null value by them already returned it. The unknown and
+  the null it may turn out to be now answer alike, one narrowing at a time
+  or all at once, and a plan no longer reports a contradiction the
+  configuration it plans does not meet. The same holds for a set longer
+  than its element type has values, such as a set of bools of length 4. With
+  `NotNull` in force, before those narrowings or after, they are still a
+  contradiction, with the same message either way. A document recording
+  such a range is refused as `serialize.not_canonical`, since the value is
+  the null, where it was `serialize.malformed`; the vector corpus renames
+  that entry "range only null lies in" and adds "range no value lies in"
+  for a range that excludes null. This settles what `CONFORMANCE.md`
+  overstated for `UN-004` and `UN-005` since 0.4.0; `DI-011` still waits.
 - The module's Go directive is `go 1.26.0`, the floor `golang.org/x/text`
   v0.42.0 sets, where it named the toolchain's patch release and demanded
   more of consumers than anything in tenon needs.

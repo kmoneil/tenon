@@ -258,6 +258,9 @@ func TestConformance_SE002_OnlyTheEncodingDecodes(t *testing.T) {
 		{"marks out of order", "83 00 01 da74656e02 82 f5 82 83 6170 03 6176 81 616d"},
 		{"an indefinite-length array", "83 00 82 04 02 9f 01 ff"},
 		{"object attributes out of order", "83 00 82 08 82 82 6162 02 82 6161 02 82 01 02"},
+		// Crossed bounds on a range that holds null leave null alone, which
+		// is the null value and encodes as one (UN-004).
+		{"a range only null lies in", "83 00 02 da74656e01 a2 01 82 05 f5 02 82 01 f5"},
 	} {
 		wantDecodeFailure(t, tt.name, document+tt.item, tenon.CodeSerializeNotCanonical)
 	}
@@ -270,7 +273,7 @@ func TestConformance_SE002_OnlyTheEncodingDecodes(t *testing.T) {
 		{"a float", document + "83 00 02 f9 0000"},
 		{"a key twice", document + "83 00 82 06 02 82 82 6161 01 82 6161 02"},
 		{"an empty attribute name", document + "83 00 82 08 81 82 60 01 81 f5"},
-		{"a range no value lies in", document + "83 00 02 da74656e01 a2 01 82 05 f5 02 82 01 f5"},
+		{"a range no value lies in", document + "83 00 02 da74656e01 a3 00 f5 01 82 05 f5 02 82 01 f5"},
 		{"a number outside the window", document + "83 00 02 c4 82 1a 000f4240 01"},
 		{"a prefix on a number", document + "83 00 02 da74656e01 a1 03 6161"},
 		{"a number for a bool", document + "83 00 01 01"},

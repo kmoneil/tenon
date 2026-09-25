@@ -544,10 +544,13 @@ func (n *node) length() int64 {
 // Apart from Null and NotNull, a narrowing says what a value is when it is not
 // null, so a range that still holds null keeps it: NotNull alone excludes
 // null, and narrowing the null value by a bound, a prefix or a length returns
-// it unchanged. A narrowing that leaves nothing possible, such as an upper
-// bound below a lower bound already in force, produces an error value with
-// code CodeRangeContradiction rather than an empty range. Narrowing an error
-// value returns an error value carrying its diagnostics.
+// it unchanged. So does narrowing an unknown that may be null by narrowings
+// that leave it no other value, such as an upper bound below a lower bound
+// already in force: null satisfies them, so the result is the null value, as
+// it is when the unknown turns out to be null first. A narrowing that leaves
+// nothing possible, such as those bounds with NotNull in force, produces an
+// error value with code CodeRangeContradiction rather than an empty range.
+// Narrowing an error value returns an error value carrying its diagnostics.
 //
 // Narrow refines the value it is given rather than deriving a new one, so
 // the result carries the marks of v, the Isolate ones included, an error
@@ -624,13 +627,23 @@ func narrowValue(v Value, ns []Narrowing) Value {
 	// narrowing given before this one said, so a message withholds it when
 	// either carries a redacting mark.
 	withheld := n.redactingMarks()
+	// crossed names the two narrowings that left only null, once some have, so
+	// a NotNull after them reports what it contradicts as a NotNull before
+	// them would.
+	var crossed string
 	for _, nw := range ns {
 		clash, ok := r.apply(nw, ceiling)
+		if !ok && crossed != "" {
+			return contradiction("no value of type " + n.typ.String() + " satisfies both " + crossed)
+		}
+		if withheld != nil && clash != "" {
+			clash = redactedText(withheld)
+		}
 		if !ok {
-			if withheld != nil {
-				clash = redactedText(withheld)
-			}
 			return contradiction("no value of type " + n.typ.String() + " satisfies both " + clash + " and " + nw.message())
+		}
+		if clash != "" && crossed == "" {
+			crossed = clash + " and " + nw.message()
 		}
 		if ms := redactingOf(nw.marks); ms != nil {
 			withheld, _ = mergeMarks(withheld, ms)
@@ -943,9 +956,12 @@ func valueText(v Value) string {
 }
 
 // apply narrows r by nw. It reports whether anything is left, and names the
-// narrowing already in force that nw contradicts when nothing is. ceiling is
-// the greatest length the type allows, which a set over an element type
-// holding few values has (setCeiling).
+// narrowing already in force that nw contradicts when nothing is. Where nw
+// leaves no value but null and r holds null, null is what is left (UN-004):
+// r becomes the range of null alone, and apply reports true while naming the
+// narrowing nw crossed, so that a NotNull after it can say what left null
+// alone. ceiling is the greatest length the type allows, which a set over an
+// element type holding few values has (setCeiling).
 func (r *rangeData) apply(nw Narrowing, ceiling lengthBound) (string, bool) {
 	switch nw.kind {
 	case narrowNotNull:
@@ -967,6 +983,20 @@ func (r *rangeData) apply(nw Narrowing, ceiling lengthBound) (string, bool) {
 		// would give the same set two spellings.
 		return "", true
 	}
+	clash, ok := r.applyToValues(nw, ceiling)
+	if ok || r.null == nullNo {
+		return clash, ok
+	}
+	// Null satisfies nw, so a range that holds null keeps it, alone, and
+	// records nothing else: the range of null alone has one spelling.
+	*r = rangeData{null: nullOnly}
+	return clash, true
+}
+
+// applyToValues is apply for a narrowing other than Null and NotNull, over
+// the values of r other than null. It reports whether any of those is left,
+// and names the narrowing already in force that nw contradicts when none is.
+func (r *rangeData) applyToValues(nw Narrowing, ceiling lengthBound) (string, bool) {
 	switch nw.kind {
 	case narrowNumberMin:
 		r.lo.tighten(nw.num, nw.incl, true)

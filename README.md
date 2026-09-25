@@ -75,6 +75,8 @@ fmt.Println(tenon.Mul(port, tenon.NumberFromInt(2)))
 Narrowing is monotone: what a value has said, it goes on saying. A narrowing
 that leaves one value gives that value, known; one that leaves nothing is a
 contradiction, and gives an error value rather than a value that cannot exist.
+Bounds, prefixes and lengths say nothing about null, so where a value may still
+be null, narrowings that leave it no other value leave it null.
 See `ExampleUnknown` and `ExampleNarrow`.
 
 # What must not be shown
