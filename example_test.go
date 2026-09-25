@@ -72,9 +72,16 @@ func ExampleNarrow() {
 	// One that leaves nothing is a contradiction, and gives an error value.
 	empty := tenon.Narrow(tenon.Narrow(port, tenon.NumberMin(tenon.NumberFromInt(1024), true)), tenon.NumberMax(tenon.NumberFromInt(80), true))
 	fmt.Println(empty.IsError(), empty.Diagnostics()[0].Code)
+
+	// Bounds say nothing about null, so the same bounds on a port that may
+	// be absent leave it absent: null is the one value left.
+	optional := tenon.Unknown(tenon.NumberType())
+	absent := tenon.Narrow(tenon.Narrow(optional, tenon.NumberMin(tenon.NumberFromInt(1024), true)), tenon.NumberMax(tenon.NumberFromInt(80), true))
+	fmt.Println(absent)
 	// Output:
 	// 443 true
 	// true range.contradiction
+	// null(number)
 }
 
 // A pending value has no type yet, only a constraint on what its type will be,

@@ -15,6 +15,9 @@ func TestConformance_MK011_DiagnosticsWithholdRedactedContents(t *testing.T) {
 	pii := stamp{id: "pii", policy: tenon.Isolate, redact: true}
 	plain := stamp{id: "plain"}
 	hunter, fortyTwo, fifty := tenon.String("hunter2"), tenon.NumberFromInt(42), tenon.NumberFromInt(50)
+	// Crossed bounds leave a range that holds null null alone (UN-004), so
+	// the ranges below exclude it to reach a contradiction.
+	notNull := tenon.Narrow(tenon.Unknown(num), tenon.NotNull())
 
 	// A division by zero over a secret numerator says nothing of the
 	// numerator, and the error value carries the secret's mark.
@@ -47,7 +50,7 @@ func TestConformance_MK011_DiagnosticsWithholdRedactedContents(t *testing.T) {
 		},
 		{
 			"what a range says",
-			tenon.Narrow(tenon.WithMarks(tenon.Narrow(tenon.Unknown(num), tenon.NumberMax(fortyTwo, true)), secret),
+			tenon.Narrow(tenon.WithMarks(tenon.Narrow(notNull, tenon.NumberMax(fortyTwo, true)), secret),
 				tenon.NumberMin(fifty, true)),
 			`no value of type number satisfies both redacted("secret") and >= 50`,
 		},
@@ -58,12 +61,19 @@ func TestConformance_MK011_DiagnosticsWithholdRedactedContents(t *testing.T) {
 		},
 		{
 			"a bound in the range",
-			tenon.Narrow(tenon.Narrow(tenon.Unknown(num), secretBound), tenon.NumberMin(fifty, true)),
+			tenon.Narrow(tenon.Narrow(notNull, secretBound), tenon.NumberMin(fifty, true)),
 			`no value of type number satisfies both redacted("secret") and >= 50`,
 		},
 		{
 			"a bound given earlier in the same call",
-			tenon.Narrow(tenon.Unknown(num), secretBound, tenon.NumberMin(fifty, true)),
+			tenon.Narrow(notNull, secretBound, tenon.NumberMin(fifty, true)),
+			`no value of type number satisfies both redacted("secret") and >= 50`,
+		},
+		{
+			// The bounds leave null alone, which NotNull then excludes; the
+			// message names the bounds, as it does with NotNull given first.
+			"bounds that leave only null, then NotNull",
+			tenon.Narrow(tenon.Unknown(num), secretBound, tenon.NumberMin(fifty, true), tenon.NotNull()),
 			`no value of type number satisfies both redacted("secret") and >= 50`,
 		},
 		{

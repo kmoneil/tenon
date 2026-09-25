@@ -56,14 +56,21 @@ func TestConformance_UN001_RangesAreNeverEmpty(t *testing.T) {
 	}
 	// Narrowing to nothing produces an error value: no value has an empty
 	// range, because a value whose range is empty could not exist.
-	empty := tenon.Narrow(tenon.Unknown(num),
+	crossed := []tenon.Narrowing{
 		tenon.NumberMin(tenon.NumberFromInt(5), true),
-		tenon.NumberMax(tenon.NumberFromInt(3), true))
+		tenon.NumberMax(tenon.NumberFromInt(3), true),
+	}
+	empty := tenon.Narrow(tenon.Narrow(tenon.Unknown(num), tenon.NotNull()), crossed...)
 	if empty.IsResolved() {
 		t.Errorf("narrowing to nothing produced the resolved value %v", empty)
 	}
 	if !empty.IsError() {
 		t.Errorf("narrowing to nothing produced %v, want an error value", empty)
+	}
+	// A range that holds null is never empty: the same narrowings leave it
+	// null alone, and so the null value (UN-004).
+	if got := tenon.Narrow(tenon.Unknown(num), crossed...); !tenon.Identical(got, tenon.NullVal(num)) {
+		t.Errorf("narrowing a range holding null to no other value produced %v, want null(number)", got)
 	}
 }
 
@@ -184,17 +191,17 @@ func TestConformance_UN004_ContradictionIsAnErrorValue(t *testing.T) {
 			// (UN-002), so the least length here is the LengthMin's, however
 			// provably distinct the listed values are.
 			"a least length a listing does not force", tenon.Unknown(tenon.Set(num)),
-			[]tenon.Narrowing{tenon.LengthMin(2), tenon.Members(atLeastFive, between("-9", "0")), tenon.LengthMax(1)},
+			[]tenon.Narrowing{tenon.NotNull(), tenon.LengthMin(2), tenon.Members(atLeastFive, between("-9", "0")), tenon.LengthMax(1)},
 			"no value of type set(number) satisfies both length >= 2 and length <= 1",
 		},
 		{
 			"a lower bound above an upper bound", tenon.Unknown(num),
-			[]tenon.Narrowing{tenon.NumberMin(five, true), tenon.NumberMax(three, true)},
+			[]tenon.Narrowing{tenon.NotNull(), tenon.NumberMin(five, true), tenon.NumberMax(three, true)},
 			"no value of type number satisfies both >= 5 and <= 3",
 		},
 		{
 			"equal bounds, one of them exclusive", tenon.Unknown(num),
-			[]tenon.Narrowing{tenon.NumberMin(five, false), tenon.NumberMax(five, true)},
+			[]tenon.Narrowing{tenon.NotNull(), tenon.NumberMin(five, false), tenon.NumberMax(five, true)},
 			"no value of type number satisfies both > 5 and <= 5",
 		},
 		{
@@ -205,17 +212,17 @@ func TestConformance_UN004_ContradictionIsAnErrorValue(t *testing.T) {
 
 		{
 			"two prefixes that diverge", tenon.Unknown(str),
-			[]tenon.Narrowing{tenon.StringPrefix("ab-"), tenon.StringPrefix("ax-")},
+			[]tenon.Narrowing{tenon.NotNull(), tenon.StringPrefix("ab-"), tenon.StringPrefix("ax-")},
 			`no value of type string satisfies both prefix "ab-" and prefix "ax-"`,
 		},
 		{
 			"a prefix longer than the length allows", tenon.Unknown(str),
-			[]tenon.Narrowing{tenon.StringPrefix("ab-"), tenon.LengthMax(1)},
+			[]tenon.Narrowing{tenon.NotNull(), tenon.StringPrefix("ab-"), tenon.LengthMax(1)},
 			`no value of type string satisfies both prefix "ab-" and length <= 1`,
 		},
 		{
 			"length bounds that cross", tenon.Unknown(lst),
-			[]tenon.Narrowing{tenon.LengthMin(3), tenon.LengthMax(2)},
+			[]tenon.Narrowing{tenon.NotNull(), tenon.LengthMin(3), tenon.LengthMax(2)},
 			"no value of type list(string) satisfies both length >= 3 and length <= 2",
 		},
 		{
@@ -341,21 +348,16 @@ func TestConformance_UN004_ContradictionIsAnErrorValue(t *testing.T) {
 		},
 
 		// A set holds distinct values of its element type, null among them, so
-		// a length beyond the values that type holds is a contradiction,
-		// whether or not the set could still turn out to be null.
+		// a length beyond the values that type holds is a contradiction where
+		// the set cannot be null. Where it can, null is left (the test below).
 		{
 			"a set of bools longer than bool has values", tenon.Unknown(tenon.Set(tenon.BoolType())),
 			[]tenon.Narrowing{tenon.NotNull(), tenon.LengthMin(4)},
 			"no value of type set(bool) satisfies both length <= 3 and length >= 4",
 		},
 		{
-			"the same while the set could still be null", tenon.Unknown(tenon.Set(tenon.BoolType())),
-			[]tenon.Narrowing{tenon.LengthMin(4)},
-			"no value of type set(bool) satisfies both length <= 3 and length >= 4",
-		},
-		{
 			"a set of empty tuples longer than that type has values", tenon.Unknown(tenon.Set(tenon.Tuple())),
-			[]tenon.Narrowing{tenon.LengthMin(3)},
+			[]tenon.Narrowing{tenon.NotNull(), tenon.LengthMin(3)},
 			"no value of type set(tuple([])) satisfies both length <= 2 and length >= 3",
 		},
 		{
@@ -363,6 +365,7 @@ func TestConformance_UN004_ContradictionIsAnErrorValue(t *testing.T) {
 			"a set of bools listing them all, and a length beyond them",
 			tenon.Unknown(tenon.Set(tenon.BoolType())),
 			[]tenon.Narrowing{
+				tenon.NotNull(),
 				tenon.Members(tenon.Bool(true), tenon.NullVal(tenon.BoolType()), tenon.Bool(false)),
 				tenon.LengthMin(4),
 			},
@@ -401,6 +404,91 @@ func TestConformance_UN004_ContradictionIsAnErrorValue(t *testing.T) {
 		}
 		if diags[0].Path.Len() != 0 {
 			t.Errorf("%s: path %s, want the empty path", tt.name, diags[0].Path)
+		}
+	}
+}
+
+// A range that holds null is never empty: narrowings that leave it no other
+// value leave the null value, in one call or across several, as they leave
+// the null the unknown could turn out to be. NotNull, before them or after,
+// makes them the contradiction the test above pins, with one message.
+func TestConformance_UN004_NullIsLeftWhereNullIsPossible(t *testing.T) {
+	conformance.Covers(t, "UN-004", "UN-002", "UN-005", "UN-007")
+	one, two, three, five := tenon.NumberFromInt(1), tenon.NumberFromInt(2), tenon.NumberFromInt(3), tenon.NumberFromInt(5)
+	num, str := tenon.NumberType(), tenon.StringType()
+	for _, tt := range []struct {
+		name string
+		typ  tenon.Type
+		ns   []tenon.Narrowing
+		want string // the contradiction once NotNull is in force
+	}{
+		{
+			"a lower bound above an upper bound", num,
+			[]tenon.Narrowing{tenon.NumberMin(five, true), tenon.NumberMax(three, true)},
+			"no value of type number satisfies both >= 5 and <= 3",
+		},
+		{
+			"equal bounds, one of them exclusive", num,
+			[]tenon.Narrowing{tenon.NumberMin(five, false), tenon.NumberMax(five, true)},
+			"no value of type number satisfies both > 5 and <= 5",
+		},
+		{
+			"two prefixes that diverge", str,
+			[]tenon.Narrowing{tenon.StringPrefix("ab-"), tenon.StringPrefix("ax-")},
+			`no value of type string satisfies both prefix "ab-" and prefix "ax-"`,
+		},
+		{
+			"a prefix longer than the length allows", str,
+			[]tenon.Narrowing{tenon.StringPrefix("ab-"), tenon.LengthMax(1)},
+			`no value of type string satisfies both prefix "ab-" and length <= 1`,
+		},
+		{
+			"length bounds that cross", tenon.List(str),
+			[]tenon.Narrowing{tenon.LengthMin(3), tenon.LengthMax(2)},
+			"no value of type list(string) satisfies both length >= 3 and length <= 2",
+		},
+		{
+			"more listed members than the length allows", tenon.Set(num),
+			[]tenon.Narrowing{tenon.Members(one, two), tenon.LengthMax(1)},
+			"no value of type set(number) satisfies both members {1, 2} and length <= 1",
+		},
+		{
+			"a set of bools longer than bool has values", tenon.Set(tenon.BoolType()),
+			[]tenon.Narrowing{tenon.LengthMin(4)},
+			"no value of type set(bool) satisfies both length <= 3 and length >= 4",
+		},
+		{
+			"a set of empty tuples longer than that type has values", tenon.Set(tenon.Tuple()),
+			[]tenon.Narrowing{tenon.LengthMin(3)},
+			"no value of type set(tuple([])) satisfies both length <= 2 and length >= 3",
+		},
+	} {
+		null := tenon.NullVal(tt.typ)
+		if got := tenon.Narrow(tenon.Unknown(tt.typ), tt.ns...); !tenon.Identical(got, null) {
+			t.Errorf("%s: an unknown that may be null narrows to %v, want %v", tt.name, got, null)
+		}
+		stepwise := tenon.Unknown(tt.typ)
+		for _, nw := range tt.ns {
+			stepwise = tenon.Narrow(stepwise, nw)
+		}
+		if !tenon.Identical(stepwise, null) {
+			t.Errorf("%s: narrowed one narrowing at a time, an unknown that may be null narrows to %v, want %v", tt.name, stepwise, null)
+		}
+		if got := tenon.Narrow(null, tt.ns...); !tenon.Identical(got, null) {
+			t.Errorf("%s: the null value narrows to %v, want it unchanged", tt.name, got)
+		}
+		for _, ns := range [][]tenon.Narrowing{
+			append([]tenon.Narrowing{tenon.NotNull()}, tt.ns...),
+			append(slices.Clone(tt.ns), tenon.NotNull()),
+		} {
+			got := tenon.Narrow(tenon.Unknown(tt.typ), ns...)
+			if !got.IsError() {
+				t.Errorf("%s, with %v: produced %v, want an error value", tt.name, ns, got)
+				continue
+			}
+			if ds := got.Diagnostics(); len(ds) != 1 || ds[0].Code != tenon.CodeRangeContradiction || ds[0].Message != tt.want {
+				t.Errorf("%s, with %v: diagnostics %v, want one %s saying %q", tt.name, ns, ds, tenon.CodeRangeContradiction, tt.want)
+			}
 		}
 	}
 }
@@ -1162,17 +1250,21 @@ func TestConformance_UN002_MembersNarrowing(t *testing.T) {
 	}
 
 	// More provably distinct members than the greatest length allows is a
-	// contradiction, in whichever order the two narrowings arrive.
+	// contradiction, in whichever order the two narrowings arrive, where the
+	// set cannot be null. Where it can, null is what is left (UN-004).
 	for _, ns := range [][]tenon.Narrowing{
 		{tenon.Members(one, two), tenon.LengthMax(1)},
 		{tenon.LengthMax(1), tenon.Members(one, two)},
 	} {
-		got := tenon.Narrow(tenon.Unknown(set), ns...)
+		got := tenon.Narrow(tenon.Narrow(tenon.Unknown(set), tenon.NotNull()), ns...)
 		if !got.IsError() {
 			t.Fatalf("narrowing to nothing produced %v, want an error value", got)
 		}
 		if diags := got.Diagnostics(); diags[0].Code != tenon.CodeRangeContradiction {
 			t.Errorf("code %s, want %s", diags[0].Code, tenon.CodeRangeContradiction)
+		}
+		if got := tenon.Narrow(tenon.Unknown(set), ns...); !tenon.Identical(got, tenon.NullVal(set)) {
+			t.Errorf("narrowing a set that may be null to no set produced %v, want null(set(number))", got)
 		}
 	}
 
