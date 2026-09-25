@@ -61,6 +61,15 @@ func TestRangesAreCanonical(t *testing.T) {
 			t.Errorf("%s: %+v and %+v are not the same range", tt.name, *a, *b)
 		}
 	}
+	// Listings are the exception (UN-002): a listed requirement the others
+	// imply stays in the record, so these two allow the same sets, each
+	// holding 1, and are two ranges. Should implied requirements ever be
+	// dropped, this pair is where it shows.
+	atLeastZero := Narrow(Unknown(num), NotNull(), NumberMin(NumberFromInt(0), true))
+	implied := rangeOf(t, Narrow(Unknown(Set(num)), Members(one, atLeastZero)))
+	if implied.equal(rangeOf(t, Narrow(Unknown(Set(num)), Members(one)))) {
+		t.Error("a listing holding a requirement the others imply is the range without it")
+	}
 	// The zero range is the whole domain, so a fresh unknown records nothing.
 	if r := rangeOf(t, Unknown(str)); !r.equal(&rangeData{}) {
 		t.Errorf("a fresh unknown has range %+v, want the zero range", *r)

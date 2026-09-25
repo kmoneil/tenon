@@ -12,6 +12,13 @@
 
 ### Changed
 
+- The specification now says what `Identical` and the encoding compare for
+  an unknown set: what its range records. A listing keeps a listed
+  requirement the others imply, so `Members(1, u)`, with `u` any number at
+  least 0, and `Members(1)` allow the same sets and are two ranges, not
+  identical and encoded differently, while every operation answers alike
+  for them. Nothing behaves differently; finding implied requirements would
+  compare listed values pairwise, which bounded decoding rules out.
 - Narrowings that leave a value that may be null no other value leave it
   null. `Narrow(Unknown(NumberType()), NumberMin(5), NumberMax(3))` is
   `null(number)`, where it was `range.contradiction`: bounds, prefixes,
