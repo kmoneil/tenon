@@ -112,6 +112,46 @@ func TestConformance_EQ010_IdenticalComparesEverything(t *testing.T) {
 	mustPanicUsage(t, "use of the zero Value", func() { tenon.Identical(tenon.Value{}, one) })
 }
 
+// A range is compared by what it records. A listing that holds a requirement
+// the others imply allows the sets the listing without it allows, and the two
+// are distinct values: not identical, encoded differently, each read back as
+// itself, and answering alike for every set they are compared with.
+func TestConformance_EQ010_RangesCompareByRecord(t *testing.T) {
+	conformance.Covers(t, "EQ-010", "UN-002", "SE-001")
+	num := tenon.NumberType()
+	set := tenon.Set(num)
+	one := tenon.NumberFromInt(1)
+	atLeastZero := tenon.Narrow(tenon.Unknown(num), tenon.NotNull(), tenon.NumberMin(tenon.NumberFromInt(0), true))
+	// 1 is at least 0, so a set holding 1 holds a member the second
+	// requirement allows.
+	implied := tenon.Narrow(tenon.Unknown(set), tenon.Members(one, atLeastZero))
+	plain := tenon.Narrow(tenon.Unknown(set), tenon.Members(one))
+	if tenon.Identical(implied, plain) {
+		t.Errorf("%v and %v are identical, want them told apart by what they record", implied, plain)
+	}
+	a, _, okA := tenon.Serialize(implied)
+	b, _, okB := tenon.Serialize(plain)
+	if !okA || !okB || string(a) == string(b) {
+		t.Errorf("the two encode alike, or not at all: %x and %x", a, b)
+	}
+	for _, v := range []tenon.Value{implied, plain} {
+		data, _, _ := tenon.Serialize(v)
+		if back, _, ok := tenon.Deserialize(data, tenon.Decoders{}); !ok || !tenon.Identical(back, v) {
+			t.Errorf("%v reads back as %v", v, back)
+		}
+	}
+	for _, s := range []tenon.Value{
+		tenon.SetVal(num, one),
+		tenon.SetVal(num, one, tenon.NumberFromInt(-1)),
+		tenon.SetVal(num, tenon.NumberFromInt(2)),
+		tenon.SetVal(num),
+	} {
+		if x, y := tenon.Equals(implied, s), tenon.Equals(plain, s); !tenon.Identical(x, y) {
+			t.Errorf("against %v the two answer %v and %v, want them alike", s, x, y)
+		}
+	}
+}
+
 func TestConformance_EQ011_IdenticalIsAnEquivalenceRelation(t *testing.T) {
 	conformance.Covers(t, "EQ-011")
 	all := values.All()

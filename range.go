@@ -187,7 +187,11 @@ type lengthBound struct {
 // fields are equal. That holds because an absent narrowing has one spelling,
 // and because a narrowing that another one implies is recorded as though it
 // had been applied: a prefix of n grapheme clusters records a least length of
-// n.
+// n. Listings are the one exception (UN-002): a listed requirement that the
+// others imply, such as a value that is not known whose range allows a known
+// value listed beside it, stays in the record, since finding it would compare
+// the listed values pairwise. Two such ranges allow the same sets, and are
+// two ranges all the same, which Identical and the encoding tell apart.
 type rangeData struct {
 	null  nullness
 	lo    bound       // Number: the lower bound
@@ -1053,7 +1057,8 @@ func (r *rangeData) applyToValues(nw Narrowing, ceiling lengthBound) (string, bo
 // record is canonical, however the listings arrive: values that are one
 // member appear once, a value whose range excludes nothing is dropped, the
 // rest are held in the order a set iterates them, and the least length rises
-// to what the listing implies (listingLeast).
+// to what the listing implies (listingLeast). A value whose requirement the
+// others imply is kept (UN-002), as the type's doc says.
 func (r *rangeData) addMembers(vs []Value) {
 	if len(vs) == 0 {
 		return
