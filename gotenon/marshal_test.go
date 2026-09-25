@@ -6,8 +6,8 @@ import (
 	"time"
 
 	"github.com/kmoneil/tenon"
-	"github.com/kmoneil/tenon/conformance"
 	"github.com/kmoneil/tenon/gotenon"
+	"github.com/kmoneil/tenon/internal/conformance"
 )
 
 // moment is a time that marshals itself as text.

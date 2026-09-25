@@ -6,7 +6,7 @@ import (
 	"testing"
 	"unicode"
 
-	"github.com/kmoneil/tenon/conformance"
+	"github.com/kmoneil/tenon/internal/conformance"
 )
 
 // TestConformance_ST003_CategoriesAgreeWithGo holds the general categories

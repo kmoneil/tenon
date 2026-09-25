@@ -12,7 +12,7 @@ import (
 	"testing"
 
 	"github.com/kmoneil/tenon"
-	"github.com/kmoneil/tenon/conformance"
+	"github.com/kmoneil/tenon/internal/conformance"
 )
 
 // mustPanicUsage runs f and fails t unless f panics with a usage error whose
@@ -74,7 +74,7 @@ func TestConformance_TY011_CollectionTypes(t *testing.T) {
 		if !typ.IsCollection() || typ.IsStructural() {
 			t.Errorf("%v: IsCollection() = %t, IsStructural() = %t; want a collection type", typ, typ.IsCollection(), typ.IsStructural())
 		}
-		if got := typ.ElementType(); !got.Equals(elem) {
+		if got := typ.ElementType(); !got.Equal(elem) {
 			t.Errorf("%v: ElementType() = %v, want %v", typ, got, elem)
 		}
 	}
@@ -99,7 +99,7 @@ func TestConformance_TY012_StructuralTypes(t *testing.T) {
 
 	// Members have differing types.
 	for name, want := range map[string]tenon.Type{"name": str, "count": num, "tags": tags} {
-		if got := obj.AttributeType(name); !got.Equals(want) {
+		if got := obj.AttributeType(name); !got.Equal(want) {
 			t.Errorf("AttributeType(%q) = %v, want %v", name, got, want)
 		}
 	}
@@ -110,7 +110,7 @@ func TestConformance_TY012_StructuralTypes(t *testing.T) {
 		t.Errorf("TupleLength() = %d, want 3", got)
 	}
 	for i, want := range []tenon.Type{str, num, tags} {
-		if got := tup.TupleElementType(i); !got.Equals(want) {
+		if got := tup.TupleElementType(i); !got.Equal(want) {
 			t.Errorf("TupleElementType(%d) = %v, want %v", i, got, want)
 		}
 	}
@@ -131,7 +131,7 @@ func TestConformance_TY013_AttributeNames(t *testing.T) {
 	// the name is kept in its normalized form.
 	fromDecomposed := tenon.Object(map[string]tenon.Type{decomposed: num})
 	fromComposed := tenon.Object(map[string]tenon.Type{composed: num})
-	if !fromDecomposed.Equals(fromComposed) {
+	if !fromDecomposed.Equal(fromComposed) {
 		t.Errorf("%v and %v are not equal", fromDecomposed, fromComposed)
 	}
 	if got, want := fromDecomposed.AttributeNames(), []string{composed}; !slices.Equal(got, want) {
@@ -139,7 +139,7 @@ func TestConformance_TY013_AttributeNames(t *testing.T) {
 	}
 
 	// Lookups normalize the name they are given.
-	if !fromComposed.HasAttribute(decomposed) || !fromComposed.AttributeType(decomposed).Equals(num) {
+	if !fromComposed.HasAttribute(decomposed) || !fromComposed.AttributeType(decomposed).Equal(num) {
 		t.Errorf("%v: looking up %+q failed", fromComposed, decomposed)
 	}
 	if fromComposed.HasAttribute("cafe") || fromComposed.HasAttribute("\xff") {
@@ -163,7 +163,7 @@ func TestConformance_TY022_TypesImmutable(t *testing.T) {
 	attrs := map[string]tenon.Type{"a": str}
 	obj := tenon.Object(attrs)
 	attrs["a"], attrs["b"] = num, num
-	if want := tenon.Object(map[string]tenon.Type{"a": str}); !obj.Equals(want) {
+	if want := tenon.Object(map[string]tenon.Type{"a": str}); !obj.Equal(want) {
 		t.Errorf("changing the map passed to Object changed the type to %v", obj)
 	}
 	names := obj.AttributeNames()
@@ -175,12 +175,12 @@ func TestConformance_TY022_TypesImmutable(t *testing.T) {
 	elems := []tenon.Type{str, num}
 	tup := tenon.Tuple(elems...)
 	elems[0] = num
-	if !tup.TupleElementType(0).Equals(str) {
+	if !tup.TupleElementType(0).Equal(str) {
 		t.Errorf("changing the slice passed to Tuple changed the type to %v", tup)
 	}
 	got := tup.TupleElementTypes()
 	got[1] = str
-	if !tup.TupleElementType(1).Equals(num) {
+	if !tup.TupleElementType(1).Equal(num) {
 		t.Errorf("changing the slice from TupleElementTypes changed the type to %v", tup)
 	}
 
@@ -192,7 +192,7 @@ func TestConformance_TY022_TypesImmutable(t *testing.T) {
 	}
 }
 
-func TestTypeEquals(t *testing.T) {
+func TestTypeEqual(t *testing.T) {
 	str, num := tenon.StringType(), tenon.NumberType()
 	object := func(attrs map[string]tenon.Type) tenon.Type { return tenon.Object(attrs) }
 	equal := [][2]tenon.Type{
@@ -213,13 +213,14 @@ func TestTypeEquals(t *testing.T) {
 		{tenon.Tuple(str), tenon.Tuple(str, str)},
 		{tenon.Tuple(), object(nil)},
 	}
+	// Equals, deprecated until 1.0, answers as Equal does.
 	for _, p := range equal {
-		if !p[0].Equals(p[1]) || !p[1].Equals(p[0]) || p[0] != p[1] {
+		if !p[0].Equal(p[1]) || !p[1].Equal(p[0]) || p[0] != p[1] || !p[0].Equals(p[1]) {
 			t.Errorf("%v and %v are not equal", p[0], p[1])
 		}
 	}
 	for _, p := range unequal {
-		if p[0].Equals(p[1]) || p[1].Equals(p[0]) || p[0] == p[1] {
+		if p[0].Equal(p[1]) || p[1].Equal(p[0]) || p[0] == p[1] || p[0].Equals(p[1]) {
 			t.Errorf("%v and %v are equal", p[0], p[1])
 		}
 	}
@@ -252,8 +253,8 @@ func TestZeroType(t *testing.T) {
 	var zero tenon.Type
 	str := tenon.StringType()
 	mustPanicUsage(t, "zero Type", func() { zero.Kind() })
-	mustPanicUsage(t, "zero Type", func() { zero.Equals(str) })
-	mustPanicUsage(t, "zero Type", func() { str.Equals(zero) })
+	mustPanicUsage(t, "zero Type", func() { zero.Equal(str) })
+	mustPanicUsage(t, "zero Type", func() { str.Equal(zero) })
 	mustPanicUsage(t, "zero Type", func() { tenon.List(zero) })
 	mustPanicUsage(t, "zero Type", func() { tenon.Tuple(str, zero) })
 	mustPanicUsage(t, "zero Type", func() { tenon.Object(map[string]tenon.Type{"a": zero}) })

@@ -7,8 +7,8 @@ import (
 	"testing"
 
 	"github.com/kmoneil/tenon"
-	"github.com/kmoneil/tenon/conformance"
-	"github.com/kmoneil/tenon/conformance/values"
+	"github.com/kmoneil/tenon/internal/conformance"
+	"github.com/kmoneil/tenon/internal/conformance/values"
 )
 
 func TestConformance_EQ045_CanonicalOrder(t *testing.T) {
@@ -245,7 +245,7 @@ func TestConformance_EQ045_ThePublishedOrderings(t *testing.T) {
 
 // colliding declares equality and a hash that is the same for every value,
 // which a hash is allowed to be, and no order. It is declared here as well as
-// in conformance/values because that package's point type is unexported, so
+// in internal/conformance/values because that package's point type is unexported, so
 // values of values.Colliding cannot be built from outside it.
 var colliding = tenon.Capsule("colliding_in_canonical_test", tenon.CapsuleOps[point]{
 	Equals: func(a, b *point) bool { return *a == *b },

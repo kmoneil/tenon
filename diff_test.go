@@ -6,8 +6,8 @@ import (
 	"testing"
 
 	"github.com/kmoneil/tenon"
-	"github.com/kmoneil/tenon/conformance"
-	"github.com/kmoneil/tenon/conformance/values"
+	"github.com/kmoneil/tenon/internal/conformance"
+	"github.com/kmoneil/tenon/internal/conformance/values"
 )
 
 // wantDiff fails t unless the diff of a against b displays as the lines given.

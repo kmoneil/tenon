@@ -5,8 +5,8 @@ import (
 	"testing"
 
 	"github.com/kmoneil/tenon"
-	"github.com/kmoneil/tenon/conformance"
-	"github.com/kmoneil/tenon/conformance/matrix"
+	"github.com/kmoneil/tenon/internal/conformance"
+	"github.com/kmoneil/tenon/internal/conformance/matrix"
 )
 
 // registered returns the package's registered operations as the matrix sees

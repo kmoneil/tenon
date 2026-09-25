@@ -8,8 +8,8 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/kmoneil/tenon/conformance"
 	"github.com/kmoneil/tenon/internal/cbor"
+	"github.com/kmoneil/tenon/internal/conformance"
 	"github.com/kmoneil/tenon/internal/decimal"
 )
 

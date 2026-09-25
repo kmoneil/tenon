@@ -10,8 +10,8 @@ import (
 	"testing"
 
 	"github.com/kmoneil/tenon"
-	"github.com/kmoneil/tenon/conformance"
 	"github.com/kmoneil/tenon/gotenon"
+	"github.com/kmoneil/tenon/internal/conformance"
 )
 
 // decoded decodes v into a T under p, failing t if decoding fails.

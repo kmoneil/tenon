@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Added
+
+- `Type.Equal` reports whether two types are the same type, the name
+  `Constraint`, `Path` and `Diagnostic` already give their comparisons.
+  go-cmp calls an `Equal` method where a type has one, so `cmp.Equal` and
+  `cmp.Diff` now compare structs holding a `Type`, where they panicked on
+  its unexported field.
+
 ### Changed
 
 - The module's Go directive is `go 1.26.0`, the floor `golang.org/x/text`
@@ -36,6 +44,22 @@
   not valid UTF-8 is refused. Through 0.5.0 the declaration was accepted,
   `Serialize` wrote the bytes as CBOR text, and `Deserialize` refused what it
   wrote as `serialize.malformed`.
+
+### Deprecated
+
+- `Type.Equals`, for `Type.Equal`. It answers as `Equal` does and is
+  removed at 1.0. The package-level `Equals`, the language's equality of
+  values, is unchanged.
+
+### Removed
+
+- The Go packages `conformance`, `conformance/values` and
+  `conformance/matrix` move to `internal/conformance`, out of the public
+  API. They exist for tenon's own tests (the coverage harness, the corpus of
+  values and the operand matrix), and a public package is a promise kept
+  past 1.0. What other implementations test against stays where it was:
+  `conformance/vectors` with its encoding and diff corpora, and the rule and
+  code records `conformance/rules.json` and `conformance/codes.json`.
 
 ### Fixed
 

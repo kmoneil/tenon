@@ -325,11 +325,19 @@ func (t Type) TupleElementTypes() []Type {
 	return slices.Clone(t.mustKind(KindTuple, "TupleElementTypes").elems)
 }
 
-// Equals reports whether t and u are the same type: types of the same
+// Equal reports whether t and u are the same type: types of the same
 // structure are, and a capsule type is the same type only as itself. For types
-// other than the zero Type, Equals is t == u.
-func (t Type) Equals(u Type) bool {
+// other than the zero Type, Equal is t == u.
+func (t Type) Equal(u Type) bool {
 	return t.data() == u.data()
+}
+
+// Equals reports whether t and u are the same type, as Equal does.
+//
+// Deprecated: use Equal, the name Constraint, Path and Diagnostic share.
+// Equals is removed at 1.0.
+func (t Type) Equals(u Type) bool {
+	return t.Equal(u)
 }
 
 // String returns the display form of t (DI-014), as in
