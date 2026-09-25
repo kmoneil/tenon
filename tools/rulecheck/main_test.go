@@ -102,9 +102,15 @@ func TestRunCoverage(t *testing.T) {
 	manifest := filepath.Join(dir, "rules.json")
 	active := filepath.Join(dir, "active-areas.txt")
 	cover := filepath.Join(dir, "cover")
+	// The registry and the code record are fixtures too, so check reads no
+	// file of the module: without them it would fall back to the real
+	// codes.go and conformance/codes.json.
+	registry := registryFixture(t, dir)
+	record := filepath.Join(dir, "codes.json")
+	writeFile(t, record, []byte(`{"format":1,"codes":[]}`+"\n"))
 	t.Setenv("TENON_SPEC", "")
 	c := cli{t}
-	inputs := []string{"-manifest", manifest, "-active", active, "-cover", cover, "-report", filepath.Join(dir, "CONFORMANCE.md")}
+	inputs := []string{"-manifest", manifest, "-active", active, "-cover", cover, "-codes", registry, "-coderecord", record, "-report", filepath.Join(dir, "CONFORMANCE.md")}
 	check := append([]string{"check"}, inputs...)
 
 	writeFile(t, spec, fixture("## 2. Alpha", "", "`[AA-001]` One.", "", "`[AA-002]` Two."))
