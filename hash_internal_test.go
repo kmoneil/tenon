@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kmoneil/tenon/conformance"
+	"github.com/kmoneil/tenon/internal/conformance"
 )
 
 // TestConformance_EQ032_HashesSurviveTypeCollection checks that a hash does not

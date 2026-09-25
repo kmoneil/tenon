@@ -12,7 +12,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/kmoneil/tenon/conformance"
+	"github.com/kmoneil/tenon/internal/conformance"
 )
 
 // mustParse parses s, failing t if s is not a number.

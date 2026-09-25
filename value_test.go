@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	"github.com/kmoneil/tenon"
-	"github.com/kmoneil/tenon/conformance"
+	"github.com/kmoneil/tenon/internal/conformance"
 )
 
 func TestConformance_VA001_ThreeStates(t *testing.T) {

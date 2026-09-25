@@ -5,7 +5,7 @@ import (
 	"math/rand/v2"
 	"testing"
 
-	"github.com/kmoneil/tenon/conformance"
+	"github.com/kmoneil/tenon/internal/conformance"
 )
 
 // TestLog10Pow2 holds the fixed-point floor of b times log10(2) to the exact

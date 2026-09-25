@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/kmoneil/tenon/conformance"
+	"github.com/kmoneil/tenon/internal/conformance"
 )
 
 // mustPanicInternal runs f and checks that it reports a defect in this package

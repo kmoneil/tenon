@@ -8,7 +8,7 @@ import (
 	"math/rand/v2"
 	"testing"
 
-	"github.com/kmoneil/tenon/conformance"
+	"github.com/kmoneil/tenon/internal/conformance"
 )
 
 // hashOf returns the hash under seed of the numbers written in turn.

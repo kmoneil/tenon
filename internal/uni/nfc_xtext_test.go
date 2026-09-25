@@ -9,7 +9,7 @@ import (
 
 	"golang.org/x/text/unicode/norm"
 
-	"github.com/kmoneil/tenon/conformance"
+	"github.com/kmoneil/tenon/internal/conformance"
 )
 
 // This file runs only below go1.27, where golang.org/x/text still normalizes

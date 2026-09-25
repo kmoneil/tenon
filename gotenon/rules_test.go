@@ -7,8 +7,8 @@ import (
 	"testing"
 
 	"github.com/kmoneil/tenon"
-	"github.com/kmoneil/tenon/conformance"
 	"github.com/kmoneil/tenon/gotenon"
+	"github.com/kmoneil/tenon/internal/conformance"
 )
 
 // TestConformance_GO001_AMappingHasTwoDirections pins the rule's two verbs:

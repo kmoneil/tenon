@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"github.com/kmoneil/tenon"
-	"github.com/kmoneil/tenon/conformance"
+	"github.com/kmoneil/tenon/internal/conformance"
 )
 
 // sampleCapsule is one fixed capsule type for tests that list sample types.
@@ -15,11 +15,11 @@ func TestConformance_TY040_CapsuleIdentity(t *testing.T) {
 	type handle struct{ fd int }
 	a := tenon.Capsule("handle", tenon.CapsuleOps[handle]{})
 	b := tenon.Capsule("handle", tenon.CapsuleOps[handle]{})
-	if a == b || a.Equals(b) {
+	if a == b || a.Equal(b) {
 		t.Errorf("two constructions of %v are the same type", a)
 	}
 	again := a
-	if again != a || !again.Equals(a) {
+	if again != a || !again.Equal(a) {
 		t.Errorf("%v is not the same type as itself", a)
 	}
 	if a.Kind() != tenon.KindCapsule || a.IsCollection() || a.IsStructural() || a.CapsuleName() != "handle" {

@@ -3,7 +3,7 @@ package tenon
 import (
 	"testing"
 
-	"github.com/kmoneil/tenon/conformance"
+	"github.com/kmoneil/tenon/internal/conformance"
 )
 
 // TestConformance_EQ002_EqualsReadsNothingWithinWhatItShares holds Equals to settling a known

@@ -8,8 +8,8 @@ import (
 	"testing"
 
 	"github.com/kmoneil/tenon"
-	"github.com/kmoneil/tenon/conformance"
-	"github.com/kmoneil/tenon/conformance/values"
+	"github.com/kmoneil/tenon/internal/conformance"
+	"github.com/kmoneil/tenon/internal/conformance/values"
 )
 
 // wantProjection fails t unless v projects to want.

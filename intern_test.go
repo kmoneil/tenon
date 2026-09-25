@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github.com/kmoneil/tenon"
-	"github.com/kmoneil/tenon/conformance"
+	"github.com/kmoneil/tenon/internal/conformance"
 )
 
 // nested builds the same deeply structured type afresh on every call.
@@ -28,7 +28,7 @@ func TestConformance_TY014_ObjectAttributeOrder(t *testing.T) {
 	second["tags"] = tenon.List(tenon.StringType())
 	second["name"] = tenon.StringType()
 	a, b := tenon.Object(first), tenon.Object(second)
-	if a != b || !a.Equals(b) {
+	if a != b || !a.Equal(b) {
 		t.Errorf("%v and %v are different types", a, b)
 	}
 
@@ -38,7 +38,7 @@ func TestConformance_TY014_ObjectAttributeOrder(t *testing.T) {
 		tenon.Object(map[string]tenon.Type{"name": tenon.StringType(), "tags": tenon.Set(tenon.StringType())}),
 		tenon.Object(map[string]tenon.Type{"name": tenon.StringType(), "tag": tenon.List(tenon.StringType())}),
 	} {
-		if a == other || a.Equals(other) {
+		if a == other || a.Equal(other) {
 			t.Errorf("%v and %v are the same type", a, other)
 		}
 	}
@@ -49,7 +49,7 @@ func TestConformance_TY015_TupleOrder(t *testing.T) {
 	str, num := tenon.StringType(), tenon.NumberType()
 	a := tenon.Tuple(str, tenon.List(num))
 	b := tenon.Tuple(tenon.StringType(), tenon.List(tenon.NumberType()))
-	if a != b || !a.Equals(b) {
+	if a != b || !a.Equal(b) {
 		t.Errorf("%v and %v are different types", a, b)
 	}
 	for _, p := range [][2]tenon.Type{
@@ -58,7 +58,7 @@ func TestConformance_TY015_TupleOrder(t *testing.T) {
 		{tenon.Tuple(), tenon.Tuple(str)},
 		{tenon.Tuple(str, num), tenon.Tuple(str, tenon.List(num))},
 	} {
-		if p[0] == p[1] || p[0].Equals(p[1]) {
+		if p[0] == p[1] || p[0].Equal(p[1]) {
 			t.Errorf("%v and %v are the same type", p[0], p[1])
 		}
 	}
@@ -66,7 +66,7 @@ func TestConformance_TY015_TupleOrder(t *testing.T) {
 
 func TestConformance_TY020_StructuralEquality(t *testing.T) {
 	conformance.Covers(t, "TY-020")
-	if a, b := nested(), nested(); a != b || !a.Equals(b) {
+	if a, b := nested(), nested(); a != b || !a.Equal(b) {
 		t.Errorf("two constructions of %v are different types", a)
 	}
 
@@ -127,7 +127,7 @@ func TestConformance_TY021_DeterministicEquality(t *testing.T) {
 	for range 10000 {
 		deep, deeper = tenon.List(deep), tenon.List(deeper)
 	}
-	if deep != deeper || !deep.Equals(deeper) || deep.Equals(tenon.List(deep)) {
+	if deep != deeper || !deep.Equal(deeper) || deep.Equal(tenon.List(deep)) {
 		t.Error("deeply nested list types compared wrongly")
 	}
 }

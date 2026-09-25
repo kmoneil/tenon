@@ -5,7 +5,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/kmoneil/tenon/conformance"
+	"github.com/kmoneil/tenon/internal/conformance"
 )
 
 // TestSameMultisetIsTheCount holds the walk that compares two sets' members to

@@ -11,7 +11,7 @@ import (
 	"testing"
 
 	"github.com/kmoneil/tenon"
-	"github.com/kmoneil/tenon/conformance"
+	"github.com/kmoneil/tenon/internal/conformance"
 )
 
 // The capsule type and marks the vectors use, as vectors.json describes them.

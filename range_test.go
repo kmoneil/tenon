@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/kmoneil/tenon"
-	"github.com/kmoneil/tenon/conformance"
+	"github.com/kmoneil/tenon/internal/conformance"
 )
 
 func TestConformance_VA002_RangeOfAResolvedValue(t *testing.T) {

@@ -14,7 +14,7 @@ import (
 	"strings"
 
 	"github.com/kmoneil/tenon"
-	"github.com/kmoneil/tenon/conformance/values"
+	"github.com/kmoneil/tenon/internal/conformance/values"
 )
 
 // Operation is what the matrix needs to know of an operation.

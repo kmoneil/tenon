@@ -9,8 +9,8 @@ import (
 	"testing"
 
 	"github.com/kmoneil/tenon"
-	"github.com/kmoneil/tenon/conformance"
-	"github.com/kmoneil/tenon/conformance/values"
+	"github.com/kmoneil/tenon/internal/conformance"
+	"github.com/kmoneil/tenon/internal/conformance/values"
 )
 
 // The marks the round-trip generator attaches, and the decoders that read

@@ -12,8 +12,8 @@ import (
 	"testing"
 
 	"github.com/kmoneil/tenon"
-	"github.com/kmoneil/tenon/conformance"
 	"github.com/kmoneil/tenon/gotenon"
+	"github.com/kmoneil/tenon/internal/conformance"
 )
 
 // encoded encodes x, failing t if encoding fails.
