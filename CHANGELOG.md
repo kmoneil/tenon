@@ -12,6 +12,13 @@
 
 ### Changed
 
+- `gotenon.Decode` decodes a pointer, at any depth, to a type whose pointer
+  implements `ValueUnmarshaler` by that method, as it decodes the type
+  itself: `*T`, a `*T` field and `[]*T` receive unknown, pending and marked
+  values as `T` does, where they failed with `decode.not_known` or
+  `decode.marked`. As `encoding/json` treats a pointer to an `Unmarshaler`,
+  a null that carries no mark leaves the pointer nil, and a marked null goes
+  to the method, so its mark is not dropped.
 - `Unify` is bounded by the size of what it is given. Each member of one
   `OneOf` unifies with each member of another, so constraints that are each a
   `OneOf` of object types with different attributes multiplied: ten of three

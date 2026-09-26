@@ -30,6 +30,12 @@ import (
 // own diagnostics). An error value gives its own diagnostics. To decode a
 // marked value, unmark it with tenon.UnmarkDeep first and keep the marks.
 //
+// A pointer, at any depth, to a type whose pointer implements
+// ValueUnmarshaler decodes by that method too, as encoding/json treats a
+// pointer to an Unmarshaler: a null that carries no mark leaves the pointer
+// nil, and any other value, a marked null among them, goes as it is to the
+// method of a new value that the pointer then points to.
+//
 // A null decodes into a pointer, slice or map as nil, and into an optional
 // field as the field's zero value, as an absent optional attribute leaves it. A
 // float64 is the nearest to the number, ties to even; a big.Float takes the
@@ -122,8 +128,8 @@ func (d *decoder) decode(m *goMapping, dst reflect.Value, v tenon.Value, p tenon
 		d.fails.within(p, v.Diagnostics())
 		return
 	}
-	if m.unmarshal {
-		d.unmarshal(dst, v, p)
+	if byUnmarshaler(m) {
+		d.build(m, dst, v, p, optional)
 		return
 	}
 	var marked []tenon.Diagnostic
@@ -145,7 +151,7 @@ func (d *decoder) decode(m *goMapping, dst reflect.Value, v tenon.Value, p tenon
 // is and the members of a collection that are decoded by their own
 // conversions, which look at their own marks.
 func scanMarks(m *goMapping, v tenon.Value, p tenon.Path, found *[]tenon.Diagnostic) {
-	if m.kind == goValue || m.unmarshal {
+	if m.kind == goValue || byUnmarshaler(m) {
 		return
 	}
 	if _, marks := tenon.Unmark(v); len(marks) > 0 {
@@ -216,6 +222,31 @@ func pathKey(p tenon.Path) string {
 	return b.String()
 }
 
+// byUnmarshaler reports whether m decodes by an unmarshaler: its Go type's
+// pointer implements ValueUnmarshaler, or it is a pointer, at any depth, to a
+// type whose pointer does (GO-041). Such a mapping takes values as they are,
+// unknown, pending and marked ones among them.
+func byUnmarshaler(m *goMapping) bool {
+	for m.kind == goPointer {
+		m = m.elem
+	}
+	return m.unmarshal
+}
+
+// unmarkedNull reports whether v is a null, or a pending value known to be
+// null, that carries no mark: what a pointer decodes as nil even where its
+// element decodes by an unmarshaler.
+func unmarkedNull(v tenon.Value) bool {
+	if _, marks := tenon.Unmark(v); len(marks) > 0 {
+		return false
+	}
+	if v.IsPending() {
+		isNull := tenon.IsNull(v)
+		return isNull.IsKnown() && isNull.AsBool()
+	}
+	return v.IsKnown() && !v.HasContent()
+}
+
 // unmarshal decodes v into dst by the UnmarshalValue method of dst's pointer,
 // giving it v as it is.
 func (d *decoder) unmarshal(dst reflect.Value, v tenon.Value, p tenon.Path) {
@@ -234,6 +265,20 @@ func (d *decoder) build(m *goMapping, dst reflect.Value, v tenon.Value, p tenon.
 	}
 	if m.unmarshal {
 		d.unmarshal(dst, v, p)
+		return
+	}
+	if m.kind == goPointer && byUnmarshaler(m) {
+		// A pointer to what decodes by an unmarshaler decodes by it too
+		// (GO-041): an unmarked null leaves it nil, as it leaves any pointer,
+		// and anything else, a marked null among them, goes as it is to the
+		// method of a new value.
+		if unmarkedNull(v) {
+			dst.SetZero()
+			return
+		}
+		ptr := reflect.New(m.elem.rt)
+		d.build(m.elem, ptr.Elem(), v, p, false)
+		dst.Set(ptr)
 		return
 	}
 	if len(d.marked) > 0 {

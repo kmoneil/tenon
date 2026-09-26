@@ -122,13 +122,50 @@ func (o *observer) UnmarshalValue(v tenon.Value) error {
 	return nil
 }
 
+// watched holds unmarshalers behind pointers, in a field and in a slice.
+type watched struct {
+	One  *observer   `tenon:"one"`
+	Many []*observer `tenon:"many"`
+}
+
 func TestConformance_GO040_MarshalersAtTheBoundary(t *testing.T) {
-	conformance.Covers(t, "GO-040")
+	conformance.Covers(t, "GO-040", "GO-041", "GO-042")
 	// An unmarshaler is given the value as it is: unknown, marked or null.
 	marked := tenon.WithMarks(tenon.Unknown(num), stamp{id: "iso", policy: tenon.Isolate})
 	for _, v := range []tenon.Value{marked, tenon.NullVal(str), tenon.Narrow(tenon.Pending(tenon.Any()), tenon.NotNull())} {
 		if got := decoded[observer](t, v, tenon.Safe); !tenon.Identical(got.got, v) {
 			t.Errorf("an unmarshaler was given %v, not %v", got.got, v)
+		}
+	}
+	// So is a pointer to one, at any depth, alone, in a field or in a slice,
+	// as encoding/json treats a pointer to an Unmarshaler: anything but an
+	// unmarked null, a marked null among them, goes to the method of a new
+	// value, and an unmarked null leaves the pointer nil.
+	markedNull := tenon.WithMarks(tenon.NullVal(str), stamp{id: "m"})
+	pending := tenon.Narrow(tenon.Pending(tenon.Any()), tenon.NotNull())
+	for _, v := range []tenon.Value{marked, tenon.Unknown(num), pending, markedNull} {
+		if got := decoded[*observer](t, v, tenon.Safe); got == nil || !tenon.Identical(got.got, v) {
+			t.Errorf("a pointer to an unmarshaler, given %v, decoded to %v", v, got)
+		}
+		if got := decoded[**observer](t, v, tenon.Safe); got == nil || *got == nil || !tenon.Identical((*got).got, v) {
+			t.Errorf("a pointer to a pointer to an unmarshaler, given %v, decoded to %v", v, got)
+		}
+	}
+	// A container holds no pending value, and its conversion carries its
+	// members' Propagate marks, so these are what a field and a slice hold.
+	carried := tenon.WithMarks(tenon.Unknown(num), stamp{id: "p"})
+	for _, v := range []tenon.Value{carried, tenon.Unknown(num), markedNull} {
+		w := decoded[watched](t, obj(map[string]tenon.Value{"one": v, "many": tenon.TupleVal(v)}), tenon.Safe)
+		if w.One == nil || !tenon.Identical(w.One.got, v) {
+			t.Errorf("a field pointing to an unmarshaler, given %v, decoded to %v", v, w.One)
+		}
+		if len(w.Many) != 1 || w.Many[0] == nil || !tenon.Identical(w.Many[0].got, v) {
+			t.Errorf("a slice of pointers to an unmarshaler, given [%v], decoded to %v", v, w.Many)
+		}
+	}
+	for _, v := range []tenon.Value{tenon.NullVal(str), tenon.Narrow(tenon.Pending(tenon.Any()), tenon.Null())} {
+		if got := decoded[*observer](t, v, tenon.Safe); got != nil {
+			t.Errorf("a pointer to an unmarshaler, given the unmarked %v, decoded to %v, want nil", v, got)
 		}
 	}
 	// A failure is located where the Go value is: an error that carries
