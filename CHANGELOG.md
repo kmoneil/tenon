@@ -12,6 +12,21 @@
 
 ### Changed
 
+- `Unify` is bounded by the size of what it is given. Each member of one
+  `OneOf` unifies with each member of another, so constraints that are each a
+  `OneOf` of object types with different attributes multiplied: ten of three
+  objects each, 1.5 KB written out, unified to 3^10 members in 392 MiB.
+  `Unify` now weighs each pair of members it forms by their sizes, and where
+  the pairs would weigh more in all than 64 times the size of its
+  constraints, it forms no more and returns an error value with the new code
+  `CodeUnifyTooLarge` (`unify.too_large`); that case is refused in under a
+  millisecond. Unions that stay small pass however many there are: a
+  thousand "number or string" constraints, an object of eleven such fields
+  with itself, two tagged unions of 60 variants each. Constraints are
+  unified in canonical order, so a refusal does not depend on the order they
+  are given in, though unifying in stages can differ from one call near the
+  bound. `Convert`'s doc now says that objects of distinct attributes
+  converted to one collection each gain the others' attributes, n by n.
 - `Path.Index` panics on a key that carries marks, as `SetVal`, `Hash` and
   `Members` panic on marked values. A mark on a key showed in the path's
   display, went unnoticed by `Identical`, and dropped out of the encoding,

@@ -47,7 +47,12 @@ func (p Policy) String() string {
 //
 // The type of the result follows from the type of v and from c, not from what
 // v holds, except where a map becomes an object, whose attributes are the
-// map's keys. A conversion that fails for what v holds, as the string "x"
+// map's keys. Where a collection's members are objects whose attribute names
+// differ, they convert to one object type holding every attribute of any of
+// them, and each member gains the others' attributes as null: n objects of
+// distinct attributes give n objects of n attributes each, which is what the
+// conversion means. A program converting a collection it did not write bounds
+// its length. A conversion that fails for what v holds, as the string "x"
 // converted to a number does, gives an error value, never a value of another
 // type. A failure within a container is reported where it happens: a
 // diagnostic for each member that fails, located by its path within v, with

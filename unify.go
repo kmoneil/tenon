@@ -3,6 +3,7 @@ package tenon
 import (
 	"cmp"
 	"slices"
+	"strconv"
 	"strings"
 )
 
@@ -28,6 +29,14 @@ import (
 // Equal, and it does not depend on the order cs are given in. Unifying none
 // gives Any, and unifying one gives it written canonically.
 //
+// OneOf multiplies: each member of one unifies with each member of the other,
+// so constraints that are each a OneOf of object types with different
+// attributes unify to a OneOf of every combination of them. Unify weighs each
+// pair of members it forms by their sizes, and where the pairs would weigh
+// more in all than a fixed multiple of the size of cs, it forms no more and
+// returns an error value with code CodeUnifyTooLarge instead. Unions that stay
+// small, because their pairs unify alike or fail, are never refused.
+//
 // Unify panics if p is not Safe or Unsafe, or if a constraint is the zero
 // Constraint.
 func Unify(p Policy, cs ...Constraint) (Constraint, Value, bool) {
@@ -42,14 +51,125 @@ func Unify(p Policy, cs ...Constraint) (Constraint, Value, bool) {
 	if len(given) == 0 {
 		return Any(), Value{}, true
 	}
-	u := given[0]
-	for _, c := range given[1:] {
+	// Unified in canonical order, so that the pairs formed, and whether they
+	// pass the bound, do not depend on the order cs are given in (CV-045).
+	ordered := slices.Clone(given)
+	slices.SortFunc(ordered, compareConstraints)
+	un := newUnifier(p)
+	var total int64
+	for _, c := range ordered {
+		total = saturatingAdd(total, un.size(c))
+	}
+	un.left = saturatingMul(unifyBound, total)
+	u := ordered[0]
+	for _, c := range ordered[1:] {
 		var ok bool
-		if u, ok = unifyPair(u, c, p); !ok {
+		if u, ok = un.pair(u, c); !ok {
+			if un.over {
+				return Constraint{}, unifyTooLarge(len(given), total), false
+			}
 			return Constraint{}, unifyFailure(given, p), false
 		}
 	}
 	return u, Value{}, true
+}
+
+// unifyBound is the multiple of CV-045: the pairs a unification forms may
+// weigh in all at most this many times the size of the constraints it is
+// given.
+const unifyBound = 64
+
+// unifier holds what one Unify call has left to form: the weight of the pairs
+// it may still form, whether a OneOf has been refused its pairs, and the sizes
+// it has measured, since a member is weighed again at every pair it joins.
+type unifier struct {
+	p     Policy
+	left  int64
+	over  bool
+	sizes map[*constraintData]int64
+	types map[*typeData]int64
+}
+
+func newUnifier(p Policy) *unifier {
+	return &unifier{p: p, sizes: map[*constraintData]int64{}, types: map[*typeData]int64{}}
+}
+
+// size returns the size of c by CV-045: the constraints c is written with,
+// itself among them, each counted where it appears, Exactly of a type counting
+// as the types that type is written with.
+func (un *unifier) size(c Constraint) int64 {
+	d := c.c
+	if s, ok := un.sizes[d]; ok {
+		return s
+	}
+	s := int64(1)
+	switch d.kind {
+	case ConstraintExactly:
+		s = un.typeSize(d.typ)
+	case ConstraintListOf, ConstraintSetOf, ConstraintMapOf:
+		s = saturatingAdd(s, un.size(d.elem))
+	case ConstraintTupleOf, ConstraintOneOf:
+		for _, m := range d.members {
+			s = saturatingAdd(s, un.size(m))
+		}
+	case ConstraintObjectWith:
+		for _, f := range d.fields {
+			s = saturatingAdd(s, un.size(f.Constraint))
+		}
+	}
+	un.sizes[d] = s
+	return s
+}
+
+// typeSize returns the number of types t is written with, itself among them,
+// each counted where it appears.
+func (un *unifier) typeSize(t Type) int64 {
+	d := t.t
+	if s, ok := un.types[d]; ok {
+		return s
+	}
+	s := int64(1)
+	switch d.kind {
+	case KindList, KindSet, KindMap:
+		s = saturatingAdd(s, un.typeSize(d.elem))
+	case KindTuple:
+		for _, e := range d.elems {
+			s = saturatingAdd(s, un.typeSize(e))
+		}
+	case KindObject:
+		for _, a := range d.attrs {
+			s = saturatingAdd(s, un.typeSize(a.typ))
+		}
+	}
+	un.types[d] = s
+	return s
+}
+
+// saturated is where sizes and weights stop counting: past any bound that the
+// size of constraints a program could hold allows.
+const saturated = int64(1) << 60
+
+func saturatingAdd(a, b int64) int64 {
+	if a >= saturated-b {
+		return saturated
+	}
+	return a + b
+}
+
+func saturatingMul(a, b int64) int64 {
+	if a != 0 && b > saturated/a {
+		return saturated
+	}
+	return a * b
+}
+
+// unifyTooLarge returns the error value of a unification refused by CV-045. It
+// names neither the constraints nor their order, only how many there were and
+// the weight their size allowed, which do not depend on the order either.
+func unifyTooLarge(n int, size int64) Value {
+	return errorValue(Diagnostic{Code: CodeUnifyTooLarge, Message: "unifying " + count(n, "constraint") + " of size " +
+		strconv.FormatInt(size, 10) + " forms pairs weighing more than the " +
+		strconv.FormatInt(saturatingMul(unifyBound, size), 10) + " that size allows"})
 }
 
 // unifyFailure returns the error value of constraints that do not unify. It
@@ -174,9 +294,10 @@ func compareFields(f, g field) int {
 	return compareConstraints(f.Constraint, g.Constraint)
 }
 
-// unifyPair unifies two canonical constraints, returning the canonical result
-// and whether there is one.
-func unifyPair(a, b Constraint, p Policy) (Constraint, bool) {
+// pair unifies two canonical constraints, returning the canonical result and
+// whether there is one. Where it fails because a OneOf was refused its pairs,
+// un.over says so, and every caller stops.
+func (un *unifier) pair(a, b Constraint) (Constraint, bool) {
 	switch {
 	case a.c.kind == ConstraintAny:
 		return b, true
@@ -195,10 +316,30 @@ func unifyPair(a, b Constraint, p Policy) (Constraint, bool) {
 		if b.c.kind == ConstraintOneOf {
 			ys = b.c.members
 		}
+		// Every member of xs joins a pair with each member of ys, and a pair
+		// weighs its two members' sizes, so the pairs weigh this in all,
+		// which is judged before any of them is formed (CV-045).
+		var sx, sy int64
+		for _, x := range xs {
+			sx = saturatingAdd(sx, un.size(x))
+		}
+		for _, y := range ys {
+			sy = saturatingAdd(sy, un.size(y))
+		}
+		weight := saturatingAdd(saturatingMul(int64(len(ys)), sx), saturatingMul(int64(len(xs)), sy))
+		if weight > un.left {
+			un.over = true
+			return Constraint{}, false
+		}
+		un.left -= weight
 		var out []Constraint
 		for _, x := range xs {
 			for _, y := range ys {
-				if u, ok := unifyPair(x, y, p); ok {
+				u, ok := un.pair(x, y)
+				if un.over {
+					return Constraint{}, false
+				}
+				if ok {
 					out = append(out, u)
 				}
 			}
@@ -208,7 +349,7 @@ func unifyPair(a, b Constraint, p Policy) (Constraint, bool) {
 		}
 		return oneOf(out), true
 	}
-	r, ok := unifyStructures(spelledOut(a), spelledOut(b), p)
+	r, ok := un.structures(spelledOut(a), spelledOut(b))
 	if !ok {
 		return Constraint{}, false
 	}
@@ -224,9 +365,9 @@ func spelledOut(c Constraint) Constraint {
 	return c
 }
 
-// unifyStructures unifies two constraints that are neither Any nor OneOf, and
-// of which an Exactly names a primitive or capsule type.
-func unifyStructures(x, y Constraint, p Policy) (Constraint, bool) {
+// structures unifies two constraints that are neither Any nor OneOf, and of
+// which an Exactly names a primitive or capsule type.
+func (un *unifier) structures(x, y Constraint) (Constraint, bool) {
 	if constraintOrder[x.c.kind] > constraintOrder[y.c.kind] {
 		x, y = y, x
 	}
@@ -236,56 +377,60 @@ func unifyStructures(x, y Constraint, p Policy) (Constraint, bool) {
 		switch tx, ty := x.c.typ, y.c.typ; {
 		case tx == ty:
 			return x, true
-		case p == Unsafe && isPrimitive(tx.t.kind) && isPrimitive(ty.t.kind):
+		case un.p == Unsafe && isPrimitive(tx.t.kind) && isPrimitive(ty.t.kind):
 			// Two primitive types meet only as text.
 			return Exactly(Type{stringType}), true
 		}
 	case kx == ky && (kx == ConstraintListOf || kx == ConstraintSetOf || kx == ConstraintMapOf):
-		if e, ok := unifyPair(x.c.elem, y.c.elem, p); ok {
+		if e, ok := un.pair(x.c.elem, y.c.elem); ok {
 			return elementConstraint(kx, e), true
 		}
 	case kx == ConstraintListOf && ky == ConstraintSetOf:
-		if e, ok := unifyPair(x.c.elem, y.c.elem, p); ok {
+		if e, ok := un.pair(x.c.elem, y.c.elem); ok {
 			return ListOf(e), true
 		}
 	case (kx == ConstraintListOf || kx == ConstraintSetOf) && ky == ConstraintTupleOf:
-		if e, ok := unifyAll(append([]Constraint{x.c.elem}, y.c.members...), p); ok {
+		if e, ok := un.all(append([]Constraint{x.c.elem}, y.c.members...)); ok {
 			return ListOf(e), true
 		}
 	case kx == ConstraintTupleOf && ky == ConstraintTupleOf:
-		return unifyTupleOf(x, y, p)
+		return un.tuples(x, y)
 	case kx == ConstraintMapOf && ky == ConstraintObjectWith:
 		members := []Constraint{x.c.elem}
 		for _, f := range y.c.fields {
 			members = append(members, f.Constraint)
 		}
-		if e, ok := unifyAll(members, p); ok {
+		if e, ok := un.all(members); ok {
 			return MapOf(e), true
 		}
 	case kx == ConstraintObjectWith && ky == ConstraintObjectWith:
-		return unifyObjectWith(x, y, p)
+		return un.objects(x, y)
 	}
 	return Constraint{}, false
 }
 
-// unifyAll unifies canonical constraints pair by pair. With none it gives Any.
-func unifyAll(cs []Constraint, p Policy) (Constraint, bool) {
+// all unifies canonical constraints pair by pair, in canonical order, so that
+// the pairs formed do not depend on the order the rule gathered them in
+// (CV-045). With none it gives Any.
+func (un *unifier) all(cs []Constraint) (Constraint, bool) {
+	ordered := slices.Clone(cs)
+	slices.SortFunc(ordered, compareConstraints)
 	u := Any()
-	for _, c := range cs {
+	for _, c := range ordered {
 		var ok bool
-		if u, ok = unifyPair(u, c, p); !ok {
+		if u, ok = un.pair(u, c); !ok {
 			return Constraint{}, false
 		}
 	}
 	return u, true
 }
 
-// unifyTupleOf unifies two TupleOf constraints: position by position where
-// they are of one length, and otherwise as a list of every member of both.
-func unifyTupleOf(x, y Constraint, p Policy) (Constraint, bool) {
+// tuples unifies two TupleOf constraints: position by position where they are
+// of one length, and otherwise as a list of every member of both.
+func (un *unifier) tuples(x, y Constraint) (Constraint, bool) {
 	xs, ys := x.c.members, y.c.members
 	if len(xs) != len(ys) {
-		e, ok := unifyAll(slices.Concat(xs, ys), p)
+		e, ok := un.all(slices.Concat(xs, ys))
 		if !ok {
 			return Constraint{}, false
 		}
@@ -294,17 +439,17 @@ func unifyTupleOf(x, y Constraint, p Policy) (Constraint, bool) {
 	members := make([]Constraint, len(xs))
 	for i := range xs {
 		var ok bool
-		if members[i], ok = unifyPair(xs[i], ys[i], p); !ok {
+		if members[i], ok = un.pair(xs[i], ys[i]); !ok {
 			return Constraint{}, false
 		}
 	}
 	return Constraint{&constraintData{kind: ConstraintTupleOf, members: members}}, true
 }
 
-// unifyObjectWith unifies two ObjectWith constraints field by field: a field
-// for each name in either, required where both require it, and closed where
-// both are.
-func unifyObjectWith(x, y Constraint, p Policy) (Constraint, bool) {
+// objects unifies two ObjectWith constraints field by field, in name order: a
+// field for each name in either, required where both require it, and closed
+// where both are.
+func (un *unifier) objects(x, y Constraint) (Constraint, bool) {
 	var fields []field
 	fx, fy := x.c.fields, y.c.fields
 	for len(fx) > 0 || len(fy) > 0 {
@@ -316,7 +461,7 @@ func unifyObjectWith(x, y Constraint, p Policy) (Constraint, bool) {
 			fields = append(fields, field{fy[0].name, Optional(fy[0].Constraint)})
 			fy = fy[1:]
 		default:
-			u, ok := unifyPair(fx[0].Constraint, fy[0].Constraint, p)
+			u, ok := un.pair(fx[0].Constraint, fy[0].Constraint)
 			if !ok {
 				return Constraint{}, false
 			}

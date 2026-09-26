@@ -355,6 +355,12 @@ func (u unification) String() string {
 	return u.failure.String()
 }
 
+// tooLarge reports whether the unification was refused for the pairs it
+// would form (CV-045).
+func (u unification) tooLarge() bool {
+	return !u.ok && u.failure.Diagnostics()[0].Code == tenon.CodeUnifyTooLarge
+}
+
 func TestConformance_CV041_UnificationIsOrderIndependent(t *testing.T) {
 	conformance.Covers(t, "CV-041")
 	wantUnified(t, safe, tenon.Any())
@@ -420,13 +426,17 @@ func TestConformance_CV041_UnificationIsOrderIndependent(t *testing.T) {
 					t.Errorf("%s = %v, but in the order %v it is %v", what, whole, perm, got)
 				}
 			}
-			// Any grouping gives the same constraint, or fails as well.
+			// Any grouping gives the same constraint, or fails as well, except
+			// where CV-045 refuses one of them: stages form other pairs.
 			left, right := unify(t, p, cs[0], cs[1]), unify(t, p, cs[1], cs[2])
 			for _, g := range []struct {
 				first unification
 				other tenon.Constraint
 				name  string
 			}{{left, cs[2], "(a, b), c"}, {right, cs[0], "a, (b, c)"}} {
+				if whole.tooLarge() || g.first.tooLarge() {
+					continue
+				}
 				if !g.first.ok {
 					if whole.ok {
 						t.Errorf("%s = %v, but grouped as %s it fails: %v", what, whole, g.name, g.first)
@@ -434,6 +444,9 @@ func TestConformance_CV041_UnificationIsOrderIndependent(t *testing.T) {
 					continue
 				}
 				grouped := unify(t, p, g.first.c, g.other)
+				if grouped.tooLarge() {
+					continue
+				}
 				if grouped.ok != whole.ok || grouped.ok && !grouped.c.Equal(whole.c) {
 					t.Errorf("%s = %v, but grouped as %s it is %v", what, whole, g.name, grouped)
 				}
@@ -446,6 +459,117 @@ func TestConformance_CV041_UnificationIsOrderIndependent(t *testing.T) {
 	}
 	if succeeded < 500 || failed < 500 {
 		t.Errorf("the generated sets unified %d times and failed %d times, too few of one to say much", succeeded, failed)
+	}
+}
+
+// TestConformance_CV045_UnificationIsBounded holds unification to the weight
+// of the pairs it forms: the bound falls where the rule's arithmetic puts it,
+// the multiplying shape is refused in every order with one diagnostic, and
+// unions that stay small pass however many of them there are.
+func TestConformance_CV045_UnificationIsBounded(t *testing.T) {
+	conformance.Covers(t, "CV-045", "CV-041")
+	// singles returns n objects of one attribute each, their names distinct,
+	// so that every pair of them unifies to an object of its own.
+	singles := func(prefix string, n int) []tenon.Constraint {
+		out := make([]tenon.Constraint, n)
+		for i := range out {
+			out[i] = tenon.ObjectWith(map[string]tenon.Field{fmt.Sprintf("%s%d", prefix, i): tenon.Required(is(num))}, false)
+		}
+		return out
+	}
+	shuffled := func(r *rand.Rand, cs []tenon.Constraint) []tenon.Constraint {
+		out := append([]tenon.Constraint(nil), cs...)
+		r.Shuffle(len(out), func(i, j int) { out[i], out[j] = out[j], out[i] })
+		return out
+	}
+	r := rand.New(rand.NewSource(20260926))
+
+	// Each object is of size 2, itself and Exactly(number), so two OneOfs of
+	// n of them are of size 2 + 4n in all and allow pairs weighing 64 times
+	// that, 128 + 256n. Their n by n pairs weigh 2n apiece on each side, 4n^2
+	// in all: 64 of each pass, and 65 are refused. Any beside them adds its
+	// size, 1, and forms no pair.
+	for _, tt := range []struct {
+		n       int
+		ok      bool
+		message string
+	}{
+		{64, true, ""},
+		{65, false, "unifying 3 constraints of size 263 forms pairs weighing more than the 16832 that size allows"},
+	} {
+		cs := []tenon.Constraint{tenon.OneOf(singles("a", tt.n)...), tenon.OneOf(singles("b", tt.n)...), tenon.Any()}
+		whole := unify(t, safe, cs...)
+		if whole.ok != tt.ok {
+			t.Fatalf("two OneOfs of %d objects: %v, want ok %t", tt.n, whole, tt.ok)
+		}
+		if whole.ok {
+			if got := len(whole.c.Members()); got != tt.n*tt.n {
+				t.Errorf("two OneOfs of %d objects unify to %d members, want %d", tt.n, got, tt.n*tt.n)
+			}
+		} else if ds := whole.failure.Diagnostics(); !whole.tooLarge() || ds[0].Message != tt.message {
+			t.Errorf("two OneOfs of %d objects: %v, want %s saying %q", tt.n, whole.failure, tenon.CodeUnifyTooLarge, tt.message)
+		}
+		for range 10 {
+			if got := unify(t, safe, shuffled(r, cs)...); !got.same(whole) {
+				t.Errorf("two OneOfs of %d objects, in another order: %v, want %v", tt.n, got, whole)
+			}
+		}
+	}
+
+	// Beside a constraint that unifies with none of their members, the same
+	// two OneOfs fail for want of a common constraint, in every order: in the
+	// canonical order Exactly(number) comes first and fails with the first
+	// OneOf, so the fold stops before the two OneOfs form their pairs. Folded
+	// as given, they would form them first and be refused. The same holds
+	// where a rule folds a list, a tuple of both against a tuple of the one.
+	wantNoCommon := func(what string, got unification) {
+		t.Helper()
+		if got.ok || got.failure.Diagnostics()[0].Code != tenon.CodeUnifyNoCommonConstraint {
+			t.Errorf("%s: %v, want %s", what, got, tenon.CodeUnifyNoCommonConstraint)
+		}
+	}
+	big := []tenon.Constraint{tenon.OneOf(singles("a", 65)...), tenon.OneOf(singles("b", 65)...), is(num)}
+	for range 10 {
+		wantNoCommon("two OneOfs of 65 objects beside a number", unify(t, safe, shuffled(r, big)...))
+	}
+	pairOfBig, lone := tenon.TupleOf(big[0], big[1]), tenon.TupleOf(is(num))
+	wantNoCommon("a tuple of two OneOfs of 65 objects with a tuple of a number", unify(t, safe, pairOfBig, lone))
+	wantNoCommon("the same the other way round", unify(t, safe, lone, pairOfBig))
+
+	// Ten OneOfs of three objects each would unify to 3^10 members; they are
+	// refused, in every order alike, by a message that names no order.
+	var multiplying []tenon.Constraint
+	for i := range 10 {
+		multiplying = append(multiplying, tenon.OneOf(singles(fmt.Sprintf("a%d_", i), 3)...))
+	}
+	refused := unify(t, safe, multiplying...)
+	if !refused.tooLarge() {
+		t.Fatalf("ten OneOfs of three objects: %v, want %s", refused, tenon.CodeUnifyTooLarge)
+	}
+	for range 20 {
+		if got := unify(t, safe, shuffled(r, multiplying)...); !got.same(refused) {
+			t.Errorf("ten OneOfs of three objects, in another order: %v, want %v", got, refused)
+		}
+	}
+
+	// Unions whose pairs unify alike or fail stay small, and pass however
+	// many there are: a thousand of number or string, and an object of eleven
+	// such fields with itself.
+	numOrStr := tenon.OneOf(is(num), is(str))
+	var thousand []tenon.Constraint
+	for range 1000 {
+		thousand = append(thousand, numOrStr)
+	}
+	if got := unify(t, uns, thousand...); !got.ok || !got.c.Equal(numOrStr) {
+		t.Errorf("a thousand of number or string unify to %v, want %v", got, numOrStr)
+	}
+	fields := map[string]tenon.Field{}
+	for i := range 11 {
+		fields[fmt.Sprintf("f%d", i)] = tenon.Required(numOrStr)
+	}
+	eleven := tenon.ObjectWith(fields, true)
+	if got := unify(t, safe, eleven, eleven); !got.ok || !got.c.Equal(eleven) {
+		t.Errorf("an object of eleven union fields with itself unifies to %v, want it", got)
 	}
 }
 

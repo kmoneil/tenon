@@ -62,6 +62,7 @@ var specCodes = []string{
 	"serialize.unsupported_version",
 	"string.invalid_utf8",
 	"unify.no_common_constraint",
+	"unify.too_large",
 }
 
 func TestConformance_ER007_DiagnosticCodes(t *testing.T) {

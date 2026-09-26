@@ -115,6 +115,9 @@
     },
     {
       "code": "unify.no_common_constraint"
+    },
+    {
+      "code": "unify.too_large"
     }
   ]
 }
