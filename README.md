@@ -1,5 +1,9 @@
 # tenon
 
+[![Go Reference](https://pkg.go.dev/badge/github.com/kmoneil/tenon.svg)](https://pkg.go.dev/github.com/kmoneil/tenon)
+[![check](https://github.com/kmoneil/tenon/actions/workflows/check.yml/badge.svg)](https://github.com/kmoneil/tenon/actions/workflows/check.yml)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/kmoneil/tenon/badge)](https://scorecard.dev/viewer/?uri=github.com/kmoneil/tenon)
+
 tenon is a Go library for values whose types a program does not know at compile
 time: the value layer of a configuration language, and of anything else that
 carries data a person supplied.
@@ -207,6 +211,8 @@ The other targets:
 | `make report` | Runs the tests, recording the rules they cover, and regenerates `CONFORMANCE.md`. |
 | `make rules`, `make codes` | Regenerate `conformance/rules.json` and the specification's appendix of diagnostic codes from the specification that `TENON_SPEC` names. |
 | `make vuln` | Runs govulncheck, at the version the Makefile names, and fails on a known vulnerability tenon's code can reach, in its dependencies or in the Go standard library it is built with. CI runs it on every change and every night. |
+
+`CONTRIBUTING.md` says how to propose a change and what a pull request needs.
 
 # License
 
