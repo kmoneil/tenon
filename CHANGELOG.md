@@ -1,6 +1,43 @@
 # Changelog
 
-## Unreleased
+## 0.6.0 (2026-09-26)
+
+Every question the v0.1.0 audit left open is answered, and this release
+carries the answers and the fixes they unblocked, two of which close ways a
+redacting mark could be lost. It implements version 0.5.0 of the tenon
+specification, which amends `UN-002`, `UN-004`, `UN-005`, `EQ-010`, `VA-020`,
+`MK-006`, `CV-002`, `CV-024`, `CV-041`, `GO-041` and `GO-042`, and adds
+`CV-045`: 196 rules.
+
+**Upgrade if you mark values as redacting and build paths, or decode them with
+gotenon.** In 0.5.0 a key under a redacting mark, given to `Path.Index`, read in
+clear after one `Serialize` and `Deserialize`, and `gotenon.Decode` dropped an
+Isolate mark, a redacting one included, from a struct field, slice element or
+map element that it decoded into a `tenon.Value` or by an unmarshaler.
+`Path.Index` now refuses a marked key, and `Decode` hands such members over as
+they are. Upgrade as well if you `Unify` constraints you did not write: ten
+`OneOf`s of three object types each, 1.5 KB written out, took 392 MiB, and are
+now refused in under a millisecond.
+
+The minor version moves because results change. Narrowings that leave a value
+that may be null no other value give the null value, where they gave
+`range.contradiction`. `Path.Index` panics on a marked key. `Unify` refuses
+past its bound with the new code `unify.too_large`. A pointer to a type that
+decodes by an unmarshaler decodes by it, where it failed. The Go packages
+`conformance`, `conformance/values` and `conformance/matrix` leave the public
+API for `internal/`, and `Type.Equals` is deprecated for `Type.Equal`. Each is
+below.
+
+**Upgrading from 0.5.0.** A document recording a range that holds nothing but
+null, which 0.5.0 refused as malformed, is refused as not canonical, since
+that value is the null; the vector corpus renames its entry and adds one for a
+range that excludes null. Replace `Type.Equals` with `Type.Equal` before 1.0
+removes it. A program that imported the conformance packages, which only
+tenon's own tests did, keeps a copy of what it used.
+
+**What `CONFORMANCE.md` states.** 196 of 196, and no rule more widely than its
+test exercises: the narrower tests of `UN-004`, `UN-005` and `DI-011`, noted
+since 0.4.0, are settled.
 
 ### Added
 
