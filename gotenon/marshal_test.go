@@ -212,6 +212,39 @@ func TestConformance_GO040_MarshalersAtTheBoundary(t *testing.T) {
 	mustPanicUsage(t, "returned the zero Value", func() { gotenon.Encode(zeroMarshaler{}) })
 }
 
+// TestConformance_GO012_CollectionsOfUnmarshalers holds a slice, array or map
+// of unmarshalers to what a slice or map of tenon.Value does in decoding: it
+// decodes from Any, member by member, since each member takes a value of any
+// type, so members whose types differ decode under either policy, each
+// method given its own.
+func TestConformance_GO012_CollectionsOfUnmarshalers(t *testing.T) {
+	conformance.Covers(t, "GO-012", "GO-040")
+	mixed := tenon.TupleVal(n(1), s("a"), tenon.Unknown(boo))
+	for _, p := range []tenon.Policy{tenon.Safe, tenon.Unsafe} {
+		plain := decoded[[]observer](t, mixed, p)
+		pointers := decoded[[]*observer](t, mixed, p)
+		array := decoded[[3]observer](t, mixed, p)
+		for i, want := range mixed.Elements() {
+			if !tenon.Identical(plain[i].got, want) || pointers[i] == nil || !tenon.Identical(pointers[i].got, want) || !tenon.Identical(array[i].got, want) {
+				t.Errorf("%s: member %d, %v, reached a slice, a slice of pointers and an array of unmarshalers as %v, %v and %v", p, i, want, plain[i].got, pointers[i], array[i].got)
+			}
+		}
+		nested := decoded[[][]observer](t, tenon.TupleVal(mixed, tenon.TupleVal(n(2))), p)
+		if len(nested) != 2 || len(nested[0]) != 3 || !tenon.Identical(nested[0][1].got, s("a")) || !tenon.Identical(nested[1][0].got, n(2)) {
+			t.Errorf("%s: a slice of slices of unmarshalers decoded to %v", p, nested)
+		}
+		m := decoded[map[string]observer](t, obj(map[string]tenon.Value{"n": n(1), "s": s("a")}), p)
+		if !tenon.Identical(m["n"].got, n(1)) || !tenon.Identical(m["s"].got, s("a")) {
+			t.Errorf("%s: a map of unmarshalers decoded to %v", p, m)
+		}
+	}
+	// A value of another kind still decodes into none of them.
+	wantDecodeFailures[[]observer](t, "a number into a slice of unmarshalers", n(1), tenon.Safe,
+		wantDiag{tenon.CodeConvertNoConversion, "."})
+	wantDecodeFailures[map[string]observer](t, "a list into a map of unmarshalers", tenon.ListVal(num, n(1)), tenon.Safe,
+		wantDiag{tenon.CodeConvertNoConversion, "."})
+}
+
 // zeroMarshaler breaks the contract of a marshaler.
 type zeroMarshaler struct{}
 

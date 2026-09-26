@@ -77,6 +77,23 @@ type goMapping struct {
 // typed reports whether the Go type maps to a type.
 func (m *goMapping) typed() bool { return m.typ != (tenon.Type{}) }
 
+// decodesAny reports whether a value of any type decodes into the Go type:
+// one that maps to no type, one that decodes by an unmarshaler, itself or
+// through a pointer, and a slice, array or map of such, which decodes from
+// Any member by member (GO-012).
+func (m *goMapping) decodesAny() bool {
+	for m.kind == goPointer {
+		m = m.elem
+	}
+	switch {
+	case !m.typed(), m.unmarshal:
+		return true
+	case m.kind == goSlice, m.kind == goArray, m.kind == goMap:
+		return m.elem.decodesAny()
+	}
+	return false
+}
+
 // goField is a struct field that maps to an attribute.
 type goField struct {
 	index    int
@@ -166,7 +183,12 @@ func buildMapping(rt reflect.Type, building map[reflect.Type]bool) *goMapping {
 			m.elem = buildMapping(rt.Elem(), building)
 			m.constraint = tenon.Any()
 			if m.elem.typed() {
-				m.typ, m.constraint = tenon.List(m.elem.typ), tenon.ListOf(m.elem.constraint)
+				m.typ = tenon.List(m.elem.typ)
+				// Members that take any value decode by their own
+				// conversions, as members of no type do (GO-012).
+				if !m.elem.decodesAny() {
+					m.constraint = tenon.ListOf(m.elem.constraint)
+				}
 			}
 		case reflect.Map:
 			if rt.Key().Kind() != reflect.String {
@@ -176,7 +198,10 @@ func buildMapping(rt reflect.Type, building map[reflect.Type]bool) *goMapping {
 			m.elem = buildMapping(rt.Elem(), building)
 			m.constraint = tenon.Any()
 			if m.elem.typed() {
-				m.typ, m.constraint = tenon.Map(m.elem.typ), tenon.MapOf(m.elem.constraint)
+				m.typ = tenon.Map(m.elem.typ)
+				if !m.elem.decodesAny() {
+					m.constraint = tenon.MapOf(m.elem.constraint)
+				}
 			}
 		case reflect.Struct:
 			m.kind = goStruct

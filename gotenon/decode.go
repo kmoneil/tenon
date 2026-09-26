@@ -446,10 +446,11 @@ func (d *decoder) integer(m *goMapping, dst reflect.Value, v tenon.Value, p teno
 }
 
 // sequence decodes a list into a slice or an array. A slice of elements that
-// map to no type decodes from a list, a set or a tuple, each member by its own
+// take a value of any type, since they map to no type or decode by an
+// unmarshaler, decodes from a list, a set or a tuple, each member by its own
 // conversion.
 func (d *decoder) sequence(m *goMapping, dst reflect.Value, v, given tenon.Value, p tenon.Path) {
-	dynamic := !m.typed()
+	dynamic := m.elem.decodesAny()
 	switch k := v.Type().Kind(); {
 	case !dynamic && k != tenon.KindList, dynamic && k != tenon.KindList && k != tenon.KindSet && k != tenon.KindTuple:
 		d.fail(p, tenon.CodeConvertNoConversion, d.typeText(v.Type())+" does not decode into a Go "+m.rt.String())
@@ -477,10 +478,11 @@ func (d *decoder) sequence(m *goMapping, dst reflect.Value, v, given tenon.Value
 	}
 }
 
-// mapping decodes a map into a Go map. A map of elements that map to no type
-// decodes from a map or an object, each member by its own conversion.
+// mapping decodes a map into a Go map. A map of elements that take a value of
+// any type, as a slice's do, decodes from a map or an object, each member by
+// its own conversion.
 func (d *decoder) mapping(m *goMapping, dst reflect.Value, v, given tenon.Value, p tenon.Path) {
-	dynamic := !m.typed()
+	dynamic := m.elem.decodesAny()
 	var names []string
 	var members []tenon.Value
 	var steps []tenon.Path
