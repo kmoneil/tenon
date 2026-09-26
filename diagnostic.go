@@ -61,8 +61,8 @@ func (l *diagnosticLookup) holds(list []Diagnostic, d Diagnostic) bool {
 
 // diagnosticKey is the encoding of d, which two diagnostics share exactly
 // when Equal reports them the same: the encoding holds the code, the message
-// and each step of the path, it writes a number key canonically, and it
-// leaves out the marks on a key, as Equal does.
+// and each step of the path, and it writes a number key canonically. A key
+// carries no marks, which Index refuses, so there are none to leave out.
 func diagnosticKey(d Diagnostic) string { return string(appendDiagnostic(nil, d)) }
 
 // ErrorVal returns an error value carrying diags. Data that is wrong produces

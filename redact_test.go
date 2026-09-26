@@ -168,11 +168,6 @@ func TestConformance_MK011_DiagnosticsWithholdRedactedContents(t *testing.T) {
 		{"a member read out of that set", sealed.Elements()[0].String(), `redacted("secret")`},
 		{"a narrowing with a secret bound", secretBound.String(), `<= redacted("secret")`},
 		{
-			"a path through a secret key",
-			tenon.Path{}.Index(tenon.WithMarks(tenon.String("k"), secret)).String(),
-			`.[redacted("secret")]`,
-		},
-		{
 			"an error value",
 			tenon.WithMarks(tenon.ErrorVal(tenon.Diagnostic{Code: "app.failed", Message: "it failed"}), secret).String(),
 			`marked(error(app.failed: "it failed"), "secret")`,

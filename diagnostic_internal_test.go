@@ -9,14 +9,13 @@ import (
 // keyedDiagnostics returns diagnostics covering every part of a diagnostic
 // that decides whether two are equal: the code, the message, and the shape of
 // the path, attribute steps and index steps of both key kinds among them,
-// with a key that carries marks and one written another way.
+// with a key written another way.
 //
 // Two of the codes and two of the messages run together into one text
 // ("app.x" with "ab", and "app.xa" with "b"), and an attribute and a string
 // key share their text, so a key that wrote no lengths or did not say which
 // kind of step it holds would give one key to two diagnostics.
 func keyedDiagnostics() []Diagnostic {
-	marked := WithMarks(NumberFromInt(1), probe{id: "secret", redact: true})
 	paths := []Path{
 		{},
 		Path{}.Attribute("a"),
@@ -26,11 +25,9 @@ func keyedDiagnostics() []Diagnostic {
 		Path{}.Index(String("a b")),
 		Path{}.Index(NumberFromInt(1)),
 		Path{}.Index(NumberFromInt(11)),
-		// The same number written another way, and the same number carrying a
-		// redacting mark: equality compares the values a path indexes by, and
-		// neither the text they were written as nor what is attached to them.
+		// The same number written another way: equality compares the values a
+		// path indexes by, not the text they were written as.
 		Path{}.Index(NumberFromText("1.0")),
-		Path{}.Index(marked),
 		Path{}.Attribute("a").Index(NumberFromInt(1)),
 		Path{}.Index(NumberFromInt(1)).Attribute("a"),
 		Path{}.Attribute("a").Attribute("b"),
