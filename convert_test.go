@@ -488,6 +488,14 @@ func TestConformance_CV024_ConvertingToOneOf(t *testing.T) {
 	missing := tenon.ObjectWith(map[string]tenon.Field{"b": tenon.Required(tenon.Any())}, true)
 	wantValue(t, "object past a member it lacks attributes for", tenon.Convert(obj(map[string]tenon.Value{"a": n(1)}), tenon.OneOf(missing, tenon.MapOf(tenon.Any())), safe),
 		tenon.MapVal(num, map[string]tenon.Value{"a": n(1)}))
+	// A value that fits a later member as it is stays as it is, though the
+	// first member would take it with an attribute added.
+	withB := tenon.ObjectWith(map[string]tenon.Field{"a": tenon.Required(is(num)), "b": tenon.Optional(is(str))}, true)
+	onlyA := tenon.ObjectWith(map[string]tenon.Field{"a": tenon.Required(is(num))}, true)
+	a := obj(map[string]tenon.Value{"a": n(1)})
+	wantValue(t, "an object fitting the second member", tenon.Convert(a, tenon.OneOf(withB, onlyA), safe), a)
+	wantValue(t, "the same object to the first member alone", tenon.Convert(a, withB, safe),
+		obj(map[string]tenon.Value{"a": n(1), "b": tenon.NullVal(str)}))
 	// Where no member has a conversion, the conversion does not exist.
 	wantErrors(t, "string, safe", tenon.Convert(s("2"), numOrList, safe), wantDiag{tenon.CodeConvertUnsafe, "."})
 	wantErrors(t, "bool", tenon.Convert(tenon.Bool(true), numOrList, uns), wantDiag{tenon.CodeConvertNoConversion, "."})
@@ -1305,6 +1313,18 @@ func TestConformance_CV002_ValuesInFullShapeConvertToThemselves(t *testing.T) {
 	}
 	wantValue(t, "short", tenon.Convert(short, c, safe), tenon.ListVal(tenon.Object(map[string]tenon.Type{"name": str, "port": num}),
 		obj(map[string]tenon.Value{"name": s("a"), "port": tenon.NullVal(num)})))
+
+	// For a OneOf, at any depth, the shape is some member's that the type
+	// satisfies, wherever that member stands among the others: here the
+	// second's, whole, where the first would add "b".
+	withB := tenon.ObjectWith(map[string]tenon.Field{"a": tenon.Required(is(num)), "b": tenon.Optional(is(str))}, true)
+	onlyA := tenon.ObjectWith(map[string]tenon.Field{"a": tenon.Required(is(num))}, true)
+	a := obj(map[string]tenon.Value{"a": n(1)})
+	for _, oneOf := range []tenon.Constraint{tenon.OneOf(withB, onlyA), tenon.OneOf(onlyA, withB)} {
+		wantValue(t, "an object fitting a member of "+oneOf.String(), tenon.Convert(a, oneOf, safe), a)
+		inList := tenon.ListVal(a.Type(), a)
+		wantValue(t, "the same in a list of "+oneOf.String(), tenon.Convert(inList, tenon.ListOf(oneOf), uns), inList)
+	}
 }
 
 func TestConformance_CV032_PendingValuesConvertedToAny(t *testing.T) {

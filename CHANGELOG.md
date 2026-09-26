@@ -12,6 +12,12 @@
 
 ### Changed
 
+- The specification now says which rule decides a conversion to a `OneOf`
+  that a value already fits: a value whose type satisfies some member, and
+  holds each attribute that member would add, converts to itself, whichever
+  place the member has, and the first member a conversion exists to decides
+  only otherwise. `{"a": 1}` converted to `OneOf(withB, onlyA)`, where `withB`
+  would add an optional `b`, stays `{"a": 1}`. Nothing behaves differently.
 - `gotenon.Decode` decodes a pointer, at any depth, to a type whose pointer
   implements `ValueUnmarshaler` by that method, as it decodes the type
   itself: `*T`, a `*T` field and `[]*T` receive unknown, pending and marked
