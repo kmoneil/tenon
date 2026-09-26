@@ -123,6 +123,14 @@
 
 ### Fixed
 
+- `gotenon.Decode` gives a `tenon.Value` and an unmarshaler within a
+  container the member as it was handed, before the container is
+  converted. A conversion carries only Propagate marks, so an Isolate mark
+  on a struct field, a slice element or a map element was dropped before the
+  field's `tenon.Value` or the `UnmarshalValue` method saw it, a redacting
+  one included; and under Unsafe a tuple of a number and a string decoded
+  into `[]T` gave each method the string its member converted to. Both now
+  receive the member as it is, as the specification says.
 - Division refuses a terminating quotient whose last digit lies below the
   digit window before computing it: `1 / 2^3000000` is refused from the
   denominator's twos and fives where it was refused after ten million
