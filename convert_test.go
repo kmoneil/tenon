@@ -292,8 +292,7 @@ func TestConformance_CV011_CapsuleConversions(t *testing.T) {
 			return func(tenon.Value) tenon.Value { return tenon.CapsuleVal(kelvin, fromTarget) }, true
 		},
 	})
-	var other tenon.Type
-	other = tenon.Capsule("other", tenon.CapsuleOps[celsius]{
+	other := tenon.Capsule("other", tenon.CapsuleOps[celsius]{
 		ConvertTo: func(to tenon.Type) (func(*celsius) tenon.Value, bool) {
 			if to != kelvin {
 				return nil, false
@@ -515,8 +514,7 @@ func TestConformance_CV026_OneTypeConstraintsAreExactly(t *testing.T) {
 	conformance.Covers(t, "CV-026")
 	// A capsule type converts to a constraint naming the one type it declares
 	// a conversion to, however that constraint is written.
-	var words tenon.Type
-	words = tenon.Capsule("words", tenon.CapsuleOps[celsius]{
+	words := tenon.Capsule("words", tenon.CapsuleOps[celsius]{
 		ConvertTo: func(to tenon.Type) (func(*celsius) tenon.Value, bool) {
 			if to != tenon.List(str) {
 				return nil, false
@@ -894,8 +892,7 @@ func TestConformance_CV050_DiagnosticsPerMember(t *testing.T) {
 	// A conversion that fails as a whole has one diagnostic, at the empty path.
 	wantErrors(t, "whole", tenon.Convert(n(1), tenon.ListOf(tenon.Any()), uns), wantDiag{tenon.CodeConvertNoConversion, "."})
 	// Exact duplicates are removed.
-	var twice tenon.Type
-	twice = tenon.Capsule("twice", tenon.CapsuleOps[celsius]{
+	twice := tenon.Capsule("twice", tenon.CapsuleOps[celsius]{
 		ConvertTo: func(tenon.Type) (func(*celsius) tenon.Value, bool) {
 			return func(*celsius) tenon.Value {
 				d := tenon.Diagnostic{Code: "app.twice", Message: "said twice"}

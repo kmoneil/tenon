@@ -37,7 +37,7 @@ func (bare) Redacting() bool                { return false }
 // slippery is a Mark whose type is not comparable, which WithMarks refuses.
 type slippery struct {
 	stamp
-	payload []byte
+	_ []byte // a slice, so that the type is not comparable
 }
 
 func TestConformance_MK001_MarksAreTypedMetadata(t *testing.T) {
