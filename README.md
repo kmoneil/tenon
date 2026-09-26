@@ -201,6 +201,7 @@ The other targets:
 | `make determinism` | Runs the tests twice, in shuffled orders and on different numbers of processors, writing the canonical output they emit (encodings, display forms, diffs, conversions) to `.emit/`, and fails unless both runs wrote the same bytes. |
 | `make fuzz` | Runs each fuzz target (the number parser, string construction, decoding, and conversion) for `FUZZTIME`, 30 minutes by default; `make -j4 fuzz` runs them at once. An input that fails is saved under the package's `testdata/fuzz`, where it runs with the tests from then on. CI does this every night. |
 | `make release-fuzz` | Every fuzz target at once for five minutes: the fuzzing a release asks for, the depth coming from the nightly runs. |
+| `make release-notes VERSION=x.y.z` | Prints that version's section of `CHANGELOG.md`, which becomes the GitHub Release when its tag is pushed. |
 | `make growth` | Measures each benchmark at a size and at four times that size, and fails where the larger allocates more than five times what the smaller does: work growing faster than its input. CI does this every night. |
 | `make lint` | Runs staticcheck, at the version the Makefile names, over every package. CI requires it of every change. |
 | `make report` | Runs the tests, recording the rules they cover, and regenerates `CONFORMANCE.md`. |
