@@ -12,6 +12,15 @@
 
 ### Changed
 
+- `Path.Index` panics on a key that carries marks, as `SetVal`, `Hash` and
+  `Members` panic on marked values. A mark on a key showed in the path's
+  display, went unnoticed by `Identical`, and dropped out of the encoding,
+  so a key under a redacting mark read in clear after `Serialize` and
+  `Deserialize`: `.[redacted("secret")]` came back as `.["k"]`. tenon's own
+  paths index by fresh keys and are unaffected; a program indexing by a
+  marked key unmarks it first, deciding what a diagnostic may show. This
+  settles what `CONFORMANCE.md` overstated for `DI-011` since 0.4.0, the
+  last rule it overstated.
 - The specification now says what `Identical` and the encoding compare for
   an unknown set: what its range records. A listing keeps a listed
   requirement the others imply, so `Members(1, u)`, with `u` any number at

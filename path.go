@@ -97,8 +97,8 @@ func (s Step) equal(t Step) bool {
 	return sameKey(s.key, t.key)
 }
 
-// sameKey reports whether two index keys, which are Number or String values,
-// are the same value. Value equality proper belongs to Equals.
+// sameKey reports whether two index keys, which are Number or String values
+// that carry no marks (Index refuses marked keys), are the same value. Value equality proper belongs to Equals.
 func sameKey(a, b Value) bool {
 	if a.n.typ != b.n.typ {
 		return false
@@ -150,11 +150,19 @@ func (p Path) Attribute(name string) Path {
 }
 
 // Index returns p followed by a step to the element with the given key, which
-// must be a Number or String value.
+// must be a known Number or String value that carries no marks.
+//
+// Index panics on a marked key. A path's keys carry no marks: a mark on one
+// would show in the path's display, go unnoticed by Identical and drop out of
+// the encoding, so a key under a redacting mark would read in clear once
+// decoded. Unmark the key first, deciding what a diagnostic should show.
 func (p Path) Index(key Value) Path {
 	n := key.data()
 	if n.state != stateKnown || (n.typ.t.kind != KindNumber && n.typ.t.kind != KindString) {
 		usagePanic("Index called with %s as a key; a path indexes by a known Number or String value", n.describe())
+	}
+	if n.isMarked() {
+		usagePanic("Index called with %s as a key, and a path's keys carry no marks; unmark it, deciding what the path may show", n.describeMarked())
 	}
 	return p.extend(Step{kind: StepIndex, key: key})
 }

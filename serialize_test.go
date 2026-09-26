@@ -253,9 +253,10 @@ func TestConformance_SE011_Diagnostics(t *testing.T) {
 	p := tenon.Path{}.Attribute("a").Index(n(0)).Index(s("k"))
 	failed := tenon.ErrorVal(tenon.Diagnostic{Code: "app.failed", Message: "x", Path: p})
 	wantEncoding(t, "an error", failed, "82 02 81 83 6a 6170702e6661696c6564 61 78 83 6161 00 81 616b")
-	// A mark on a key is no part of the diagnostic.
-	marked := tenon.ErrorVal(tenon.Diagnostic{Code: "app.failed", Message: "x", Path: tenon.Path{}.Attribute("a").Index(tenon.WithMarks(n(0), signal{id: "m"})).Index(s("k"))})
-	wantEncoding(t, "an error with a marked key", marked, "82 02 81 83 6a 6170702e6661696c6564 61 78 83 6161 00 81 616b")
+	// A path records no marks on its keys because it holds none: Index
+	// refuses a marked key, so no mark is dropped here and none can read in
+	// clear once decoded (VA-020).
+	mustPanicUsage(t, "a path's keys carry no marks", func() { tenon.Path{}.Attribute("a").Index(tenon.WithMarks(n(0), signal{id: "m"})) })
 }
 
 func TestConformance_SE031_Marks(t *testing.T) {

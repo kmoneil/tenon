@@ -8,19 +8,11 @@ import (
 	"github.com/kmoneil/tenon"
 )
 
-// secret is a redacting mark, for a path key that carries one.
-type secret struct{}
-
-func (secret) MarkID() string                 { return "secret" }
-func (secret) Propagation() tenon.Propagation { return tenon.Propagate }
-func (secret) Redacting() bool                { return true }
-
 // keyedFailures returns diagnostics covering every part of a diagnostic that
 // decides whether two are equal: the code, the message, and the shape of the
 // path, attribute steps and index steps of both key kinds among them, with a
-// key that carries a redacting mark and one written another way.
+// key written another way.
 func keyedFailures() []tenon.Diagnostic {
-	marked := tenon.WithMarks(tenon.NumberFromInt(1), secret{})
 	paths := []tenon.Path{
 		{},
 		tenon.Path{}.Attribute("a"),
@@ -31,7 +23,6 @@ func keyedFailures() []tenon.Diagnostic {
 		tenon.Path{}.Index(tenon.NumberFromInt(1)),
 		tenon.Path{}.Index(tenon.NumberFromInt(11)),
 		tenon.Path{}.Index(tenon.NumberFromText("1.0")),
-		tenon.Path{}.Index(marked),
 		tenon.Path{}.Attribute("a").Index(tenon.NumberFromInt(1)),
 		tenon.Path{}.Index(tenon.NumberFromInt(1)).Attribute("a"),
 		tenon.Path{}.Attribute("a").Attribute("b"),

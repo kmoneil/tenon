@@ -9,7 +9,7 @@ import (
 )
 
 func TestConformance_VA020_PathSteps(t *testing.T) {
-	conformance.Covers(t, "VA-020")
+	conformance.Covers(t, "VA-020", "MK-006")
 	var root tenon.Path
 	if root.Len() != 0 || len(root.Steps()) != 0 || root.String() != "." {
 		t.Errorf("the zero Path is not the empty path: %d steps, %q", root.Len(), root.String())
@@ -47,6 +47,17 @@ func TestConformance_VA020_PathSteps(t *testing.T) {
 	mustPanicUsage(t, "a value of type bool", func() { root.Index(tenon.Bool(true)) })
 	mustPanicUsage(t, "an error value", func() { root.Index(tenon.String("\xff")) })
 	mustPanicUsage(t, "a pending value", func() { root.Index(tenon.Pending(tenon.Any())) })
+	// A path's keys carry no marks, so its display, Identical and its encoding
+	// agree on every key: a marked key, redacting or not, is refused, and the
+	// same key unmarked is taken.
+	secret := stamp{id: "secret", redact: true}
+	mustPanicUsage(t, "Index called with a value of type string that carries marks as a key, and a path's keys carry no marks",
+		func() { root.Index(tenon.WithMarks(tenon.String("k"), secret)) })
+	mustPanicUsage(t, "a value of type number that carries marks", func() { root.Index(tenon.WithMarks(tenon.NumberFromInt(0), stamp{id: "m"})) })
+	unmarked, _ := tenon.Unmark(tenon.WithMarks(tenon.String("k"), secret))
+	if got := root.Index(unmarked).String(); got != `.["k"]` {
+		t.Errorf("the key unmarked indexes as %s, want .[\"k\"]", got)
+	}
 
 	// Step accessors are for the kind of step they name.
 	mustPanicUsage(t, "not an attribute step", func() { steps[1].Name() })
