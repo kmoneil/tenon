@@ -8,7 +8,7 @@
 # The tests run with -count=1 because a cached result records nothing.
 RULECOV := $(CURDIR)/.rulecov
 
-.PHONY: check check-slow determinism fuzz fuzz-parse fuzz-string fuzz-deserialize fuzz-convert release-fuzz growth rules codes report
+.PHONY: check check-slow determinism fuzz fuzz-parse fuzz-string fuzz-deserialize fuzz-convert release-fuzz growth rules codes report lint vuln
 
 check:
 	@test -z "$$TENON_UPDATE_VECTORS" || { echo 'check: TENON_UPDATE_VECTORS is set, which rewrites both corpora and passes; unset it'; exit 1; }
@@ -90,3 +90,17 @@ BENCH ?= .
 growth:
 	go run ./tools/growth -bench='$(BENCH)' ./...
 
+
+# lint runs staticcheck and vuln runs govulncheck, each at the version named
+# here through go run, so that neither enters go.mod as a dependency. CI runs
+# lint on every change as a required check (.github/workflows/check.yml), and
+# vuln on every change and every night (.github/workflows/vuln.yml), since a
+# vulnerability can be published against code that has not changed. vuln
+# fails only on a vulnerability tenon's code can reach, the standard
+# library's included, so it also flags a toolchain that needs updating.
+STATICCHECK := honnef.co/go/tools/cmd/staticcheck@v0.8.1
+GOVULNCHECK := golang.org/x/vuln/cmd/govulncheck@v1.8.0
+lint:
+	go run $(STATICCHECK) ./...
+vuln:
+	go run $(GOVULNCHECK) ./...

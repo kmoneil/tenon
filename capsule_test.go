@@ -12,7 +12,7 @@ var sampleCapsule = tenon.Capsule("sample", tenon.CapsuleOps[struct{}]{})
 
 func TestConformance_TY040_CapsuleIdentity(t *testing.T) {
 	conformance.Covers(t, "TY-040")
-	type handle struct{ fd int }
+	type handle struct{}
 	a := tenon.Capsule("handle", tenon.CapsuleOps[handle]{})
 	b := tenon.Capsule("handle", tenon.CapsuleOps[handle]{})
 	if a == b || a.Equal(b) {

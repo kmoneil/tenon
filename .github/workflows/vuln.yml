@@ -1,0 +1,41 @@
+# govulncheck (make vuln) on every change, and each night, since a
+# vulnerability can be published against code that has not changed. It fails
+# only on a vulnerability tenon's code can reach, the standard library's
+# included, on both toolchains the gate tests; GitHub reports a failed run to
+# the repository's owner. It is not a required check: a newly published
+# vulnerability must not hold up changes that do not touch it.
+name: vuln
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: '43 3 * * *'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  vuln:
+    name: vuln (go ${{ matrix.go }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        go: ['1.26.x', '1.27.x']
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ matrix.go }}
+      - run: make vuln
