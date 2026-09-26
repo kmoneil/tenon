@@ -36,6 +36,12 @@ import (
 // nil, and any other value, a marked null among them, goes as it is to the
 // method of a new value that the pointer then points to.
 //
+// A tenon.Value and an unmarshaler within a container, a field, a slice
+// element or a map element, take the member as v holds it, before the
+// container is converted: its marks, Isolate ones among them, and its type are
+// as they were, though the conversion of what holds it carries only Propagate
+// marks and may convert its members.
+//
 // A null decodes into a pointer, slice or map as nil, and into an optional
 // field as the field's zero value, as an absent optional attribute leaves it. A
 // float64 is the nearest to the number, ties to even; a big.Float takes the
@@ -129,7 +135,7 @@ func (d *decoder) decode(m *goMapping, dst reflect.Value, v tenon.Value, p tenon
 		return
 	}
 	if byUnmarshaler(m) {
-		d.build(m, dst, v, p, optional)
+		d.build(m, dst, v, v, p, optional)
 		return
 	}
 	var marked []tenon.Diagnostic
@@ -142,7 +148,7 @@ func (d *decoder) decode(m *goMapping, dst reflect.Value, v tenon.Value, p tenon
 	for _, diag := range marked {
 		d.marked[pathKey(diag.Path)] = diag
 	}
-	d.build(m, dst, c, p, optional)
+	d.build(m, dst, c, v, p, optional)
 }
 
 // scanMarks adds a diagnostic to found for each part of v that carries a mark,
@@ -247,6 +253,44 @@ func unmarkedNull(v tenon.Value) bool {
 	return v.IsKnown() && !v.HasContent()
 }
 
+// givenEntry returns the attribute or map element named name of given, the
+// value Decode was handed where a converted object or map holds converted,
+// or converted where given holds no such member. A map converts to an object
+// and an object to a map entry for entry, so the names match.
+func givenEntry(given tenon.Value, name string, converted tenon.Value) tenon.Value {
+	if !given.HasContent() {
+		return converted
+	}
+	switch t := given.Type(); t.Kind() {
+	case tenon.KindObject:
+		if t.HasAttribute(name) {
+			return given.Attribute(name)
+		}
+	case tenon.KindMap:
+		if e, ok := given.MapElement(name); ok {
+			return e
+		}
+	}
+	return converted
+}
+
+// givenElements returns the members of given, the value Decode was handed
+// where converted holds the converted members, in their order, or converted
+// where given holds no members that match them one for one. A list, set or
+// tuple converts to a list member for member, in the order it holds them.
+func givenElements(given tenon.Value, converted []tenon.Value) []tenon.Value {
+	if !given.HasContent() {
+		return converted
+	}
+	switch given.Type().Kind() {
+	case tenon.KindList, tenon.KindSet, tenon.KindTuple:
+		if members := given.Elements(); len(members) == len(converted) {
+			return members
+		}
+	}
+	return converted
+}
+
 // unmarshal decodes v into dst by the UnmarshalValue method of dst's pointer,
 // giving it v as it is.
 func (d *decoder) unmarshal(dst reflect.Value, v tenon.Value, p tenon.Path) {
@@ -257,14 +301,17 @@ func (d *decoder) unmarshal(dst reflect.Value, v tenon.Value, p tenon.Path) {
 }
 
 // build builds the Go value in dst from v, which is converted already to the
-// constraint m maps to, and which p locates.
-func (d *decoder) build(m *goMapping, dst reflect.Value, v tenon.Value, p tenon.Path, optional bool) {
+// constraint m maps to, and which p locates. given is what Decode was handed
+// at p, before any conversion: a tenon.Value and an unmarshaler take that, as
+// they are (GO-041), since a conversion carries only Propagate marks and may
+// change what it converts.
+func (d *decoder) build(m *goMapping, dst reflect.Value, v, given tenon.Value, p tenon.Path, optional bool) {
 	if m.kind == goValue {
-		dst.Set(reflect.ValueOf(v))
+		dst.Set(reflect.ValueOf(given))
 		return
 	}
 	if m.unmarshal {
-		d.unmarshal(dst, v, p)
+		d.unmarshal(dst, given, p)
 		return
 	}
 	if m.kind == goPointer && byUnmarshaler(m) {
@@ -272,12 +319,12 @@ func (d *decoder) build(m *goMapping, dst reflect.Value, v tenon.Value, p tenon.
 		// (GO-041): an unmarked null leaves it nil, as it leaves any pointer,
 		// and anything else, a marked null among them, goes as it is to the
 		// method of a new value.
-		if unmarkedNull(v) {
+		if unmarkedNull(given) {
 			dst.SetZero()
 			return
 		}
 		ptr := reflect.New(m.elem.rt)
-		d.build(m.elem, ptr.Elem(), v, p, false)
+		d.build(m.elem, ptr.Elem(), v, given, p, false)
 		dst.Set(ptr)
 		return
 	}
@@ -339,9 +386,9 @@ func (d *decoder) build(m *goMapping, dst reflect.Value, v tenon.Value, p tenon.
 	case goBigFloat:
 		dst.Set(reflect.ValueOf(new(big.Float).SetRat(v.AsBigRat())).Elem())
 	case goSlice, goArray:
-		d.sequence(m, dst, v, p)
+		d.sequence(m, dst, v, given, p)
 	case goMap:
-		d.mapping(m, dst, v, p)
+		d.mapping(m, dst, v, given, p)
 	case goStruct:
 		// Attributes are taken in name order, so that failures read in member
 		// order; the fields are held in that order, so the field for each
@@ -353,12 +400,13 @@ func (d *decoder) build(m *goMapping, dst reflect.Value, v tenon.Value, p tenon.
 			}
 			if i < len(m.fields) && m.fields[i].name == name {
 				f := m.fields[i]
-				d.build(f.m, dst.Field(f.index), v.Attribute(name), p.Attribute(name), f.optional)
+				member := v.Attribute(name)
+				d.build(f.m, dst.Field(f.index), member, givenEntry(given, name, member), p.Attribute(name), f.optional)
 			}
 		}
 	case goPointer:
 		ptr := reflect.New(m.elem.rt)
-		d.build(m.elem, ptr.Elem(), v, p, false)
+		d.build(m.elem, ptr.Elem(), v, given, p, false)
 		dst.Set(ptr)
 	default:
 		usagePanic("Decode met the mapping kind %d of %s, which no arm of build handles; this is a defect in gotenon, not in the caller", m.kind, m.rt)
@@ -400,7 +448,7 @@ func (d *decoder) integer(m *goMapping, dst reflect.Value, v tenon.Value, p teno
 // sequence decodes a list into a slice or an array. A slice of elements that
 // map to no type decodes from a list, a set or a tuple, each member by its own
 // conversion.
-func (d *decoder) sequence(m *goMapping, dst reflect.Value, v tenon.Value, p tenon.Path) {
+func (d *decoder) sequence(m *goMapping, dst reflect.Value, v, given tenon.Value, p tenon.Path) {
 	dynamic := !m.typed()
 	switch k := v.Type().Kind(); {
 	case !dynamic && k != tenon.KindList, dynamic && k != tenon.KindList && k != tenon.KindSet && k != tenon.KindTuple:
@@ -408,6 +456,7 @@ func (d *decoder) sequence(m *goMapping, dst reflect.Value, v tenon.Value, p ten
 		return
 	}
 	members := v.Elements()
+	givens := givenElements(given, members)
 	target := dst
 	if m.kind == goSlice {
 		target = reflect.MakeSlice(m.rt, len(members), len(members))
@@ -418,9 +467,9 @@ func (d *decoder) sequence(m *goMapping, dst reflect.Value, v tenon.Value, p ten
 	for i, member := range members {
 		at := p.Index(tenon.NumberFromInt(int64(i)))
 		if dynamic {
-			d.decode(m.elem, target.Index(i), member, at, false)
+			d.decode(m.elem, target.Index(i), givens[i], at, false)
 		} else {
-			d.build(m.elem, target.Index(i), member, at, false)
+			d.build(m.elem, target.Index(i), member, givens[i], at, false)
 		}
 	}
 	if m.kind == goSlice {
@@ -430,7 +479,7 @@ func (d *decoder) sequence(m *goMapping, dst reflect.Value, v tenon.Value, p ten
 
 // mapping decodes a map into a Go map. A map of elements that map to no type
 // decodes from a map or an object, each member by its own conversion.
-func (d *decoder) mapping(m *goMapping, dst reflect.Value, v tenon.Value, p tenon.Path) {
+func (d *decoder) mapping(m *goMapping, dst reflect.Value, v, given tenon.Value, p tenon.Path) {
 	dynamic := !m.typed()
 	var names []string
 	var members []tenon.Value
@@ -452,10 +501,11 @@ func (d *decoder) mapping(m *goMapping, dst reflect.Value, v tenon.Value, p teno
 	target := reflect.MakeMapWithSize(m.rt, len(members))
 	for i, member := range members {
 		elem := reflect.New(m.rt.Elem()).Elem()
+		as := givenEntry(given, names[i], member)
 		if dynamic {
-			d.decode(m.elem, elem, member, steps[i], false)
+			d.decode(m.elem, elem, as, steps[i], false)
 		} else {
-			d.build(m.elem, elem, member, steps[i], false)
+			d.build(m.elem, elem, member, as, steps[i], false)
 		}
 		target.SetMapIndex(reflect.ValueOf(names[i]).Convert(m.rt.Key()), elem)
 	}

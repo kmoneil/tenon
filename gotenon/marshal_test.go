@@ -122,10 +122,14 @@ func (o *observer) UnmarshalValue(v tenon.Value) error {
 	return nil
 }
 
-// watched holds unmarshalers behind pointers, in a field and in a slice.
+// watched holds unmarshalers in fields and slices, behind pointers and not,
+// and a tenon.Value, all of which take what they are given as it is.
 type watched struct {
-	One  *observer   `tenon:"one"`
-	Many []*observer `tenon:"many"`
+	One    *observer   `tenon:"one"`
+	Many   []*observer `tenon:"many"`
+	Plain  observer    `tenon:"plain"`
+	Plains []observer  `tenon:"plains"`
+	Raw    tenon.Value `tenon:"raw"`
 }
 
 func TestConformance_GO040_MarshalersAtTheBoundary(t *testing.T) {
@@ -151,17 +155,44 @@ func TestConformance_GO040_MarshalersAtTheBoundary(t *testing.T) {
 			t.Errorf("a pointer to a pointer to an unmarshaler, given %v, decoded to %v", v, got)
 		}
 	}
-	// A container holds no pending value, and its conversion carries its
-	// members' Propagate marks, so these are what a field and a slice hold.
+	// Within a container, a field or a slice, each takes the member it was
+	// given, before the container's conversion, which carries only
+	// Propagate marks: an Isolate mark reaches it too. A container holds no
+	// pending value.
+	holding := func(v tenon.Value) tenon.Value {
+		return obj(map[string]tenon.Value{"one": v, "many": tenon.TupleVal(v), "plain": v, "plains": tenon.TupleVal(v), "raw": v})
+	}
 	carried := tenon.WithMarks(tenon.Unknown(num), stamp{id: "p"})
-	for _, v := range []tenon.Value{carried, tenon.Unknown(num), markedNull} {
-		w := decoded[watched](t, obj(map[string]tenon.Value{"one": v, "many": tenon.TupleVal(v)}), tenon.Safe)
+	for _, v := range []tenon.Value{marked, carried, tenon.Unknown(num), markedNull} {
+		w := decoded[watched](t, holding(v), tenon.Safe)
 		if w.One == nil || !tenon.Identical(w.One.got, v) {
 			t.Errorf("a field pointing to an unmarshaler, given %v, decoded to %v", v, w.One)
 		}
 		if len(w.Many) != 1 || w.Many[0] == nil || !tenon.Identical(w.Many[0].got, v) {
 			t.Errorf("a slice of pointers to an unmarshaler, given [%v], decoded to %v", v, w.Many)
 		}
+		if !tenon.Identical(w.Plain.got, v) {
+			t.Errorf("an unmarshaler field, given %v, was given %v", v, w.Plain.got)
+		}
+		if len(w.Plains) != 1 || !tenon.Identical(w.Plains[0].got, v) {
+			t.Errorf("a slice of unmarshalers, given [%v], decoded to %v", v, w.Plains)
+		}
+		if !tenon.Identical(w.Raw, v) {
+			t.Errorf("a tenon.Value field, given %v, holds %v", v, w.Raw)
+		}
+	}
+	// Unconverted as well: under Unsafe, a tuple of a number and a string
+	// converts to a list of strings, and each method takes its member as it
+	// was, the number a number.
+	mixed := tenon.TupleVal(n(1), s("a"))
+	w := decoded[watched](t, obj(map[string]tenon.Value{"one": n(1), "many": mixed, "plain": n(1), "plains": mixed, "raw": mixed}), tenon.Unsafe)
+	for i, want := range mixed.Elements() {
+		if !tenon.Identical(w.Many[i].got, want) || !tenon.Identical(w.Plains[i].got, want) {
+			t.Errorf("member %d of a mixed tuple reached the methods as %v and %v, want %v", i, w.Many[i].got, w.Plains[i].got, want)
+		}
+	}
+	if !tenon.Identical(w.Raw, mixed) {
+		t.Errorf("a tenon.Value field given %v holds %v", mixed, w.Raw)
 	}
 	for _, v := range []tenon.Value{tenon.NullVal(str), tenon.Narrow(tenon.Pending(tenon.Any()), tenon.Null())} {
 		if got := decoded[*observer](t, v, tenon.Safe); got != nil {
