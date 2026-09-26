@@ -36,7 +36,7 @@ fmt.Println(address.IsKnown(), tenon.Length(address))
     go get github.com/kmoneil/tenon@v0.5.0
 
 Version 0.5.0 implements version 0.4.0 of the tenon specification. A
-conformance test covers every one of its 195 rules, as `CONFORMANCE.md`
+conformance test covers every one of its 196 rules, as `CONFORMANCE.md`
 reports; `CHANGELOG.md` says what each release holds, and which rules the
 report still states more widely than its test exercises.
 
