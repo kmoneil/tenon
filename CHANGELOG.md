@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- A slice, array or map whose elements decode by an unmarshaler, directly or
+  through a pointer, decodes as a slice or map of `tenon.Value` does: from a
+  list, set or tuple, or a map or object, each member by its own conversion.
+  Members whose types differ now decode into `[]T`, `[]*T`, `[N]T`, `[][]T`
+  and `map[string]T` under either policy, each method given its own, where
+  under Safe they failed with `convert.no_common_type`. Encoding is unchanged.
+
 ## 0.6.0 (2026-09-26)
 
 Every question the v0.1.0 audit left open is answered, and this release
