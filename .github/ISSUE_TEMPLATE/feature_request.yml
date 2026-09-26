@@ -1,0 +1,20 @@
+name: Feature request
+description: Something tenon could do that it does not.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What you are trying to do
+      description: The program you are writing, and where tenon gets in the way.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What would help
+      description: An API or a behavior, if you have one in mind.
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: What you do today instead
