@@ -8,7 +8,7 @@
 # The tests run with -count=1 because a cached result records nothing.
 RULECOV := $(CURDIR)/.rulecov
 
-.PHONY: check check-slow determinism fuzz fuzz-parse fuzz-string fuzz-deserialize fuzz-convert release-fuzz growth rules codes report lint vuln
+.PHONY: check check-slow determinism fuzz fuzz-parse fuzz-string fuzz-deserialize fuzz-convert release-fuzz growth rules codes report lint vuln release-notes
 
 check:
 	@test -z "$$TENON_UPDATE_VECTORS" || { echo 'check: TENON_UPDATE_VECTORS is set, which rewrites both corpora and passes; unset it'; exit 1; }
@@ -104,3 +104,11 @@ lint:
 	go run $(STATICCHECK) ./...
 vuln:
 	go run $(GOVULNCHECK) ./...
+
+# release-notes prints the notes of VERSION, its section of CHANGELOG.md,
+# which the release workflow (.github/workflows/release.yml) makes the GitHub
+# Release of a pushed tag from. Check them before tagging:
+# make release-notes VERSION=0.6.0.
+release-notes:
+	@test -n '$(VERSION)' || { echo 'release-notes: set VERSION, as in VERSION=0.6.0'; exit 1; }
+	@go run ./tools/relnotes '$(VERSION)'
