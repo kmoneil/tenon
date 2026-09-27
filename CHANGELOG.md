@@ -31,6 +31,14 @@
   appears twice, a range's narrowing, a diagnostic code, or the type a
   document gives. A capsule type's or a mark's identifier is still named,
   since it says which decoder to supply.
+- A type that implements only one of gotenon's marshaler interfaces is mapped
+  by its kind only in the other direction, and only when a value goes that
+  way. `gotenon.Encode` panicked on a `map[int]string`, or a tree holding
+  itself, that implemented `MarshalValue`, where the method encodes it; it
+  now encodes it, and decoding into such a type is the usage error. A type
+  that implements only `UnmarshalValue` decodes whatever its kind, and
+  encoding from it is the usage error. A nil pointer to a type that encodes
+  itself encodes as the null decoding reads back as nil, as before.
 
 ### Changed
 

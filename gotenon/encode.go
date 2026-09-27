@@ -203,7 +203,7 @@ func (f *failures) withError(p tenon.Path, code tenon.Code, err error) {
 // required tenon.Value field, or any other tenon.Value, holding the zero
 // Value; and on a MarshalValue method returning the zero Value.
 func Encode[T any](x T) (tenon.Value, error) {
-	m := mappingOf(reflect.TypeFor[T]())
+	m := mappingOf(reflect.TypeFor[T](), encoding)
 	var e encoder
 	v, ok := e.encode(m, reflect.ValueOf(&x).Elem(), tenon.Path{})
 	if len(e.fails.list) > 0 || !ok {
@@ -281,7 +281,7 @@ func (e *encoder) encode(m *goMapping, rv reflect.Value, p tenon.Path) (tenon.Va
 			e.within[c] = true
 			defer delete(e.within, c)
 		}
-		return e.encode(mappingOf(held.Type()), held, p)
+		return e.encode(mappingOf(held.Type(), encoding), held, p)
 	case goBool:
 		return tenon.Bool(rv.Bool()), true
 	case goString:
@@ -382,6 +382,15 @@ func nullType(m *goMapping) tenon.Type {
 			}
 		}
 		return tenon.Object(attrs)
+	case goCustom:
+		// A type that encodes itself and does not decode itself is decoded
+		// by its kind, which gives its null as for any type; a kind that
+		// does not map, which nothing decodes into, gives the empty object.
+		if m.marshal && !m.unmarshal {
+			if kind, ok := byKind(m.rt); ok {
+				return nullType(kind)
+			}
+		}
 	}
 	return tenon.Object(nil)
 }

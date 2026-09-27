@@ -29,7 +29,10 @@
 // Go types the program actually has.
 //
 // A type can encode and decode itself by implementing ValueMarshaler and, on
-// its pointer, ValueUnmarshaler. Failures are reported as a *DiagnosticError,
+// its pointer, ValueUnmarshaler. A type implementing one is mapped by its kind
+// only in the other direction, and only when a value goes that way, so a map
+// with int keys, or a tree holding itself, that marshals itself encodes, and
+// decoding into it is the mistake. Failures are reported as a *DiagnosticError,
 // with a diagnostic for each part of the value that fails, located by its
 // path.
 //

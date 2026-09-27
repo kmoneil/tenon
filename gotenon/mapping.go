@@ -120,23 +120,60 @@ var (
 	unmarshalerGoType = reflect.TypeFor[ValueUnmarshaler]()
 )
 
-// goMappings caches the mapping of every Go type met so far.
-var goMappings sync.Map // reflect.Type to *goMapping
+// direction is which way a mapping is used: to encode Go values or to decode
+// into them.
+type direction uint8
 
-// mappingOf returns the mapping of the Go type rt, building it on first use. It
-// panics where rt does not map to tenon (GO-011) or holds a struct whose tags
-// are malformed (GO-021).
-func mappingOf(rt reflect.Type) *goMapping {
-	if m, ok := goMappings.Load(rt); ok {
-		return m.(*goMapping)
-	}
-	return buildMapping(rt, map[reflect.Type]bool{})
+const (
+	encoding direction = iota
+	decoding
+	// encodingByKind maps a type that encodes itself by its kind all the
+	// same, for encoding, which the null of a nil pointer to it needs
+	// (nullType); what it holds is mapped for encoding.
+	encodingByKind
+)
+
+// mappingKey is what a mapping is cached by: a Go type and a direction.
+type mappingKey struct {
+	rt  reflect.Type
+	dir direction
 }
 
-// buildMapping builds the mapping of rt, with building holding the types whose
-// mappings are being built around it, which a finite type cannot meet again.
-func buildMapping(rt reflect.Type, building map[reflect.Type]bool) *goMapping {
-	if m, ok := goMappings.Load(rt); ok {
+// goMappings caches the mapping of every Go type met so far, in each
+// direction it was met in.
+var goMappings sync.Map // mappingKey to *goMapping
+
+// mappingOf returns the mapping of the Go type rt for dir, building it on
+// first use. It panics where rt does not map to tenon in that direction
+// (GO-011) or holds a struct whose tags are malformed (GO-021).
+//
+// Each direction is mapped on its own (GO-040): a type that encodes itself is
+// not mapped by its kind to be encoded, nor one that decodes itself to be
+// decoded, so a map[int]string, or a tree holding itself, that marshals
+// itself encodes, and only decoding into it, where it maps by its kind, is
+// refused.
+func mappingOf(rt reflect.Type, dir direction) *goMapping {
+	if m, ok := goMappings.Load(mappingKey{rt, dir}); ok {
+		return m.(*goMapping)
+	}
+	return buildMapping(rt, dir, map[reflect.Type]bool{})
+}
+
+// byKind returns the mapping of rt, a type that encodes itself, by its kind
+// for encoding, and false where its kind does not map to tenon, as a map
+// with int keys or a type holding itself does not: nothing then decodes into
+// it, and its null reads back as nothing in particular.
+func byKind(rt reflect.Type) (m *goMapping, ok bool) {
+	ok = unlessUsageError(func() { m = mappingOf(rt, encodingByKind) })
+	return m, ok
+}
+
+// buildMapping builds the mapping of rt for dir, with building holding the
+// types whose mappings are being built around it, which a finite type cannot
+// meet again.
+func buildMapping(rt reflect.Type, dir direction, building map[reflect.Type]bool) *goMapping {
+	key := mappingKey{rt, dir}
+	if m, ok := goMappings.Load(key); ok {
 		return m.(*goMapping)
 	}
 	if building[rt] {
@@ -150,10 +187,16 @@ func buildMapping(rt reflect.Type, building map[reflect.Type]bool) *goMapping {
 		m.marshal = rt.Implements(marshalerGoType) || reflect.PointerTo(rt).Implements(marshalerGoType)
 		m.unmarshal = reflect.PointerTo(rt).Implements(unmarshalerGoType)
 	}
-	if m.marshal && m.unmarshal {
+	// A type that encodes itself needs no mapping of its kind to be encoded,
+	// and one that decodes itself none to be decoded: in that direction it is
+	// a leaf, whatever its kind.
+	if m.marshal && m.unmarshal || dir == encoding && m.marshal || dir == decoding && m.unmarshal {
 		m.kind, m.constraint = goCustom, tenon.Any()
-		actual, _ := goMappings.LoadOrStore(rt, m)
+		actual, _ := goMappings.LoadOrStore(key, m)
 		return actual.(*goMapping)
+	}
+	if dir == encodingByKind {
+		dir = encoding
 	}
 	number := tenon.Exactly(tenon.NumberType())
 	switch rt {
@@ -186,7 +229,7 @@ func buildMapping(rt reflect.Type, building map[reflect.Type]bool) *goMapping {
 			if rt.Kind() == reflect.Array {
 				m.kind = goArray
 			}
-			m.elem = buildMapping(rt.Elem(), building)
+			m.elem = buildMapping(rt.Elem(), dir, building)
 			m.constraint = tenon.Any()
 			if m.elem.typed() {
 				m.typ = tenon.List(m.elem.typ)
@@ -201,7 +244,7 @@ func buildMapping(rt reflect.Type, building map[reflect.Type]bool) *goMapping {
 				usagePanic("the Go type %s has keys of kind %s, and only maps with string keys map to tenon", rt, rt.Key().Kind())
 			}
 			m.kind = goMap
-			m.elem = buildMapping(rt.Elem(), building)
+			m.elem = buildMapping(rt.Elem(), dir, building)
 			m.constraint = tenon.Any()
 			if m.elem.typed() {
 				m.typ = tenon.Map(m.elem.typ)
@@ -211,7 +254,7 @@ func buildMapping(rt reflect.Type, building map[reflect.Type]bool) *goMapping {
 			}
 		case reflect.Struct:
 			m.kind = goStruct
-			structMapping(m, building)
+			structMapping(m, dir, building)
 		case reflect.Interface:
 			// A value of an interface type encodes as what it holds, whose
 			// type is not known until it is in hand, so the interface maps
@@ -223,7 +266,7 @@ func buildMapping(rt reflect.Type, building map[reflect.Type]bool) *goMapping {
 				usagePanic("the Go type %s is a pointer to tenon.Value, which does not map to tenon; use tenon.Value itself", rt)
 			}
 			m.kind = goPointer
-			m.elem = buildMapping(rt.Elem(), building)
+			m.elem = buildMapping(rt.Elem(), dir, building)
 			m.typ, m.constraint = m.elem.typ, m.elem.constraint
 		default:
 			usagePanic("the Go type %s is of kind %s, which does not map to tenon", rt, rt.Kind())
@@ -239,7 +282,7 @@ func buildMapping(rt reflect.Type, building map[reflect.Type]bool) *goMapping {
 	} else {
 		m.iface = decodedInterface(m)
 	}
-	actual, _ := goMappings.LoadOrStore(rt, m)
+	actual, _ := goMappings.LoadOrStore(key, m)
 	return actual.(*goMapping)
 }
 
@@ -264,7 +307,7 @@ func decodedInterface(m *goMapping) reflect.Type {
 
 // structMapping fills in the mapping of a struct type from its exported fields
 // and their tags.
-func structMapping(m *goMapping, building map[reflect.Type]bool) {
+func structMapping(m *goMapping, dir direction, building map[reflect.Type]bool) {
 	rt := m.rt
 	names := map[string]string{} // normalized attribute name to the field mapped to it
 	fields := map[string]tenon.Field{}
@@ -305,7 +348,7 @@ func structMapping(m *goMapping, building map[reflect.Type]bool) {
 			usagePanic("fields %s and %s of %s both map to the attribute %q", other, sf.Name, rt, normalized)
 		}
 		names[normalized] = sf.Name
-		fm := buildMapping(sf.Type, building)
+		fm := buildMapping(sf.Type, dir, building)
 		m.fields = append(m.fields, goField{index: i, name: normalized, optional: optional, m: fm})
 		fields[normalized] = tenon.Field{Constraint: fm.constraint, Required: !optional}
 		if !fm.typed() {
