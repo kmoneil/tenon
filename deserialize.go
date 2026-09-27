@@ -882,8 +882,11 @@ func (d *decoder) numberParts() (small int64, c *big.Int, exp int64, derr *decod
 		small, c, derr = d.integer()
 		return small, c, 0, derr
 	case h.Major == cbor.MajorTag && (h.Arg == tagBignum || h.Arg == tagNegBignum):
-		small, c, derr = d.integer()
-		return small, c, 0, derr
+		// An integer a bignum holds lies beyond CBOR's integers, and such an
+		// integer is a decimal fraction (SE-032), so this is no number's
+		// encoding, refused before the bignum is read.
+		return 0, nil, 0, &decodeError{code: CodeSerializeNotCanonical, offset: at,
+			message: "a bignum standing for a number, which a decimal fraction holds"}
 	case h.Major == cbor.MajorTag && h.Arg == tagDecimal:
 		d.r.ReadTag()
 		if err := d.array(2, "a decimal fraction"); err != nil {
@@ -901,7 +904,15 @@ func (d *decoder) numberParts() (small int64, c *big.Int, exp int64, derr *decod
 		if neg {
 			exp = -1 - exp
 		}
+		mat := d.r.Offset()
 		small, c, derr = d.integer()
+		if derr == nil && c != nil && decimal.MultipleOfTen(c) {
+			// The mantissa of a number's decimal fraction is no multiple of
+			// ten (SE-032). Refusing it here spares the conversion to text
+			// that stripping its zeros would take.
+			return 0, nil, 0, &decodeError{code: CodeSerializeNotCanonical, offset: mat,
+				message: "a decimal fraction whose mantissa is a multiple of ten"}
+		}
 		return small, c, exp, derr
 	}
 	return 0, nil, 0, d.malformed(at, "expected a number")

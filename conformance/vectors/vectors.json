@@ -103,6 +103,8 @@
     {"name":"map key twice","hex":"da74656e0082018300820602828261610182616102","code":"serialize.malformed"},
     {"name":"range no value lies in","hex":"da74656e008201830002da74656e01a300f5018205f5028201f5","code":"serialize.malformed"},
     {"name":"range only null lies in","hex":"da74656e008201830002da74656e01a2018205f5028201f5","code":"serialize.not_canonical"},
+    {"name":"number as a bare bignum","hex":"da74656e008201830002c249010000000000000000","code":"serialize.not_canonical"},
+    {"name":"decimal fraction whose mantissa is a multiple of ten","hex":"da74656e008201830002c48200c249056bc75e2d63100000","code":"serialize.not_canonical"},
     {"name":"number outside the window","hex":"da74656e008201830002c4821a000f424001","code":"serialize.malformed"},
     {"name":"error with no diagnostics","hex":"da74656e008201820280","code":"serialize.malformed"},
     {"name":"another format version","hex":"da74656e008202830001f5","code":"serialize.unsupported_version"},

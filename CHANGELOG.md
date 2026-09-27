@@ -33,6 +33,12 @@
   ordered. Values of a type with no equality are now numbered by weak pointer
   and forgotten once collected, and a type with an encoding orders values
   whose hashes collide by their encodings, numbering none.
+- `Deserialize` refuses a number written as a bare bignum, or as a decimal
+  fraction whose bignum mantissa is a multiple of ten, as
+  `serialize.not_canonical` before working out its digits. Neither is any
+  number's encoding, and stripping the zeros of such a mantissa by its text
+  cost many times the document: 826 KB took 286 ms where its canonical twin
+  takes half a millisecond. The vector corpus gains both.
 - `Serialize` refuses a value nesting more than 512 levels deep, with
   `CodeSerializeTooLarge` at the first part past the bound, where it wrote a
   document that `Deserialize` then refused as too large: data written that

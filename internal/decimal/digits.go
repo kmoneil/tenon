@@ -60,6 +60,11 @@ func (d Dec) twos() int64 {
 // multipleOfTen reports whether c is a multiple of ten, without dividing it.
 // It must be even, and a multiple of five: each word of c stands for a power
 // of 2^64, or of 2^32 where words are that wide, and either leaves remainder
+// MultipleOfTen reports whether c is a multiple of ten, from its bits and
+// without converting it to text, which for a coefficient of a million digits
+// costs a thousand times reading it.
+func MultipleOfTen(c *big.Int) bool { return multipleOfTen(c) }
+
 // one when divided by five, so c leaves the remainder its words' sum does.
 func multipleOfTen(c *big.Int) bool {
 	if c.TrailingZeroBits() == 0 {
