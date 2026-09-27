@@ -48,6 +48,11 @@
 // path, and the errors that marshalers and unmarshalers returned as its
 // causes, which errors.Is and errors.As find through it.
 //
+// A type that says how it is written down, through encoding.TextMarshaler
+// and, on its pointer, encoding.TextUnmarshaler, as time.Time and netip.Addr
+// do, crosses as the String of its text, unless it implements ValueMarshaler
+// or ValueUnmarshaler, which come first.
+//
 // # What Go has no type for
 //
 // A field of type tenon.Value carries whatever Go cannot hold: a value that is
@@ -74,8 +79,10 @@
 //
 // A Go type that does not map to tenon is a mistake in the program, and Encode
 // and Decode panic on it: a channel, a function, a complex number, a map
-// without string keys, a type that holds itself, or a struct whose tags are
-// malformed. Decode panics as well on an interface, or a type holding one,
+// without string keys, a type that holds itself, a struct whose tags are
+// malformed, or a struct whose state is all in unexported fields and which
+// marshals itself neither to a value nor to text, since it would cross as an
+// empty object and come back as its zero value. Decode panics as well on an interface, or a type holding one,
 // whatever the value, where Encode takes what the interface holds. Data that
 // does not fit a type that maps is a failure in the data, and comes back as a
 // *tenon.Error.

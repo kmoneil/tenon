@@ -1,6 +1,7 @@
 package gotenon
 
 import (
+	goencoding "encoding"
 	"errors"
 	"math"
 	"math/big"
@@ -136,6 +137,11 @@ func (f *failures) withError(p tenon.Path, code tenon.Code, err error) {
 // elements need not share a type, as tenon.Value, interface and marshaler
 // types need not, encodes as a tuple or an object.
 //
+// A type that implements encoding.TextMarshaler, and not ValueMarshaler,
+// encodes as the String of its text, as time.Time and netip.Addr do; a
+// MarshalText failure fails with tenon.CodeEncodeMarshalFailed, keeping the
+// error as a cause.
+//
 // A value of an interface type encodes as what it holds, by that value's own
 // type, so the map[string]any that encoding/json gives encodes as an object of
 // whatever the document held. A nil interface holds no value, and no type
@@ -175,7 +181,8 @@ func (f *failures) withError(p tenon.Path, code tenon.Code, err error) {
 // Encode panics where T does not map to tenon: a channel, a
 // function, a complex number, a pointer to tenon.Value, a map without string
 // keys, or a type that holds itself, whether T is that type or holds it in an
-// interface; where a struct's tags are malformed; on a
+// interface; where a struct's tags are malformed, or its state is all in
+// unexported fields and it marshals itself neither to a value nor to text; on a
 // required tenon.Value field, or any other tenon.Value, holding the zero
 // Value; and on a MarshalValue method returning the zero Value.
 func Encode[T any](x T) (tenon.Value, error) {
@@ -262,6 +269,8 @@ func (e *encoder) encode(m *goMapping, rv reflect.Value, p tenon.Path) (tenon.Va
 		return tenon.Bool(rv.Bool()), true
 	case goString:
 		return e.fromData(tenon.String(rv.String()), p)
+	case goText:
+		return e.marshalText(rv, p)
 	case goInt:
 		return tenon.NumberFromInt(rv.Int()), true
 	case goUint:
@@ -333,6 +342,26 @@ func (e *encoder) marshal(m *goMapping, rv reflect.Value, p tenon.Path) (tenon.V
 	// An error value it returns fails the encoding as a returned error does,
 	// with the error value's own diagnostics [GO-040, GO-043].
 	return e.fromData(v, p)
+}
+
+// marshalText encodes rv by its MarshalText method, as the String of the text
+// it gives [GO-044], which fails as a Go string's does where it is not
+// well-formed UTF-8.
+func (e *encoder) marshalText(rv reflect.Value, p tenon.Path) (tenon.Value, bool) {
+	var tm goencoding.TextMarshaler
+	if rv.Type().Implements(textMarshalerGoType) {
+		tm = rv.Interface().(goencoding.TextMarshaler)
+	} else {
+		ptr := reflect.New(rv.Type())
+		ptr.Elem().Set(rv)
+		tm = ptr.Interface().(goencoding.TextMarshaler)
+	}
+	text, err := tm.MarshalText()
+	if err != nil {
+		e.fails.withError(p, tenon.CodeEncodeMarshalFailed, err)
+		return tenon.Value{}, false
+	}
+	return e.fromData(tenon.String(string(text)), p)
 }
 
 // nullType returns the type whose null a nil of the Go type that m maps

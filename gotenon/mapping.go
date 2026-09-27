@@ -1,6 +1,7 @@
 package gotenon
 
 import (
+	goencoding "encoding"
 	"encoding/json"
 	"math/big"
 	"reflect"
@@ -33,6 +34,7 @@ const (
 	goJSONNumber // encoding/json.Number, a number written down [GO-034]
 	goInterface  // a type whose values encode as what they hold [GO-015]
 	goCustom     // a type that marshals and unmarshals itself, which needs no other mapping
+	goText       // a type that marshals itself to text, or unmarshals itself from it [GO-044]
 )
 
 // ValueMarshaler is implemented by a Go type that encodes itself: Encode gives
@@ -77,6 +79,11 @@ type goMapping struct {
 	// marshal and unmarshal say the Go type encodes or decodes itself, in
 	// place of its mapping in that direction.
 	marshal, unmarshal bool
+	// marshalText and unmarshalText say the Go type implements
+	// goencoding.TextMarshaler, itself or through its pointer, or its pointer
+	// goencoding.TextUnmarshaler: in that direction, unless it encodes or
+	// decodes itself, it is a string [GO-044].
+	marshalText, unmarshalText bool
 	// iface is the interface type that decoding into the Go type meets
 	// first, the Go type itself or one it holds, other than within a type
 	// that decodes by an unmarshaler, and nil where it meets none. Decode
@@ -122,6 +129,15 @@ var (
 
 	marshalerGoType   = reflect.TypeFor[ValueMarshaler]()
 	unmarshalerGoType = reflect.TypeFor[ValueUnmarshaler]()
+
+	textMarshalerGoType   = reflect.TypeFor[goencoding.TextMarshaler]()
+	textUnmarshalerGoType = reflect.TypeFor[goencoding.TextUnmarshaler]()
+
+	// mappedItself holds the Go types that the mapping names, which map as it
+	// says whatever methods they have [GO-010].
+	mappedItself = map[reflect.Type]bool{
+		valueGoType: true, bigIntGoType: true, bigFloatGoType: true, bigRatGoType: true, jsonNumberGoType: true,
+	}
 )
 
 // direction is which way a mapping is used: to encode Go values or to decode
@@ -190,6 +206,8 @@ func buildMapping(rt reflect.Type, dir direction, building map[reflect.Type]bool
 	if k := rt.Kind(); k != reflect.Interface && k != reflect.Pointer {
 		m.marshal = rt.Implements(marshalerGoType) || reflect.PointerTo(rt).Implements(marshalerGoType)
 		m.unmarshal = reflect.PointerTo(rt).Implements(unmarshalerGoType)
+		m.marshalText = rt.Implements(textMarshalerGoType) || reflect.PointerTo(rt).Implements(textMarshalerGoType)
+		m.unmarshalText = reflect.PointerTo(rt).Implements(textUnmarshalerGoType)
 	}
 	// A type that encodes itself needs no mapping of its kind to be encoded,
 	// and one that decodes itself none to be decoded: in that direction it is
@@ -201,6 +219,16 @@ func buildMapping(rt reflect.Type, dir direction, building map[reflect.Type]bool
 	}
 	if dir == encodingByKind {
 		dir = encoding
+	}
+	// A type that marshals itself to text, and not by MarshalValue, is a
+	// string in that direction, whatever its kind [GO-044]; ValueMarshaler
+	// and ValueUnmarshaler come first, being tenon's own, and so do the
+	// types the table maps itself, the big numbers among them, whose text
+	// methods would make text of numbers.
+	if !mappedItself[rt] && (dir == encoding && !m.marshal && m.marshalText || dir == decoding && !m.unmarshal && m.unmarshalText) {
+		m.kind, m.typ, m.constraint = goText, tenon.StringType(), tenon.Exactly(tenon.StringType())
+		actual, _ := goMappings.LoadOrStore(key, m)
+		return actual.(*goMapping)
 	}
 	number := tenon.Exactly(tenon.NumberType())
 	switch rt {
@@ -361,9 +389,26 @@ func structMapping(m *goMapping, dir direction, building map[reflect.Type]bool) 
 			attrs[normalized] = fm.typ
 		}
 	}
+	// A struct whose state is all in unexported fields, as time.Time's and
+	// netip.Addr's is, would encode as an empty object and decode to its
+	// zero value, losing what it holds without a word: it must marshal
+	// itself instead [GO-011]. A struct of no fields holds nothing to lose.
+	if len(m.fields) == 0 && hasUnexported(rt) {
+		usagePanic("the Go type %s holds its state in unexported fields, which do not map to tenon; implement ValueMarshaler and ValueUnmarshaler, or encoding.TextMarshaler and encoding.TextUnmarshaler", rt)
+	}
 	slices.SortFunc(m.fields, func(a, b goField) int { return strings.Compare(a.name, b.name) })
 	m.constraint = tenon.ObjectWith(fields, true)
 	if typed {
 		m.typ = tenon.Object(attrs)
 	}
+}
+
+// hasUnexported reports whether the struct type rt has an unexported field.
+func hasUnexported(rt reflect.Type) bool {
+	for i := range rt.NumField() {
+		if !rt.Field(i).IsExported() {
+			return true
+		}
+	}
+	return false
 }
