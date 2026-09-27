@@ -60,12 +60,12 @@ type Change struct {
 // String returns the display form of the change (DI-037), as in
 // ~ .name: "web" -> "api", + .ports[2]: 8443 or ~ .tags: marks [] -> ["audited"].
 func (c Change) String() string {
-	var b strings.Builder
+	var b textWriter
 	c.write(&b)
 	return b.String()
 }
 
-func (c Change) write(b *strings.Builder) {
+func (c Change) write(b *textWriter) {
 	switch c.Kind {
 	case ChangeReplaced, ChangeMarks:
 		b.WriteString("~ ")
@@ -109,7 +109,7 @@ type Changes []Change
 // String returns the display form of the diff (DI-037): each change's display
 // form followed by a line feed, and no text for no changes.
 func (cs Changes) String() string {
-	var b strings.Builder
+	var b textWriter
 	for _, c := range cs {
 		c.write(&b)
 		b.WriteByte('\n')

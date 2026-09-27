@@ -3,6 +3,7 @@ package tenon_test
 import (
 	"fmt"
 	"math/rand"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -1332,6 +1333,88 @@ func TestConformance_CV032_PendingValuesConvertedToAny(t *testing.T) {
 	wantValue(t, "pending list", tenon.Convert(tenon.WithMarks(lists, carried, isolated), tenon.Any(), safe), tenon.WithMarks(lists, carried))
 	// A constraint naming one type still settles the result.
 	wantValue(t, "pending number", tenon.Convert(tenon.Narrow(tenon.Pending(is(num)), tenon.Null()), tenon.Any(), safe), tenon.NullVal(num))
+}
+
+// TestConformance_CV033_CarryingMarksGrowsWithTheMembers holds carrying the
+// marks of a conversion's members to work in proportion to the members, where
+// each member is under a container's k deep marks: at 4,000 members and marks
+// a conversion allocates under eight times what it does at 1,000, where a
+// cost of k for each member, which giving each its marks anew was, allocates
+// sixteen. The members go into a set, which takes their marks; into a set as
+// lists, whose own members hold the marks too; fail, their errors carrying
+// the marks; and sit beside one that makes the container pending, which then
+// carries the marks of all of them, each with one of its own.
+func TestConformance_CV033_CarryingMarksGrowsWithTheMembers(t *testing.T) {
+	conformance.Covers(t, "CV-033", "MK-003", "MK-008")
+	type shape struct {
+		v    tenon.Value
+		c    tenon.Constraint
+		p    tenon.Policy
+		want func(r tenon.Value) bool
+	}
+	shapes := func(k int) map[string]shape {
+		own, deep := manyStamps(k, false), manyStamps(k, true)
+		for i := range deep {
+			deep[i] = stamp{id: fmt.Sprintf("d%05d", i), deep: true}
+		}
+		numbers, lists, texts, maps := make([]tenon.Value, k), make([]tenon.Value, k), make([]tenon.Value, k), make([]tenon.Value, k)
+		for i := range numbers {
+			numbers[i] = tenon.WithMarks(n(int64(i)), own[i])
+			lists[i] = tenon.ListVal(num, n(int64(i)))
+			texts[i] = tenon.WithMarks(s("x"), own[i])
+			maps[i] = tenon.WithMarks(tenon.MapVal(num, map[string]tenon.Value{"a": n(1)}), own[i])
+		}
+		maps[k-1] = tenon.Unknown(tenon.Map(num))
+		carries := func(r tenon.Value, marks ...tenon.Mark) bool {
+			for _, m := range marks {
+				if !tenon.HasMark(r, m) {
+					return false
+				}
+			}
+			return true
+		}
+		return map[string]shape{
+			"numbers into a set": {tenon.WithMarks(tenon.ListVal(num, numbers...), deep...), tenon.SetOf(tenon.Exactly(num)), uns,
+				func(r tenon.Value) bool { return carries(r, deep[0], deep[k-1], own[0], own[k-1]) }},
+			"lists into a set": {tenon.WithMarks(tenon.ListVal(tenon.List(num), lists...), deep...), tenon.SetOf(tenon.ListOf(tenon.Exactly(num))), uns,
+				func(r tenon.Value) bool {
+					return carries(r, deep[0], deep[k-1]) && carries(r.Elements()[k-1].Index(0), deep[k-1])
+				}},
+			"failing members": {tenon.WithMarks(tenon.ListVal(str, texts...), deep...), tenon.ListOf(tenon.Exactly(num)), safe,
+				func(r tenon.Value) bool {
+					return r.IsError() && len(r.Diagnostics()) == k && carries(r, deep[0], deep[k-1], own[0], own[k-1])
+				}},
+			"a pending container": {tenon.WithMarks(tenon.ListVal(tenon.Map(num), maps...), deep...), tenon.ListOf(tenon.ObjectWith(nil, false)), uns,
+				func(r tenon.Value) bool { return r.IsPending() && carries(r, own[0], own[k-2], deep[0], deep[k-1]) }},
+		}
+	}
+	allocated := func(f func()) uint64 {
+		var before, after runtime.MemStats
+		runtime.GC()
+		runtime.ReadMemStats(&before)
+		f()
+		runtime.ReadMemStats(&after)
+		return after.TotalAlloc - before.TotalAlloc
+	}
+	small, large := shapes(1000), shapes(4000)
+	for _, name := range []string{"numbers into a set", "lists into a set", "failing members", "a pending container"} {
+		var sizes [2]uint64
+		for i, sh := range []shape{small[name], large[name]} {
+			var r tenon.Value
+			sizes[i] = allocated(func() {
+				r = tenon.Convert(sh.v, sh.c, sh.p)
+				if r.IsError() {
+					r.Diagnostics()
+				}
+			})
+			if !sh.want(r) {
+				t.Errorf("%s converted to %.80s..., not carrying the marks", name, r)
+			}
+		}
+		if grew := float64(sizes[1]) / float64(sizes[0]); grew > 8 {
+			t.Errorf("%s: four times the members and marks allocated %.1f times as much (%d bytes, then %d)", name, grew, sizes[0], sizes[1])
+		}
+	}
 }
 
 func TestConformance_CV033_FailuresCarryOnlyTheMarksTheyRead(t *testing.T) {

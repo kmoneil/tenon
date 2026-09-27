@@ -99,20 +99,39 @@ func TestDiagnosticLookupIsTheScan(t *testing.T) {
 	}
 }
 
-// TestContainerFailuresAreLookedUpPastAHandful holds a container collecting
-// its error members' diagnostics to the lookup: past manyDiagnostics of them,
-// each is looked for by its key rather than compared with every one collected.
-// The comparisons a scan makes are the package's own, and nothing outside it
-// can count them, since a diagnostic holds no value whose equality a caller's
-// code decides; so this asks the lookup what it holds, which a collection
-// comparing each diagnostic with every one leaves empty (T-1601). The members
-// fail alike, each where it is, as the nulls of a JSON array do.
-func TestContainerFailuresAreLookedUpPastAHandful(t *testing.T) {
+// TestContainerFailuresAreListedOnce holds a container's error value to
+// listing its members' diagnostics, each located by its step, once, on first
+// asking, in member order, a later duplicate dropped as each container on
+// the way up dropped it: the same failure under one key twice, and an
+// unlocated member's failure that one located elsewhere repeats.
+func TestContainerFailuresAreListedOnce(t *testing.T) {
 	var errs containerErrors
+	failed := ErrorVal(Diagnostic{Code: "app.failed", Message: "it failed"})
 	for i := range 3 * manyDiagnostics {
-		errs.add(indexStep(NumberFromInt(int64(i))), ErrorVal(Diagnostic{Code: "app.failed", Message: "it failed"}))
+		errs.add(indexStep(NumberFromInt(int64(i))), failed)
 	}
-	if len(errs.diags) != 3*manyDiagnostics || errs.seen.set == nil {
-		t.Errorf("%d failing members were collected as %d diagnostics, looked up by key: %v", 3*manyDiagnostics, len(errs.diags), errs.seen.set != nil)
+	errs.add(indexStep(NumberFromInt(0)), failed)
+	errs.add(indexStep(NumberFromText("1.0")), failed)
+	errs.addUnlocated(ErrorVal(Diagnostic{Code: "app.failed", Message: "it failed", Path: Path{}.Index(NumberFromInt(2))}))
+	errs.addDiagnostic(Diagnostic{Code: "app.own", Message: "the container failed"})
+	v, ok := errs.value()
+	if !ok {
+		t.Fatal("no error value from failing members")
+	}
+	h := v.n.data.(*hoisted)
+	got := v.Diagnostics()
+	if len(got) != 3*manyDiagnostics+1 {
+		t.Fatalf("%d failing members and one own failure listed %d diagnostics: %v", 3*manyDiagnostics, len(got), v)
+	}
+	for i, d := range got[:3*manyDiagnostics] {
+		if want := (Path{}).Index(NumberFromInt(int64(i))); !d.Path.Equal(want) || d.Code != "app.failed" {
+			t.Errorf("diagnostic %d is %v, want app.failed at %v", i, d, want)
+		}
+	}
+	if last := got[len(got)-1]; last.Code != "app.own" || last.Path.Len() != 0 {
+		t.Errorf("the container's own failure is listed as %v", last)
+	}
+	if again := h.list(); &again[0] != &h.list()[0] || len(again) != len(got) {
+		t.Error("the diagnostics were listed again")
 	}
 }

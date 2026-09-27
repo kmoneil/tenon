@@ -6,8 +6,10 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"unicode/utf8"
 
+	"github.com/kmoneil/tenon/internal/decimal"
 	"github.com/kmoneil/tenon/internal/uni"
 )
 
@@ -23,50 +25,180 @@ type mapEntry struct {
 // error value that takes the container's place. Members that are not errors
 // keep their marks to themselves: building a container is not an operation
 // over its members, and the error value says nothing of them.
+//
+// It keeps the members themselves, each with the step that locates it, and
+// the error value it makes lists their diagnostics only when asked (hoisted),
+// so that a diagnostic rising through many containers is not copied, with a
+// path one step longer, at each of them.
 type containerErrors struct {
-	diags []Diagnostic
+	parts []hoistedPart
 	marks propagating
-	seen  diagnosticLookup
 }
 
 // add records the diagnostics of an error member that step locates within the
 // container, and its marks.
 func (c *containerErrors) add(step Step, member Value) {
-	for _, d := range member.n.data.([]Diagnostic) {
-		d.Path = d.Path.prepend(step)
-		c.addDiagnostic(d)
-	}
+	c.parts = append(c.parts, hoistedPart{step: step, member: member.n})
 	c.addMarks(member)
 }
 
 // addUnlocated records the diagnostics of an error member that the container
 // cannot locate, leaving their paths as they are, and its marks.
 func (c *containerErrors) addUnlocated(member Value) {
-	for _, d := range member.n.data.([]Diagnostic) {
-		c.addDiagnostic(d)
-	}
+	c.parts = append(c.parts, hoistedPart{member: member.n})
 	c.addMarks(member)
 }
 
-// addMarks records the Propagate marks of an error member.
+// addMarks records the Propagate marks of an error member, each shared layer
+// once however many failing members share it.
 func (c *containerErrors) addMarks(member Value) {
-	c.marks.add(member.n.markList())
+	c.marks.addSet(member.n.marks)
 }
 
-// addDiagnostic records d unless it is already there.
+// addDiagnostic records d, a diagnostic of the container's own, as an
+// unlocated member failing with d alone would be.
 func (c *containerErrors) addDiagnostic(d Diagnostic) {
-	if !c.seen.holds(c.diags, d) {
-		c.diags = append(c.diags, d)
-	}
+	c.parts = append(c.parts, hoistedPart{member: &node{state: stateError, data: []Diagnostic{d}}})
 }
 
 // value returns the error value for what was collected, and whether there was
 // anything.
 func (c *containerErrors) value() (Value, bool) {
-	if len(c.diags) == 0 {
+	if len(c.parts) == 0 {
 		return Value{}, false
 	}
-	return WithMarks(errorValue(c.diags...), c.marks.marks...), true
+	return WithMarks(Value{&node{state: stateError, data: &hoisted{parts: c.parts}}}, c.marks.marks...), true
+}
+
+// hoisted is what an error value that a container's error members made holds
+// in place of its diagnostics: those members, and any diagnostics of the
+// container's own, in the order met, each member with the step that locates
+// it. Locating each diagnostic as it rose would copy its path at every
+// container it rose through, the square of its depth for each: a conversion
+// of 2,000 failing leaves 200 levels deep allocated 6.5 GB. So the
+// diagnostics are listed once, when first asked for, each path built from
+// the outermost step in, the diagnostics beneath one step sharing it.
+type hoisted struct {
+	parts []hoistedPart
+	once  sync.Once
+	diags []Diagnostic
+}
+
+// hoistedPart is one part of a hoisted error: an error member and the step
+// that locates it, the zero Step where nothing does. A diagnostic of the
+// container's own is a member failing with it alone, unlocated.
+type hoistedPart struct {
+	step   Step
+	member *node
+}
+
+// list returns the diagnostics, listing them on the first call.
+func (h *hoisted) list() []Diagnostic {
+	h.once.Do(func() {
+		var f flattening
+		f.parts(h.parts, nil)
+		h.diags = f.out
+	})
+	return h.diags
+}
+
+// flattening lists the diagnostics of a hoisted error. Each path it builds is
+// built once, one node for each path however many diagnostics sit on it, so
+// that two diagnostics are the same exactly when their code, message and
+// path node are: dropping the later of each such pair once, here, drops what
+// dropping it at every container on the way up did, since the step a
+// container puts before two paths leaves them the same or not as it found
+// them.
+type flattening struct {
+	out   []Diagnostic
+	nodes map[pathNodeKey]*pathNode
+	seen  map[diagnosticAt]bool
+}
+
+// pathNodeKey identifies a path by the node of the path before its last step
+// and that step's kind and text: a key is a String or Number value without
+// marks, written as its kind and its string or canonical text.
+type pathNodeKey struct {
+	parent *pathNode
+	kind   StepKind
+	text   string
+}
+
+// diagnosticAt identifies a diagnostic by its code, its message and the one
+// node flattening builds for its path.
+type diagnosticAt struct {
+	code    Code
+	message string
+	at      *pathNode
+}
+
+// parts lists the diagnostics of parts, located beneath at.
+func (f *flattening) parts(parts []hoistedPart, at *pathNode) {
+	for _, p := range parts {
+		if p.step.kind == 0 {
+			f.member(p.member, at)
+		} else {
+			f.member(p.member, f.node(at, p.step))
+		}
+	}
+}
+
+// member lists the diagnostics of the error member n, located beneath at.
+func (f *flattening) member(n *node, at *pathNode) {
+	if h, ok := n.data.(*hoisted); ok {
+		f.parts(h.parts, at)
+		return
+	}
+	for _, d := range n.data.([]Diagnostic) {
+		f.add(d, at)
+	}
+}
+
+// add lists d, its path located beneath at, unless it is listed already.
+func (f *flattening) add(d Diagnostic, at *pathNode) {
+	for _, s := range d.Path.Steps() {
+		at = f.node(at, s)
+	}
+	key := diagnosticAt{d.Code, d.Message, at}
+	if f.seen[key] {
+		return
+	}
+	if f.seen == nil {
+		f.seen = map[diagnosticAt]bool{}
+	}
+	f.seen[key] = true
+	d.Path = Path{at}
+	f.out = append(f.out, d)
+}
+
+// node returns the one node of the path at followed by s.
+func (f *flattening) node(at *pathNode, s Step) *pathNode {
+	key := pathNodeKey{parent: at, kind: s.kind, text: s.name}
+	if s.kind == StepIndex {
+		if s.key.n.typ.t.kind == KindString {
+			key.text = "s" + s.key.n.data.(string)
+		} else {
+			key.text = "n" + s.key.n.data.(decimal.Dec).String()
+		}
+	}
+	if n, ok := f.nodes[key]; ok {
+		return n
+	}
+	n := Path{at}.extend(s).last
+	if f.nodes == nil {
+		f.nodes = map[pathNodeKey]*pathNode{}
+	}
+	f.nodes[key] = n
+	return n
+}
+
+// diagnostics returns the diagnostics of the error node n. The result is read,
+// never written to.
+func (n *node) diagnostics() []Diagnostic {
+	if h, ok := n.data.(*hoisted); ok {
+		return h.list()
+	}
+	return n.data.([]Diagnostic)
 }
 
 // isError reports whether v is an error value, for constructors sorting their
@@ -701,7 +833,7 @@ func (v Value) Attribute(name string) Value {
 
 // writeContainer writes the content of a resolved collection or structural
 // value.
-func (n *node) writeContainer(b *strings.Builder) {
+func (n *node) writeContainer(b *textWriter) {
 	switch n.typ.t.kind {
 	case KindList, KindSet:
 		n.typ.write(b)
@@ -712,6 +844,9 @@ func (n *node) writeContainer(b *strings.Builder) {
 		n.typ.write(b)
 		b.WriteByte('{')
 		for i, e := range n.data.([]mapEntry) {
+			if b.full() {
+				return
+			}
 			if i > 0 {
 				b.WriteString(", ")
 			}
@@ -723,6 +858,9 @@ func (n *node) writeContainer(b *strings.Builder) {
 	case KindObject:
 		b.WriteByte('{')
 		for i, val := range n.data.([]Value) {
+			if b.full() {
+				return
+			}
 			if i > 0 {
 				b.WriteString(", ")
 			}
@@ -735,9 +873,12 @@ func (n *node) writeContainer(b *strings.Builder) {
 }
 
 // writeElements writes elements in brackets, separated by commas.
-func writeElements(b *strings.Builder, elems []Value) {
+func writeElements(b *textWriter, elems []Value) {
 	b.WriteByte('[')
 	for i, e := range elems {
+		if b.full() {
+			return
+		}
 		if i > 0 {
 			b.WriteString(", ")
 		}

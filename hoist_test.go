@@ -2,8 +2,10 @@ package tenon_test
 
 import (
 	"fmt"
+	"runtime"
 	"slices"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/kmoneil/tenon"
@@ -155,10 +157,79 @@ func TestConformance_ER008_ContainersHoistErrors(t *testing.T) {
 	mustPanicUsage(t, "is a pending value", func() { tenon.TupleVal(first, tenon.Pending(tenon.Any())) })
 }
 
-// BenchmarkHoistedFailures measures building a list of error members, each a
-// diagnostic at its own path, and propagating two operands' diagnostics
-// through an operation, at a size and four times it: the growth from one to
-// the other is the reading, not the wall clock.
+// TestConformance_ER008_DeepFailuresAreLocatedOnce holds hoisting to work in
+// proportion to what fails and what holds it, however deep: 1,000 failing
+// members 400 levels down, converted or built level by level, allocate under
+// twice what they do 100 levels down, where extending each diagnostic's path
+// at every level it rose through cost the square of the depth for each: 2,000
+// of them 200 levels down allocated 6.5 GB to convert. Each diagnostic is
+// still located by its whole path, the steps above it shared.
+func TestConformance_ER008_DeepFailuresAreLocatedOnce(t *testing.T) {
+	conformance.Covers(t, "ER-008", "ER-003")
+	const leaves = 1000
+	str, num := tenon.StringType(), tenon.NumberType()
+	allocated := func(f func()) uint64 {
+		var before, after runtime.MemStats
+		runtime.GC()
+		runtime.ReadMemStats(&before)
+		f()
+		runtime.ReadMemStats(&after)
+		return after.TotalAlloc - before.TotalAlloc
+	}
+	type run struct {
+		bytes uint64
+		diags []tenon.Diagnostic
+	}
+	measure := func(depth int) map[string]run {
+		texts, members := make([]tenon.Value, leaves), make([]tenon.Value, leaves)
+		for i := range texts {
+			texts[i] = tenon.String("x")
+			members[i] = failed("member " + strconv.Itoa(i))
+		}
+		v, c := tenon.TupleVal(texts...), tenon.ListOf(tenon.Exactly(num))
+		for range depth {
+			v, c = tenon.TupleVal(v), tenon.ListOf(c)
+		}
+		out := map[string]run{}
+		var r tenon.Value
+		b := allocated(func() {
+			r = tenon.Convert(v, c, tenon.Safe)
+			r.Diagnostics()
+		})
+		out["converted"] = run{b, r.Diagnostics()}
+		b = allocated(func() {
+			r = tenon.ListVal(str, members...)
+			for range depth {
+				r = tenon.TupleVal(r)
+			}
+			r.Diagnostics()
+		})
+		out["built"] = run{b, r.Diagnostics()}
+		return out
+	}
+	shallow, deep := measure(100), measure(400)
+	for _, name := range []string{"converted", "built"} {
+		d := deep[name].diags
+		if len(d) != leaves {
+			t.Fatalf("%s: %d failing members 400 levels down gave %d diagnostics", name, leaves, len(d))
+		}
+		want := strings.Repeat("[0]", 400) + "[" + strconv.Itoa(leaves-1) + "]"
+		if got := d[leaves-1].Path.String(); got != "."+want {
+			t.Errorf("%s: the last diagnostic is at %.40s..., want .%.40s...", name, got, want)
+		}
+		if d[0].Path.Len() != 401 {
+			t.Errorf("%s: the first diagnostic's path has %d steps, want 401", name, d[0].Path.Len())
+		}
+		if grew := float64(deep[name].bytes) / float64(shallow[name].bytes); grew > 2 {
+			t.Errorf("%s: four times as deep allocated %.1f times as much (%d bytes, then %d)", name, grew, shallow[name].bytes, deep[name].bytes)
+		}
+	}
+}
+
+// BenchmarkHoistedFailures measures building a list of error members and
+// listing their diagnostics, each at its own path, and propagating two
+// operands' diagnostics through an operation, at a size and four times it:
+// the growth from one to the other is the reading, not the wall clock.
 func BenchmarkHoistedFailures(b *testing.B) {
 	str := tenon.StringType()
 	for _, size := range []int{5000, 20000} {
@@ -174,7 +245,8 @@ func BenchmarkHoistedFailures(b *testing.B) {
 		b.Run(fmt.Sprintf("hoist/%d", size), func(b *testing.B) {
 			b.ReportAllocs()
 			for b.Loop() {
-				if v := tenon.ListVal(str, members...); !v.IsError() {
+				v := tenon.ListVal(str, members...)
+				if len(v.Diagnostics()) != size {
 					b.Fatal("the list was built")
 				}
 			}

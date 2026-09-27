@@ -100,6 +100,9 @@ type markSet struct {
 	outer *markSet
 	layer bool
 	full  atomic.Pointer[[]Mark]
+	// redacting is a layer's redacting marks, kept as full is, since each
+	// value sharing the layer asks for them.
+	redacting atomic.Pointer[[]Mark]
 }
 
 // all returns every mark s holds, each once, sorted by identifier: among marks
@@ -122,6 +125,42 @@ func (s *markSet) all() []Mark {
 		s.full.Store(&merged)
 	}
 	return merged
+}
+
+// redactingMarks returns the redacting marks among all, in its order, or nil:
+// those of s's own list merged with its outer layers', which a layer keeps,
+// rather than all merged and then filtered, which would cost every value
+// sharing a layer the layer's marks each time.
+func (s *markSet) redactingMarks() []Mark {
+	if s.layer {
+		if p := s.redacting.Load(); p != nil {
+			return *p
+		}
+	}
+	merged := redactingOf(s.list)
+	if s.outer != nil {
+		if outer := s.outer.redactingMarks(); merged == nil {
+			merged = outer
+		} else {
+			merged, _ = mergeDistinct(merged, outer)
+		}
+	}
+	if s.layer {
+		s.redacting.Store(&merged)
+	}
+	return merged
+}
+
+// withoutMarks returns v without the marks it carries, as Unmark does, where
+// the marks themselves are not wanted: listing them costs a value sharing a
+// layer the layer's marks.
+func withoutMarks(v Value) Value {
+	if v.n.marks == nil {
+		return v
+	}
+	nn := *v.n
+	nn.marks = nil
+	return Value{&nn}
 }
 
 // contains reports whether s holds m, looking in each layer in turn.
@@ -673,6 +712,8 @@ type taking struct {
 	marks  []Mark
 	seen   markLookup
 	layers map[*markSet]bool
+	// keep, where set, says which marks to take; the others are passed over.
+	keep func(Mark) bool
 }
 
 // add takes the marks of s, layer by layer, stopping at a layer taken already,
@@ -689,7 +730,7 @@ func (t *taking) add(s *markSet) {
 			t.layers[s] = true
 		}
 		for _, m := range s.list {
-			if !t.seen.holds(t.marks, m) {
+			if (t.keep == nil || t.keep(m)) && !t.seen.holds(t.marks, m) {
 				t.marks = append(t.marks, m)
 			}
 		}

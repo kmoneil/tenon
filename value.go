@@ -4,7 +4,6 @@ import (
 	"math/big"
 	"slices"
 	"strconv"
-	"strings"
 	"unicode/utf8"
 
 	"github.com/kmoneil/tenon/internal/decimal"
@@ -437,7 +436,7 @@ func (v Value) Diagnostics() []Diagnostic {
 	if n.state != stateError {
 		usagePanic("Diagnostics called on %s, which is not an error value", n.describe())
 	}
-	return slices.Clone(n.data.([]Diagnostic))
+	return slices.Clone(n.diagnostics())
 }
 
 // AsBool returns the content of a Bool value. It panics if v is not a Bool
@@ -491,38 +490,44 @@ func (v Value) String() string {
 	if v.n == nil {
 		return "<zero Value>"
 	}
-	var b strings.Builder
+	var b textWriter
 	v.write(&b)
 	return b.String()
 }
 
-func (v Value) write(b *strings.Builder) {
+func (v Value) write(b *textWriter) {
 	n := v.n
-	ms := n.markList()
+	if n.marks == nil || b.plain && n.state == stateError {
+		v.writeUnmarked(b)
+		return
+	}
 	if n.state != stateError {
-		if rs := redactingOf(ms); rs != nil {
+		if rs := n.redactingMarks(); rs != nil {
 			writeRedacted(b, rs)
 			return
 		}
 	}
-	if ms != nil {
-		b.WriteString("marked(")
+	if b.plain {
 		v.writeUnmarked(b)
-		b.WriteString(", ")
-		writeIdentifiers(b, ms)
-		b.WriteByte(')')
 		return
 	}
+	b.WriteString("marked(")
 	v.writeUnmarked(b)
+	b.WriteString(", ")
+	writeIdentifiers(b, n.markList())
+	b.WriteByte(')')
 }
 
 // writeUnmarked writes the display form v would have without its marks.
-func (v Value) writeUnmarked(b *strings.Builder) {
+func (v Value) writeUnmarked(b *textWriter) {
 	n := v.n
 	switch n.state {
 	case stateError:
 		b.WriteString("error(")
-		for i, d := range n.data.([]Diagnostic) {
+		for i, d := range n.diagnostics() {
+			if b.full() {
+				return
+			}
 			if i > 0 {
 				b.WriteString("; ")
 			}
@@ -537,6 +542,9 @@ func (v Value) writeUnmarked(b *strings.Builder) {
 		b.WriteByte(')')
 		return
 	case statePending:
+		// What a pending or unknown value says of itself is written as it
+		// is recorded, marks and all, in a message too.
+		defer b.keepPlain(false)()
 		b.WriteString("pending(")
 		n.data.(Constraint).write(b)
 		switch n.null {
@@ -553,6 +561,7 @@ func (v Value) writeUnmarked(b *strings.Builder) {
 		b.WriteByte(')')
 		return
 	case stateUnknown:
+		defer b.keepPlain(false)()
 		b.WriteString("unknown(")
 		n.typ.write(b)
 		n.data.(*rangeData).write(b)

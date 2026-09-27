@@ -2,7 +2,6 @@ package tenon
 
 import (
 	"strconv"
-	"strings"
 
 	"github.com/kmoneil/tenon/internal/decimal"
 )
@@ -63,12 +62,12 @@ func (s Step) Key() Value {
 // String returns the display form of the step (DI-013), as in .name,
 // ."a name", [0] or ["key"].
 func (s Step) String() string {
-	var b strings.Builder
+	var b textWriter
 	s.write(&b)
 	return b.String()
 }
 
-func (s Step) write(b *strings.Builder) {
+func (s Step) write(b *textWriter) {
 	switch s.kind {
 	case StepAttribute:
 		b.WriteByte('.')
@@ -213,29 +212,22 @@ func (p Path) Equal(q Path) bool {
 // .[0].name: its steps, with a . before a first step that is an index. The
 // empty path is ".".
 func (p Path) String() string {
-	var b strings.Builder
+	var b textWriter
 	p.write(&b)
 	return b.String()
 }
 
-func (p Path) write(b *strings.Builder) {
+func (p Path) write(b *textWriter) {
 	steps := p.Steps()
 	if len(steps) == 0 || steps[0].kind == StepIndex {
 		b.WriteByte('.')
 	}
 	for _, s := range steps {
+		if b.full() {
+			return
+		}
 		s.write(b)
 	}
-}
-
-// prepend returns the path of what p locates, seen from one step further out:
-// s followed by the steps of p.
-func (p Path) prepend(s Step) Path {
-	out := Path{}.extend(s)
-	for _, step := range p.Steps() {
-		out = out.extend(step)
-	}
-	return out
 }
 
 // attributeStep returns a step to the attribute of the given normalized name.

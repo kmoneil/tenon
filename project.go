@@ -47,9 +47,8 @@ func ProjectJSON(v Value) ([]byte, Value, bool) {
 // projector projects one value, collecting what it cannot project. It visits
 // each path once and fails at most once at each, so no two diagnostics it
 // records are the same: it records what it finds in the order it finds it,
-// without the duplicate every container under construction looks for
-// (containerErrors.addDiagnostic), which would cost a scan of what it has
-// recorded for every member that fails.
+// looking for no duplicate among them, as a container's error value does
+// when it lists its members' diagnostics (hoisted).
 type projector struct {
 	diags []Diagnostic
 	// trail holds the steps to the member being projected, of which value

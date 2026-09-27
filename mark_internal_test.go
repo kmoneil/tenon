@@ -198,11 +198,11 @@ func checkFlags(t *testing.T, v Value) int {
 	return checked
 }
 
-// TestPlainWritesOutNoMark holds plain to its doc, including in a state no
-// message renders today: an error value shows no marks at all, as a value
-// that is not an error and carries no redacting mark does. What plain copies
-// says truly whether it holds a marked value, and a value with no mark comes
-// back as itself.
+// TestPlainWritesOutNoMark holds a plain writer, as a message renders a
+// value, to its doc, including in a state no message renders today: an error
+// value shows no marks at all, as a value that is not an error and carries no
+// redacting mark does, at any depth, where what an unknown value's range
+// lists is written as recorded.
 func TestPlainWritesOutNoMark(t *testing.T) {
 	secret, origin := probe{id: "secret", redact: true}, probe{id: "origin"}
 	e := ErrorVal(Diagnostic{Code: "app.x", Message: "m"})
@@ -216,15 +216,32 @@ func TestPlainWritesOutNoMark(t *testing.T) {
 		{WithMarks(a, origin), `"a"`},
 		{WithMarks(ListVal(StringType(), WithMarks(a, origin)), origin), `list(string)["a"]`},
 		{ListVal(StringType(), WithMarks(a, secret), WithMarks(b, origin)), `list(string)[redacted("secret"), "b"]`},
+		{MapVal(StringType(), map[string]Value{"k": WithMarks(a, origin)}), `map(string){"k": "a"}`},
 	} {
-		p := Value{tt.v.n.plain()}
-		if got := p.String(); got != tt.want {
+		w := textWriter{plain: true}
+		tt.v.write(&w)
+		if got := w.String(); got != tt.want {
 			t.Errorf("%v reads %s, want %s", tt.v, got, tt.want)
 		}
-		checkFlags(t, p)
 	}
-	if a.n.plain() != a.n {
-		t.Error("a value with no mark was copied")
+}
+
+// TestLimitedWriterStopsPastItsLimit holds a writer given a limit to taking
+// one byte past it and no more, whatever writes to it, so that shortened
+// sees the text is longer than it keeps and cuts it as it cut the whole.
+func TestLimitedWriterStopsPastItsLimit(t *testing.T) {
+	long := make([]Value, 1000)
+	for i := range long {
+		long[i] = NullVal(Object(map[string]Type{"attribute": NumberType()}))
+	}
+	v := ListVal(long[0].Type(), long...)
+	w := textWriter{limit: shortLimit}
+	v.write(&w)
+	if w.Len() != shortLimit+1 || !strings.HasPrefix(v.String(), w.String()) {
+		t.Errorf("a limited writer holds %d bytes, %q, want the first %d of the display form", w.Len(), w.String(), shortLimit+1)
+	}
+	if got, want := valueText(v), shortened(v.String(), func(s string) string { return s }); got != want {
+		t.Errorf("valueText gives %q, where shortening the whole display form gives %q", got, want)
 	}
 }
 

@@ -58,12 +58,12 @@ func (r Range) String() string {
 	if r.v.n == nil {
 		return "<zero Range>"
 	}
-	var b strings.Builder
+	var b textWriter
 	r.write(&b)
 	return b.String()
 }
 
-func (r Range) write(b *strings.Builder) {
+func (r Range) write(b *textWriter) {
 	n := r.v.n
 	if n.state != stateUnknown {
 		r.v.write(b) // a singleton range is the value itself
@@ -116,14 +116,14 @@ func (b *bound) tighten(v decimal.Dec, incl, lower bool) {
 	}
 }
 
-func (b bound) write(w *strings.Builder, lower bool) {
+func (b bound) write(w *textWriter, lower bool) {
 	b.writeOperator(w, lower)
 	w.WriteString(b.v.String())
 }
 
 // writeOperator writes the comparison that b makes, as in >= or <, and the
 // space after it.
-func (b bound) writeOperator(w *strings.Builder, lower bool) {
+func (b bound) writeOperator(w *textWriter, lower bool) {
 	switch {
 	case lower && b.incl:
 		w.WriteString(">= ")
@@ -168,7 +168,7 @@ func crosses(lo, hi bound) bool {
 
 // text renders b as the narrowing that produced it.
 func (b bound) text(lower bool) string {
-	var w strings.Builder
+	var w textWriter
 	b.write(&w, lower)
 	return w.String()
 }
@@ -215,7 +215,7 @@ func (r *rangeData) equal(s *rangeData) bool {
 }
 
 // write writes the facts r records, each after a comma, in the order of DI-017.
-func (r *rangeData) write(b *strings.Builder) {
+func (r *rangeData) write(b *textWriter) {
 	if r.null == nullNo {
 		b.WriteString(", not null")
 	}
@@ -246,9 +246,12 @@ func (r *rangeData) write(b *strings.Builder) {
 }
 
 // writeMembers renders a member listing, as in members {1, 2}.
-func writeMembers(b *strings.Builder, members []Value) {
+func writeMembers(b *textWriter, members []Value) {
 	b.WriteString("members {")
 	for i, m := range members {
+		if b.full() {
+			return
+		}
 		if i > 0 {
 			b.WriteString(", ")
 		}
@@ -260,9 +263,7 @@ func writeMembers(b *strings.Builder, members []Value) {
 // membersText renders listed members for a message, shortened if they are
 // long.
 func membersText(members []Value) string {
-	var b strings.Builder
-	writeMembers(&b, members)
-	return shortened(b.String(), func(s string) string { return s })
+	return shortText(func(w *textWriter) { writeMembers(w, members) })
 }
 
 // narrowingKind identifies which row of the narrowings table a Narrowing is.
@@ -416,7 +417,7 @@ func (nw Narrowing) String() string {
 	case narrowNull:
 		return "null"
 	case narrowNumberMin, narrowNumberMax:
-		var b strings.Builder
+		var b textWriter
 		nw.writeBound(&b)
 		return b.String()
 	case narrowPrefix:
@@ -426,7 +427,7 @@ func (nw Narrowing) String() string {
 	case narrowLengthMax:
 		return "length <= " + strconv.FormatInt(nw.n, 10)
 	case narrowMembers:
-		var b strings.Builder
+		var b textWriter
 		writeMembers(&b, nw.members)
 		return b.String()
 	}
@@ -435,7 +436,7 @@ func (nw Narrowing) String() string {
 
 // writeBound writes a number narrowing, with a placeholder in place of the
 // number when the value it was taken from carries a redacting mark.
-func (nw Narrowing) writeBound(w *strings.Builder) {
+func (nw Narrowing) writeBound(w *textWriter) {
 	b, lower := bound{v: nw.num, incl: nw.incl, set: true}, nw.kind == narrowNumberMin
 	if ms := redactingOf(nw.marks); ms != nil {
 		b.writeOperator(w, lower)
@@ -451,7 +452,7 @@ func (nw Narrowing) message() string {
 	case narrowPrefix:
 		return "prefix " + quoted(nw.str)
 	case narrowMembers:
-		return shortened(nw.String(), func(s string) string { return s })
+		return shortText(func(w *textWriter) { writeMembers(w, nw.members) })
 	}
 	return nw.String()
 }
@@ -953,10 +954,13 @@ func contradiction(message string) Value {
 }
 
 // valueText renders v for a diagnostic message, shortening it if it is long.
-// It renders through String, so it withholds what redacting marks protect,
-// within v as well as on it, and it leaves every other mark out.
+// It renders as String does, so it withholds what redacting marks protect,
+// within v as well as on it, and it leaves every other mark out. It writes
+// no more than it keeps, however large v's display form.
 func valueText(v Value) string {
-	return shortened(Value{v.n.plain()}.String(), func(s string) string { return s })
+	w := textWriter{limit: shortLimit, plain: true}
+	v.write(&w)
+	return shortened(w.String(), func(s string) string { return s })
 }
 
 // apply narrows r by nw. It reports whether anything is left, and names the
