@@ -239,3 +239,66 @@ func primaryComposite(a, b rune) (rune, bool) {
 	}
 	return compositionValues[i], true
 }
+
+// decomposes reports whether r has a canonical decomposition: a Hangul
+// syllable, or a code point the tables list.
+func decomposes(r rune) bool {
+	if i := r - hangulSBase; i >= 0 && i < hangulSCount {
+		return true
+	}
+	_, ok := slices.BinarySearch(decomposable[:], r)
+	return ok
+}
+
+// startsWithStarter reports whether the full canonical decomposition of r
+// begins with a starter, a code point of combining class 0: normalization
+// composes nothing across the start of such a code point.
+func startsWithStarter(r rune) bool {
+	if i := r - hangulSBase; i >= 0 && i < hangulSCount {
+		return true
+	}
+	if j, ok := slices.BinarySearch(decomposable[:], r); ok {
+		first, _ := utf8.DecodeRuneInString(decompositions[decompositionOffsets[j]:])
+		return combiningClass(first) == 0
+	}
+	return combiningClass(r) == 0
+}
+
+// composesForward reports whether r is the first of a pair that composes: a
+// primary composite begins with it, or it is a Hangul leading consonant, or a
+// Hangul syllable with no trailing consonant.
+func composesForward(r rune) bool {
+	if l := r - hangulLBase; l >= 0 && l < hangulLCount {
+		return true
+	}
+	if s := r - hangulSBase; s >= 0 && s < hangulSCount && s%hangulTCount == 0 {
+		return true
+	}
+	i, _ := slices.BinarySearch(compositionKeys[:], uint64(r)<<21)
+	return i < len(compositionKeys) && rune(compositionKeys[i]>>21) == r
+}
+
+// composesBackward reports whether r is the second of a pair that composes:
+// a primary composite ends with it, or it is a Hangul vowel or trailing
+// consonant.
+func composesBackward(r rune) bool {
+	if v := r - hangulVBase; v >= 0 && v < hangulVCount {
+		return true
+	}
+	if t := r - hangulTBase; t > 0 && t < hangulTCount {
+		return true
+	}
+	_, ok := slices.BinarySearch(compositionSeconds, r)
+	return ok
+}
+
+// compositionSeconds holds the code points that end a primary composite, in
+// order: the second halves of compositionKeys.
+var compositionSeconds = func() []rune {
+	seconds := make([]rune, 0, len(compositionKeys))
+	for _, k := range compositionKeys {
+		seconds = append(seconds, rune(k&(1<<21-1)))
+	}
+	slices.Sort(seconds)
+	return slices.Compact(seconds)
+}()
