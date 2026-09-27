@@ -208,11 +208,11 @@ func (m *canonMemo) soleTypeOf(c Constraint) (Type, bool) {
 		}
 		switch d.kind {
 		case ConstraintListOf:
-			return List(elem), true
+			return ListType(elem), true
 		case ConstraintSetOf:
-			return Set(elem), true
+			return SetType(elem), true
 		}
-		return Map(elem), true
+		return MapType(elem), true
 	case ConstraintTupleOf:
 		// Conversion asks this of every constraint it meets, so a tuple that
 		// admits more than one type allocates nothing to say so.
@@ -227,7 +227,7 @@ func (m *canonMemo) soleTypeOf(c Constraint) (Type, bool) {
 			}
 			elems[i] = t
 		}
-		return Tuple(elems...), true
+		return TupleType(elems...), true
 	case ConstraintObjectWith:
 		if !d.closed {
 			return Type{}, false
@@ -251,7 +251,7 @@ func (m *canonMemo) soleTypeOf(c Constraint) (Type, bool) {
 			}
 			attrs[f.name] = t
 		}
-		return Object(attrs), true
+		return ObjectType(attrs), true
 	case ConstraintOneOf:
 		var sole Type
 		for _, member := range d.members {
@@ -284,11 +284,11 @@ func resultType(c Constraint) (Type, bool) {
 		case !ok:
 			return Type{}, false
 		case d.kind == ConstraintListOf:
-			return List(elem), true
+			return ListType(elem), true
 		case d.kind == ConstraintSetOf:
-			return Set(elem), true
+			return SetType(elem), true
 		}
-		return Map(elem), true
+		return MapType(elem), true
 	case ConstraintTupleOf:
 		elems := make([]Type, len(d.members))
 		for i, m := range d.members {
@@ -298,7 +298,7 @@ func resultType(c Constraint) (Type, bool) {
 			}
 			elems[i] = t
 		}
-		return Tuple(elems...), true
+		return TupleType(elems...), true
 	case ConstraintObjectWith:
 		if !d.closed {
 			return Type{}, false
@@ -317,7 +317,7 @@ func resultType(c Constraint) (Type, bool) {
 			}
 			attrs[f.name] = t
 		}
-		return Object(attrs), true
+		return ObjectType(attrs), true
 	case ConstraintOneOf:
 		var given Type
 		for _, m := range d.members {

@@ -334,7 +334,7 @@ func (d *decoder) item() (Value, *decodeError) {
 		case null == 1:
 			return Narrow(Pending(c), NotNull()), nil
 		case null == 2:
-			return Narrow(Pending(c), Null()), nil
+			return Narrow(Pending(c), NullOnly()), nil
 		}
 		return Value{}, d.malformed(nat, "nullness %d is not 0, 1 or 2", null)
 	case k == itemError && n == 2:
@@ -476,7 +476,7 @@ func (d *decoder) typ() (Type, *decodeError) {
 			}
 			elems = append(elems, t)
 		}
-		return Tuple(elems...), nil
+		return TupleType(elems...), nil
 	case KindObject:
 		n, err := d.r.ReadArray()
 		if err != nil {
@@ -497,7 +497,7 @@ func (d *decoder) typ() (Type, *decodeError) {
 			}
 			attrs[name] = t
 		}
-		return Object(attrs), nil
+		return ObjectType(attrs), nil
 	case KindCapsule:
 		at := d.r.Offset()
 		id, err := d.r.ReadText()
@@ -616,7 +616,7 @@ func (d *decoder) content(t Type) (Value, *decodeError) {
 	defer d.leave()
 	at := d.r.Offset()
 	if d.r.ReadNull() {
-		return NullVal(t), nil
+		return Null(t), nil
 	}
 	h, err := d.r.PeekHead()
 	if err != nil {
@@ -687,7 +687,7 @@ func (d *decoder) content(t Type) (Value, *decodeError) {
 			}
 			entries[key] = v
 		}
-		m := MapVal(t.t.elem, entries)
+		m := Map(t.t.elem, entries)
 		if m.n.state == stateError {
 			return Value{}, d.malformed(at, "a map whose keys are the same after normalization")
 		}
@@ -741,11 +741,11 @@ func (d *decoder) sequence(t Type, at int) (Value, *decodeError) {
 	}
 	switch t.t.kind {
 	case KindList:
-		return ListVal(t.t.elem, members...), nil
+		return List(t.t.elem, members...), nil
 	case KindSet:
-		return SetVal(t.t.elem, members...), nil
+		return Set(t.t.elem, members...), nil
 	}
-	return TupleVal(members...), nil
+	return Tuple(members...), nil
 }
 
 // capsule reads the content of a known capsule value of type t.

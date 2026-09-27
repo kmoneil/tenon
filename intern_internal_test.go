@@ -32,6 +32,6 @@ func TestInternedTypesAreCollected(t *testing.T) {
 //
 //go:noinline
 func internUnreferencedType() string {
-	typ := Object(map[string]Type{"only-in-TestInternedTypesAreCollected": StringType()})
+	typ := ObjectType(map[string]Type{"only-in-TestInternedTypesAreCollected": StringType()})
 	return typ.t.internKey()
 }

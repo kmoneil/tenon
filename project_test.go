@@ -48,7 +48,7 @@ func TestConformance_SE062_Projection(t *testing.T) {
 		v    tenon.Value
 		want string
 	}{
-		{"null", tenon.NullVal(tenon.List(num)), `null`},
+		{"null", tenon.Null(tenon.ListType(num)), `null`},
 		{"true", tenon.Bool(true), `true`},
 		{"an integer", n(-42), `-42`},
 		{"an exact fraction", tenon.NumberFromText("0.1000"), `0.1`},
@@ -57,20 +57,20 @@ func TestConformance_SE062_Projection(t *testing.T) {
 		{"a number in scientific form", tenon.NumberFromText("1.5e30"), `1.5e30`},
 		{"a small number", tenon.NumberFromText("-2.5e-25"), `-2.5e-25`},
 		{"a string", s("tenon"), `"tenon"`},
-		{"a list", tenon.ListVal(num, n(1), n(2)), `[1,2]`},
-		{"a set, in iteration order", tenon.SetVal(num, n(3), n(1), n(2)), `[1,2,3]`},
-		{"a tuple", tenon.TupleVal(tenon.Bool(false), s("x"), tenon.NullVal(num)), `[false,"x",null]`},
-		{"a map, in key order", tenon.MapVal(num, map[string]tenon.Value{"b": n(2), "": n(0), "a": n(1)}), `{"":0,"a":1,"b":2}`},
-		{"an object, in name order", obj(map[string]tenon.Value{"z": tenon.ListVal(str), "a": obj(nil)}), `{"a":{},"z":[]}`},
+		{"a list", tenon.List(num, n(1), n(2)), `[1,2]`},
+		{"a set, in iteration order", tenon.Set(num, n(3), n(1), n(2)), `[1,2,3]`},
+		{"a tuple", tenon.Tuple(tenon.Bool(false), s("x"), tenon.Null(num)), `[false,"x",null]`},
+		{"a map, in key order", tenon.Map(num, map[string]tenon.Value{"b": n(2), "": n(0), "a": n(1)}), `{"":0,"a":1,"b":2}`},
+		{"an object, in name order", obj(map[string]tenon.Value{"z": tenon.List(str), "a": obj(nil)}), `{"a":{},"z":[]}`},
 		{"a capsule value", degreesShown.Value(&celsius{21}), `"21 degrees"`},
 		// Marks that do not redact are left out.
-		{"a marked value", tenon.WithMarks(tenon.ListVal(num, tenon.WithMarks(n(1), stamp{id: "m"})), stamp{id: "n"}), `[1]`},
+		{"a marked value", tenon.WithMarks(tenon.List(num, tenon.WithMarks(n(1), stamp{id: "m"})), stamp{id: "n"}), `[1]`},
 	} {
 		wantProjection(t, tt.name, tt.v, tt.want)
 	}
 	// One value, however it was built, projects to the same text.
-	a, _, _ := tryProjectJSON(tenon.SetVal(str, s("b"), s("a")))
-	b, _, _ := tryProjectJSON(tenon.SetVal(str, s("a"), s("b"), s("a")))
+	a, _, _ := tryProjectJSON(tenon.Set(str, s("b"), s("a")))
+	b, _, _ := tryProjectJSON(tenon.Set(str, s("a"), s("b"), s("a")))
 	if string(a) != string(b) {
 		t.Errorf("one set projects as %s and as %s", a, b)
 	}
@@ -120,13 +120,13 @@ func TestConformance_SE061_WhatDoesNotProject(t *testing.T) {
 	wantProjectionFailure(t, "an unknown", tenon.Unknown(num), wantDiag{tenon.CodeSerializeNotKnown, "."})
 	wantProjectionFailure(t, "a pending value", tenon.Pending(tenon.Any()), wantDiag{tenon.CodeSerializeNotKnown, "."})
 	wantProjectionFailure(t, "unknown members, each located", obj(map[string]tenon.Value{
-		"a": tenon.ListVal(num, n(1), tenon.Unknown(num)),
+		"a": tenon.List(num, n(1), tenon.Unknown(num)),
 		"b": tenon.Unknown(str),
 	}), wantDiag{tenon.CodeSerializeNotKnown, ".a[1]"}, wantDiag{tenon.CodeSerializeNotKnown, ".b"})
 	// A redacted value is refused whole: what it holds is not looked at.
-	wantProjectionFailure(t, "a redacted list holding an unknown", tenon.WithMarks(tenon.ListVal(num, tenon.Unknown(num)), secret),
+	wantProjectionFailure(t, "a redacted list holding an unknown", tenon.WithMarks(tenon.List(num, tenon.Unknown(num)), secret),
 		wantDiag{tenon.CodeSerializeRedacted, "."})
-	wantProjectionFailure(t, "a redacted member", tenon.MapVal(str, map[string]tenon.Value{"password": tenon.WithMarks(s("hunter2"), secret)}),
+	wantProjectionFailure(t, "a redacted member", tenon.Map(str, map[string]tenon.Value{"password": tenon.WithMarks(s("hunter2"), secret)}),
 		wantDiag{tenon.CodeSerializeRedacted, `.["password"]`})
 	_, failure, _ := tryProjectJSON(tenon.WithMarks(s("hunter2"), secret))
 	if strings.Contains(failure.String(), "hunter2") {
@@ -137,7 +137,7 @@ func TestConformance_SE061_WhatDoesNotProject(t *testing.T) {
 	wantProjection(t, "unmarked", unmarked, `"hunter2"`)
 
 	opaque := tenon.NewCapsule("opaque", tenon.CapsuleOps[celsius]{})
-	wantProjectionFailure(t, "a capsule with no display form", tenon.ListVal(opaque.Type(), opaque.Value(&celsius{})),
+	wantProjectionFailure(t, "a capsule with no display form", tenon.List(opaque.Type(), opaque.Value(&celsius{})),
 		wantDiag{tenon.CodeSerializeUnencodableCapsule, ".[0]"})
 	failed := tenon.ErrorVal(tenon.Diagnostic{Code: "app.failed", Message: "it failed"})
 	if _, got, ok := tryProjectJSON(failed); ok || !tenon.Identical(got, failed) {
@@ -157,8 +157,8 @@ func TestConformance_SE061_EveryDiagnosticHasItsOwnPath(t *testing.T) {
 	unknown := tenon.Unknown(num)
 	// One value, held in many places: each place fails for itself.
 	v := obj(map[string]tenon.Value{
-		"a": tenon.ListVal(num, unknown, n(1), unknown),
-		"b": tenon.MapVal(num, map[string]tenon.Value{"a": unknown, "b": unknown}),
+		"a": tenon.List(num, unknown, n(1), unknown),
+		"b": tenon.Map(num, map[string]tenon.Value{"a": unknown, "b": unknown}),
 		"c": tenon.WithMarks(s("hunter2"), secret),
 		"d": unknown,
 	})
@@ -207,7 +207,7 @@ func BenchmarkProjectJSON(b *testing.B) {
 		for i := range members {
 			members[i] = tenon.Unknown(num)
 		}
-		v := tenon.ListVal(num, members...)
+		v := tenon.List(num, members...)
 		b.Run(fmt.Sprintf("unknowns/%d", size), func(b *testing.B) {
 			b.ReportAllocs()
 			for b.Loop() {

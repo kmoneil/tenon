@@ -16,7 +16,7 @@ func TestConformance_VA005_ValuesImmutable(t *testing.T) {
 	one, two := tenon.NumberFromInt(1), tenon.NumberFromInt(2)
 
 	elems := []tenon.Value{one, two}
-	list, set, tuple := tenon.ListVal(num, elems...), tenon.SetVal(num, elems...), tenon.TupleVal(elems...)
+	list, set, tuple := tenon.List(num, elems...), tenon.Set(num, elems...), tenon.Tuple(elems...)
 	elems[0] = two
 	for _, v := range []tenon.Value{list, set, tuple} {
 		if got := v.Elements(); len(got) != 2 || !got[0].Equal(one) {
@@ -30,22 +30,22 @@ func TestConformance_VA005_ValuesImmutable(t *testing.T) {
 	}
 
 	entries := map[string]tenon.Value{"a": one}
-	m := tenon.MapVal(num, entries)
+	m := tenon.Map(num, entries)
 	entries["a"], entries["b"] = two, two
-	if e, ok := m.MapElement("a"); m.Len() != 1 || !ok || !e.Equal(one) {
-		t.Errorf("changing the map passed to MapVal changed %v", m)
+	if e, ok := m.LookupMapElement("a"); m.Len() != 1 || !ok || !e.Equal(one) {
+		t.Errorf("changing the map passed to Map changed %v", m)
 	}
 	keys := m.MapKeys()
 	keys[0] = "z"
-	if _, ok := m.MapElement("a"); !ok {
+	if _, ok := m.LookupMapElement("a"); !ok {
 		t.Errorf("changing the slice from MapKeys changed %v", m)
 	}
 
 	attrs := map[string]tenon.Value{"a": tenon.String("x")}
-	obj := tenon.ObjectVal(attrs)
+	obj := tenon.Object(attrs)
 	attrs["a"], attrs["b"] = one, one
-	if obj.Len() != 1 || obj.Attribute("a").AsString() != "x" || obj.Type() != tenon.Object(map[string]tenon.Type{"a": str}) {
-		t.Errorf("changing the map passed to ObjectVal changed %v", obj)
+	if obj.Len() != 1 || obj.Attribute("a").AsString() != "x" || obj.Type() != tenon.ObjectType(map[string]tenon.Type{"a": str}) {
+		t.Errorf("changing the map passed to Object changed %v", obj)
 	}
 }
 
@@ -53,24 +53,24 @@ func TestConformance_TY016_MapKeys(t *testing.T) {
 	conformance.Covers(t, "TY-016")
 	num := tenon.NumberType()
 	composed, decomposed := "caf\u00e9", "cafe\u0301"
-	m := tenon.MapVal(num, map[string]tenon.Value{decomposed: tenon.NumberFromInt(1), "tea": tenon.NumberFromInt(2)})
+	m := tenon.Map(num, map[string]tenon.Value{decomposed: tenon.NumberFromInt(1), "tea": tenon.NumberFromInt(2)})
 	if got := m.MapKeys(); !slices.Equal(got, []string{composed, "tea"}) {
 		t.Errorf("MapKeys() = %+q; want the keys normalized and sorted", got)
 	}
 	// Lookups normalize the key they are given.
 	for _, key := range []string{composed, decomposed} {
-		if v, ok := m.MapElement(key); !ok || v.String() != "1" {
-			t.Errorf("MapElement(%+q) = %v, %t", key, v, ok)
+		if v, ok := m.LookupMapElement(key); !ok || v.String() != "1" {
+			t.Errorf("LookupMapElement(%+q) = %v, %t", key, v, ok)
 		}
 	}
 	for _, key := range []string{"cafe", "caf", "\xff"} {
-		if v, ok := m.MapElement(key); ok {
-			t.Errorf("MapElement(%+q) found %v", key, v)
+		if v, ok := m.LookupMapElement(key); ok {
+			t.Errorf("LookupMapElement(%+q) found %v", key, v)
 		}
 	}
 
 	// Keys are strings of Unicode scalar values.
-	bad := tenon.MapVal(num, map[string]tenon.Value{"ok": tenon.NumberFromInt(1), "a\xffb": tenon.NumberFromInt(2)})
+	bad := tenon.Map(num, map[string]tenon.Value{"ok": tenon.NumberFromInt(1), "a\xffb": tenon.NumberFromInt(2)})
 	if !bad.IsError() {
 		t.Fatalf("a map with an invalid key is %v; want an error value", bad)
 	}
@@ -83,7 +83,7 @@ func TestConformance_TY017_DuplicateMapKeys(t *testing.T) {
 	conformance.Covers(t, "TY-017")
 	num := tenon.NumberType()
 	composed, decomposed := "caf\u00e9", "cafe\u0301"
-	v := tenon.MapVal(num, map[string]tenon.Value{
+	v := tenon.Map(num, map[string]tenon.Value{
 		composed:   tenon.NumberFromInt(1),
 		decomposed: tenon.NumberFromInt(2),
 		"x":        tenon.NumberFromInt(3),
@@ -134,14 +134,14 @@ func TestConformance_TY017_DuplicateMapKeys(t *testing.T) {
 			},
 		},
 	} {
-		if got := located(tenon.MapVal(num, tt.entries)); !slices.Equal(got, tt.want) {
+		if got := located(tenon.Map(num, tt.entries)); !slices.Equal(got, tt.want) {
 			t.Errorf("%s: diagnostics %q, want %q", tt.name, got, tt.want)
 		}
 	}
 
 	// With no elements that fail, the invalid keys come first, then the keys
 	// that normalize alike.
-	many := tenon.MapVal(num, map[string]tenon.Value{
+	many := tenon.Map(num, map[string]tenon.Value{
 		"\xffz": one, "a\xff": one,
 		composed: one, decomposed: one,
 		"\u00c5": one, "A\u030a": one,
@@ -193,9 +193,9 @@ func TestConformance_TY017_AnyEntriesAnySpelling(t *testing.T) {
 		for _, e := range entries {
 			problem = problem || e.IsError()
 		}
-		v := tenon.MapVal(num, entries)
+		v := tenon.Map(num, entries)
 		if v.IsError() != problem {
-			t.Errorf("MapVal(%q) = %v", entries, v)
+			t.Errorf("Map(%q) = %v", entries, v)
 			continue
 		}
 		if !v.IsError() {
@@ -210,9 +210,9 @@ func TestConformance_TY017_AnyEntriesAnySpelling(t *testing.T) {
 		}
 		switch {
 		case shared && !slices.Equal(dups, []int{len(ds) - 1}):
-			t.Errorf("MapVal(%q) gave %q, want the shared key reported once, last", entries, located(v))
+			t.Errorf("Map(%q) gave %q, want the shared key reported once, last", entries, located(v))
 		case !shared && len(dups) > 0:
-			t.Errorf("MapVal(%q) gave %q, reporting a key that nothing shares", entries, located(v))
+			t.Errorf("Map(%q) gave %q, reporting a key that nothing shares", entries, located(v))
 		case !shared:
 			other := map[string]tenon.Value{}
 			for k, e := range entries {
@@ -221,8 +221,8 @@ func TestConformance_TY017_AnyEntriesAnySpelling(t *testing.T) {
 				}
 				other[k] = e
 			}
-			if w := tenon.MapVal(num, other); !tenon.Identical(v, w) {
-				t.Errorf("MapVal(%q) gave %q, but spelled the other way %q", entries, located(v), located(w))
+			if w := tenon.Map(num, other); !tenon.Identical(v, w) {
+				t.Errorf("Map(%q) gave %q, but spelled the other way %q", entries, located(v), located(w))
 			}
 		}
 	}
@@ -232,44 +232,44 @@ func TestContainerValues(t *testing.T) {
 	str, num := tenon.StringType(), tenon.NumberType()
 	a, b, one := tenon.String("a"), tenon.String("b"), tenon.NumberFromInt(1)
 
-	list := tenon.ListVal(str, a, b)
-	if list.Type() != tenon.List(str) || list.Len() != 2 || !list.Index(0).Equal(a) || !list.Index(1).Equal(b) {
-		t.Errorf("ListVal gave %v", list)
+	list := tenon.List(str, a, b)
+	if list.Type() != tenon.ListType(str) || list.Len() != 2 || !list.Index(0).Equal(a) || !list.Index(1).Equal(b) {
+		t.Errorf("List gave %v", list)
 	}
-	if empty := tenon.ListVal(num); empty.Type() != tenon.List(num) || empty.Len() != 0 || len(empty.Elements()) != 0 {
-		t.Errorf("an empty ListVal gave %v", empty)
+	if empty := tenon.List(num); empty.Type() != tenon.ListType(num) || empty.Len() != 0 || len(empty.Elements()) != 0 {
+		t.Errorf("an empty List gave %v", empty)
 	}
 	// A set holds its members in the order it iterates them in, which is not
 	// the order they were given in.
-	if set := tenon.SetVal(str, b, a); set.Type() != tenon.Set(str) || !slices.EqualFunc(set.Elements(), []tenon.Value{a, b}, tenon.Value.Equal) {
-		t.Errorf("SetVal gave %v", set)
+	if set := tenon.Set(str, b, a); set.Type() != tenon.SetType(str) || !slices.EqualFunc(set.Elements(), []tenon.Value{a, b}, tenon.Value.Equal) {
+		t.Errorf("Set gave %v", set)
 	}
-	tuple := tenon.TupleVal(a, one, tenon.Bool(true))
-	if tuple.Type() != tenon.Tuple(str, num, tenon.BoolType()) || tuple.Len() != 3 || !tuple.Index(2).Equal(tenon.Bool(true)) {
-		t.Errorf("TupleVal gave %v", tuple)
+	tuple := tenon.Tuple(a, one, tenon.Bool(true))
+	if tuple.Type() != tenon.TupleType(str, num, tenon.BoolType()) || tuple.Len() != 3 || !tuple.Index(2).Equal(tenon.Bool(true)) {
+		t.Errorf("Tuple gave %v", tuple)
 	}
-	m := tenon.MapVal(str, map[string]tenon.Value{"y": b, "x": a})
-	if e, ok := m.MapElement("y"); m.Type() != tenon.Map(str) || !slices.Equal(m.MapKeys(), []string{"x", "y"}) || !ok || !e.Equal(b) {
-		t.Errorf("MapVal gave %v", m)
+	m := tenon.Map(str, map[string]tenon.Value{"y": b, "x": a})
+	if e, ok := m.LookupMapElement("y"); m.Type() != tenon.MapType(str) || !slices.Equal(m.MapKeys(), []string{"x", "y"}) || !ok || !e.Equal(b) {
+		t.Errorf("Map gave %v", m)
 	}
-	obj := tenon.ObjectVal(map[string]tenon.Value{"name": a, "count": one, "caf\u00e9": b})
-	if obj.Type() != tenon.Object(map[string]tenon.Type{"name": str, "count": num, "caf\u00e9": str}) || obj.Len() != 3 ||
+	obj := tenon.Object(map[string]tenon.Value{"name": a, "count": one, "caf\u00e9": b})
+	if obj.Type() != tenon.ObjectType(map[string]tenon.Type{"name": str, "count": num, "caf\u00e9": str}) || obj.Len() != 3 ||
 		!obj.Attribute("name").Equal(a) || !obj.Attribute("count").Equal(one) || !obj.Attribute("cafe\u0301").Equal(b) {
-		t.Errorf("ObjectVal gave %v", obj)
+		t.Errorf("Object gave %v", obj)
 	}
-	if nested := tenon.ListVal(tenon.Tuple(str), tenon.TupleVal(a)); !nested.Index(0).Index(0).Equal(a) {
+	if nested := tenon.List(tenon.TupleType(str), tenon.Tuple(a)); !nested.Index(0).Index(0).Equal(a) {
 		t.Errorf("a nested value gave %v", nested)
 	}
 
-	mustPanicUsage(t, "ListVal: element 0 has type number, not string", func() { tenon.ListVal(str, one) })
-	mustPanicUsage(t, "element 1 is a pending value, which has no type", func() { tenon.SetVal(str, a, tenon.Pending(tenon.Any())) })
-	mustPanicUsage(t, `the element of key "k" has type string, not number`, func() { tenon.MapVal(num, map[string]tenon.Value{"k": a}) })
+	mustPanicUsage(t, "List: element 0 has type number, not string", func() { tenon.List(str, one) })
+	mustPanicUsage(t, "element 1 is a pending value, which has no type", func() { tenon.Set(str, a, tenon.Pending(tenon.Any())) })
+	mustPanicUsage(t, `the element of key "k" has type string, not number`, func() { tenon.Map(num, map[string]tenon.Value{"k": a}) })
 	// A host's own mistake panics before any problem the data has is reported,
 	// under a key that is not well-formed UTF-8 too.
 	mustPanicUsage(t, `the element of key "\xff" has type string, not number`, func() {
-		tenon.MapVal(num, map[string]tenon.Value{"\xff": a, "k": tenon.ErrorVal(tenon.Diagnostic{Code: "app.failed", Message: "m"})})
+		tenon.Map(num, map[string]tenon.Value{"\xff": a, "k": tenon.ErrorVal(tenon.Diagnostic{Code: "app.failed", Message: "m"})})
 	})
-	mustPanicUsage(t, "zero Type", func() { tenon.ListVal(tenon.Type{}) })
+	mustPanicUsage(t, "zero Type", func() { tenon.List(tenon.Type{}) })
 	mustPanicUsage(t, "Index(2) called on a value with 2 elements", func() { list.Index(2) })
 	mustPanicUsage(t, "not a list or tuple value", func() { m.Index(0) })
 	mustPanicUsage(t, "not a list, set or tuple value", func() { obj.Elements() })
@@ -286,14 +286,14 @@ func TestContainerString(t *testing.T) {
 		v    tenon.Value
 		want string
 	}{
-		{tenon.ListVal(str, a, b), `list(string)["a", "b"]`},
-		{tenon.ListVal(num), "list(number)[]"},
-		{tenon.SetVal(num, one), "set(number)[1]"},
-		{tenon.TupleVal(a, one), `["a", 1]`},
-		{tenon.TupleVal(), "[]"},
-		{tenon.MapVal(num, map[string]tenon.Value{"b": one, "a": two}), `map(number){"a": 2, "b": 1}`},
-		{tenon.ObjectVal(map[string]tenon.Value{"z": one, "k": tenon.ListVal(str)}), `{"k": list(string)[], "z": 1}`},
-		{tenon.ObjectVal(nil), "{}"},
+		{tenon.List(str, a, b), `list(string)["a", "b"]`},
+		{tenon.List(num), "list(number)[]"},
+		{tenon.Set(num, one), "set(number)[1]"},
+		{tenon.Tuple(a, one), `["a", 1]`},
+		{tenon.Tuple(), "[]"},
+		{tenon.Map(num, map[string]tenon.Value{"b": one, "a": two}), `map(number){"a": 2, "b": 1}`},
+		{tenon.Object(map[string]tenon.Value{"z": one, "k": tenon.List(str)}), `{"k": list(string)[], "z": 1}`},
+		{tenon.Object(nil), "{}"},
 	} {
 		if got := tt.v.String(); got != tt.want {
 			t.Errorf("String() = %s, want %s", got, tt.want)
@@ -303,39 +303,39 @@ func TestContainerString(t *testing.T) {
 
 func TestContainersHoldMembersThatAreNotKnown(t *testing.T) {
 	str := tenon.StringType()
-	unknown, null := tenon.Unknown(str), tenon.NullVal(str)
-	l := tenon.ListVal(str, unknown, null, tenon.String("x"))
+	unknown, null := tenon.Unknown(str), tenon.Null(str)
+	l := tenon.List(str, unknown, null, tenon.String("x"))
 	if l.Len() != 3 || !l.Index(0).Equal(unknown) || !l.Index(1).Equal(null) {
 		t.Errorf("a list did not keep the members it was given: %v", l)
 	}
-	if l.Type() != tenon.List(str) {
-		t.Errorf("the list has type %v, want %v", l.Type(), tenon.List(str))
+	if l.Type() != tenon.ListType(str) {
+		t.Errorf("the list has type %v, want %v", l.Type(), tenon.ListType(str))
 	}
 	if want := `list(string)[unknown(string), null(string), "x"]`; l.String() != want {
 		t.Errorf("the list reads as %s, want %s", l, want)
 	}
 	// A tuple and an object take their type from members that are not known,
 	// which have types like any other resolved value.
-	if got, want := tenon.TupleVal(unknown, null).Type(), tenon.Tuple(str, str); got != want {
+	if got, want := tenon.Tuple(unknown, null).Type(), tenon.TupleType(str, str); got != want {
 		t.Errorf("a tuple of unknown and null has type %v, want %v", got, want)
 	}
-	obj := tenon.ObjectVal(map[string]tenon.Value{"a": unknown})
-	if got, want := obj.Type(), tenon.Object(map[string]tenon.Type{"a": str}); got != want {
+	obj := tenon.Object(map[string]tenon.Value{"a": unknown})
+	if got, want := obj.Type(), tenon.ObjectType(map[string]tenon.Type{"a": str}); got != want {
 		t.Errorf("an object with an unknown attribute has type %v, want %v", got, want)
 	}
-	if v, ok := tenon.MapVal(str, map[string]tenon.Value{"k": unknown}).MapElement("k"); !ok || !v.Equal(unknown) {
+	if v, ok := tenon.Map(str, map[string]tenon.Value{"k": unknown}).LookupMapElement("k"); !ok || !v.Equal(unknown) {
 		t.Errorf("a map did not keep the unknown element it was given")
 	}
 	// The element type is still checked, and a member with no type at all is
 	// still a mistake.
-	mustPanicUsage(t, "ListVal: element 0 has type number, not string", func() {
-		tenon.ListVal(str, tenon.Unknown(tenon.NumberType()))
+	mustPanicUsage(t, "List: element 0 has type number, not string", func() {
+		tenon.List(str, tenon.Unknown(tenon.NumberType()))
 	})
 	mustPanicUsage(t, "element 0 is a pending value, which has no type; Resolve it to one first", func() {
-		tenon.ListVal(str, tenon.Pending(tenon.Any()))
+		tenon.List(str, tenon.Pending(tenon.Any()))
 	})
 	// An error member is still hoisted out of the container.
-	if got := tenon.ListVal(str, tenon.String("\xff"), unknown); !got.IsError() {
+	if got := tenon.List(str, tenon.String("\xff"), unknown); !got.IsError() {
 		t.Errorf("a list with an error member is %v, want an error value", got)
 	}
 }
@@ -364,25 +364,25 @@ func TestConformance_ER001_ContainerConstructorsNameTheMemberAtFault(t *testing.
 		want string
 		f    func()
 	}{
-		{"ListVal: element 1 has type number, not string", func() { tenon.ListVal(str, a, one) }},
-		{"ListVal: element 2" + noType, func() { tenon.ListVal(str, a, a, pending) }},
-		{"SetVal: element 1 has type number, not string", func() { tenon.SetVal(str, a, one) }},
-		{"SetVal: element 0" + noType, func() { tenon.SetVal(str, pending) }},
-		{"TupleVal: element 1" + noType, func() { tenon.TupleVal(a, pending) }},
-		{`ObjectVal: attribute "name"` + noType, func() { tenon.ObjectVal(map[string]tenon.Value{"name": pending}) }},
-		{`ObjectVal: attribute "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxyz"...` + noType, func() { tenon.ObjectVal(map[string]tenon.Value{long: pending}) }},
-		{`ObjectVal: attribute "a\"b\tc"` + noType, func() { tenon.ObjectVal(map[string]tenon.Value{"a\"b\tc": pending}) }},
-		{"ObjectVal: attribute \"caf\xc3\xa9\"" + noType, func() { tenon.ObjectVal(map[string]tenon.Value{"caf\xc3\xa9": pending}) }},
-		{`MapVal: the element of key "k" has type string, not number`, func() { tenon.MapVal(num, map[string]tenon.Value{"k": a}) }},
-		{`MapVal: the element of key "\xff" has type string, not number`, func() { tenon.MapVal(num, map[string]tenon.Value{"\xff": a}) }},
-		{`MapVal: the element of key "k"` + noType, func() { tenon.MapVal(num, map[string]tenon.Value{"k": pending}) }},
+		{"List: element 1 has type number, not string", func() { tenon.List(str, a, one) }},
+		{"List: element 2" + noType, func() { tenon.List(str, a, a, pending) }},
+		{"Set: element 1 has type number, not string", func() { tenon.Set(str, a, one) }},
+		{"Set: element 0" + noType, func() { tenon.Set(str, pending) }},
+		{"Tuple: element 1" + noType, func() { tenon.Tuple(a, pending) }},
+		{`Object: attribute "name"` + noType, func() { tenon.Object(map[string]tenon.Value{"name": pending}) }},
+		{`Object: attribute "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxyz"...` + noType, func() { tenon.Object(map[string]tenon.Value{long: pending}) }},
+		{`Object: attribute "a\"b\tc"` + noType, func() { tenon.Object(map[string]tenon.Value{"a\"b\tc": pending}) }},
+		{"Object: attribute \"caf\xc3\xa9\"" + noType, func() { tenon.Object(map[string]tenon.Value{"caf\xc3\xa9": pending}) }},
+		{`Map: the element of key "k" has type string, not number`, func() { tenon.Map(num, map[string]tenon.Value{"k": a}) }},
+		{`Map: the element of key "\xff" has type string, not number`, func() { tenon.Map(num, map[string]tenon.Value{"\xff": a}) }},
+		{`Map: the element of key "k"` + noType, func() { tenon.Map(num, map[string]tenon.Value{"k": pending}) }},
 		{
-			`MapVal: the element of key "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxyz"... has type string, not number`,
-			func() { tenon.MapVal(num, map[string]tenon.Value{long: a}) },
+			`Map: the element of key "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxyz"... has type string, not number`,
+			func() { tenon.Map(num, map[string]tenon.Value{long: a}) },
 		},
 		{
-			`MapVal: the element of key "caf` + "\\" + `u00e9" has type string, not number`,
-			func() { tenon.MapVal(num, map[string]tenon.Value{"caf\xc3\xa9": a}) },
+			`Map: the element of key "caf` + "\\" + `u00e9" has type string, not number`,
+			func() { tenon.Map(num, map[string]tenon.Value{"caf\xc3\xa9": a}) },
 		},
 	} {
 		if got, want := usagePanicMessage(tt.f), "tenon: usage: "+tt.want; got != want {
@@ -411,11 +411,11 @@ func TestConformance_ER001_AConstructorNamesAMemberOnlyToPanic(t *testing.T) {
 		most float64 // what it made before, less the names: 106, 112, 225, 241 and 218
 		f    func()
 	}{
-		{"ListVal", 6, func() { tenon.ListVal(num, members...) }},
-		{"TupleVal", 12, func() { tenon.TupleVal(members...) }},
-		{"SetVal", 125, func() { tenon.SetVal(num, members...) }},
-		{"ObjectVal", 41, func() { tenon.ObjectVal(named) }},
-		{"MapVal", 18, func() { tenon.MapVal(num, named) }},
+		{"List", 6, func() { tenon.List(num, members...) }},
+		{"Tuple", 12, func() { tenon.Tuple(members...) }},
+		{"Set", 125, func() { tenon.Set(num, members...) }},
+		{"Object", 41, func() { tenon.Object(named) }},
+		{"Map", 18, func() { tenon.Map(num, named) }},
 	} {
 		if got := testing.AllocsPerRun(100, tt.f); got > tt.most {
 			t.Errorf("%s of %d members makes %v allocations, want at most %v", tt.name, size, got, tt.most)

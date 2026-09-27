@@ -161,43 +161,43 @@ var valid = []vector{
 	{"string/controls", func(*rand.Rand) tenon.Value { return s("\x00\t\n\x7f") }},
 	{"string/24 bytes", func(*rand.Rand) tenon.Value { return s(strings.Repeat("a", 24)) }},
 	{"string/300 bytes", func(*rand.Rand) tenon.Value { return s(strings.Repeat("ab", 150)) }},
-	{"null/bool", func(*rand.Rand) tenon.Value { return tenon.NullVal(boo) }},
-	{"null/number", func(*rand.Rand) tenon.Value { return tenon.NullVal(num) }},
-	{"null/string", func(*rand.Rand) tenon.Value { return tenon.NullVal(str) }},
-	{"null/list of numbers", func(*rand.Rand) tenon.Value { return tenon.NullVal(tenon.List(num)) }},
-	{"null/capsule", func(*rand.Rand) tenon.Value { return tenon.NullVal(degreesType.Type()) }},
-	{"list/empty", func(*rand.Rand) tenon.Value { return tenon.ListVal(num) }},
-	{"list/numbers", func(*rand.Rand) tenon.Value { return tenon.ListVal(num, n(1), n(2), n(3)) }},
+	{"null/bool", func(*rand.Rand) tenon.Value { return tenon.Null(boo) }},
+	{"null/number", func(*rand.Rand) tenon.Value { return tenon.Null(num) }},
+	{"null/string", func(*rand.Rand) tenon.Value { return tenon.Null(str) }},
+	{"null/list of numbers", func(*rand.Rand) tenon.Value { return tenon.Null(tenon.ListType(num)) }},
+	{"null/capsule", func(*rand.Rand) tenon.Value { return tenon.Null(degreesType.Type()) }},
+	{"list/empty", func(*rand.Rand) tenon.Value { return tenon.List(num) }},
+	{"list/numbers", func(*rand.Rand) tenon.Value { return tenon.List(num, n(1), n(2), n(3)) }},
 	{"list/nested", func(*rand.Rand) tenon.Value {
-		return tenon.ListVal(tenon.List(num), tenon.ListVal(num, n(1)), tenon.ListVal(num))
+		return tenon.List(tenon.ListType(num), tenon.List(num, n(1)), tenon.List(num))
 	}},
-	{"set/numbers", func(r *rand.Rand) tenon.Value { return tenon.SetVal(num, shuffled(r, n(-1), n(1), n(24), n(1000))...) }},
+	{"set/numbers", func(r *rand.Rand) tenon.Value { return tenon.Set(num, shuffled(r, n(-1), n(1), n(24), n(1000))...) }},
 	{"set/strings given twice", func(r *rand.Rand) tenon.Value {
-		return tenon.SetVal(str, shuffled(r, s("b"), s("a"), s("b"), s(composed(r)), s(composed(r)))...)
+		return tenon.Set(str, shuffled(r, s("b"), s("a"), s("b"), s(composed(r)), s(composed(r)))...)
 	}},
 	{"set/unknown members", func(r *rand.Rand) tenon.Value {
-		return tenon.SetVal(num, shuffled(r, n(1), tenon.Unknown(num), tenon.Unknown(num))...)
+		return tenon.Set(num, shuffled(r, n(1), tenon.Unknown(num), tenon.Unknown(num))...)
 	}},
 	{"set/capsules", func(r *rand.Rand) tenon.Value {
-		return tenon.SetVal(degreesType.Type(), shuffled(r,
+		return tenon.Set(degreesType.Type(), shuffled(r,
 			degreesType.Value(&degrees{30}),
 			degreesType.Value(&degrees{-5}),
 			degreesType.Value(&degrees{1}))...)
 	}},
-	{"map/empty", func(*rand.Rand) tenon.Value { return tenon.MapVal(num, nil) }},
+	{"map/empty", func(*rand.Rand) tenon.Value { return tenon.Map(num, nil) }},
 	{"map/entries", func(*rand.Rand) tenon.Value {
-		return tenon.MapVal(num, map[string]tenon.Value{"b": n(2), "a": n(1), "": n(0)})
+		return tenon.Map(num, map[string]tenon.Value{"b": n(2), "a": n(1), "": n(0)})
 	}},
 	{"map/composed key", func(r *rand.Rand) tenon.Value {
-		return tenon.MapVal(str, map[string]tenon.Value{composed(r): s("x")})
+		return tenon.Map(str, map[string]tenon.Value{composed(r): s("x")})
 	}},
-	{"tuple/empty", func(*rand.Rand) tenon.Value { return tenon.TupleVal() }},
+	{"tuple/empty", func(*rand.Rand) tenon.Value { return tenon.Tuple() }},
 	{"tuple/mixed", func(r *rand.Rand) tenon.Value {
-		return tenon.TupleVal(tenon.Bool(true), s("x"), spelled(r, "1.5", "15e-1"))
+		return tenon.Tuple(tenon.Bool(true), s("x"), spelled(r, "1.5", "15e-1"))
 	}},
-	{"object/empty", func(*rand.Rand) tenon.Value { return tenon.ObjectVal(nil) }},
+	{"object/empty", func(*rand.Rand) tenon.Value { return tenon.Object(nil) }},
 	{"object/attributes", func(r *rand.Rand) tenon.Value {
-		return tenon.ObjectVal(map[string]tenon.Value{"b": n(1), "a": s("x"), composed(r): tenon.Bool(false)})
+		return tenon.Object(map[string]tenon.Value{"b": n(1), "a": s("x"), composed(r): tenon.Bool(false)})
 	}},
 	{"unknown/number", func(*rand.Rand) tenon.Value { return tenon.Unknown(num) }},
 	{"unknown/bounded number", func(r *rand.Rand) tenon.Value {
@@ -208,17 +208,17 @@ var valid = []vector{
 		return tenon.Narrow(tenon.Unknown(str), shuffled(r, tenon.StringPrefix("cafe-"), tenon.LengthMax(10))...)
 	}},
 	{"unknown/list length", func(r *rand.Rand) tenon.Value {
-		return tenon.Narrow(tenon.Unknown(tenon.List(str)), shuffled(r, tenon.LengthMin(1), tenon.LengthMax(3))...)
+		return tenon.Narrow(tenon.Unknown(tenon.ListType(str)), shuffled(r, tenon.LengthMin(1), tenon.LengthMax(3))...)
 	}},
 	{"unknown/set members", func(r *rand.Rand) tenon.Value {
 		members := one(r,
 			[]tenon.Narrowing{tenon.Members(n(1), n(2))},
 			[]tenon.Narrowing{tenon.Members(n(2)), tenon.Members(n(1))})
-		return tenon.Narrow(tenon.Unknown(tenon.Set(num)), shuffled(r, append(members, tenon.LengthMax(5))...)...)
+		return tenon.Narrow(tenon.Unknown(tenon.SetType(num)), shuffled(r, append(members, tenon.LengthMax(5))...)...)
 	}},
 	{"unknown/capsule", func(*rand.Rand) tenon.Value { return tenon.Narrow(tenon.Unknown(degreesType.Type()), tenon.NotNull()) }},
 	{"pending/any", func(*rand.Rand) tenon.Value { return tenon.Pending(tenon.Any()) }},
-	{"pending/null", func(*rand.Rand) tenon.Value { return tenon.Narrow(tenon.Pending(tenon.Any()), tenon.Null()) }},
+	{"pending/null", func(*rand.Rand) tenon.Value { return tenon.Narrow(tenon.Pending(tenon.Any()), tenon.NullOnly()) }},
 	{"pending/not null", func(*rand.Rand) tenon.Value {
 		return tenon.Narrow(tenon.Pending(tenon.Exactly(degreesType.Type())), tenon.NotNull())
 	}},
@@ -248,36 +248,36 @@ var valid = []vector{
 		if r.Intn(2) == 0 {
 			first = tenon.WithMarks(first, deep)
 		}
-		return tenon.WithMarks(tenon.ListVal(num, first, n(2)), deep)
+		return tenon.WithMarks(tenon.List(num, first, n(2)), deep)
 	}},
 	{"marks/member", func(r *rand.Rand) tenon.Value {
-		return tenon.ListVal(num, n(1), marked(r, n(2), plain, note{"x"}))
+		return tenon.List(num, n(1), marked(r, n(2), plain, note{"x"}))
 	}},
 	{"marks/null and unknown", func(r *rand.Rand) tenon.Value {
-		return tenon.TupleVal(marked(r, tenon.NullVal(num), plain), marked(r, tenon.Unknown(str), note{"u"}))
+		return tenon.Tuple(marked(r, tenon.Null(num), plain), marked(r, tenon.Unknown(str), note{"u"}))
 	}},
 	{"marks/pending", func(r *rand.Rand) tenon.Value { return marked(r, tenon.Pending(tenon.Any()), plain) }},
 	{"marks/error", func(r *rand.Rand) tenon.Value {
 		return marked(r, tenon.ErrorVal(tenon.Diagnostic{Code: "vectors.failed", Message: "it failed"}), note{"e"}, plain)
 	}},
 	{"marks/set", func(r *rand.Rand) tenon.Value {
-		return tenon.WithMarks(tenon.SetVal(num, shuffled(r, n(1), n(2))...), deep)
+		return tenon.WithMarks(tenon.Set(num, shuffled(r, n(1), n(2))...), deep)
 	}},
 	{"marks/redacted", func(r *rand.Rand) tenon.Value {
-		return tenon.ObjectVal(map[string]tenon.Value{"password": marked(r, s("hunter2"), secret{}, plain), "user": s("ann")})
+		return tenon.Object(map[string]tenon.Value{"password": marked(r, s("hunter2"), secret{}, plain), "user": s("ann")})
 	}},
 	{"capsule/value", func(*rand.Rand) tenon.Value { return degreesType.Value(&degrees{21}) }},
 	// The deepest a document nests: the item, 510 list types and a number
 	// are 512 levels, and a mark on the value adds none.
-	{"nesting/512 levels", func(*rand.Rand) tenon.Value { return tenon.NullVal(lists(510)) }},
-	{"nesting/marked at 512 levels", func(r *rand.Rand) tenon.Value { return marked(r, tenon.NullVal(lists(510)), plain) }},
+	{"nesting/512 levels", func(*rand.Rand) tenon.Value { return tenon.Null(lists(510)) }},
+	{"nesting/marked at 512 levels", func(r *rand.Rand) tenon.Value { return marked(r, tenon.Null(lists(510)), plain) }},
 }
 
 // lists returns k list types around Number.
 func lists(k int) tenon.Type {
 	t := num
 	for range k {
-		t = tenon.List(t)
+		t = tenon.ListType(t)
 	}
 	return t
 }

@@ -205,29 +205,29 @@ func (n *node) diagnostics() []Diagnostic {
 // members.
 func isError(v Value) bool { return v.data().state == stateError }
 
-// ListVal returns the list with element type elem and the given elements, in
-// order. ListVal does not retain the slice.
+// List returns the list with element type elem and the given elements, in
+// order. List does not retain the slice.
 //
 // If an element is an error value the result is an error value carrying the
 // diagnostics of every such element, each located by its index, and the
-// Propagate marks of those elements. ListVal panics if elem is the zero Type,
+// Propagate marks of those elements. List panics if elem is the zero Type,
 // or an element is neither an error value nor a resolved value of type elem.
-func ListVal(elem Type, elems ...Value) Value {
-	return sequenceValue(List(elem), "ListVal", elems)
+func List(elem Type, elems ...Value) Value {
+	return sequenceValue(ListType(elem), "List", elems)
 }
 
-// SetVal returns the set with element type elem and the given members. Equality
+// Set returns the set with element type elem and the given members. Equality
 // tells members apart: members it settles are one value are one member, of
 // which the set keeps the first given, and members that are not known stay
 // apart unless it settles that. A set holds its members in the order it
-// iterates them. SetVal does not retain the slice, and treats error members and
-// panics as ListVal does.
+// iterates them. Set does not retain the slice, and treats error members and
+// panics as List does.
 //
 // A member must not be marked: it must carry no mark and hold none, at any
 // depth. Equality tells members apart without looking at marks, so of two
 // members that differ only by their marks a set would keep one and lose the
 // other's marks, and which it lost would depend on the order they were given
-// in. SetVal panics on a marked member rather than choose. Take the marks off
+// in. Set panics on a marked member rather than choose. Take the marks off
 // the members, and put them on the set:
 //
 //	var marks []tenon.Mark
@@ -236,9 +236,9 @@ func ListVal(elem Type, elems ...Value) Value {
 //		members[i], taken = tenon.UnmarkDeep(m)
 //		marks = append(marks, taken...)
 //	}
-//	set := tenon.WithMarks(tenon.SetVal(elem, members...), marks...)
-func SetVal(elem Type, elems ...Value) Value {
-	return sequenceValue(Set(elem), "SetVal", elems)
+//	set := tenon.WithMarks(tenon.Set(elem, members...), marks...)
+func Set(elem Type, elems ...Value) Value {
+	return sequenceValue(SetType(elem), "Set", elems)
 }
 
 // sequenceValue returns the value of list or set type t with the given
@@ -270,12 +270,12 @@ func sequenceValue(t Type, fn string, elems []Value) Value {
 // member: the way to do it that keeps the marks.
 const unmarkForSet = "unmark it with UnmarkDeep and reapply the marks to the set"
 
-// TupleVal returns the tuple with the given elements, in order, whose type is
-// the tuple type of the elements' types. TupleVal does not retain the slice.
+// Tuple returns the tuple with the given elements, in order, whose type is
+// the tuple type of the elements' types. Tuple does not retain the slice.
 //
-// If an element is an error value the result is an error value, as in ListVal.
-// TupleVal panics if an element is neither an error value nor a resolved value.
-func TupleVal(elems ...Value) Value {
+// If an element is an error value the result is an error value, as in List.
+// Tuple panics if an element is neither an error value nor a resolved value.
+func Tuple(elems ...Value) Value {
 	var errs containerErrors
 	types := make([]Type, len(elems))
 	for i, e := range elems {
@@ -283,17 +283,17 @@ func TupleVal(elems ...Value) Value {
 			errs.add(indexStep(NumberFromInt(int64(i))), e)
 			continue
 		}
-		types[i] = memberType("TupleVal", element(i), e)
+		types[i] = memberType("Tuple", element(i), e)
 	}
 	if v, ok := errs.value(); ok {
 		return v
 	}
-	return Value{n: &node{state: stateKnown, partial: anyPartial(elems), markedWithin: anyMarked(elems), typ: Tuple(types...), data: slices.Clone(elems)}}
+	return Value{n: &node{state: stateKnown, partial: anyPartial(elems), markedWithin: anyMarked(elems), typ: TupleType(types...), data: slices.Clone(elems)}}
 }
 
-// ObjectVal returns the object with the given attributes, whose type is the
+// Object returns the object with the given attributes, whose type is the
 // object type of the attributes' types. Attribute names are normalized to
-// Unicode Normalization Form C, as Object normalizes them. ObjectVal does not
+// Unicode Normalization Form C, as ObjectType normalizes them. Object does not
 // retain the map.
 //
 // The names come from data as often as from the program, so a name that
@@ -306,9 +306,9 @@ func TupleVal(elems ...Value) Value {
 // name where the name can be one, then code CodeObjectDuplicateName for each
 // name that attributes share, whatever their values are. The error value
 // carries the Propagate marks of the error attributes. CheckAttributeNames
-// reports the same of names alone. ObjectVal panics if an attribute is neither
+// reports the same of names alone. Object panics if an attribute is neither
 // an error value nor a resolved value.
-func ObjectVal(attrs map[string]Value) Value {
+func Object(attrs map[string]Value) Value {
 	given := make([]namedEntry[Value], 0, len(attrs))
 	for name, v := range attrs {
 		given = append(given, namedEntry[Value]{original: name, value: v})
@@ -316,7 +316,7 @@ func ObjectVal(attrs map[string]Value) Value {
 	entries, shared := checkNames(given)
 	for _, e := range entries {
 		if !isError(e.value) {
-			memberType("ObjectVal", attributeNamed(e.original), e.value)
+			memberType("Object", attributeNamed(e.original), e.value)
 		}
 	}
 	var errs containerErrors
@@ -345,12 +345,12 @@ func ObjectVal(attrs map[string]Value) Value {
 		types[e.key] = e.value.n.typ
 		vals[i] = e.value
 	}
-	return Value{n: &node{state: stateKnown, partial: anyPartial(vals), markedWithin: anyMarked(vals), typ: Object(types), data: vals}}
+	return Value{n: &node{state: stateKnown, partial: anyPartial(vals), markedWithin: anyMarked(vals), typ: ObjectType(types), data: vals}}
 }
 
 // objectOf returns the object value of type t holding vals, one per attribute
 // of t in its order. It is for a caller that has the type and the values it
-// asks for already, where ObjectVal takes a map, normalizes its names, orders
+// asks for already, where Object takes a map, normalizes its names, orders
 // them and interns the type they describe, all of which t settles. Since no
 // container holds an error value, and nothing here would locate one, a caller
 // that has not settled its values first is a mistake in this package.
@@ -612,8 +612,8 @@ func anyMarked(vals []Value) bool {
 	return false
 }
 
-// MapVal returns the map with element type elem and the given entries. Keys are
-// normalized to Unicode Normalization Form C. MapVal does not retain the map.
+// Map returns the map with element type elem and the given entries. Keys are
+// normalized to Unicode Normalization Form C. Map does not retain the map.
 //
 // The result is an error value if a key is not well-formed UTF-8, if keys are
 // the same key after normalization, or if an element is an error value, with a
@@ -621,11 +621,11 @@ func anyMarked(vals []Value) bool {
 // are well-formed: code CodeStringInvalidUTF8 for each such key and the
 // diagnostics of each error element, then code CodeMapDuplicateKey for each
 // group of keys that normalize alike, whatever their elements are. The error
-// value carries the Propagate marks of the error elements. MapVal panics if
+// value carries the Propagate marks of the error elements. Map panics if
 // elem is the zero Type, or an element is neither an error value nor a
 // resolved value of type elem.
-func MapVal(elem Type, entries map[string]Value) Value {
-	t := Map(elem)
+func Map(elem Type, entries map[string]Value) Value {
+	t := MapType(elem)
 	// keyed is an entry beside its key as given. Its key is the normalized
 	// form, or the key as given where that is not well-formed UTF-8, which no
 	// normalized key can equal.
@@ -638,7 +638,7 @@ func MapVal(elem Type, entries map[string]Value) Value {
 	for _, key := range slices.Sorted(maps.Keys(entries)) {
 		val := entries[key]
 		if !isError(val) {
-			requireMember("MapVal", mapElement(key), val, elem)
+			requireMember("Map", mapElement(key), val, elem)
 		}
 		normalized, err := uni.Canonical(key)
 		if err != nil {
@@ -842,30 +842,47 @@ func (v Value) MapKeys() []string {
 	return keys
 }
 
-// MapElement returns the element of a map value with the given key, which is
-// normalized before the lookup, and whether there is one. It panics if v is not
-// a map value.
-func (v Value) MapElement(key string) (Value, bool) {
-	entries := v.known(KindMap, "MapElement").data.([]mapEntry)
+// LookupMapElement returns the element of a map value with the given key,
+// which is normalized before the lookup, and whether there is one. It panics
+// if v is not a map value.
+func (v Value) LookupMapElement(key string) (Value, bool) {
+	entries := v.known(KindMap, "LookupMapElement").data.([]mapEntry)
 	e, ok := findName(entries, key, func(e mapEntry) string { return e.key })
 	return e.val, ok
 }
 
 // Attribute returns the attribute of an object value with the given name, which
 // is normalized before the lookup. It panics if v is not an object value or has
-// no such attribute.
+// no such attribute; LookupAttribute is for a name that may be absent.
 func (v Value) Attribute(name string) Value {
 	n := v.known(KindObject, "Attribute")
-	if utf8.ValidString(name) {
-		i, found := slices.BinarySearchFunc(n.typ.t.attrs, uni.NFC(name), func(a attribute, s string) int {
-			return strings.Compare(a.name, s)
-		})
-		if found {
-			return n.data.([]Value)[i]
-		}
+	if a, ok := n.attribute(name); ok {
+		return a
 	}
 	usagePanic("Attribute called on %s, which has no attribute %s", n.describe(), quoted(name))
 	return Value{}
+}
+
+// LookupAttribute returns the attribute of an object value with the given
+// name, which is normalized before the lookup, and whether there is one. It
+// panics if v is not an object value.
+func (v Value) LookupAttribute(name string) (Value, bool) {
+	return v.known(KindObject, "LookupAttribute").attribute(name)
+}
+
+// attribute returns the attribute of n, a known object value, with the given
+// name, and whether there is one.
+func (n *node) attribute(name string) (Value, bool) {
+	if !utf8.ValidString(name) {
+		return Value{}, false
+	}
+	i, found := slices.BinarySearchFunc(n.typ.t.attrs, uni.NFC(name), func(a attribute, s string) int {
+		return strings.Compare(a.name, s)
+	})
+	if !found {
+		return Value{}, false
+	}
+	return n.data.([]Value)[i], true
 }
 
 // writeContainer writes the content of a resolved collection or structural

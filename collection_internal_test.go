@@ -7,12 +7,12 @@ import (
 )
 
 // TestObjectOfIsObjectVal holds objectOf, which takes the type its caller
-// already has, to ObjectVal, which takes a map and works the type out: the
+// already has, to Object, which takes a map and works the type out: the
 // two give the same value, of the same type, holding the same, over
 // attributes in every state a decoded one can be in.
 func TestObjectOfIsObjectVal(t *testing.T) {
 	num, str := Type{numberType}, Type{stringType}
-	list := List(num)
+	list := ListType(num)
 	// One value of each state an attribute can have, and containers that hold
 	// one, since what a container holds decides the flags an object keeps.
 	states := []struct {
@@ -21,12 +21,12 @@ func TestObjectOfIsObjectVal(t *testing.T) {
 		value Value
 	}{
 		{"known", num, NumberFromInt(1)},
-		{"null", str, NullVal(str)},
+		{"null", str, Null(str)},
 		{"unknown", num, Unknown(num)},
 		{"narrowed", num, Narrow(Unknown(num), NotNull())},
 		{"marked", str, WithMarks(String("x"), probe{id: "m"})},
-		{"holds an unknown", list, ListVal(num, Unknown(num))},
-		{"holds a marked value", list, ListVal(num, WithMarks(NumberFromInt(2), probe{id: "m"}))},
+		{"holds an unknown", list, List(num, Unknown(num))},
+		{"holds a marked value", list, List(num, WithMarks(NumberFromInt(2), probe{id: "m"}))},
 		{"\U000000e9", num, NumberFromInt(3)}, // a name of more than one byte
 	}
 	for take := 1; take <= len(states); take++ {
@@ -38,23 +38,23 @@ func TestObjectOfIsObjectVal(t *testing.T) {
 				attrs[s.name] = s.typ
 				vals[s.name] = s.value
 			}
-			typ := Object(attrs)
+			typ := ObjectType(attrs)
 			// The decoder holds the attributes in the type's order, which is
 			// the order objectOf takes them in.
 			ordered := make([]Value, len(typ.t.attrs))
 			for i, a := range typ.t.attrs {
 				ordered[i] = vals[a.name]
 			}
-			got, want := objectOf(typ, ordered), ObjectVal(vals)
+			got, want := objectOf(typ, ordered), Object(vals)
 			switch {
 			case !Identical(got, want):
-				t.Fatalf("%d attributes from %d: objectOf gave %v, ObjectVal %v", take, start, got, want)
+				t.Fatalf("%d attributes from %d: objectOf gave %v, Object %v", take, start, got, want)
 			case got.n.typ != want.n.typ:
-				t.Fatalf("%d attributes from %d: objectOf gave type %v, ObjectVal %v", take, start, got.n.typ, want.n.typ)
+				t.Fatalf("%d attributes from %d: objectOf gave type %v, Object %v", take, start, got.n.typ, want.n.typ)
 			case got.n.partial != want.n.partial:
-				t.Fatalf("%d attributes from %d: objectOf said partial %v, ObjectVal %v", take, start, got.n.partial, want.n.partial)
+				t.Fatalf("%d attributes from %d: objectOf said partial %v, Object %v", take, start, got.n.partial, want.n.partial)
 			case got.n.markedWithin != want.n.markedWithin:
-				t.Fatalf("%d attributes from %d: objectOf said markedWithin %v, ObjectVal %v", take, start, got.n.markedWithin, want.n.markedWithin)
+				t.Fatalf("%d attributes from %d: objectOf said markedWithin %v, Object %v", take, start, got.n.markedWithin, want.n.markedWithin)
 			}
 		}
 	}
@@ -99,17 +99,17 @@ func TestWithNothingLeftToBeIsTheScan(t *testing.T) {
 		return kept
 	}
 	boo := Type{boolType}
-	pair := Tuple(boo, boo)
-	object := Object(map[string]Type{"a": boo, "b": boo})
+	pair := TupleType(boo, boo)
+	object := ObjectType(map[string]Type{"a": boo, "b": boo})
 	r := rand.New(rand.NewSource(20260922))
 	cases, dropped := 0, 0
-	for _, elem := range []Type{boo, pair, object, Set(boo)} {
+	for _, elem := range []Type{boo, pair, object, SetType(boo)} {
 		values := memberValues(elem)
 		// Values that are not known, of the element type: an unknown, one
 		// that cannot be null, and for a tuple one that is known in part.
 		open := []Value{Unknown(elem), Narrow(Unknown(elem), NotNull())}
 		if elem == pair {
-			open = append(open, TupleVal(Bool(true), Unknown(boo)), TupleVal(Unknown(boo), NullVal(boo)))
+			open = append(open, Tuple(Bool(true), Unknown(boo)), Tuple(Unknown(boo), Null(boo)))
 		}
 		for range 200 {
 			var raw []Value
@@ -123,8 +123,8 @@ func TestWithNothingLeftToBeIsTheScan(t *testing.T) {
 			}
 			r.Shuffle(len(raw), func(i, j int) { raw[i], raw[j] = raw[j], raw[i] })
 			prepared := orderMembers(distinctMembers(slices.Clone(raw)))
-			want := scan(Set(elem), slices.Clone(prepared))
-			got := withNothingLeftToBe(Set(elem), slices.Clone(prepared))
+			want := scan(SetType(elem), slices.Clone(prepared))
+			got := withNothingLeftToBe(SetType(elem), slices.Clone(prepared))
 			if len(got) != len(want) {
 				t.Fatalf("%v over %d members kept %d, the scan kept %d", elem, len(prepared), len(got), len(want))
 			}

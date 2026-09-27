@@ -48,7 +48,7 @@ func TestConformance_MK011_DiagnosticsWithholdRedactedContents(t *testing.T) {
 		},
 		{
 			"a value within a value",
-			tenon.Narrow(tenon.ListVal(num, tenon.NumberFromInt(7), tenon.WithMarks(fortyTwo, pii)), tenon.LengthMax(1)),
+			tenon.Narrow(tenon.List(num, tenon.NumberFromInt(7), tenon.WithMarks(fortyTwo, pii)), tenon.LengthMax(1)),
 			`the value list(number)[7, redacted("pii")] does not satisfy length <= 1`,
 		},
 		{
@@ -81,7 +81,7 @@ func TestConformance_MK011_DiagnosticsWithholdRedactedContents(t *testing.T) {
 		},
 		{
 			"a narrowing given earlier in the same call, which a set holding an unknown cannot meet beside this one",
-			tenon.Narrow(tenon.WithMarks(tenon.SetVal(num, tenon.NumberFromInt(7), tenon.Unknown(num)), secret),
+			tenon.Narrow(tenon.WithMarks(tenon.Set(num, tenon.NumberFromInt(7), tenon.Unknown(num)), secret),
 				tenon.LengthMin(2), tenon.LengthMax(1)),
 			`the value redacted("secret") does not satisfy both redacted("secret") and length <= 1`,
 		},
@@ -109,7 +109,7 @@ func TestConformance_MK011_DiagnosticsWithholdRedactedContents(t *testing.T) {
 		},
 		{
 			"values within a value, one redacted and one not",
-			tenon.Narrow(tenon.ListVal(num, tenon.WithMarks(tenon.NumberFromInt(7), plain), tenon.WithMarks(fortyTwo, pii)), tenon.LengthMax(1)),
+			tenon.Narrow(tenon.List(num, tenon.WithMarks(tenon.NumberFromInt(7), plain), tenon.WithMarks(fortyTwo, pii)), tenon.LengthMax(1)),
 			`the value list(number)[7, redacted("pii")] does not satisfy length <= 1`,
 		},
 		{
@@ -136,12 +136,12 @@ func TestConformance_MK011_DiagnosticsWithholdRedactedContents(t *testing.T) {
 	// caller builds from String withholds it too. An error value shows its
 	// diagnostics, which withheld what they had to when they were made, and
 	// unmarking a value is how a caller shows it on purpose.
-	sealed := tenon.WithMarks(tenon.SetVal(str, hunter), stamp{id: "secret", redact: true, deep: true})
+	sealed := tenon.WithMarks(tenon.Set(str, hunter), stamp{id: "secret", redact: true, deep: true})
 	for _, tt := range []struct {
 		name, got, want string
 	}{
 		{"a known value", tenon.WithMarks(hunter, secret).String(), `redacted("secret")`},
-		{"a null value", tenon.WithMarks(tenon.NullVal(str), secret).String(), `redacted("secret")`},
+		{"a null value", tenon.WithMarks(tenon.Null(str), secret).String(), `redacted("secret")`},
 		{
 			"an unknown value",
 			tenon.WithMarks(tenon.Narrow(tenon.Unknown(num), tenon.NumberMax(fortyTwo, true)), secret).String(),
@@ -154,12 +154,12 @@ func TestConformance_MK011_DiagnosticsWithholdRedactedContents(t *testing.T) {
 		},
 		{
 			"a pending value",
-			tenon.WithMarks(tenon.Narrow(tenon.Pending(tenon.Any()), tenon.Null()), secret).String(),
+			tenon.WithMarks(tenon.Narrow(tenon.Pending(tenon.Any()), tenon.NullOnly()), secret).String(),
 			`redacted("secret")`,
 		},
 		{
 			"a value within a value",
-			tenon.ListVal(str, tenon.String("shown"), tenon.WithMarks(hunter, secret)).String(),
+			tenon.List(str, tenon.String("shown"), tenon.WithMarks(hunter, secret)).String(),
 			`list(string)["shown", redacted("secret")]`,
 		},
 		{
@@ -203,7 +203,7 @@ func TestConformance_MK011_RedactionWithholdsStructure(t *testing.T) {
 			t.Errorf("%s: %v shows what the mark withholds", what, v)
 		}
 	}
-	vault := tenon.WithMarks(tenon.MapVal(str, map[string]tenon.Value{"hunter2": tenon.String("x"), "other": tenon.String("y")}), secret)
+	vault := tenon.WithMarks(tenon.Map(str, map[string]tenon.Value{"hunter2": tenon.String("x"), "other": tenon.String("y")}), secret)
 
 	// A failure within a redacted map is located at the map, once for each
 	// code, named by the placeholder and the constraint converted to, which
@@ -219,7 +219,7 @@ func TestConformance_MK011_RedactionWithholdsStructure(t *testing.T) {
 		inner string
 	}{
 		{"the map itself", vault, tenon.MapOf(tenon.Exactly(num)), tenon.Unsafe, tenon.CodeNumberInvalidSyntax, ".", "map_of(exactly(number))"},
-		{"a map within an object", tenon.ObjectVal(map[string]tenon.Value{"vault": vault}), tenon.ObjectWith(map[string]tenon.Field{"vault": tenon.Required(tenon.MapOf(tenon.Exactly(num)))}, true),
+		{"a map within an object", tenon.Object(map[string]tenon.Value{"vault": vault}), tenon.ObjectWith(map[string]tenon.Field{"vault": tenon.Required(tenon.MapOf(tenon.Exactly(num)))}, true),
 			tenon.Unsafe, tenon.CodeNumberInvalidSyntax, ".vault", "exactly(map(number))"},
 		{"under the safe policy", vault, tenon.MapOf(tenon.Exactly(num)), tenon.Safe, tenon.CodeConvertUnsafe, ".", "map_of(exactly(number))"},
 	} {
@@ -233,29 +233,29 @@ func TestConformance_MK011_RedactionWithholdsStructure(t *testing.T) {
 	}
 
 	// A redacted object that does not convert names no attribute.
-	record := tenon.WithMarks(tenon.ObjectVal(map[string]tenon.Value{"hunter2": tenon.NumberFromInt(1)}), secret)
+	record := tenon.WithMarks(tenon.Object(map[string]tenon.Value{"hunter2": tenon.NumberFromInt(1)}), secret)
 	leaks("a redacted object converted to a number", tenon.Convert(record, tenon.Exactly(num), tenon.Unsafe))
 
 	// A list whose element type takes attribute names from a redacted map,
 	// through the object it converts to, carries the mark, since its type and
 	// the members given those attributes would show them. One whose element
 	// type takes nothing from its redacted members is left as it is.
-	mixed := tenon.ListVal(tenon.Map(num),
-		tenon.WithMarks(tenon.MapVal(num, map[string]tenon.Value{"hunter2": tenon.NumberFromInt(1)}), secret),
-		tenon.MapVal(num, map[string]tenon.Value{"b": tenon.NumberFromInt(2)}))
+	mixed := tenon.List(tenon.MapType(num),
+		tenon.WithMarks(tenon.Map(num, map[string]tenon.Value{"hunter2": tenon.NumberFromInt(1)}), secret),
+		tenon.Map(num, map[string]tenon.Value{"b": tenon.NumberFromInt(2)}))
 	objects := tenon.Convert(mixed, tenon.ListOf(tenon.ObjectWith(nil, false)), tenon.Unsafe)
 	if objects.IsError() || !tenon.HasMark(objects, secret) {
 		t.Errorf("a list taking attribute names from a redacted map converted to %v, not carrying its mark", objects)
 	}
 	leaks("a list taking attribute names from a redacted map", objects)
-	numbers := tenon.Convert(tenon.ListVal(num, tenon.WithMarks(tenon.NumberFromInt(1), secret), tenon.NumberFromInt(2)), tenon.ListOf(tenon.Any()), tenon.Safe)
+	numbers := tenon.Convert(tenon.List(num, tenon.WithMarks(tenon.NumberFromInt(1), secret), tenon.NumberFromInt(2)), tenon.ListOf(tenon.Any()), tenon.Safe)
 	if _, marks := tenon.Unmark(numbers); len(marks) != 0 || numbers.String() != `list(number)[redacted("secret"), 2]` {
 		t.Errorf("a list of numbers, one redacted, converted to %v", numbers)
 	}
 
 	// An operand is named by the placeholder: whether it is null, and the
 	// constraint a pending one will satisfy, are what the mark withholds.
-	null := tenon.Add(tenon.WithMarks(tenon.NullVal(num), secret), tenon.NumberFromInt(1))
+	null := tenon.Add(tenon.WithMarks(tenon.Null(num), secret), tenon.NumberFromInt(1))
 	if ds := errorsOf(null); len(ds) != 1 || ds[0].Code != tenon.CodeOperationNullOperand || strings.Contains(ds[0].Message, "null") {
 		t.Errorf("adding to a redacted null gave %v", null)
 	}
@@ -265,8 +265,8 @@ func TestConformance_MK011_RedactionWithholdsStructure(t *testing.T) {
 	}
 
 	// Serialize locates what fails within a redacted value at the value.
-	holder := tenon.ObjectVal(map[string]tenon.Value{"vault": tenon.WithMarks(
-		tenon.MapVal(num, map[string]tenon.Value{"hunter2": tenon.WithMarks(tenon.NumberFromInt(1), stamp{id: "plain"})}), secret)})
+	holder := tenon.Object(map[string]tenon.Value{"vault": tenon.WithMarks(
+		tenon.Map(num, map[string]tenon.Value{"hunter2": tenon.WithMarks(tenon.NumberFromInt(1), stamp{id: "plain"})}), secret)})
 	_, failure, ok := trySerialize(holder)
 	if ds := errorsOf(failure); ok || len(ds) != 1 || ds[0].Code != tenon.CodeSerializeUnencodableMark || ds[0].Path.String() != ".vault" {
 		t.Errorf("serializing a redacted map holding an unencodable mark gave %v", failure)
@@ -301,7 +301,7 @@ func TestConformance_MK002_RedactingMarksAlwaysPropagate(t *testing.T) {
 		{"a narrowing taken from it", tenon.Narrow(tenon.Unknown(num), tenon.NumberMin(fortyTwo, true)), pii},
 		{"an operation over it", tenon.Add(fortyTwo, tenon.NumberFromInt(0)), pii},
 		{"a set it is deep on, converted to a list", tenon.Convert(
-			tenon.WithMarks(tenon.SetVal(str, tenon.String("hunter2")), deepPii), tenon.ListOf(tenon.Exactly(str)), tenon.Safe), deepPii},
+			tenon.WithMarks(tenon.Set(str, tenon.String("hunter2")), deepPii), tenon.ListOf(tenon.Exactly(str)), tenon.Safe), deepPii},
 	} {
 		if !tenon.HasMark(tt.got, tt.mark) {
 			t.Errorf("%s gave %v, not carrying the redacting mark", tt.name, tt.got)

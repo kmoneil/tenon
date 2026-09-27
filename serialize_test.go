@@ -111,17 +111,17 @@ func TestConformance_SE030_ContentByType(t *testing.T) {
 	}{
 		{"false", tenon.Bool(false), "83 00 01 f4"},
 		{"a string", s("a\xc3\xa9"), "83 00 03 63 61c3a9"},
-		{"a list", tenon.ListVal(num, n(1), n(2)), "83 00 82 04 02 82 01 02"},
-		{"an empty list of strings", tenon.ListVal(str), "83 00 82 04 03 80"},
-		{"a map, keys in order", tenon.MapVal(num, map[string]tenon.Value{"b": n(2), "a": n(1)}),
+		{"a list", tenon.List(num, n(1), n(2)), "83 00 82 04 02 82 01 02"},
+		{"an empty list of strings", tenon.List(str), "83 00 82 04 03 80"},
+		{"a map, keys in order", tenon.Map(num, map[string]tenon.Value{"b": n(2), "a": n(1)}),
 			"83 00 82 06 02 82 82 6161 01 82 6162 02"},
-		{"a tuple", tenon.TupleVal(tenon.Bool(true), s("x")), "83 00 82 07 82 01 03 82 f5 6178"},
+		{"a tuple", tenon.Tuple(tenon.Bool(true), s("x")), "83 00 82 07 82 01 03 82 f5 6178"},
 		{"an object, in attribute order", obj(map[string]tenon.Value{"b": n(1), "a": s("x")}),
 			"83 00 82 08 82 82 6161 03 82 6162 02 82 6178 01"},
-		{"a null list", tenon.NullVal(tenon.List(num)), "83 00 82 04 02 f6"},
-		{"a list holding a null", tenon.ListVal(num, tenon.NullVal(num)), "83 00 82 04 02 81 f6"},
+		{"a null list", tenon.Null(tenon.ListType(num)), "83 00 82 04 02 f6"},
+		{"a list holding a null", tenon.List(num, tenon.Null(num)), "83 00 82 04 02 81 f6"},
 		{"a capsule value", degrees.Value(&celsius{21}), "83 00 82 09 63 742f63 82 02 15"},
-		{"a nested type", tenon.NullVal(tenon.Set(tenon.Map(tenon.Tuple()))), "83 00 82 05 82 06 82 07 80 f6"},
+		{"a nested type", tenon.Null(tenon.SetType(tenon.MapType(tenon.TupleType()))), "83 00 82 05 82 06 82 07 80 f6"},
 	} {
 		wantEncoding(t, tt.name, tt.v, tt.item)
 	}
@@ -175,7 +175,7 @@ func TestConformance_SE032_NumbersAreWrittenAndReadWithoutBigIntegers(t *testing
 			for i := range members {
 				members[i] = tt.number(i)
 			}
-			list := tenon.ListVal(num, members...)
+			list := tenon.List(num, members...)
 			data, failure, ok := trySerialize(list)
 			if !ok {
 				t.Fatalf("%s: %v", tt.name, failure)
@@ -198,11 +198,11 @@ func TestConformance_SE032_NumbersAreWrittenAndReadWithoutBigIntegers(t *testing
 func TestConformance_SE033_SetMembersInEncodingOrder(t *testing.T) {
 	conformance.Covers(t, "SE-033")
 	// 1 is 01 and -1 is 20: the order of the bytes, not of the numbers.
-	wantEncoding(t, "numbers", tenon.SetVal(num, n(-1), n(1)), "83 00 82 05 02 82 01 20")
-	wantEncoding(t, "given the other way", tenon.SetVal(num, n(1), n(-1)), "83 00 82 05 02 82 01 20")
+	wantEncoding(t, "numbers", tenon.Set(num, n(-1), n(1)), "83 00 82 05 02 82 01 20")
+	wantEncoding(t, "given the other way", tenon.Set(num, n(1), n(-1)), "83 00 82 05 02 82 01 20")
 	// An unknown member, and one held twice, order by their bytes too.
 	u := tenon.Unknown(num)
-	wantEncoding(t, "unknowns", tenon.SetVal(num, u, n(1), u), "83 00 82 05 02 83 01 da74656e01a0 da74656e01a0")
+	wantEncoding(t, "unknowns", tenon.Set(num, u, n(1), u), "83 00 82 05 02 83 01 da74656e01a0 da74656e01a0")
 }
 
 func TestConformance_SE034_Ranges(t *testing.T) {
@@ -220,11 +220,11 @@ func TestConformance_SE034_Ranges(t *testing.T) {
 			"83 00 02 da74656e01 a1 02 82 c4 82 20 18 19 f4"},
 		{"a prefix and the length it implies", tenon.Narrow(tenon.Unknown(str), tenon.StringPrefix("ab-")),
 			"83 00 03 da74656e01 a2 03 63 61622d 04 03"},
-		{"at most two", tenon.Narrow(tenon.Unknown(tenon.List(str)), tenon.LengthMax(2)),
+		{"at most two", tenon.Narrow(tenon.Unknown(tenon.ListType(str)), tenon.LengthMax(2)),
 			"83 00 82 04 03 da74656e01 a1 05 02"},
-		{"a listed member", tenon.Narrow(tenon.Unknown(tenon.Set(num)), tenon.Members(n(1))),
+		{"a listed member", tenon.Narrow(tenon.Unknown(tenon.SetType(num)), tenon.Members(n(1))),
 			"83 00 82 05 02 da74656e01 a2 04 01 06 81 01"},
-		{"an unknown member of a list", tenon.ListVal(num, unknownNum), "83 00 82 04 02 81 da74656e01 a0"},
+		{"an unknown member of a list", tenon.List(num, unknownNum), "83 00 82 04 02 81 da74656e01 a0"},
 	} {
 		wantEncoding(t, tt.name, tt.v, tt.item)
 	}
@@ -239,7 +239,7 @@ func TestConformance_SE021_PendingValuesAndConstraints(t *testing.T) {
 	}{
 		{"any", tenon.Pending(tenon.Any()), "83 01 81 02 00"},
 		{"a list of any, not null", tenon.Narrow(tenon.Pending(tenon.ListOf(tenon.Any())), tenon.NotNull()), "83 01 82 03 81 02 01"},
-		{"null", tenon.Narrow(tenon.Pending(is(num)), tenon.Null()), "83 01 82 01 02 02"},
+		{"null", tenon.Narrow(tenon.Pending(is(num)), tenon.NullOnly()), "83 01 82 01 02 02"},
 		{"an object with a field", tenon.Pending(fields(true, "a", tenon.Required(is(num)))), "83 01 83 06 81 83 6161 f5 82 01 02 f5 00"},
 		{"one of, in the order given", tenon.Pending(tenon.OneOf(is(str), is(num))), "83 01 82 08 82 82 01 03 82 01 02 00"},
 		{"a tuple of sets and maps", tenon.Pending(tenon.TupleOf(tenon.SetOf(tenon.Any()), tenon.MapOf(is(boo)))), "83 01 82 07 82 82 04 81 02 82 05 82 01 01 00"},
@@ -267,13 +267,13 @@ func TestConformance_SE031_Marks(t *testing.T) {
 	wantEncoding(t, "marks in the order of their bytes", tenon.WithMarks(tenon.Bool(true), note{"p", "v"}, m),
 		"83 00 01 da74656e02 82 f5 82 81 616d 83 6170 03 6176")
 	wantEncoding(t, "a marked pending value", tenon.WithMarks(tenon.Pending(tenon.Any()), m), "da74656e02 82 83 01 81 02 00 81 81 616d")
-	wantEncoding(t, "a marked member", tenon.ListVal(num, tenon.WithMarks(n(1), m)), "83 00 82 04 02 81 da74656e02 82 01 81 81 616d")
+	wantEncoding(t, "a marked member", tenon.List(num, tenon.WithMarks(n(1), m)), "83 00 82 04 02 81 da74656e02 82 01 81 81 616d")
 	// A deep mark is listed where it was attached, not again on what holds it.
-	wantEncoding(t, "a deep mark", tenon.WithMarks(tenon.ListVal(num, n(1)), deep), "83 00 82 04 02 da74656e02 82 81 01 81 81 6164")
-	wantEncoding(t, "a deep mark attached twice", tenon.WithMarks(tenon.ListVal(num, tenon.WithMarks(n(1), deep)), deep),
+	wantEncoding(t, "a deep mark", tenon.WithMarks(tenon.List(num, n(1)), deep), "83 00 82 04 02 da74656e02 82 81 01 81 81 6164")
+	wantEncoding(t, "a deep mark attached twice", tenon.WithMarks(tenon.List(num, tenon.WithMarks(n(1), deep)), deep),
 		"83 00 82 04 02 da74656e02 82 81 01 81 81 6164")
 	// A member of a set carries no marks; the set does.
-	wantEncoding(t, "a deep mark on a set", tenon.WithMarks(tenon.SetVal(num, n(1)), deep), "83 00 82 05 02 da74656e02 82 81 01 81 81 6164")
+	wantEncoding(t, "a deep mark on a set", tenon.WithMarks(tenon.Set(num, n(1)), deep), "83 00 82 05 02 da74656e02 82 81 01 81 81 6164")
 }
 
 // deepCount is a deep mark that counts how often it is asked whether it is
@@ -311,7 +311,7 @@ func TestConformance_SE031_DeepMarksAreDecidedOncePerMarkSet(t *testing.T) {
 		for i := range held {
 			held[i] = n(int64(i))
 		}
-		v := tenon.WithMarks(tenon.ListVal(num, held...), marks...)
+		v := tenon.WithMarks(tenon.List(num, held...), marks...)
 		asked = 0
 		b, failure, ok := trySerialize(v)
 		if !ok {
@@ -339,7 +339,7 @@ func TestConformance_SE031_DeepMarksAreDecidedOncePerMarkSet(t *testing.T) {
 	for i := range levels {
 		m := deepCount{id: fmt.Sprintf("n%03d", i), asked: &asked}
 		deepRead.Marks[m.id] = func(tenon.Value, bool) (tenon.Mark, []tenon.Diagnostic) { return m, nil }
-		nested = tenon.WithMarks(tenon.ListVal(nested.Type(), nested), m)
+		nested = tenon.WithMarks(tenon.List(nested.Type(), nested), m)
 	}
 	nestedDoc, why, fine := trySerialize(nested)
 	if !fine {
@@ -378,9 +378,9 @@ func TestConformance_SE031_DeepMarksAreDecidedOncePerMarkSet(t *testing.T) {
 	// lists the one its container does not imply, which is a different mark
 	// under each of these two lists.
 	held := tenon.WithMarks(n(1), marks[0], marks[1])
-	pair := tenon.TupleVal(
-		tenon.WithMarks(tenon.ListVal(num, held), marks[0]),
-		tenon.WithMarks(tenon.ListVal(num, held), marks[1]),
+	pair := tenon.Tuple(
+		tenon.WithMarks(tenon.List(num, held), marks[0]),
+		tenon.WithMarks(tenon.List(num, held), marks[1]),
 	)
 	b, failure, ok := trySerialize(pair)
 	if !ok {
@@ -402,7 +402,7 @@ func TestConformance_SE040_Capsules(t *testing.T) {
 	}
 
 	opaque := tenon.NewCapsule("opaque", tenon.CapsuleOps[celsius]{})
-	wantSerializeFailure(t, "a list of undeclared capsules", tenon.ListVal(opaque.Type(), opaque.Value(&celsius{}), opaque.Value(&celsius{})),
+	wantSerializeFailure(t, "a list of undeclared capsules", tenon.List(opaque.Type(), opaque.Value(&celsius{}), opaque.Value(&celsius{})),
 		wantDiag{tenon.CodeSerializeUnencodableCapsule, "."},
 		wantDiag{tenon.CodeSerializeUnencodableCapsule, ".[0]"},
 		wantDiag{tenon.CodeSerializeUnencodableCapsule, ".[1]"})
@@ -432,7 +432,7 @@ func TestConformance_SE040_Capsules(t *testing.T) {
 	// from a value it never gets.
 	nothing := tenon.NewCapsule("nothing", tenon.CapsuleOps[celsius]{Equal: celsiusEqual, Hash: celsiusHash, Encoding: &tenon.CapsuleEncoding[celsius]{
 		ID: "t/nothing", Type: num,
-		Encode: func(*celsius) tenon.Value { return tenon.NullVal(num) },
+		Encode: func(*celsius) tenon.Value { return tenon.Null(num) },
 		Decode: func(tenon.Value) (*celsius, []tenon.Diagnostic) { return nil, nil },
 	}})
 	mustPanicUsage(t, "other than null", func() { trySerialize(nothing.Value(&celsius{})) })
@@ -490,10 +490,10 @@ func TestConformance_SE020_TypesEncodeByKind(t *testing.T) {
 		v    tenon.Value
 		item string
 	}{
-		{"a scalar", tenon.NullVal(num), "83 00 02 f6"},
-		{"a list of numbers", tenon.NullVal(tenon.List(num)), "83 00 82 04 02 f6"},
-		{"a tuple", tenon.NullVal(tenon.Tuple(num, str)), "83 00 82 07 82 02 03 f6"},
-		{"an object, attributes in name order", tenon.NullVal(tenon.Object(map[string]tenon.Type{"b": str, "a": num})),
+		{"a scalar", tenon.Null(num), "83 00 02 f6"},
+		{"a list of numbers", tenon.Null(tenon.ListType(num)), "83 00 82 04 02 f6"},
+		{"a tuple", tenon.Null(tenon.TupleType(num, str)), "83 00 82 07 82 02 03 f6"},
+		{"an object, attributes in name order", tenon.Null(tenon.ObjectType(map[string]tenon.Type{"b": str, "a": num})),
 			"83 00 82 08 82 82 6161 02 82 6162 03 f6"},
 	} {
 		wantEncoding(t, tt.name, tt.v, tt.item)
@@ -539,7 +539,7 @@ func TestConformance_SE042_UnencodableMarks(t *testing.T) {
 	plain := stamp{id: "plain"}
 	wantSerializeFailure(t, "marks without encodings, located", obj(map[string]tenon.Value{
 		"a": tenon.WithMarks(n(1), plain),
-		"b": tenon.ListVal(num, n(2), tenon.WithMarks(n(3), stamp{id: "other"})),
+		"b": tenon.List(num, n(2), tenon.WithMarks(n(3), stamp{id: "other"})),
 	}),
 		wantDiag{tenon.CodeSerializeUnencodableMark, ".a"},
 		wantDiag{tenon.CodeSerializeUnencodableMark, ".b[1]"})
@@ -614,9 +614,9 @@ func TestConformance_SE050_AMemberCostsNoPathUnlessItFails(t *testing.T) {
 		// written apart to be sorted, and a projected number is its text.
 		written, projected float64
 	}{
-		{"a list", func(size int) tenon.Value { return tenon.ListVal(num, numbers(size)...) }, 0, 2},
-		{"a set", func(size int) tenon.Value { return tenon.SetVal(num, numbers(size)...) }, 1, 2},
-		{"a map", func(size int) tenon.Value { return tenon.MapVal(num, named("k", size)) }, 0, 2},
+		{"a list", func(size int) tenon.Value { return tenon.List(num, numbers(size)...) }, 0, 2},
+		{"a set", func(size int) tenon.Value { return tenon.Set(num, numbers(size)...) }, 1, 2},
+		{"a map", func(size int) tenon.Value { return tenon.Map(num, named("k", size)) }, 0, 2},
 		{"an object", func(size int) tenon.Value { return obj(named("a", size)) }, 0, 2},
 	} {
 		var written, projected [2]float64
@@ -652,7 +652,7 @@ func TestConformance_SE050_FailuresUnderOneMemberShareItsPath(t *testing.T) {
 	deep := func(bottom tenon.Value) tenon.Value {
 		v := bottom
 		for range levels {
-			v = tenon.ListVal(v.Type(), v)
+			v = tenon.List(v.Type(), v)
 		}
 		return v
 	}
@@ -674,7 +674,7 @@ func TestConformance_SE050_FailuresUnderOneMemberShareItsPath(t *testing.T) {
 			for i := range members {
 				members[i] = tt.member
 			}
-			v := deep(tenon.ListVal(tt.member.Type(), members...))
+			v := deep(tenon.List(tt.member.Type(), members...))
 			made[k] = testing.AllocsPerRun(10, func() { tt.call(v) })
 		}
 		// A path of its own would cost a failure three allocations a level.
@@ -697,41 +697,41 @@ func TestConformance_SE050_FailuresAreLocatedAtEveryKindOfMember(t *testing.T) {
 	c := func(d int64) tenon.Value { return unencodable.Value(&celsius{d}) }
 	const capsule, mark = tenon.CodeSerializeUnencodableCapsule, tenon.CodeSerializeUnencodableMark
 	wrapper := tenon.NewCapsule("wrapper", tenon.CapsuleOps[celsius]{Equal: celsiusEqual, Hash: celsiusHash, Encoding: &tenon.CapsuleEncoding[celsius]{
-		ID: "t/wrapper", Type: tenon.List(unencodable.Type()),
-		Encode: func(v *celsius) tenon.Value { return tenon.ListVal(unencodable.Type(), unencodable.Value(v)) },
+		ID: "t/wrapper", Type: tenon.ListType(unencodable.Type()),
+		Encode: func(v *celsius) tenon.Value { return tenon.List(unencodable.Type(), unencodable.Value(v)) },
 		Decode: func(tenon.Value) (*celsius, []tenon.Diagnostic) { return nil, nil },
 	}})
 	// Where a type names the capsule type, the type fails at the path of the
 	// value it is the type of, which for these is the root.
-	wantSerializeFailure(t, "a tuple", tenon.TupleVal(n(1), c(1)), wantDiag{capsule, "."}, wantDiag{capsule, ".[1]"})
-	wantSerializeFailure(t, "a set", tenon.SetVal(unencodable.Type(), c(1), c(2)),
+	wantSerializeFailure(t, "a tuple", tenon.Tuple(n(1), c(1)), wantDiag{capsule, "."}, wantDiag{capsule, ".[1]"})
+	wantSerializeFailure(t, "a set", tenon.Set(unencodable.Type(), c(1), c(2)),
 		wantDiag{capsule, "."}, wantDiag{capsule, ".[0]"}, wantDiag{capsule, ".[1]"})
-	wantSerializeFailure(t, "a map", tenon.MapVal(unencodable.Type(), map[string]tenon.Value{"k": c(1)}),
+	wantSerializeFailure(t, "a map", tenon.Map(unencodable.Type(), map[string]tenon.Value{"k": c(1)}),
 		wantDiag{capsule, "."}, wantDiag{capsule, `.["k"]`})
 	wantSerializeFailure(t, "a map in a list in an object", obj(map[string]tenon.Value{
-		"a": tenon.ListVal(tenon.Map(unencodable.Type()), tenon.MapVal(unencodable.Type(), map[string]tenon.Value{"k": c(1)})),
+		"a": tenon.List(tenon.MapType(unencodable.Type()), tenon.Map(unencodable.Type(), map[string]tenon.Value{"k": c(1)})),
 	}), wantDiag{capsule, "."}, wantDiag{capsule, `.a[0]["k"]`})
 	wantSerializeFailure(t, "a member a range records", obj(map[string]tenon.Value{
-		"s": tenon.Narrow(tenon.Unknown(tenon.Set(unencodable.Type())), tenon.Members(c(1))),
+		"s": tenon.Narrow(tenon.Unknown(tenon.SetType(unencodable.Type())), tenon.Members(c(1))),
 	}), wantDiag{capsule, "."}, wantDiag{capsule, ".s"})
-	wantSerializeFailure(t, "a mark on an element", tenon.ListVal(num, n(1), tenon.WithMarks(n(2), stamp{id: "plain"})),
+	wantSerializeFailure(t, "a mark on an element", tenon.List(num, n(1), tenon.WithMarks(n(2), stamp{id: "plain"})),
 		wantDiag{mark, ".[1]"})
 	// A container's marks are written after its members, and a mark that
 	// fails there is located at the container, not at the member last
 	// written.
 	wantSerializeFailure(t, "a mark on a list", obj(map[string]tenon.Value{
-		"a": tenon.WithMarks(tenon.ListVal(num, n(1), n(2)), stamp{id: "plain"}),
+		"a": tenon.WithMarks(tenon.List(num, n(1), n(2)), stamp{id: "plain"}),
 	}), wantDiag{mark, ".a"})
-	wantSerializeFailure(t, "a mark's payload on an element", tenon.ListVal(num, n(1), tenon.WithMarks(n(2), pinned{&celsius{2}})),
+	wantSerializeFailure(t, "a mark's payload on an element", tenon.List(num, n(1), tenon.WithMarks(n(2), pinned{&celsius{2}})),
 		wantDiag{capsule, ".[1]"})
 	wantSerializeFailure(t, "a capsule's payload", obj(map[string]tenon.Value{"x": wrapper.Value(&celsius{1})}),
 		wantDiag{capsule, ".x"}, wantDiag{capsule, ".x[0]"})
 
 	unknown := tenon.Unknown(num)
-	wantProjectionFailure(t, "a tuple", tenon.TupleVal(n(1), unknown), wantDiag{tenon.CodeSerializeNotKnown, ".[1]"})
-	wantProjectionFailure(t, "a set", tenon.SetVal(num, n(1), unknown), wantDiag{tenon.CodeSerializeNotKnown, ".[1]"})
+	wantProjectionFailure(t, "a tuple", tenon.Tuple(n(1), unknown), wantDiag{tenon.CodeSerializeNotKnown, ".[1]"})
+	wantProjectionFailure(t, "a set", tenon.Set(num, n(1), unknown), wantDiag{tenon.CodeSerializeNotKnown, ".[1]"})
 	wantProjectionFailure(t, "a map in a list in an object", obj(map[string]tenon.Value{
-		"a": tenon.ListVal(tenon.Map(num), tenon.MapVal(num, map[string]tenon.Value{"k": unknown})),
+		"a": tenon.List(tenon.MapType(num), tenon.Map(num, map[string]tenon.Value{"k": unknown})),
 	}), wantDiag{tenon.CodeSerializeNotKnown, `.a[0]["k"]`})
 }
 
@@ -742,7 +742,7 @@ type nullNote struct{}
 func (nullNote) MarkID() string                   { return "p" }
 func (nullNote) Propagation() tenon.Propagation   { return tenon.Propagate }
 func (nullNote) Redacting() bool                  { return false }
-func (nullNote) MarkPayload() (tenon.Value, bool) { return tenon.NullVal(tenon.StringType()), true }
+func (nullNote) MarkPayload() (tenon.Value, bool) { return tenon.Null(tenon.StringType()), true }
 
 // twinNote is a mark unequal to a note that serializes as one does, which
 // breaks the contract of an encodable mark.
@@ -781,7 +781,7 @@ func TestConformance_SE001_OneValueOneEncoding(t *testing.T) {
 	for _, pair := range [][2]tenon.Value{
 		{tenon.WithMarks(tenon.WithMarks(n(1), m), other), tenon.WithMarks(n(1), other, m)},
 		{obj(map[string]tenon.Value{"x": s("e\U00000301")}), obj(map[string]tenon.Value{"x": s("\U000000e9")})},
-		{tenon.SetVal(str, s("b"), s("a"), s("b")), tenon.SetVal(str, s("a"), s("b"))},
+		{tenon.Set(str, s("b"), s("a"), s("b")), tenon.Set(str, s("a"), s("b"))},
 		{tenon.Narrow(tenon.Unknown(str), tenon.StringPrefix("ab"), tenon.LengthMin(1)), tenon.Narrow(tenon.Unknown(str), tenon.StringPrefix("ab"))},
 	} {
 		a, _, _ := trySerialize(pair[0])
@@ -817,7 +817,7 @@ func BenchmarkDeepMarkEncoding(b *testing.B) {
 		for i := range members {
 			members[i] = tenon.NumberFromInt(int64(i))
 		}
-		v := tenon.WithMarks(tenon.ListVal(tenon.NumberType(), members...), marks...)
+		v := tenon.WithMarks(tenon.List(tenon.NumberType(), members...), marks...)
 		encoded, failure, ok := trySerialize(v)
 		if !ok {
 			b.Fatalf("Serialize(a list under %d deep marks) failed: %v", d, failure)
@@ -851,7 +851,7 @@ func BenchmarkSerializeFailures(b *testing.B) {
 		for i := range members {
 			members[i] = opaque.Value(&celsius{int64(i)})
 		}
-		v := tenon.ListVal(opaque.Type(), members...)
+		v := tenon.List(opaque.Type(), members...)
 		b.Run(fmt.Sprintf("%d", size), func(b *testing.B) {
 			b.ReportAllocs()
 			for b.Loop() {
@@ -873,7 +873,7 @@ func TestConformance_SE050_FailuresFollowTheEncoding(t *testing.T) {
 	conformance.Covers(t, "SE-050")
 	opaque := tenon.NewCapsule("opaque_in_se050", tenon.CapsuleOps[celsius]{})
 	member := tenon.WithMarks(opaque.Value(&celsius{1}), stamp{id: "inner"})
-	list := tenon.WithMarks(tenon.ListVal(opaque.Type(), member), stamp{id: "outer"})
+	list := tenon.WithMarks(tenon.List(opaque.Type(), member), stamp{id: "outer"})
 	wantSerializeFailure(t, "a type, a member and two marks that do not encode", list,
 		wantDiag{tenon.CodeSerializeUnencodableCapsule, "."},
 		wantDiag{tenon.CodeSerializeUnencodableCapsule, ".[0]"},

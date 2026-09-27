@@ -24,7 +24,7 @@ func (sensitive) String() string                   { return "sensitive" }
 func Example_pluginProtocol() {
 	// The host's side. The address is not known until the resource is
 	// created, though the host knows which network it will be on.
-	resource := tenon.ObjectVal(map[string]tenon.Value{
+	resource := tenon.Object(map[string]tenon.Value{
 		"name":    tenon.String("web"),
 		"address": tenon.Narrow(tenon.Unknown(tenon.StringType()), tenon.NotNull(), tenon.StringPrefix("10.")),
 		"token":   tenon.WithMarks(tenon.String("hunter2"), sensitive{}),

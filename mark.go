@@ -2,6 +2,7 @@ package tenon
 
 import (
 	"slices"
+	"strconv"
 	"strings"
 	"sync/atomic"
 )
@@ -54,7 +55,7 @@ type Mark interface {
 // be looked up later: once WithMarks returns, the values within carry the mark
 // in their own right, and taking it off the outer value with Unmark leaves it
 // on them. The members of a set are the exception, because they carry no
-// marks (see SetVal): a deep mark on a set stays on the set, and Elements
+// marks (see Set): a deep mark on a set stays on the set, and Elements
 // attaches it to each member as it returns the member.
 type DeepMark interface {
 	Mark
@@ -88,6 +89,18 @@ const (
 	// even so: a result that did not carry it would show what it withholds.
 	Isolate
 )
+
+// String returns the name of the propagation policy, "propagate" or
+// "isolate".
+func (p Propagation) String() string {
+	switch p {
+	case Propagate:
+		return "propagate"
+	case Isolate:
+		return "isolate"
+	}
+	return "Propagation(" + strconv.Itoa(int(p)) + ")"
+}
 
 // markSet is the immutable set of marks on a value. It is nil on an unmarked
 // value, which therefore pays a nil pointer and nothing else for the marks it
@@ -700,7 +713,7 @@ func Unmark(v Value) (Value, []Mark) {
 // A marked value, one that carries a mark or holds one, has no hash, no place
 // in the canonical order and no place in a set. UnmarkDeep is the first half of
 // what to do instead; the second is reapplying the marks it returns, which are
-// the caller's to place. SetVal shows the usual place: the set.
+// the caller's to place. Set shows the usual place: the set.
 func UnmarkDeep(v Value) (Value, []Mark) {
 	n := v.data()
 	if !n.isMarked() {

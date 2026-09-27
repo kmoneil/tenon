@@ -283,7 +283,7 @@ func shortened(s string, quote func(string) string) string {
 
 // Pending returns a pending value: a value whose type is not yet determined,
 // and will satisfy c. Whether it will be null is not determined either;
-// Narrow with Null or NotNull says so when the caller knows.
+// Narrow with NullOnly or NotNull says so when the caller knows.
 func Pending(c Constraint) Value {
 	c.data()
 	return Value{n: &node{state: statePending, data: c}}
@@ -315,7 +315,7 @@ func Resolve(v Value, t Type) Value {
 	}
 	switch n.null {
 	case nullOnly:
-		return carryMarks(v, NullVal(t))
+		return carryMarks(v, Null(t))
 	case nullNo:
 		return carryMarks(v, Narrow(Unknown(t), NotNull()))
 	}
@@ -329,12 +329,12 @@ func Unknown(t Type) Value {
 	return Value{n: &node{state: stateUnknown, typ: t, data: &rangeData{}}}
 }
 
-// NullVal returns the null value of type t. Null is a member of the domain of
+// Null returns the null value of type t. Null is a member of the domain of
 // every type rather than a state of its own, so the null value of t is a known
 // value whose range holds nothing but null.
 //
-// NullVal is the value; Null is the narrowing that produces it.
-func NullVal(t Type) Value {
+// Null is the value; NullOnly is the narrowing that produces it.
+func Null(t Type) Value {
 	t.data()
 	return Value{n: &node{state: stateNull, typ: t}}
 }
@@ -423,8 +423,8 @@ func (v Value) IsKnown() bool { return v.data().isKnown() }
 // HasContent reports whether v's content can be read: v is a known value other
 // than null, or a collection or structural value holding members that are not
 // all known, whose members are there to read all the same. Len, Index,
-// Elements, MapKeys, MapElement, Attribute and the As accessors need it; a null,
-// an unknown value, a pending value and an error value have no content.
+// Elements, MapKeys, LookupMapElement, Attribute and the As accessors need it;
+// a null, an unknown value, a pending value and an error value have no content.
 func (v Value) HasContent() bool { return v.data().state == stateKnown }
 
 // IsPending reports whether v is a pending value, whose type is not yet

@@ -49,17 +49,17 @@ func (g generator) typ(depth int) tenon.Type {
 	}
 	switch g.r.Intn(5) {
 	case 0:
-		return tenon.List(g.typ(depth - 1))
+		return tenon.ListType(g.typ(depth - 1))
 	case 1:
-		return tenon.Set(g.typ(depth - 1))
+		return tenon.SetType(g.typ(depth - 1))
 	case 2:
-		return tenon.Map(g.typ(depth - 1))
+		return tenon.MapType(g.typ(depth - 1))
 	case 3:
 		elems := make([]tenon.Type, g.r.Intn(3))
 		for i := range elems {
 			elems[i] = g.typ(depth - 1)
 		}
-		return tenon.Tuple(elems...)
+		return tenon.TupleType(elems...)
 	}
 	attrs := map[string]tenon.Type{}
 	for _, name := range []string{"a", "b", "c\U00000301"} {
@@ -67,7 +67,7 @@ func (g generator) typ(depth int) tenon.Type {
 			attrs[name] = g.typ(depth - 1)
 		}
 	}
-	return tenon.Object(attrs)
+	return tenon.ObjectType(attrs)
 }
 
 func (g generator) number() tenon.Value {
@@ -82,7 +82,7 @@ func (g generator) value(t tenon.Type, depth int, inSet bool) tenon.Value {
 	var v tenon.Value
 	switch g.r.Intn(10) {
 	case 0:
-		v = tenon.NullVal(t)
+		v = tenon.Null(t)
 	case 1, 2:
 		v = g.unknown(t)
 	default:
@@ -148,9 +148,9 @@ func (g generator) known(t tenon.Type, depth int) tenon.Value {
 			members[i] = g.value(t.ElementType(), depth-1, t.Kind() == tenon.KindSet)
 		}
 		if t.Kind() == tenon.KindSet {
-			return tenon.SetVal(t.ElementType(), members...)
+			return tenon.Set(t.ElementType(), members...)
 		}
-		return tenon.ListVal(t.ElementType(), members...)
+		return tenon.List(t.ElementType(), members...)
 	case tenon.KindMap:
 		entries := map[string]tenon.Value{}
 		for _, key := range []string{"", "k", "j\U00000301"} {
@@ -158,19 +158,19 @@ func (g generator) known(t tenon.Type, depth int) tenon.Value {
 				entries[key] = g.value(t.ElementType(), depth-1, false)
 			}
 		}
-		return tenon.MapVal(t.ElementType(), entries)
+		return tenon.Map(t.ElementType(), entries)
 	case tenon.KindTuple:
 		elems := make([]tenon.Value, t.TupleLength())
 		for i := range elems {
 			elems[i] = g.value(t.TupleElementType(i), depth-1, false)
 		}
-		return tenon.TupleVal(elems...)
+		return tenon.Tuple(elems...)
 	}
 	attrs := map[string]tenon.Value{}
 	for _, name := range t.AttributeNames() {
 		attrs[name] = g.value(t.AttributeType(name), depth-1, false)
 	}
-	return tenon.ObjectVal(attrs)
+	return tenon.Object(attrs)
 }
 
 // top returns a value to serialize: now and then a pending or an error value,
@@ -180,7 +180,7 @@ func (g generator) top() tenon.Value {
 	switch g.r.Intn(12) {
 	case 0:
 		v = tenon.Pending(randomConstraint(g.r, 2, degrees.Type()))
-		v = tenon.Narrow(v, []tenon.Narrowing{tenon.NotNull(), tenon.Null(), tenon.NotNull()}[g.r.Intn(3)])
+		v = tenon.Narrow(v, []tenon.Narrowing{tenon.NotNull(), tenon.NullOnly(), tenon.NotNull()}[g.r.Intn(3)])
 	case 1:
 		p := tenon.Path{}.Attribute("a").Index(g.number()).Index(s("k"))
 		v = tenon.ErrorVal(tenon.Diagnostic{Code: "app.failed", Message: "it failed \U0001F600", Path: p},
@@ -461,15 +461,15 @@ func TestConformance_SE005_DecodingWorkIsBounded(t *testing.T) {
 	// A set of 2,000 members that are not known, each a tuple holding a
 	// counting value and an unknown number: no two are compared.
 	num := tenon.NumberType()
-	elem := tenon.Tuple(counting.Type(), num)
+	elem := tenon.TupleType(counting.Type(), num)
 	members := make([]tenon.Value, 2000)
 	for i := range members {
 		v := int64(i)
-		members[i] = tenon.TupleVal(counting.Value(&v), tenon.Unknown(num))
+		members[i] = tenon.Tuple(counting.Value(&v), tenon.Unknown(num))
 	}
 	withCounting := tenon.Decoders{Capsules: []tenon.Type{counting.Type()}}
 	countingCompared = 0
-	set := tenon.SetVal(elem, members...)
+	set := tenon.Set(elem, members...)
 	b, failure, ok := trySerialize(set)
 	if !ok {
 		t.Fatalf("Serialize(the set) failed: %v", failure)
@@ -488,8 +488,8 @@ func TestConformance_SE005_DecodingWorkIsBounded(t *testing.T) {
 	// are not known implies is one, and such a listing is left a range, so
 	// neither compares every pair to count the values provably distinct.
 	for _, listing := range []tenon.Value{
-		tenon.Narrow(tenon.Unknown(tenon.Set(elem)), tenon.Members(members...)),
-		tenon.Narrow(tenon.Unknown(tenon.Set(elem)), tenon.NotNull(), tenon.LengthMax(int64(len(members))), tenon.Members(members...)),
+		tenon.Narrow(tenon.Unknown(tenon.SetType(elem)), tenon.Members(members...)),
+		tenon.Narrow(tenon.Unknown(tenon.SetType(elem)), tenon.NotNull(), tenon.LengthMax(int64(len(members))), tenon.Members(members...)),
 	} {
 		b, failure, ok := trySerialize(listing)
 		if !ok {
@@ -510,8 +510,8 @@ func TestConformance_SE005_DecodingWorkIsBounded(t *testing.T) {
 	// listing tells apart by whether they are one: neither the least length
 	// of each set nor the pairs of their members are counted to find out.
 	half := len(members) / 2
-	sets := tenon.Narrow(tenon.Unknown(tenon.Set(tenon.Set(elem))),
-		tenon.Members(tenon.SetVal(elem, members[:half]...), tenon.SetVal(elem, members[half:]...)))
+	sets := tenon.Narrow(tenon.Unknown(tenon.SetType(tenon.SetType(elem))),
+		tenon.Members(tenon.Set(elem, members[:half]...), tenon.Set(elem, members[half:]...)))
 	b, failure, ok = trySerialize(sets)
 	if !ok {
 		t.Fatalf("Serialize(the listing of two sets) failed: %v", failure)
@@ -593,12 +593,12 @@ func TestConformance_SE005_NestedSetsCostWhatTheyHold(t *testing.T) {
 	}
 	nest := func(v tenon.Value, levels int) tenon.Value {
 		for range levels {
-			v = tenon.SetVal(v.Type(), v)
+			v = tenon.Set(v.Type(), v)
 		}
 		return v
 	}
 	hashed = 0
-	v := nest(tenon.ListVal(counted.Type(), members...), depth)
+	v := nest(tenon.List(counted.Type(), members...), depth)
 	if hashed > 2*size {
 		t.Errorf("building %d sets around %d values hashed them %d times", depth, size, hashed)
 	}
@@ -620,7 +620,7 @@ func TestConformance_SE005_NestedSetsCostWhatTheyHold(t *testing.T) {
 	for i := range leaves {
 		leaves[i] = tenon.NumberFromInt(int64(i))
 	}
-	list := tenon.ListVal(num, leaves...)
+	list := tenon.List(num, leaves...)
 	var sizes [2]uint64
 	for i, levels := range []int{100, 400} {
 		deep := nest(list, levels)
@@ -679,7 +679,7 @@ func TestConformance_SE005_DeepMarksBesideMembersOwn(t *testing.T) {
 		for j := range deep {
 			deep[j] = deepNote{"level", fmt.Sprintf("%d", j)}
 		}
-		list := tenon.ListVal(num, members...)
+		list := tenon.List(num, members...)
 		var v, back tenon.Value
 		var doc []byte
 		steps[0][i] = allocations(func() { v = tenon.WithMarks(list, deep...) })
@@ -758,13 +758,13 @@ func TestConformance_SE005_DeepMarksNestedLevelUponLevel(t *testing.T) {
 	for k, levels := range []int{60, 240} {
 		nest := n(0)
 		for level := range levels {
-			nest = tenon.WithMarks(tenon.ListVal(nest.Type(), nest), deepNote{"level", fmt.Sprintf("level %d", level)})
+			nest = tenon.WithMarks(tenon.List(nest.Type(), nest), deepNote{"level", fmt.Sprintf("level %d", level)})
 		}
 		nests := make([]tenon.Value, 16)
 		for i := range nests {
 			nests[i] = nest
 		}
-		v := tenon.ListVal(nest.Type(), nests...)
+		v := tenon.List(nest.Type(), nests...)
 		doc, failure, ok := trySerialize(v)
 		if !ok {
 			t.Fatalf("Serialize(16 nests of %d levels) failed: %v", levels, failure)
@@ -825,31 +825,31 @@ func TestConformance_SE005_ObjectsCostWhatTheyHold(t *testing.T) {
 			name := strings.Repeat("a", 8*size)
 			objects := make([]tenon.Value, size)
 			for i := range objects {
-				objects[i] = obj(map[string]tenon.Value{name: tenon.NullVal(num)})
+				objects[i] = obj(map[string]tenon.Value{name: tenon.Null(num)})
 			}
-			return tenon.ListVal(tenon.Object(map[string]tenon.Type{name: num}), objects...)
+			return tenon.List(tenon.ObjectType(map[string]tenon.Type{name: num}), objects...)
 		}},
 		{"objects holding a null of a type of many attributes", func(size int) tenon.Value {
 			attrs := map[string]tenon.Type{}
 			for i := range size / 2 {
 				attrs[fmt.Sprintf("x%06d", i)] = num
 			}
-			inner := tenon.Object(attrs)
+			inner := tenon.ObjectType(attrs)
 			objects := make([]tenon.Value, size)
 			for i := range objects {
-				objects[i] = obj(map[string]tenon.Value{"a": tenon.NullVal(inner)})
+				objects[i] = obj(map[string]tenon.Value{"a": tenon.Null(inner)})
 			}
-			return tenon.ListVal(tenon.Object(map[string]tenon.Type{"a": inner}), objects...)
+			return tenon.List(tenon.ObjectType(map[string]tenon.Type{"a": inner}), objects...)
 		}},
 		// A set orders its members that are not known by what they are,
 		// which reading them type and all spells the type out for each.
 		{"unknown members of a set of a type naming one long attribute", func(size int) tenon.Value {
-			elem := tenon.Object(map[string]tenon.Type{strings.Repeat("a", 8*size): num})
+			elem := tenon.ObjectType(map[string]tenon.Type{strings.Repeat("a", 8*size): num})
 			members := make([]tenon.Value, size)
 			for i := range members {
 				members[i] = tenon.Unknown(elem)
 			}
-			return tenon.SetVal(elem, members...)
+			return tenon.Set(elem, members...)
 		}},
 	}
 	for _, shape := range shapes {
@@ -884,7 +884,7 @@ func TestConformance_SE005_ObjectsCostWhatTheyHold(t *testing.T) {
 	for i := range small {
 		small[i] = obj(map[string]tenon.Value{"name": s("x"), "port": n(int64(i)), "on": tenon.Bool(true)})
 	}
-	doc, failure, ok := trySerialize(tenon.ListVal(small[0].Type(), small...))
+	doc, failure, ok := trySerialize(tenon.List(small[0].Type(), small...))
 	if !ok {
 		t.Fatalf("Serialize(100 objects) failed: %v", failure)
 	}
@@ -1014,8 +1014,8 @@ func BenchmarkSetListings(b *testing.B) {
 			members[i] = tenon.NumberFromInt(int64(i))
 		}
 		listing := tenon.Members(members...)
-		held := tenon.SetVal(num, append(members, tenon.Unknown(num))...)
-		recorded := tenon.Narrow(tenon.Unknown(tenon.Set(num)), listing)
+		held := tenon.Set(num, append(members, tenon.Unknown(num))...)
+		recorded := tenon.Narrow(tenon.Unknown(tenon.SetType(num)), listing)
 		encoded, failure, ok := trySerialize(recorded)
 		if !ok {
 			b.Fatalf("Serialize(%v) failed: %v", recorded, failure)
@@ -1023,7 +1023,7 @@ func BenchmarkSetListings(b *testing.B) {
 		b.Run(fmt.Sprintf("record/%d", size), func(b *testing.B) {
 			b.ReportAllocs()
 			for b.Loop() {
-				tenon.Narrow(tenon.Unknown(tenon.Set(num)), listing)
+				tenon.Narrow(tenon.Unknown(tenon.SetType(num)), listing)
 			}
 		})
 		b.Run(fmt.Sprintf("length/%d", size), func(b *testing.B) {
@@ -1053,7 +1053,7 @@ func BenchmarkSetOfUnknowns(b *testing.B) {
 		for i := range members {
 			members[i] = tenon.Narrow(tenon.Unknown(num), tenon.NotNull(), tenon.NumberMin(tenon.NumberFromInt(int64(i)), true))
 		}
-		set := tenon.SetVal(num, members...)
+		set := tenon.Set(num, members...)
 		encoded, failure, ok := trySerialize(set)
 		if !ok {
 			b.Fatalf("Serialize(a set of %d unknowns) failed: %v", size, failure)
@@ -1061,7 +1061,7 @@ func BenchmarkSetOfUnknowns(b *testing.B) {
 		b.Run(fmt.Sprintf("build/%d", size), func(b *testing.B) {
 			b.ReportAllocs()
 			for b.Loop() {
-				tenon.SetVal(num, members...)
+				tenon.Set(num, members...)
 			}
 		})
 		b.Run(fmt.Sprintf("decode/%d", size), func(b *testing.B) {
@@ -1164,9 +1164,9 @@ func BenchmarkObjectDocuments(b *testing.B) {
 		name := strings.Repeat("a", 8*size)
 		objects := make([]tenon.Value, size)
 		for i := range objects {
-			objects[i] = obj(map[string]tenon.Value{name: tenon.NullVal(num)})
+			objects[i] = obj(map[string]tenon.Value{name: tenon.Null(num)})
 		}
-		doc, failure, ok := trySerialize(tenon.ListVal(tenon.Object(map[string]tenon.Type{name: num}), objects...))
+		doc, failure, ok := trySerialize(tenon.List(tenon.ObjectType(map[string]tenon.Type{name: num}), objects...))
 		if !ok {
 			b.Fatalf("Serialize(%d objects) failed: %v", size, failure)
 		}
@@ -1186,7 +1186,7 @@ func BenchmarkObjectDocuments(b *testing.B) {
 		for i := range objects {
 			objects[i] = obj(map[string]tenon.Value{"name": s("x"), "port": n(int64(i)), "on": tenon.Bool(true)})
 		}
-		doc, failure, ok := trySerialize(tenon.ListVal(objects[0].Type(), objects...))
+		doc, failure, ok := trySerialize(tenon.List(objects[0].Type(), objects...))
 		if !ok {
 			b.Fatalf("Serialize(%d objects) failed: %v", size, failure)
 		}
@@ -1246,12 +1246,12 @@ func TestConformance_SE003_OnlyValuesWithinTheBoundHaveAnEncoding(t *testing.T) 
 	lists := func(n int) tenon.Type {
 		typ := tenon.NumberType()
 		for range n {
-			typ = tenon.List(typ)
+			typ = tenon.ListType(typ)
 		}
 		return typ
 	}
 	// The item, then 510 list types around a number: 512 levels.
-	within := tenon.NullVal(lists(510))
+	within := tenon.Null(lists(510))
 	data, fail, ok := trySerialize(within)
 	if !ok {
 		t.Fatalf("a null of 510 list types did not serialize: %v", fail)
@@ -1259,7 +1259,7 @@ func TestConformance_SE003_OnlyValuesWithinTheBoundHaveAnEncoding(t *testing.T) 
 	if back, fail, ok := tryDeserialize(data, tenon.Decoders{}); !ok || !tenon.Identical(back, within) {
 		t.Fatalf("a null of 510 list types read back as %v, %v", back, fail)
 	}
-	_, fail, ok = trySerialize(tenon.NullVal(lists(511)))
+	_, fail, ok = trySerialize(tenon.Null(lists(511)))
 	if ok {
 		t.Fatal("a null of 511 list types serialized, which no decoder reads")
 	}
@@ -1271,7 +1271,7 @@ func TestConformance_SE003_OnlyValuesWithinTheBoundHaveAnEncoding(t *testing.T) 
 	nested := func(d int) tenon.Value {
 		v := tenon.NumberFromInt(1)
 		for range d {
-			v = tenon.ListVal(v.Type(), v)
+			v = tenon.List(v.Type(), v)
 		}
 		return v
 	}

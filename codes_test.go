@@ -82,7 +82,7 @@ func TestConformance_ER007_DiagnosticCodes(t *testing.T) {
 		tenon.String("\xff"),
 		tenon.NumberFromText("x"),
 		tenon.NumberFromText("1e1000000"),
-		tenon.MapVal(num, map[string]tenon.Value{"caf\u00e9": one, "cafe\u0301": one, "a\xff": one}),
+		tenon.Map(num, map[string]tenon.Value{"caf\u00e9": one, "cafe\u0301": one, "a\xff": one}),
 	} {
 		for _, d := range v.Diagnostics() {
 			if !slices.Contains(specCodes, string(d.Code)) {
@@ -184,8 +184,8 @@ func TestConformance_DI002_TheRegistryListsEveryCode(t *testing.T) {
 		{tenon.NumberFromText("x"), tenon.CodeNumberInvalidSyntax},
 		{tenon.NumberFromText("1e1000000"), tenon.CodeNumberOutOfRange},
 		{tenon.String("\xff"), tenon.CodeStringInvalidUTF8},
-		{tenon.Add(tenon.NullVal(num), tenon.NumberFromInt(1)), tenon.CodeOperationNullOperand},
-		{tenon.Narrow(tenon.Unknown(num), tenon.NotNull(), tenon.Null()), tenon.CodeRangeContradiction},
+		{tenon.Add(tenon.Null(num), tenon.NumberFromInt(1)), tenon.CodeOperationNullOperand},
+		{tenon.Narrow(tenon.Unknown(num), tenon.NotNull(), tenon.NullOnly()), tenon.CodeRangeContradiction},
 		{tenon.Convert(tenon.String("x"), tenon.Exactly(num), tenon.Unsafe), tenon.CodeNumberInvalidSyntax},
 		{tenon.Convert(tenon.String("5"), tenon.Exactly(num), tenon.Safe), tenon.CodeConvertUnsafe},
 	} {

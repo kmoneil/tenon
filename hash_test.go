@@ -56,7 +56,7 @@ func TestConformance_EQ030_IdenticalValuesHashAlike(t *testing.T) {
 	// A hash is for known values that are there to hash, and asking for one
 	// elsewhere is a mistake in the calling program.
 	str := tenon.StringType()
-	mustPanicUsage(t, "and null has no hash", func() { tenon.Hash(tenon.NullVal(str)) })
+	mustPanicUsage(t, "and null has no hash", func() { tenon.Hash(tenon.Null(str)) })
 	for _, tt := range []struct {
 		name string
 		v    tenon.Value
@@ -64,7 +64,7 @@ func TestConformance_EQ030_IdenticalValuesHashAlike(t *testing.T) {
 		{"an unknown", tenon.Unknown(str)},
 		{"a pending value", tenon.Pending(tenon.Any())},
 		{"an error value", tenon.String("\xff")},
-		{"a list holding an unknown", tenon.ListVal(str, tenon.Unknown(str))},
+		{"a list holding an unknown", tenon.List(str, tenon.Unknown(str))},
 	} {
 		mustPanicUsage(t, "which is not a known value", func() { tenon.Hash(tt.v) })
 	}
@@ -73,7 +73,7 @@ func TestConformance_EQ030_IdenticalValuesHashAlike(t *testing.T) {
 	m := stamp{id: "m"}
 	mustPanicUsage(t, "that carries marks", func() { tenon.Hash(tenon.WithMarks(tenon.String("a"), m)) })
 	mustPanicUsage(t, "that holds a marked value at .[0]", func() {
-		tenon.Hash(tenon.ListVal(str, tenon.WithMarks(tenon.String("a"), m)))
+		tenon.Hash(tenon.List(str, tenon.WithMarks(tenon.String("a"), m)))
 	})
 }
 
@@ -91,23 +91,23 @@ func TestConformance_EQ031_HashingIsStableAcrossRepresentations(t *testing.T) {
 		{"a string in two normal forms", tenon.String("e\U00000301"), tenon.String("\U000000e9")},
 		{
 			"a set given its members in either order",
-			tenon.SetVal(str, tenon.String("a"), tenon.String("b")),
-			tenon.SetVal(str, tenon.String("b"), tenon.String("a")),
+			tenon.Set(str, tenon.String("a"), tenon.String("b")),
+			tenon.Set(str, tenon.String("b"), tenon.String("a")),
 		},
 		{
 			"a set with a member given twice",
-			tenon.SetVal(str, tenon.String("a"), tenon.String("a")),
-			tenon.SetVal(str, tenon.String("a")),
+			tenon.Set(str, tenon.String("a"), tenon.String("a")),
+			tenon.Set(str, tenon.String("a")),
 		},
 		{
 			"an object built from maps walked in either order",
-			tenon.ObjectVal(map[string]tenon.Value{"a": tenon.NumberFromInt(1), "b": tenon.NumberFromText("2.0")}),
-			tenon.ObjectVal(map[string]tenon.Value{"b": tenon.NumberFromInt(2), "a": tenon.NumberFromText("1.0")}),
+			tenon.Object(map[string]tenon.Value{"a": tenon.NumberFromInt(1), "b": tenon.NumberFromText("2.0")}),
+			tenon.Object(map[string]tenon.Value{"b": tenon.NumberFromInt(2), "a": tenon.NumberFromText("1.0")}),
 		},
 		{
 			"a map whose entries were given in either order",
-			tenon.MapVal(num, map[string]tenon.Value{"j": tenon.NumberFromInt(1), "k": tenon.NumberFromInt(2)}),
-			tenon.MapVal(num, map[string]tenon.Value{"k": tenon.NumberFromText("2.00"), "j": tenon.NumberFromText("1.00")}),
+			tenon.Map(num, map[string]tenon.Value{"j": tenon.NumberFromInt(1), "k": tenon.NumberFromInt(2)}),
+			tenon.Map(num, map[string]tenon.Value{"k": tenon.NumberFromText("2.00"), "j": tenon.NumberFromText("1.00")}),
 		},
 	} {
 		if !tenon.Identical(tt.a, tt.b) {
@@ -125,10 +125,10 @@ func TestConformance_EQ031_HashingIsStableAcrossRepresentations(t *testing.T) {
 		tenon.NumberFromInt(0), tenon.NumberFromInt(1), tenon.NumberFromInt(-1),
 		tenon.String(""), tenon.String("0"), tenon.String("1"),
 		tenon.Bool(true), tenon.Bool(false),
-		tenon.ListVal(str, tenon.String("a")), tenon.ListVal(str, tenon.String("b")),
-		tenon.ListVal(str, tenon.String("a"), tenon.String("b")),
-		tenon.SetVal(str, tenon.String("a")),
-		tenon.TupleVal(tenon.String("a")),
+		tenon.List(str, tenon.String("a")), tenon.List(str, tenon.String("b")),
+		tenon.List(str, tenon.String("a"), tenon.String("b")),
+		tenon.Set(str, tenon.String("a")),
+		tenon.Tuple(tenon.String("a")),
 	} {
 		h := tenon.Hash(v)
 		if other, ok := seen[h]; ok {

@@ -33,7 +33,7 @@ func TestConformance_MK007_PropagatedPaysNothingUnmarked(t *testing.T) {
 	conformance.Covers(t, "MK-007")
 	num := Type{numberType}
 	plain := NumberFromInt(1)
-	held := ListVal(num, NumberFromInt(2))
+	held := List(num, NumberFromInt(2))
 	checked := 0
 	for _, o := range operations {
 		bound := []*op{o}
@@ -80,14 +80,14 @@ func TestConformance_MK007_UnmarkedValuesPayNothing(t *testing.T) {
 		Bool(true),
 		NumberFromInt(1),
 		String("x"),
-		NullVal(str),
+		Null(str),
 		Unknown(str),
 		Narrow(Unknown(num), NotNull()),
-		ListVal(str, String("a")),
-		SetVal(str, String("a")),
-		TupleVal(String("a")),
-		ObjectVal(map[string]Value{"a": String("a")}),
-		MapVal(str, map[string]Value{"k": String("a")}),
+		List(str, String("a")),
+		Set(str, String("a")),
+		Tuple(String("a")),
+		Object(map[string]Value{"a": String("a")}),
+		Map(str, map[string]Value{"k": String("a")}),
 		Pending(Any()),
 		ErrorVal(Diagnostic{Code: "app.x", Message: "m"}),
 	} {
@@ -108,14 +108,14 @@ func TestConformance_MK007_UnmarkedValuesPayNothing(t *testing.T) {
 	// profile, and a mark-caused allocation on this path fails here. Reading
 	// the members of an unmarked set costs the slice they come back in and
 	// nothing more, though a marked set may have marks to apply to them.
-	set := SetVal(str, String("a"), String("b"))
+	set := Set(str, String("a"), String("b"))
 	for _, tt := range []struct {
 		name string
 		want float64
 		f    func()
 	}{
 		{"Bool", 0, func() { Bool(true) }},
-		{"NullVal", 1, func() { NullVal(str) }},
+		{"Null", 1, func() { Null(str) }},
 		{"Unknown", 2, func() { Unknown(str) }},
 		{"NumberFromInt", 2, func() { NumberFromInt(42) }},
 		{"Elements of an unmarked set", 1, func() { set.Elements() }},
@@ -135,27 +135,27 @@ func TestMarkedWithinAgreesWithTheMembers(t *testing.T) {
 	num := Type{numberType}
 	one := NumberFromInt(1)
 	marked := WithMarks(one, m)
-	nested := ListVal(List(num), ListVal(num, one, marked))
+	nested := List(ListType(num), List(num, one, marked))
 	ownTaken, _ := Unmark(WithMarks(nested, m))
 	allTaken, _ := UnmarkDeep(WithMarks(nested, m))
 	for _, v := range []Value{
-		ListVal(num, one),
-		ListVal(num, marked),
+		List(num, one),
+		List(num, marked),
 		nested,
-		SetVal(num, one),
-		SetVal(List(num), ListVal(num, one)),
-		TupleVal(one, marked),
-		TupleVal(WithMarks(Unknown(num), m)),
-		ObjectVal(map[string]Value{"a": marked, "b": one}),
-		ObjectVal(map[string]Value{"a": one}),
-		MapVal(num, map[string]Value{"k": marked, "j": one}),
-		MapVal(num, map[string]Value{"k": one}),
+		Set(num, one),
+		Set(ListType(num), List(num, one)),
+		Tuple(one, marked),
+		Tuple(WithMarks(Unknown(num), m)),
+		Object(map[string]Value{"a": marked, "b": one}),
+		Object(map[string]Value{"a": one}),
+		Map(num, map[string]Value{"k": marked, "j": one}),
+		Map(num, map[string]Value{"k": one}),
 		WithMarks(nested, m),
 		ownTaken,
 		allTaken,
 		Narrow(nested, LengthMin(1)),
-		Narrow(Unknown(Set(num)), NotNull(), Members(one), LengthMax(1)),
-		Narrow(Unknown(Tuple(Tuple())), NotNull()),
+		Narrow(Unknown(SetType(num)), NotNull(), Members(one), LengthMax(1)),
+		Narrow(Unknown(TupleType(TupleType())), NotNull()),
 	} {
 		checkFlags(t, v)
 	}
@@ -214,9 +214,9 @@ func TestPlainWritesOutNoMark(t *testing.T) {
 		{WithMarks(e, secret, origin), `error(app.x: "m")`},
 		{WithMarks(a, secret, origin), `redacted("secret")`},
 		{WithMarks(a, origin), `"a"`},
-		{WithMarks(ListVal(StringType(), WithMarks(a, origin)), origin), `list(string)["a"]`},
-		{ListVal(StringType(), WithMarks(a, secret), WithMarks(b, origin)), `list(string)[redacted("secret"), "b"]`},
-		{MapVal(StringType(), map[string]Value{"k": WithMarks(a, origin)}), `map(string){"k": "a"}`},
+		{WithMarks(List(StringType(), WithMarks(a, origin)), origin), `list(string)["a"]`},
+		{List(StringType(), WithMarks(a, secret), WithMarks(b, origin)), `list(string)[redacted("secret"), "b"]`},
+		{Map(StringType(), map[string]Value{"k": WithMarks(a, origin)}), `map(string){"k": "a"}`},
 	} {
 		w := textWriter{plain: true}
 		tt.v.write(&w)
@@ -232,9 +232,9 @@ func TestPlainWritesOutNoMark(t *testing.T) {
 func TestLimitedWriterStopsPastItsLimit(t *testing.T) {
 	long := make([]Value, 1000)
 	for i := range long {
-		long[i] = NullVal(Object(map[string]Type{"attribute": NumberType()}))
+		long[i] = Null(ObjectType(map[string]Type{"attribute": NumberType()}))
 	}
-	v := ListVal(long[0].Type(), long...)
+	v := List(long[0].Type(), long...)
 	w := textWriter{limit: shortLimit}
 	v.write(&w)
 	if w.Len() != shortLimit+1 || !strings.HasPrefix(v.String(), w.String()) {
@@ -254,12 +254,12 @@ func TestDeepMarksAreAppliedAllTheWayDown(t *testing.T) {
 	shallow := probe{id: "shallow"}
 	num, str := Type{numberType}, Type{stringType}
 	one := NumberFromInt(1)
-	set := SetVal(str, String("a"), String("b"))
-	tree := ObjectVal(map[string]Value{
-		"list":  ListVal(num, one, Unknown(num)),
-		"map":   MapVal(num, map[string]Value{"k": WithMarks(one, shallow)}),
-		"tuple": TupleVal(set, NullVal(str), WithMarks(one, other)),
-		"sets":  ListVal(Set(str), set),
+	set := Set(str, String("a"), String("b"))
+	tree := Object(map[string]Value{
+		"list":  List(num, one, Unknown(num)),
+		"map":   Map(num, map[string]Value{"k": WithMarks(one, shallow)}),
+		"tuple": Tuple(set, Null(str), WithMarks(one, other)),
+		"sets":  List(SetType(str), set),
 	})
 	marked := WithMarks(tree, deep)
 	stripped, _ := Unmark(marked)
@@ -269,10 +269,10 @@ func TestDeepMarksAreAppliedAllTheWayDown(t *testing.T) {
 		WithMarks(stripped, deep, other),
 		WithMarks(marked, other, shallow),
 		WithMarks(set, deep).Elements()[0],
-		ListVal(List(num), WithMarks(ListVal(num, one), deep)),
-		WithMarks(SetVal(List(num), ListVal(num, one)), deep).Elements()[0],
-		Narrow(WithMarks(Unknown(Tuple(Tuple(), Tuple())), deep), NotNull()),
-		Narrow(WithMarks(Unknown(Set(num)), deep), NotNull(), Members(one), LengthMax(1)),
+		List(ListType(num), WithMarks(List(num, one), deep)),
+		WithMarks(Set(ListType(num), List(num, one)), deep).Elements()[0],
+		Narrow(WithMarks(Unknown(TupleType(TupleType(), TupleType())), deep), NotNull()),
+		Narrow(WithMarks(Unknown(SetType(num)), deep), NotNull(), Members(one), LengthMax(1)),
 	} {
 		checkDeepMarks(t, v)
 		checkFlags(t, v)
@@ -379,13 +379,13 @@ func deepMarkTree(depth, breadth int) Value {
 		children[i] = deepMarkTree(depth-1, breadth)
 	}
 	if depth%2 == 0 {
-		return ListVal(children[0].n.typ, children...)
+		return List(children[0].n.typ, children...)
 	}
 	attrs := make(map[string]Value, breadth)
 	for i, c := range children {
 		attrs["a"+strconv.Itoa(i)] = c
 	}
-	return ObjectVal(attrs)
+	return Object(attrs)
 }
 
 // treeMembers returns the members of a list or object in the tree, and none
@@ -430,7 +430,7 @@ func BenchmarkUnmarkedValues(b *testing.B) {
 	b.ReportAllocs()
 	str := Type{stringType}
 	for range b.N {
-		l := ListVal(str, String("a"), String("b"))
+		l := List(str, String("a"), String("b"))
 		_ = Length(l)
 		_ = Narrow(Unknown(str), NotNull(), LengthMin(1))
 	}
@@ -741,20 +741,20 @@ func TestDecodedDeepMarksAreHeldAsAttached(t *testing.T) {
 				return marked(Unknown(num))
 			}
 			// A set keeps a deep mark on itself, and its members carry none.
-			return marked(SetVal(num, NumberFromInt(1), NumberFromInt(2)))
+			return marked(Set(num, NumberFromInt(1), NumberFromInt(2)))
 		}
 		inner := build(depth - 1)
 		var v Value
 		switch r.Intn(4) {
 		case 0:
 			// Two elements of one type, one of them marked again.
-			v = ListVal(inner.Type(), inner, marked(inner))
+			v = List(inner.Type(), inner, marked(inner))
 		case 1:
-			v = TupleVal(inner, NumberFromInt(7))
+			v = Tuple(inner, NumberFromInt(7))
 		case 2:
-			v = ObjectVal(map[string]Value{"a": inner, "b": marked(String("x"))})
+			v = Object(map[string]Value{"a": inner, "b": marked(String("x"))})
 		default:
-			v = MapVal(inner.Type(), map[string]Value{"k": inner})
+			v = Map(inner.Type(), map[string]Value{"k": inner})
 		}
 		return marked(v)
 	}

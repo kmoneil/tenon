@@ -14,7 +14,7 @@ import (
 func Example() {
 	// A service's configuration: the name is in hand, the address it will be
 	// reachable at is not known until the service is created.
-	config := tenon.ObjectVal(map[string]tenon.Value{
+	config := tenon.Object(map[string]tenon.Value{
 		"name":     tenon.String("web"),
 		"replicas": tenon.NumberFromInt(3),
 		"address":  tenon.Unknown(tenon.StringType()),
@@ -99,7 +99,7 @@ func ExamplePending() {
 	fmt.Println(tenon.Length(items))
 
 	// Resolve settles the type once it is known.
-	fmt.Println(tenon.Resolve(items, tenon.List(tenon.StringType())))
+	fmt.Println(tenon.Resolve(items, tenon.ListType(tenon.StringType())))
 	// Output:
 	// pending(list_of(any)) true
 	// unknown(number, not null, >= 0)
@@ -144,7 +144,7 @@ func ExampleEquals() {
 func ExampleLength() {
 	// One e with an acute accent, written as two code points.
 	fmt.Println(tenon.Length(tenon.String("e\U00000301")))
-	fmt.Println(tenon.Length(tenon.ListVal(tenon.NumberType(), tenon.NumberFromInt(1), tenon.NumberFromInt(2))))
+	fmt.Println(tenon.Length(tenon.List(tenon.NumberType(), tenon.NumberFromInt(1), tenon.NumberFromInt(2))))
 	// Output:
 	// 1
 	// 2
@@ -152,8 +152,8 @@ func ExampleLength() {
 
 // A set holds each value once, by what its members are rather than by how they
 // were written.
-func ExampleSetVal() {
-	ports := tenon.SetVal(tenon.NumberType(),
+func ExampleSet() {
+	ports := tenon.Set(tenon.NumberType(),
 		tenon.NumberFromInt(80),
 		tenon.NumberFromText("80.0"),
 		tenon.NumberFromInt(443),
@@ -170,7 +170,7 @@ func ExampleSetVal() {
 // a language rather than about values.
 func ExampleConvert() {
 	// Safe conversions change how a value is held, not what it is.
-	tuple := tenon.TupleVal(tenon.String("a"), tenon.String("b"))
+	tuple := tenon.Tuple(tenon.String("a"), tenon.String("b"))
 	fmt.Println(tenon.Convert(tuple, tenon.ListOf(tenon.Exactly(tenon.StringType())), tenon.Safe))
 
 	// Unsafe conversions change what a value is, and can fail on some values.
@@ -185,7 +185,7 @@ func ExampleConvert() {
 // Data that is wrong becomes an error value carrying a diagnostic for each
 // problem, located by its path, rather than a panic or a zero value.
 func ExampleConvert_diagnostics() {
-	ports := tenon.ListVal(tenon.StringType(), tenon.String("80"), tenon.String("http"), tenon.String("443"))
+	ports := tenon.List(tenon.StringType(), tenon.String("80"), tenon.String("http"), tenon.String("443"))
 	converted := tenon.Convert(ports, tenon.ListOf(tenon.Exactly(tenon.NumberType())), tenon.Unsafe)
 	for _, d := range converted.Diagnostics() {
 		fmt.Printf("%s at %s: %s\n", d.Code, d.Path, d.Message)
@@ -196,11 +196,11 @@ func ExampleConvert_diagnostics() {
 
 // However a value was built, two values that say the same thing are one value.
 func ExampleIdentical() {
-	fromParts := tenon.ObjectVal(map[string]tenon.Value{
-		"ports": tenon.SetVal(tenon.NumberType(), tenon.NumberFromInt(443), tenon.NumberFromInt(80), tenon.NumberFromInt(443)),
+	fromParts := tenon.Object(map[string]tenon.Value{
+		"ports": tenon.Set(tenon.NumberType(), tenon.NumberFromInt(443), tenon.NumberFromInt(80), tenon.NumberFromInt(443)),
 	})
-	written := tenon.ObjectVal(map[string]tenon.Value{
-		"ports": tenon.SetVal(tenon.NumberType(), tenon.NumberFromText("80"), tenon.NumberFromText("443.0")),
+	written := tenon.Object(map[string]tenon.Value{
+		"ports": tenon.Set(tenon.NumberType(), tenon.NumberFromText("80"), tenon.NumberFromText("443.0")),
 	})
 	fmt.Println(tenon.Identical(fromParts, written))
 	fmt.Println(tenon.Hash(fromParts) == tenon.Hash(written))
@@ -218,7 +218,7 @@ func ExampleIdentical() {
 // Serialize encodes a value as a CBOR document: what is not known, what it is
 // bounded by, and the diagnostics of a failure all survive the round trip.
 func ExampleSerialize() {
-	value := tenon.ObjectVal(map[string]tenon.Value{
+	value := tenon.Object(map[string]tenon.Value{
 		"name": tenon.String("web"),
 		"port": tenon.Narrow(tenon.Unknown(tenon.NumberType()), tenon.NotNull(), tenon.NumberMin(tenon.NumberFromInt(1024), true)),
 	})
@@ -245,14 +245,14 @@ func ExampleSerialize() {
 // ProjectJSON renders a value for a consumer that speaks JSON and nothing
 // else. It is one-way and lossy, and it refuses what JSON cannot say.
 func ExampleProjectJSON() {
-	known := tenon.ObjectVal(map[string]tenon.Value{
+	known := tenon.Object(map[string]tenon.Value{
 		"name": tenon.String("web"),
 		"port": tenon.NumberFromInt(443),
 	})
 	text, _ := tenon.ProjectJSON(known)
 	fmt.Println(string(text))
 
-	withUnknown := tenon.ObjectVal(map[string]tenon.Value{
+	withUnknown := tenon.Object(map[string]tenon.Value{
 		"name": tenon.String("web"),
 		"port": tenon.Unknown(tenon.NumberType()),
 	})
@@ -273,11 +273,11 @@ func ExampleProjectJSON() {
 // Diff reports what changed between two values, each change located by its
 // path, which is what a plan engine shows a person before it acts.
 func ExampleDiff() {
-	before := tenon.ObjectVal(map[string]tenon.Value{
+	before := tenon.Object(map[string]tenon.Value{
 		"name":     tenon.String("web"),
 		"replicas": tenon.NumberFromInt(3),
 	})
-	after := tenon.ObjectVal(map[string]tenon.Value{
+	after := tenon.Object(map[string]tenon.Value{
 		"name":     tenon.String("web"),
 		"replicas": tenon.NumberFromInt(5),
 	})
@@ -293,10 +293,10 @@ func ExampleDiff() {
 func ExampleUnify() {
 	number := tenon.Exactly(tenon.NumberType())
 	text := tenon.Exactly(tenon.StringType())
-	common, err := tenon.Unify(tenon.Unsafe, number, text)
+	common, err := tenon.Unify([]tenon.Constraint{number, text}, tenon.Unsafe)
 	fmt.Println(common, err)
 
-	_, err = tenon.Unify(tenon.Safe, number, text)
+	_, err = tenon.Unify([]tenon.Constraint{number, text}, tenon.Safe)
 	fmt.Println(err)
 	// Output:
 	// exactly(string) <nil>
@@ -314,7 +314,7 @@ func ExampleNewCapsule() {
 		Display: func(a *netip.Addr) string { return a.String() },
 	})
 	gateway := netip.MustParseAddr("10.0.0.1")
-	hosts := tenon.ListVal(addresses.Type(), addresses.Value(&gateway))
+	hosts := tenon.List(addresses.Type(), addresses.Value(&gateway))
 	fmt.Println(hosts)
 
 	if first, ok := addresses.Of(hosts.Index(0)); ok {

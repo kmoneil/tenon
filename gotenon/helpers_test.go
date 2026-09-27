@@ -20,7 +20,7 @@ var (
 )
 
 // obj returns an object value.
-func obj(attrs map[string]tenon.Value) tenon.Value { return tenon.ObjectVal(attrs) }
+func obj(attrs map[string]tenon.Value) tenon.Value { return tenon.Object(attrs) }
 
 // stamp is a Mark with a configurable identity and propagation.
 type stamp struct {

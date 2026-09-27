@@ -55,6 +55,30 @@
 
 ### Changed
 
+- The API is named by one rule: a function that makes a type ends in `Type`,
+  as `BoolType`, `NumberType` and `StringType` did, and one that makes a value
+  is bare, as `Bool`, `String` and the operations were. `List`, `Set`, `Map`,
+  `Tuple` and `Object` make values, and `Null` makes the null of a type:
+
+  | 0.8.0 | Now |
+  | ----- | --- |
+  | `ListVal`, `SetVal`, `MapVal`, `TupleVal`, `ObjectVal` | `List`, `Set`, `Map`, `Tuple`, `Object` |
+  | `List`, `Set`, `Map`, `Tuple`, `Object` (types) | `ListType`, `SetType`, `MapType`, `TupleType`, `ObjectType` |
+  | `NullVal(t)` | `Null(t)` |
+  | `Null()` (the narrowing) | `NullOnly()` |
+  | `Value.MapElement` | `Value.LookupMapElement` |
+  | `Constraint.Field` | `Constraint.LookupField` |
+  | `Unify(p, cs...)` | `Unify(cs, p)` |
+
+  A call left under an old name fails to compile, the names that changed
+  meaning among them, since a value is no type. An accessor that panics on a
+  name its value or type lacks has a `Lookup` form that answers whether there
+  is one, for a name from data: `LookupAttribute` beside `Attribute` and
+  `LookupAttributeType` beside `AttributeType`; the lookups that already
+  answered so take the name. `Unify` takes the policy last, as `Convert`
+  does. `Propagation` has a `String` method, and the `String` method of every
+  exported type answers for its zero value.
+
 - gotenon honours `encoding.TextMarshaler` and `encoding.TextUnmarshaler`: a
   type that marshals itself to text, and not by `MarshalValue`, encodes as
   the `String` of its text, and one whose pointer unmarshals itself from text

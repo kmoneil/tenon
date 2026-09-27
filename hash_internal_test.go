@@ -45,6 +45,6 @@ func TestConformance_EQ032_HashesSurviveTypeCollection(t *testing.T) {
 //
 //go:noinline
 func hashOfAnUnreferencedType() (uint64, string) {
-	v := ObjectVal(map[string]Value{"only-in-TestConformance_EQ032_HashesSurviveTypeCollection": NumberFromInt(1)})
+	v := Object(map[string]Value{"only-in-TestConformance_EQ032_HashesSurviveTypeCollection": NumberFromInt(1)})
 	return Hash(v), v.Type().t.internKey()
 }

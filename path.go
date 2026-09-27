@@ -164,7 +164,7 @@ type pathNode struct {
 }
 
 // Attribute returns p followed by a step to the named attribute. The name is
-// normalized, and Attribute panics on the same names as Object, which
+// normalized, and Attribute panics on the same names as ObjectType, which
 // CheckAttributeNames finds in names from data first.
 func (p Path) Attribute(name string) Path {
 	return p.extend(Step{kind: StepAttribute, name: attributeName(name, "object attribute")})

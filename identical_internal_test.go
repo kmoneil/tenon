@@ -22,14 +22,14 @@ func TestSameMultisetIsTheCount(t *testing.T) {
 		Compare: func(a, b *int) int { return *a - *b },
 	})
 	num := Type{numberType}
-	elem := Tuple(ranked.Type(), num)
+	elem := TupleType(ranked.Type(), num)
 	var pool []Value
 	for k := range 4 {
 		rank := func() Value { v := k; return ranked.Value(&v) }
 		pool = append(pool,
-			TupleVal(rank(), NumberFromInt(int64(k))),
-			TupleVal(rank(), Unknown(num)),
-			TupleVal(rank(), Narrow(Unknown(num), NumberMin(NumberFromInt(int64(k)), true))),
+			Tuple(rank(), NumberFromInt(int64(k))),
+			Tuple(rank(), Unknown(num)),
+			Tuple(rank(), Narrow(Unknown(num), NumberMin(NumberFromInt(int64(k)), true))),
 		)
 	}
 	pick := func() []Value {
@@ -55,7 +55,7 @@ func TestSameMultisetIsTheCount(t *testing.T) {
 				ys[r.Intn(len(ys))] = pool[r.Intn(len(pool))]
 			}
 		}
-		x, y := SetVal(elem, xs...).n.data.([]Value), SetVal(elem, ys...).n.data.([]Value)
+		x, y := Set(elem, xs...).n.data.([]Value), Set(elem, ys...).n.data.([]Value)
 		want := countedMultiset(x, y)
 		if want {
 			alike++

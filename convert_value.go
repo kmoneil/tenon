@@ -96,7 +96,7 @@ func (x converter) valueOf(v Value, c Constraint) Value {
 		case out.fail != nil:
 			return errorValue(out.fail.diagnostic())
 		case n.state == stateNull:
-			return NullVal(out.typ)
+			return Null(out.typ)
 		}
 		rd := n.data.(*rangeData)
 		if out.pending {
@@ -246,7 +246,7 @@ func withNullness(v Value, null nullness) Value {
 	case nullNo:
 		return Narrow(v, NotNull())
 	case nullOnly:
-		return Narrow(v, Null())
+		return Narrow(v, NullOnly())
 	}
 	return v
 }
@@ -589,7 +589,7 @@ func (x converter) collection(v Value, c Constraint) Value {
 		// A set holding members that are not known has no settled order and
 		// no settled count, so the list it becomes is not known either.
 		low, high := setLengthBounds(n)
-		return Narrow(Unknown(List(elem)), NotNull(), LengthMin(int64(low)), LengthMax(int64(high)))
+		return Narrow(Unknown(ListType(elem)), NotNull(), LengthMin(int64(low)), LengthMax(int64(high)))
 	}
 	// An element type the members settle holds the attribute names of their
 	// object types, and every member is given those attributes, so one taken
@@ -606,7 +606,7 @@ func (x converter) collection(v Value, c Constraint) Value {
 	var result Value
 	switch d.kind {
 	case ConstraintListOf:
-		result = ListVal(elem, converted...)
+		result = List(elem, converted...)
 	case ConstraintSetOf:
 		result = setOf(elem, converted)
 	default:
@@ -614,7 +614,7 @@ func (x converter) collection(v Value, c Constraint) Value {
 		for i, r := range converted {
 			entries[h.names[i]] = r
 		}
-		result = MapVal(elem, entries)
+		result = Map(elem, entries)
 	}
 	if derived != nil {
 		result = WithMarks(result, derived...)
@@ -685,7 +685,7 @@ func setOf(elem Type, members []Value) Value {
 		unmarked[i] = Value{n: m.n.unmarkDeep(&t)}
 	}
 	sortMarks(t.marks)
-	return WithMarks(SetVal(elem, unmarked...), t.marks...)
+	return WithMarks(Set(elem, unmarked...), t.marks...)
 }
 
 // tuple converts a known tuple, list or set to a TupleOf constraint.
@@ -722,7 +722,7 @@ func (x converter) tuple(v Value, c Constraint) Value {
 	case pending:
 		return pendingContainer(c, n)
 	}
-	return TupleVal(converted...)
+	return Tuple(converted...)
 }
 
 // partialSetTuple converts a set holding members that are not known to a
@@ -832,7 +832,7 @@ func (x converter) object(v Value, c Constraint) Value {
 	case pending:
 		return pendingContainer(c, n)
 	}
-	return ObjectVal(attrs)
+	return Object(attrs)
 }
 
 // fit returns m, a member already converted to a collection's element
@@ -850,7 +850,7 @@ func (x converter) fit(m Value, e Type) Value {
 	var r Value
 	switch n.state {
 	case stateNull:
-		r = NullVal(e)
+		r = Null(e)
 	case stateUnknown:
 		rd := n.data.(*rangeData)
 		r = narrowedUnknown(e, rd.null, lengthNarrowings(n.typ, e, rd))
@@ -885,20 +885,20 @@ func (x converter) fitKnown(m Value, e Type) Value {
 		}
 		switch to.kind {
 		case KindList:
-			return ListVal(to.elem, fitted...)
+			return List(to.elem, fitted...)
 		case KindSet:
-			return SetVal(to.elem, fitted...)
+			return Set(to.elem, fitted...)
 		}
 		entries := make(map[string]Value, len(fitted))
 		for i, v := range fitted {
 			entries[h.names[i]] = v
 		}
-		return MapVal(to.elem, entries)
+		return Map(to.elem, entries)
 	case KindTuple:
 		for i, v := range h.vals {
 			fitted[i] = x.fit(v, to.elems[i])
 		}
-		return TupleVal(fitted...)
+		return Tuple(fitted...)
 	case KindObject:
 		// The type names the attributes and their order, and the value's own
 		// attributes are in that order too, both being sorted by name, so
@@ -917,7 +917,7 @@ func (x converter) fitKnown(m Value, e Type) Value {
 				own++
 				continue
 			}
-			vals[i] = NullVal(a.typ)
+			vals[i] = Null(a.typ)
 		}
 		return objectOf(e, vals)
 	}
@@ -991,6 +991,6 @@ func holdsRedacting(n *node) bool {
 // adds, where its constraint gives a type: the null of that type.
 func addNullValue(attrs map[string]Value, f field) {
 	if t, ok := resultType(f.Constraint); ok {
-		attrs[f.name] = NullVal(t)
+		attrs[f.name] = Null(t)
 	}
 }

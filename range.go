@@ -330,11 +330,11 @@ type Narrowing struct {
 // NotNull returns the narrowing that excludes null. It applies to every type.
 func NotNull() Narrowing { return Narrowing{kind: narrowNotNull} }
 
-// Null returns the narrowing that leaves null as the only possibility. It
+// NullOnly returns the narrowing that leaves null as the only possibility. It
 // applies to every type.
 //
-// Null is the narrowing; NullVal is the null value itself.
-func Null() Narrowing { return Narrowing{kind: narrowNull} }
+// NullOnly is the narrowing; Null is the null value itself.
+func NullOnly() Narrowing { return Narrowing{kind: narrowNull} }
 
 // NumberMin returns the narrowing that bounds a Number value from below by v,
 // which is itself in the range when inclusive is true. It panics if v is not a
@@ -411,7 +411,7 @@ func LengthMax(n int64) Narrowing {
 // Members panics if a listed value is an error value or a pending value: a
 // narrowing carries no diagnostics, and a value that has no type yet says
 // nothing a member could be held to. It panics on a marked value too, for the
-// reason SetVal gives: a set's members carry no marks. Unmark the value with
+// reason Set gives: a set's members carry no marks. Unmark the value with
 // UnmarkDeep, and reapply the marks to the set being narrowed.
 func Members(vs ...Value) Narrowing {
 	for i, v := range vs {
@@ -580,13 +580,13 @@ func (n *node) length() int64 {
 // since every other member must turn out to be one of them. Any other returns
 // the set as it was.
 //
-// Apart from Null and NotNull, a narrowing says what a value is when it is not
-// null, so a range that still holds null keeps it: NotNull alone excludes
+// Apart from NullOnly and NotNull, a narrowing says what a value is when it is
+// not null, so a range that still holds null keeps it: NotNull alone excludes
 // null, and narrowing the null value by a bound, a prefix or a length returns
 // it unchanged. So does narrowing an unknown that may be null by narrowings
 // that leave it no other value, such as an upper bound below a lower bound
-// already in force: null satisfies them, so the result is the null value, as
-// it is when the unknown turns out to be null first. A narrowing that leaves
+// already in force: null satisfies them, so the result is the null value, as it
+// is when the unknown turns out to be null first. A narrowing that leaves
 // nothing possible, such as those bounds with NotNull in force, produces an
 // error value with code CodeRangeContradiction rather than an empty range.
 // Narrowing an error value returns an error value carrying its diagnostics.
@@ -888,7 +888,7 @@ func narrowPartialSet(v Value, ns []Narrowing) Value {
 	// No more members than the values it must hold leaves each of the others
 	// to be one of them, so it holds those alone.
 	if most() == int64(len(want)) {
-		return SetVal(n.typ.t.elem, want...)
+		return Set(n.typ.t.elem, want...)
 	}
 	return v
 }
@@ -899,7 +899,7 @@ func narrowPartialSet(v Value, ns []Narrowing) Value {
 // the value whose range r is, and ceiling the greatest length it allows.
 func (r *rangeData) singleton(t Type, ceiling lengthBound) (Value, bool) {
 	if r.null == nullOnly {
-		return NullVal(t), true
+		return Null(t), true
 	}
 	if r.null != nullNo {
 		// Null is still possible, so the range holds it and at least one more.
@@ -917,11 +917,11 @@ func (r *rangeData) singleton(t Type, ceiling lengthBound) (Value, bool) {
 		}
 	case KindList:
 		if r.emptyOnly() {
-			return ListVal(t.t.elem), true
+			return List(t.t.elem), true
 		}
 	case KindSet:
 		if r.emptyOnly() {
-			return SetVal(t.t.elem), true
+			return Set(t.t.elem), true
 		}
 		// As many members as the element type has values, null among them,
 		// leaves the set holding every one of them, which is built where
@@ -931,7 +931,7 @@ func (r *rangeData) singleton(t Type, ceiling lengthBound) (Value, bool) {
 		}
 	case KindMap:
 		if r.emptyOnly() {
-			return MapVal(t.t.elem, nil), true
+			return Map(t.t.elem, nil), true
 		}
 	case KindTuple, KindObject:
 		return soleValue(t)
@@ -946,15 +946,15 @@ func (r *rangeData) emptyOnly() bool { return r.lenHi.set && r.lenHi.n == 0 }
 // has only one: the empty tuple and the empty object have no room to differ.
 // A tuple or object with members always has room, because a member may be
 // null, so a tuple of one empty tuple holds both (()) and (null). Every other
-// kind has at least two values, so no narrowing but Null and none of the
+// kind has at least two values, so no narrowing but NullOnly and none of the
 // length bounds can pin one down.
 func soleValue(t Type) (Value, bool) {
 	d := t.t
 	switch {
 	case d.kind == KindTuple && len(d.elems) == 0:
-		return TupleVal(), true
+		return Tuple(), true
 	case d.kind == KindObject && len(d.attrs) == 0:
-		return ObjectVal(nil), true
+		return Object(nil), true
 	}
 	return Value{}, false
 }
@@ -976,7 +976,7 @@ func narrowPending(v Value, n *node, ns []Narrowing) Value {
 		switch nw.kind {
 		case narrowNotNull:
 			if null == nullOnly {
-				return contradiction("no pending value satisfies both " + Null().String() + " and " + nw.String())
+				return contradiction("no pending value satisfies both " + NullOnly().String() + " and " + nw.String())
 			}
 			null = nullNo
 		case narrowNull:
@@ -1019,7 +1019,7 @@ func (r *rangeData) apply(nw Narrowing, ceiling lengthBound) (string, bool) {
 	switch nw.kind {
 	case narrowNotNull:
 		if r.null == nullOnly {
-			return Null().String(), false
+			return NullOnly().String(), false
 		}
 		r.null = nullNo
 		return "", true
@@ -1046,7 +1046,7 @@ func (r *rangeData) apply(nw Narrowing, ceiling lengthBound) (string, bool) {
 	return clash, true
 }
 
-// applyToValues is apply for a narrowing other than Null and NotNull, over
+// applyToValues is apply for a narrowing other than NullOnly and NotNull, over
 // the values of r other than null. It reports whether any of those is left,
 // and names the narrowing already in force that nw contradicts when none is.
 func (r *rangeData) applyToValues(nw Narrowing, ceiling lengthBound) (string, bool) {
@@ -1252,7 +1252,7 @@ func (r *rangeData) memberSet(t Type) (Value, bool) {
 		slices.ContainsFunc(r.members, func(m Value) bool { return !m.n.isKnown() }) {
 		return Value{}, false
 	}
-	return SetVal(t.t.elem, r.members...), true
+	return Set(t.t.elem, r.members...), true
 }
 
 // implyLength records the least length that the prefix of r forces. The first

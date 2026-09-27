@@ -124,10 +124,10 @@ func elementConstraint(kind ConstraintKind, elem Constraint) Constraint {
 // A closed constraint also rejects object types with attributes that no field
 // names; an open one accepts them, whatever their types.
 //
-// Field names follow the rules for attribute names in Object. ObjectWith
-// panics in the same cases as Object, or if a field's constraint is the zero
-// Constraint; CheckAttributeNames checks names from data first. It does not
-// retain the map.
+// Field names follow the rules for attribute names in ObjectType. ObjectWith
+// panics in the same cases as ObjectType, or if a field's constraint is the
+// zero Constraint; CheckAttributeNames checks names from data first. It does
+// not retain the map.
 func ObjectWith(fields map[string]Field, closed bool) Constraint {
 	entries := attributeEntries(fields, "object field")
 	list := make([]field, len(entries))
@@ -280,11 +280,11 @@ func sharedType(cs ...Constraint) (Type, bool) {
 		case !ok:
 			return Type{}, false
 		case kind == ConstraintListOf:
-			return List(elem), true
+			return ListType(elem), true
 		case kind == ConstraintSetOf:
-			return Set(elem), true
+			return SetType(elem), true
 		}
-		return Map(elem), true
+		return MapType(elem), true
 	case ConstraintTupleOf:
 		elems := make([]Type, len(kinds[0].members))
 		for _, d := range kinds[1:] {
@@ -303,7 +303,7 @@ func sharedType(cs ...Constraint) (Type, bool) {
 			}
 			elems[j] = t
 		}
-		return Tuple(elems...), true
+		return TupleType(elems...), true
 	}
 	return sharedObject(kinds)
 }
@@ -350,7 +350,7 @@ func sharedObject(ds []*constraintData) (Type, bool) {
 		}
 		attrs[name] = t
 	}
-	return Object(attrs), true
+	return ObjectType(attrs), true
 }
 
 // data returns the description of c, panicking if c is the zero Constraint.
@@ -408,10 +408,10 @@ func (c Constraint) FieldNames() []string {
 	return names
 }
 
-// Field returns the field of an ObjectWith constraint with the given name,
-// which is normalized before the lookup, and whether there is one. It panics
-// for other kinds.
-func (c Constraint) Field(name string) (Field, bool) {
+// LookupField returns the field of an ObjectWith constraint with the given
+// name, which is normalized before the lookup, and whether there is one. It
+// panics for other kinds.
+func (c Constraint) LookupField(name string) (Field, bool) {
 	f, ok := findName(c.mustKind("Field", ConstraintObjectWith).fields, name, func(f field) string { return f.name })
 	return f.Field, ok
 }

@@ -7,7 +7,7 @@ import (
 	"github.com/kmoneil/tenon/internal/conformance"
 )
 
-// TestConformance_TY018_NamesFromDataFailAsData holds ObjectVal to reporting
+// TestConformance_TY018_NamesFromDataFailAsData holds Object to reporting
 // names that cannot be attribute names as a map's keys are reported, rather
 // than panicking: each name's fault and each error attribute's diagnostics in
 // the order of the names, then a diagnostic for each name shared. An error
@@ -54,14 +54,14 @@ func TestConformance_TY018_NamesFromDataFailAsData(t *testing.T) {
 			},
 		},
 	} {
-		got := tenon.ObjectVal(tt.attrs)
+		got := tenon.Object(tt.attrs)
 		if !got.IsError() {
-			t.Errorf("%s: ObjectVal gave %v, want an error value", tt.name, got)
+			t.Errorf("%s: Object gave %v, want an error value", tt.name, got)
 			continue
 		}
 		diags := got.Diagnostics()
 		if len(diags) != len(tt.want) {
-			t.Errorf("%s: ObjectVal gave %v, want %d diagnostics", tt.name, got, len(tt.want))
+			t.Errorf("%s: Object gave %v, want %d diagnostics", tt.name, got, len(tt.want))
 			continue
 		}
 		for i, w := range tt.want {
@@ -73,11 +73,11 @@ func TestConformance_TY018_NamesFromDataFailAsData(t *testing.T) {
 	// A program's own mistake still panics, before any fault in the names is
 	// reported.
 	mustPanicUsage(t, "is a pending value", func() {
-		tenon.ObjectVal(map[string]tenon.Value{"": tenon.Pending(tenon.Any())})
+		tenon.Object(map[string]tenon.Value{"": tenon.Pending(tenon.Any())})
 	})
 }
 
-// TestCheckAttributeNames holds the exported check to what ObjectVal reports
+// TestCheckAttributeNames holds the exported check to what Object reports
 // of names alone, and to answering nil for names that can be attribute names.
 func TestCheckAttributeNames(t *testing.T) {
 	if err := tenon.CheckAttributeNames("name", "a b", "caf\U000000e9", "x"); err != nil {
@@ -96,13 +96,13 @@ func TestCheckAttributeNames(t *testing.T) {
 	for _, name := range names {
 		attrs[name] = tenon.NumberFromInt(1)
 	}
-	want := tenon.ObjectVal(attrs).Diagnostics()
+	want := tenon.Object(attrs).Diagnostics()
 	if got := e.Diagnostics(); len(got) != len(want) || len(got) != 3 {
-		t.Fatalf("CheckAttributeNames gave %v, want the %v ObjectVal gives", got, want)
+		t.Fatalf("CheckAttributeNames gave %v, want the %v Object gives", got, want)
 	}
 	for i, d := range e.Diagnostics() {
 		if !d.Equal(want[i]) {
-			t.Errorf("diagnostic %d is %v, want %v as ObjectVal gives it", i, d, want[i])
+			t.Errorf("diagnostic %d is %v, want %v as Object gives it", i, d, want[i])
 		}
 	}
 	// A name given twice is one name given twice.
@@ -110,7 +110,7 @@ func TestCheckAttributeNames(t *testing.T) {
 		t.Errorf("CheckAttributeNames(a, a) = %v, want %s", e, tenon.CodeObjectDuplicateName)
 	}
 	// The constructors a program writes names for panic on such a name.
-	mustPanicUsage(t, "must not be empty", func() { tenon.Object(map[string]tenon.Type{"": tenon.BoolType()}) })
+	mustPanicUsage(t, "must not be empty", func() { tenon.ObjectType(map[string]tenon.Type{"": tenon.BoolType()}) })
 	mustPanicUsage(t, "must not be empty", func() { tenon.Path{}.Attribute("") })
 	mustPanicUsage(t, "must not be empty", func() {
 		tenon.ObjectWith(map[string]tenon.Field{"": tenon.Required(tenon.Any())}, false)

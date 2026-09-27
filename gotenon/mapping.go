@@ -264,7 +264,7 @@ func buildMapping(rt reflect.Type, dir direction, building map[reflect.Type]bool
 			m.elem = buildMapping(rt.Elem(), dir, building)
 			m.constraint = tenon.Any()
 			if m.elem.typed() {
-				m.typ = tenon.List(m.elem.typ)
+				m.typ = tenon.ListType(m.elem.typ)
 				// Members that take any value decode by their own
 				// conversions, as members of no type do (GO-012).
 				if !m.elem.decodesAny() {
@@ -279,7 +279,7 @@ func buildMapping(rt reflect.Type, dir direction, building map[reflect.Type]bool
 			m.elem = buildMapping(rt.Elem(), dir, building)
 			m.constraint = tenon.Any()
 			if m.elem.typed() {
-				m.typ = tenon.Map(m.elem.typ)
+				m.typ = tenon.MapType(m.elem.typ)
 				if !m.elem.decodesAny() {
 					m.constraint = tenon.MapOf(m.elem.constraint)
 				}
@@ -399,7 +399,7 @@ func structMapping(m *goMapping, dir direction, building map[reflect.Type]bool) 
 	slices.SortFunc(m.fields, func(a, b goField) int { return strings.Compare(a.name, b.name) })
 	m.constraint = tenon.ObjectWith(fields, true)
 	if typed {
-		m.typ = tenon.Object(attrs)
+		m.typ = tenon.ObjectType(attrs)
 	}
 }
 

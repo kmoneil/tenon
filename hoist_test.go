@@ -45,16 +45,16 @@ func TestConformance_ER008_ContainersHoistErrors(t *testing.T) {
 		got  tenon.Value
 		want []string
 	}{
-		{"list", tenon.ListVal(str, a, first), []string{"first at .[1]"}},
-		{"set", tenon.SetVal(str, first), []string{"first at .[0]"}},
-		{"tuple", tenon.TupleVal(a, first, second), []string{"first at .[1]", "second at .[2]"}},
+		{"list", tenon.List(str, a, first), []string{"first at .[1]"}},
+		{"set", tenon.Set(str, first), []string{"first at .[0]"}},
+		{"tuple", tenon.Tuple(a, first, second), []string{"first at .[1]", "second at .[2]"}},
 		{
 			"object",
-			tenon.ObjectVal(map[string]tenon.Value{"name": first, "count": second}),
+			tenon.Object(map[string]tenon.Value{"name": first, "count": second}),
 			[]string{"second at .count", "first at .name"},
 		},
-		{"map", tenon.MapVal(str, map[string]tenon.Value{"k": first}), []string{`first at .["k"]`}},
-		{"several, in element order", tenon.ListVal(str, first, a, second), []string{"first at .[0]", "second at .[2]"}},
+		{"map", tenon.Map(str, map[string]tenon.Value{"k": first}), []string{`first at .["k"]`}},
+		{"several, in element order", tenon.List(str, first, a, second), []string{"first at .[0]", "second at .[2]"}},
 	} {
 		if !tt.got.IsError() || tt.got.IsResolved() {
 			t.Errorf("%s: %v is not an error value", tt.name, tt.got)
@@ -67,12 +67,12 @@ func TestConformance_ER008_ContainersHoistErrors(t *testing.T) {
 
 	// An error deeper down surfaces with a step for every container it came
 	// through.
-	inner := tenon.ObjectVal(map[string]tenon.Value{"name": failed("deep")})
-	outer := tenon.ListVal(tenon.Object(map[string]tenon.Type{"name": str}), inner)
+	inner := tenon.Object(map[string]tenon.Value{"name": failed("deep")})
+	outer := tenon.List(tenon.ObjectType(map[string]tenon.Type{"name": str}), inner)
 	if got := located(outer); !slices.Equal(got, []string{"deep at .[0].name"}) {
 		t.Errorf("an error two levels deep gave %q", got)
 	}
-	deeper := tenon.MapVal(tenon.List(str), map[string]tenon.Value{"list": tenon.ListVal(str, a, failed("leaf"))})
+	deeper := tenon.Map(tenon.ListType(str), map[string]tenon.Value{"list": tenon.List(str, a, failed("leaf"))})
 	if got := located(deeper); !slices.Equal(got, []string{`leaf at .["list"][1]`}) {
 		t.Errorf("an error three levels deep gave %q", got)
 	}
@@ -83,10 +83,10 @@ func TestConformance_ER008_ContainersHoistErrors(t *testing.T) {
 		tenon.Diagnostic{Code: "app.failed", Message: "twice"},
 		tenon.Diagnostic{Code: "app.failed", Message: "twice"},
 	)
-	if got := located(tenon.ListVal(str, twice)); !slices.Equal(got, []string{"twice at .[0]"}) {
+	if got := located(tenon.List(str, twice)); !slices.Equal(got, []string{"twice at .[0]"}) {
 		t.Errorf("a repeated diagnostic gave %q", got)
 	}
-	if got := located(tenon.ListVal(str, first, first)); !slices.Equal(got, []string{"first at .[0]", "first at .[1]"}) {
+	if got := located(tenon.List(str, first, first)); !slices.Equal(got, []string{"first at .[0]", "first at .[1]"}) {
 		t.Errorf("one message at two positions gave %q", got)
 	}
 
@@ -94,8 +94,8 @@ func TestConformance_ER008_ContainersHoistErrors(t *testing.T) {
 	// spellings of one map hoist alike.
 	composedE, decomposedE := "\U000000E9", "e\U00000301"
 	one, two := failed("one"), failed("two")
-	spelled := tenon.MapVal(str, map[string]tenon.Value{decomposedE: one, "f": two})
-	if other := tenon.MapVal(str, map[string]tenon.Value{composedE: one, "f": two}); !tenon.Identical(spelled, other) {
+	spelled := tenon.Map(str, map[string]tenon.Value{decomposedE: one, "f": two})
+	if other := tenon.Map(str, map[string]tenon.Value{composedE: one, "f": two}); !tenon.Identical(spelled, other) {
 		t.Errorf("two spellings of one map gave %q and %q", located(spelled), located(other))
 	}
 	if got, want := located(spelled), []string{`two at .["f"]`, "one at " + tenon.Path{}.Index(tenon.String(composedE)).String()}; !slices.Equal(got, want) {
@@ -104,7 +104,7 @@ func TestConformance_ER008_ContainersHoistErrors(t *testing.T) {
 
 	// A key that is not a string cannot locate its element, so that element's
 	// diagnostics keep the paths they came with.
-	mixed := tenon.MapVal(str, map[string]tenon.Value{"a\xff": failed("under a bad key"), "k": first})
+	mixed := tenon.Map(str, map[string]tenon.Value{"a\xff": failed("under a bad key"), "k": first})
 	if d := mixed.Diagnostics(); len(d) != 3 || d[0].Code != tenon.CodeStringInvalidUTF8 {
 		t.Errorf("a map with a bad key and error elements gave %v", d)
 	} else if got := located(mixed)[1:]; !slices.Equal(got, []string{"under a bad key", `first at .["k"]`}) {
@@ -126,7 +126,7 @@ func TestConformance_ER008_ContainersHoistErrors(t *testing.T) {
 			at := " at .[" + strconv.Itoa(i) + "]"
 			want = append(want, "twice"+at, "member "+strconv.Itoa(i)+at)
 		}
-		if got := located(tenon.ListVal(str, members...)); !slices.Equal(got, want) {
+		if got := located(tenon.List(str, members...)); !slices.Equal(got, want) {
 			t.Errorf("a list of %d error members gave %q, want %q", count, got, want)
 		}
 	}
@@ -143,7 +143,7 @@ func TestConformance_ER008_ContainersHoistErrors(t *testing.T) {
 	for i := range members {
 		members[i] = failed("member " + strconv.Itoa(i))
 	}
-	d := tenon.ListVal(str, members...).Diagnostics()
+	d := tenon.List(str, members...).Diagnostics()
 	if len(d) != many {
 		t.Fatalf("a list of %d error members gave %d diagnostics", many, len(d))
 	}
@@ -153,8 +153,8 @@ func TestConformance_ER008_ContainersHoistErrors(t *testing.T) {
 
 	// Members that are not error values are still checked, and a host's own
 	// mistake still panics.
-	mustPanicUsage(t, "has type number, not string", func() { tenon.ListVal(str, first, tenon.NumberFromInt(1)) })
-	mustPanicUsage(t, "is a pending value", func() { tenon.TupleVal(first, tenon.Pending(tenon.Any())) })
+	mustPanicUsage(t, "has type number, not string", func() { tenon.List(str, first, tenon.NumberFromInt(1)) })
+	mustPanicUsage(t, "is a pending value", func() { tenon.Tuple(first, tenon.Pending(tenon.Any())) })
 }
 
 // TestConformance_ER008_DeepFailuresAreLocatedOnce holds hoisting to work in
@@ -186,9 +186,9 @@ func TestConformance_ER008_DeepFailuresAreLocatedOnce(t *testing.T) {
 			texts[i] = tenon.String("x")
 			members[i] = failed("member " + strconv.Itoa(i))
 		}
-		v, c := tenon.TupleVal(texts...), tenon.ListOf(tenon.Exactly(num))
+		v, c := tenon.Tuple(texts...), tenon.ListOf(tenon.Exactly(num))
 		for range depth {
-			v, c = tenon.TupleVal(v), tenon.ListOf(c)
+			v, c = tenon.Tuple(v), tenon.ListOf(c)
 		}
 		out := map[string]run{}
 		var r tenon.Value
@@ -198,9 +198,9 @@ func TestConformance_ER008_DeepFailuresAreLocatedOnce(t *testing.T) {
 		})
 		out["converted"] = run{b, r.Diagnostics()}
 		b = allocated(func() {
-			r = tenon.ListVal(str, members...)
+			r = tenon.List(str, members...)
 			for range depth {
-				r = tenon.TupleVal(r)
+				r = tenon.Tuple(r)
 			}
 			r.Diagnostics()
 		})
@@ -245,7 +245,7 @@ func BenchmarkHoistedFailures(b *testing.B) {
 		b.Run(fmt.Sprintf("hoist/%d", size), func(b *testing.B) {
 			b.ReportAllocs()
 			for b.Loop() {
-				v := tenon.ListVal(str, members...)
+				v := tenon.List(str, members...)
 				if len(v.Diagnostics()) != size {
 					b.Fatal("the list was built")
 				}

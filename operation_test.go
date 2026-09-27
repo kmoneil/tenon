@@ -194,7 +194,7 @@ func TestConformance_UN007_OperationsNarrowWhatTheyCan(t *testing.T) {
 func TestConformance_UN009_NullOperands(t *testing.T) {
 	conformance.Covers(t, "UN-009")
 	bl := tenon.BoolType()
-	null, tr, fa := tenon.NullVal(bl), tenon.Bool(true), tenon.Bool(false)
+	null, tr, fa := tenon.Null(bl), tenon.Bool(true), tenon.Bool(false)
 	for _, tt := range []struct {
 		name string
 		got  tenon.Value
@@ -232,7 +232,7 @@ func TestConformance_UN009_NullOperands(t *testing.T) {
 		t.Errorf("NOT of an unknown that may be null is %v, want an unknown Bool", got)
 	}
 	// A pending operand known to be null is caught, since that much is settled.
-	if got := tenon.Not(tenon.Narrow(tenon.Pending(tenon.Any()), tenon.Null())); !got.IsError() {
+	if got := tenon.Not(tenon.Narrow(tenon.Pending(tenon.Any()), tenon.NullOnly())); !got.IsError() {
 		t.Errorf("NOT of a pending null is %v, want an error value", got)
 	}
 }
@@ -265,8 +265,8 @@ func TestConformance_UN023_PendingOperands(t *testing.T) {
 		want string
 	}{
 		{"NOT of a pending bool", tenon.Not(tenon.Pending(tenon.Exactly(bl))), "unknown(bool, not null)"},
-		{"Length of a pending list", tenon.Length(tenon.Pending(tenon.Exactly(tenon.List(str)))), "unknown(number, not null, >= 0)"},
-		{"Contains of a pending set", tenon.Contains(tenon.Pending(tenon.Exactly(tenon.Set(str))), tenon.String("a")), "unknown(bool, not null)"},
+		{"Length of a pending list", tenon.Length(tenon.Pending(tenon.Exactly(tenon.ListType(str)))), "unknown(number, not null, >= 0)"},
+		{"Contains of a pending set", tenon.Contains(tenon.Pending(tenon.Exactly(tenon.SetType(str))), tenon.String("a")), "unknown(bool, not null)"},
 		{"Length of a pending list of anything", tenon.Length(tenon.Pending(tenon.ListOf(tenon.Any()))), "unknown(number, not null, >= 0)"},
 		{
 			"Contains of a pending set of strings",
@@ -310,7 +310,7 @@ func TestConformance_UN023_PendingOperands(t *testing.T) {
 		},
 		{
 			"Contains of a pending list",
-			tenon.Contains(tenon.Pending(tenon.Exactly(tenon.List(str))), tenon.String("a")),
+			tenon.Contains(tenon.Pending(tenon.Exactly(tenon.ListType(str))), tenon.String("a")),
 			"the first operand of Contains is pending with constraint exactly(list(string)), and no type it allows satisfies set_of(any)",
 		},
 		{

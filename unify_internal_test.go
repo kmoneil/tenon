@@ -52,7 +52,7 @@ func TestFoldUnifiesObjectsAsPairsWould(t *testing.T) {
 		case n == 4 && depth > 0:
 			return object(r, names, leaf, depth-1)
 		case n == 5:
-			return Exactly(Object(map[string]Type{names[r.Intn(len(names))]: NumberType()}))
+			return Exactly(ObjectType(map[string]Type{names[r.Intn(len(names))]: NumberType()}))
 		case n == 6:
 			return ListOf(Exactly(NumberType()))
 		}

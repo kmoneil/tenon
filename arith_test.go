@@ -53,7 +53,7 @@ func TestArithmeticThatHasNoAnswer(t *testing.T) {
 		// number's digits without bound.
 		{"a wide number squared", tenon.Mul(wide, wide), tenon.CodeNumberOutOfRange},
 		{"a digit below the window", tenon.Mul(tenon.NumberFromText("1e-999999"), tenon.NumberFromText("1.5")), tenon.CodeNumberOutOfRange},
-		{"a null operand", tenon.Add(tenon.NullVal(tenon.NumberType()), one), tenon.CodeOperationNullOperand},
+		{"a null operand", tenon.Add(tenon.Null(tenon.NumberType()), one), tenon.CodeOperationNullOperand},
 	} {
 		if !tt.got.IsError() {
 			t.Errorf("%s gave %v, want an error value", tt.name, tt.got)
@@ -148,9 +148,9 @@ func TestConformance_UN010_AnswersFromValuesOtherThanNull(t *testing.T) {
 	conformance.Covers(t, "UN-010")
 	num := tenon.NumberType()
 	one := tenon.NumberFromInt(1)
-	set := tenon.Narrow(tenon.Unknown(tenon.Set(num)), tenon.Members(one))
+	set := tenon.Narrow(tenon.Unknown(tenon.SetType(num)), tenon.Members(one))
 	large := tenon.Narrow(tenon.Unknown(num), tenon.NumberMin(tenon.NumberFromInt(1024), true))
-	list := tenon.Narrow(tenon.Unknown(tenon.List(num)), tenon.LengthMin(3), tenon.LengthMax(3))
+	list := tenon.Narrow(tenon.Unknown(tenon.ListType(num)), tenon.LengthMin(3), tenon.LengthMax(3))
 	for _, tt := range []struct {
 		name string
 		got  tenon.Value
@@ -166,7 +166,7 @@ func TestConformance_UN010_AnswersFromValuesOtherThanNull(t *testing.T) {
 		}
 	}
 	// Null itself still fails: the answer is for the operand's other values.
-	if got := tenon.Contains(tenon.NullVal(tenon.Set(num)), one); !got.IsError() {
+	if got := tenon.Contains(tenon.Null(tenon.SetType(num)), one); !got.IsError() {
 		t.Errorf("Contains of a null set = %v, want an error", got)
 	}
 }

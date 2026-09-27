@@ -48,13 +48,13 @@ func TestRangesAreCanonical(t *testing.T) {
 			// bool holds and one for null, so a greatest length of three says
 			// nothing the type does not.
 			"a length the element type already bounds",
-			Unknown(Set(BoolType())),
-			Narrow(Unknown(Set(BoolType())), LengthMax(3)),
+			Unknown(SetType(BoolType())),
+			Narrow(Unknown(SetType(BoolType())), LengthMax(3)),
 		},
 		{
 			"a length the element type bounds, under a listing",
-			Narrow(Unknown(Set(BoolType())), Members(Bool(true))),
-			Narrow(Unknown(Set(BoolType())), LengthMax(4), Members(Bool(true))),
+			Narrow(Unknown(SetType(BoolType())), Members(Bool(true))),
+			Narrow(Unknown(SetType(BoolType())), LengthMax(4), Members(Bool(true))),
 		},
 	} {
 		if a, b := rangeOf(t, tt.a), rangeOf(t, tt.b); !a.equal(b) {
@@ -66,8 +66,8 @@ func TestRangesAreCanonical(t *testing.T) {
 	// holding 1, and are two ranges. Should implied requirements ever be
 	// dropped, this pair is where it shows.
 	atLeastZero := Narrow(Unknown(num), NotNull(), NumberMin(NumberFromInt(0), true))
-	implied := rangeOf(t, Narrow(Unknown(Set(num)), Members(one, atLeastZero)))
-	if implied.equal(rangeOf(t, Narrow(Unknown(Set(num)), Members(one)))) {
+	implied := rangeOf(t, Narrow(Unknown(SetType(num)), Members(one, atLeastZero)))
+	if implied.equal(rangeOf(t, Narrow(Unknown(SetType(num)), Members(one)))) {
 		t.Error("a listing holding a requirement the others imply is the range without it")
 	}
 	// The zero range is the whole domain, so a fresh unknown records nothing.

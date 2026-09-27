@@ -9,7 +9,7 @@ import (
 // service builds the value describing one service. The token is marked, so
 // neither a display form nor a diff ever shows it.
 func service(replicas int64, address, token tenon.Value) tenon.Value {
-	return tenon.ObjectVal(map[string]tenon.Value{
+	return tenon.Object(map[string]tenon.Value{
 		"name":     tenon.String("web"),
 		"replicas": tenon.NumberFromInt(replicas),
 		"address":  address,

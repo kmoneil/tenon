@@ -31,10 +31,10 @@ func TestConformance_TY040_CapsuleIdentity(t *testing.T) {
 	}
 
 	// Types built from distinct capsule types are distinct too.
-	if tenon.List(a) == tenon.List(b) || tenon.List(a) != tenon.List(again) {
+	if tenon.ListType(a) == tenon.ListType(b) || tenon.ListType(a) != tenon.ListType(again) {
 		t.Error("list types do not follow the identity of their capsule element types")
 	}
-	if tenon.Object(map[string]tenon.Type{"h": a}) == tenon.Object(map[string]tenon.Type{"h": b}) {
+	if tenon.ObjectType(map[string]tenon.Type{"h": a}) == tenon.ObjectType(map[string]tenon.Type{"h": b}) {
 		t.Error("object types do not follow the identity of their capsule attribute types")
 	}
 

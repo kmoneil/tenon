@@ -19,18 +19,18 @@ func TestConformance_EQ045_CanonicalOrder(t *testing.T) {
 	// Null first, then the kinds in the order the rule gives, whatever each
 	// value holds.
 	ordered := []tenon.Value{
-		tenon.NullVal(tenon.BoolType()),
+		tenon.Null(tenon.BoolType()),
 		tenon.Bool(false),
 		tenon.Bool(true),
 		n(-1),
 		n(1),
 		s(""),
 		s("a"),
-		tenon.ListVal(str, s("a")),
-		tenon.SetVal(str, s("a")),
-		tenon.MapVal(str, map[string]tenon.Value{"k": s("a")}),
-		tenon.TupleVal(s("a")),
-		tenon.ObjectVal(map[string]tenon.Value{"a": s("a")}),
+		tenon.List(str, s("a")),
+		tenon.Set(str, s("a")),
+		tenon.Map(str, map[string]tenon.Value{"k": s("a")}),
+		tenon.Tuple(s("a")),
+		tenon.Object(map[string]tenon.Value{"a": s("a")}),
 		tenon.NewCapsule("held", tenon.CapsuleOps[point]{}).Value(&point{1, 2}),
 	}
 	for i := range ordered[:len(ordered)-1] {
@@ -49,30 +49,30 @@ func TestConformance_EQ045_CanonicalOrder(t *testing.T) {
 		{"strings by scalar value", s("Z"), s("a")},
 		{"a string before one it starts", s("ab"), s("abc")},
 		{"the normalized form is what sorts", s("f"), s("e\U00000301")},
-		{"lists by element", tenon.ListVal(num, n(1)), tenon.ListVal(num, n(2))},
-		{"a list before one it starts", tenon.ListVal(num, n(1)), tenon.ListVal(num, n(1), n(0))},
+		{"lists by element", tenon.List(num, n(1)), tenon.List(num, n(2))},
+		{"a list before one it starts", tenon.List(num, n(1)), tenon.List(num, n(1), n(0))},
 		{
 			"sets by their members in order",
-			tenon.SetVal(num, n(2), n(1)),
-			tenon.SetVal(num, n(3), n(1)),
+			tenon.Set(num, n(2), n(1)),
+			tenon.Set(num, n(3), n(1)),
 		},
 		{
 			"maps by name before value",
-			tenon.MapVal(num, map[string]tenon.Value{"a": n(9)}),
-			tenon.MapVal(num, map[string]tenon.Value{"b": n(1)}),
+			tenon.Map(num, map[string]tenon.Value{"a": n(9)}),
+			tenon.Map(num, map[string]tenon.Value{"b": n(1)}),
 		},
 		{
 			"objects by name before value",
-			tenon.ObjectVal(map[string]tenon.Value{"a": n(9)}),
-			tenon.ObjectVal(map[string]tenon.Value{"b": n(1)}),
+			tenon.Object(map[string]tenon.Value{"a": n(9)}),
+			tenon.Object(map[string]tenon.Value{"b": n(1)}),
 		},
-		{"tuples by element", tenon.TupleVal(n(1)), tenon.TupleVal(n(2))},
+		{"tuples by element", tenon.Tuple(n(1)), tenon.Tuple(n(2))},
 		// Two values that the rules for their kind leave together sort by
 		// type, which is the only thing left that differs.
-		{"empty lists of different element types", tenon.ListVal(num), tenon.ListVal(str)},
-		{"empty maps of different element types", tenon.MapVal(num, nil), tenon.MapVal(str, nil)},
-		{"nulls of different types", tenon.NullVal(num), tenon.NullVal(str)},
-		{"objects whose attributes differ in type", tenon.ObjectVal(nil), tenon.ObjectVal(map[string]tenon.Value{"a": n(1)})},
+		{"empty lists of different element types", tenon.List(num), tenon.List(str)},
+		{"empty maps of different element types", tenon.Map(num, nil), tenon.Map(str, nil)},
+		{"nulls of different types", tenon.Null(num), tenon.Null(str)},
+		{"objects whose attributes differ in type", tenon.Object(nil), tenon.Object(map[string]tenon.Value{"a": n(1)})},
 	} {
 		if got := tenon.CanonicalCompare(tt.a, tt.b); got >= 0 {
 			t.Errorf("%s: %v does not sort before %v: %d", tt.name, tt.a, tt.b, got)
@@ -83,8 +83,8 @@ func TestConformance_EQ045_CanonicalOrder(t *testing.T) {
 	}
 	// A set is its members, so one built two ways sorts together with itself.
 	if got := tenon.CanonicalCompare(
-		tenon.SetVal(num, n(1), n(2)),
-		tenon.SetVal(num, n(2), n(1), n(1)),
+		tenon.Set(num, n(1), n(2)),
+		tenon.Set(num, n(2), n(1), n(1)),
 	); got != 0 {
 		t.Errorf("one set built two ways does not sort together with itself: %d", got)
 	}
@@ -97,7 +97,7 @@ func TestConformance_EQ045_CanonicalOrder(t *testing.T) {
 		tenon.CanonicalCompare(tenon.WithMarks(n(1), m), n(1))
 	})
 	mustPanicUsage(t, "that holds a marked value at .[0]", func() {
-		tenon.CanonicalCompare(n(1), tenon.ListVal(num, tenon.WithMarks(n(1), m)))
+		tenon.CanonicalCompare(n(1), tenon.List(num, tenon.WithMarks(n(1), m)))
 	})
 }
 
@@ -142,7 +142,7 @@ func TestConformance_EQ045_CapsuleFallbackOrdersByEqualityClass(t *testing.T) {
 	// A set of tuples built from them iterates one way, whatever order it was
 	// built in, and two such sets are identical with an empty diff.
 	n := func(i int64) tenon.Value { return tenon.NumberFromInt(i) }
-	A, B, C := tenon.TupleVal(p, n(2)), tenon.TupleVal(r, n(0)), tenon.TupleVal(q, n(1))
+	A, B, C := tenon.Tuple(p, n(2)), tenon.Tuple(r, n(0)), tenon.Tuple(q, n(1))
 	order := func(s tenon.Value) []string {
 		var out []string
 		for _, e := range s.Elements() {
@@ -150,8 +150,8 @@ func TestConformance_EQ045_CapsuleFallbackOrdersByEqualityClass(t *testing.T) {
 		}
 		return out
 	}
-	first := tenon.SetVal(A.Type(), A, B, C)
-	second := tenon.SetVal(A.Type(), C, B, A)
+	first := tenon.Set(A.Type(), A, B, C)
+	second := tenon.Set(A.Type(), C, B, A)
 	if got, want := order(second), order(first); !slices.Equal(got, want) {
 		t.Errorf("one set built two ways iterates %v and %v", want, got)
 	}
@@ -226,9 +226,9 @@ func TestConformance_EQ045_ThePublishedOrderings(t *testing.T) {
 		Hash:    func(p *point) uint64 { return uint64(p.x) },
 		Display: func(p *point) string { return "p" + strconv.Itoa(p.x) + "." + strconv.Itoa(p.y) },
 	})
-	tup := tenon.Tuple(shown.Type(), num)
-	mu := tenon.TupleVal(shown.Value(&point{1, 1}), tenon.Unknown(num))
-	mv := tenon.TupleVal(shown.Value(&point{1, 2}), tenon.Unknown(num))
+	tup := tenon.TupleType(shown.Type(), num)
+	mu := tenon.Tuple(shown.Value(&point{1, 1}), tenon.Unknown(num))
+	mv := tenon.Tuple(shown.Value(&point{1, 2}), tenon.Unknown(num))
 	for _, tt := range []struct {
 		given []tenon.Value
 		want  string
@@ -236,7 +236,7 @@ func TestConformance_EQ045_ThePublishedOrderings(t *testing.T) {
 		{[]tenon.Value{mu, mv}, `capsule("shown_equal_in_canonical_test", "p1.1")`},
 		{[]tenon.Value{mv, mu}, `capsule("shown_equal_in_canonical_test", "p1.2")`},
 	} {
-		first := tenon.SetVal(tup, tt.given...).Elements()[0].Index(0).String()
+		first := tenon.Set(tup, tt.given...).Elements()[0].Index(0).String()
 		if first != tt.want {
 			t.Errorf("built with %s first, the set iterates %s first", tt.want, first)
 		}
@@ -261,10 +261,10 @@ func TestConformance_EQ046_TheOrderIsTheHostsAndNotTheLanguages(t *testing.T) {
 	if tenon.CanonicalCompare(one, two) >= 0 {
 		t.Error("the host's order does not order two numbers")
 	}
-	if tenon.CanonicalCompare(tenon.NullVal(num), one) >= 0 {
+	if tenon.CanonicalCompare(tenon.Null(num), one) >= 0 {
 		t.Error("the host's order does not put null first")
 	}
-	if tenon.CanonicalCompare(tenon.ListVal(num), tenon.Bool(true)) <= 0 {
+	if tenon.CanonicalCompare(tenon.List(num), tenon.Bool(true)) <= 0 {
 		t.Error("the host's order does not order across kinds")
 	}
 	// The language's ordering is a different relation: it answers with a
@@ -273,11 +273,11 @@ func TestConformance_EQ046_TheOrderIsTheHostsAndNotTheLanguages(t *testing.T) {
 	if got := tenon.LessThan(one, two).String(); got != "true" {
 		t.Errorf("the language's ordering gave %s", got)
 	}
-	if got := tenon.LessThan(tenon.NullVal(num), one); !got.IsError() {
+	if got := tenon.LessThan(tenon.Null(num), one); !got.IsError() {
 		t.Errorf("the language's ordering took null: %v", got)
 	}
 	mustPanicUsage(t, "does not satisfy one_of", func() {
-		tenon.LessThan(tenon.ListVal(num), tenon.ListVal(num))
+		tenon.LessThan(tenon.List(num), tenon.List(num))
 	})
 }
 

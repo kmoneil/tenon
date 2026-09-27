@@ -299,9 +299,9 @@ func (e *encoder) encode(m *goMapping, rv reflect.Value, p tenon.Path) (tenon.Va
 	case goPointer:
 		if rv.IsNil() {
 			if m.typed() {
-				return tenon.NullVal(m.typ), true
+				return tenon.Null(m.typ), true
 			}
-			return tenon.NullVal(nullType(m.elem)), true
+			return tenon.Null(nullType(m.elem)), true
 		}
 		return e.encode(m.elem, rv.Elem(), p)
 	}
@@ -378,7 +378,7 @@ func nullType(m *goMapping) tenon.Type {
 	case goPointer:
 		return nullType(m.elem)
 	case goSlice, goArray:
-		return tenon.Tuple()
+		return tenon.TupleType()
 	case goStruct:
 		attrs := map[string]tenon.Type{}
 		for _, f := range m.fields {
@@ -386,7 +386,7 @@ func nullType(m *goMapping) tenon.Type {
 				attrs[f.name] = nullType(f.m)
 			}
 		}
-		return tenon.Object(attrs)
+		return tenon.ObjectType(attrs)
 	case goCustom:
 		// A type that encodes itself and does not decode itself is decoded
 		// by its kind, which gives its null as for any type; a kind that
@@ -397,7 +397,7 @@ func nullType(m *goMapping) tenon.Type {
 			}
 		}
 	}
-	return tenon.Object(nil)
+	return tenon.ObjectType(nil)
 }
 
 // bigNumber encodes a big.Int, a big.Float or a big.Rat exactly.
@@ -588,7 +588,7 @@ func valuation(d *big.Int, p, limit int64) (int64, *big.Int) {
 // sequence encodes a slice or an array.
 func (e *encoder) sequence(m *goMapping, rv reflect.Value, p tenon.Path) (tenon.Value, bool) {
 	if m.kind == goSlice && rv.IsNil() {
-		return tenon.NullVal(nullType(m)), true
+		return tenon.Null(nullType(m)), true
 	}
 	members := make([]tenon.Value, rv.Len())
 	ok := true
@@ -600,15 +600,15 @@ func (e *encoder) sequence(m *goMapping, rv reflect.Value, p tenon.Path) (tenon.
 	case !ok:
 		return tenon.Value{}, false
 	case m.typed():
-		return tenon.ListVal(m.elem.typ, members...), true
+		return tenon.List(m.elem.typ, members...), true
 	}
-	return tenon.TupleVal(members...), true
+	return tenon.Tuple(members...), true
 }
 
 // mapping encodes a map with string keys.
 func (e *encoder) mapping(m *goMapping, rv reflect.Value, p tenon.Path) (tenon.Value, bool) {
 	if rv.IsNil() {
-		return tenon.NullVal(nullType(m)), true
+		return tenon.Null(nullType(m)), true
 	}
 	keys := make([]string, 0, rv.Len())
 	for _, k := range rv.MapKeys() {
@@ -671,9 +671,9 @@ func (e *encoder) mapping(m *goMapping, rv reflect.Value, p tenon.Path) (tenon.V
 	case !ok:
 		return tenon.Value{}, false
 	case m.typed():
-		return tenon.MapVal(m.elem.typ, entries), true
+		return tenon.Map(m.elem.typ, entries), true
 	}
-	return tenon.ObjectVal(entries), true
+	return tenon.Object(entries), true
 }
 
 // structure encodes a struct.
@@ -694,5 +694,5 @@ func (e *encoder) structure(m *goMapping, rv reflect.Value, p tenon.Path) (tenon
 	if !ok {
 		return tenon.Value{}, false
 	}
-	return tenon.ObjectVal(attrs), true
+	return tenon.Object(attrs), true
 }

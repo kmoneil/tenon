@@ -30,7 +30,7 @@ func TestConformance_UN008_KnownOperandsAnswerOrFail(t *testing.T) {
 		Or(Bool(true), Bool(false)),
 		Not(Bool(true)),
 		IsNull(String("x")),
-		IsNull(NullVal(StringType())),
+		IsNull(Null(StringType())),
 	} {
 		if !got.IsKnown() {
 			t.Errorf("an operation with known operands gave %v, which is not known", got)
@@ -134,13 +134,13 @@ func TestMakesSetLooksThroughOneOf(t *testing.T) {
 		want bool
 	}{
 		{SetOf(Any()), true},
-		{Exactly(Set(num)), true},
+		{Exactly(SetType(num)), true},
 		{ListOf(Any()), false},
 		{Any(), false},
 		{OneOf(SetOf(Any()), SetOf(Exactly(num))), true},
 		{OneOf(SetOf(Any()), OneOf()), true},
 		{OneOf(SetOf(Any()), ListOf(Any())), false},
-		{OneOf(OneOf(SetOf(Any())), Exactly(Set(num))), true},
+		{OneOf(OneOf(SetOf(Any())), Exactly(SetType(num))), true},
 		{OneOf(), false},
 		{SetOf(OneOf()), false},
 	} {

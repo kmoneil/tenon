@@ -20,7 +20,7 @@ func TestObjectUnionsAreBuiltOnce(t *testing.T) {
 		unionTestRun++
 		types := make([]Type, n)
 		for i := range types {
-			types[i] = Object(map[string]Type{fmt.Sprintf("r%d-a%04d", unionTestRun, i): NumberType()})
+			types[i] = ObjectType(map[string]Type{fmt.Sprintf("r%d-a%04d", unionTestRun, i): NumberType()})
 		}
 		before := typeIDs.Load()
 		u, ok := unifyTypes(types, Safe)

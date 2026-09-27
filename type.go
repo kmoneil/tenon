@@ -118,16 +118,16 @@ func NumberType() Type { return Type{numberType} }
 // StringType returns the type String.
 func StringType() Type { return Type{stringType} }
 
-// List returns the type of lists whose elements have type elem.
-func List(elem Type) Type { return collection(KindList, elem) }
+// ListType returns the type of lists whose elements have type elem.
+func ListType(elem Type) Type { return collection(KindList, elem) }
 
-// Set returns the type of sets whose elements have type elem.
-func Set(elem Type) Type { return collection(KindSet, elem) }
+// SetType returns the type of sets whose elements have type elem.
+func SetType(elem Type) Type { return collection(KindSet, elem) }
 
-// Map returns the type of maps whose elements have type elem. The keys of a
+// MapType returns the type of maps whose elements have type elem. The keys of a
 // map are always strings, normalized to Unicode Normalization Form C when the
 // map is constructed.
-func Map(elem Type) Type { return collection(KindMap, elem) }
+func MapType(elem Type) Type { return collection(KindMap, elem) }
 
 func collection(kind Kind, elem Type) Type {
 	if elem.t == nil {
@@ -136,16 +136,16 @@ func collection(kind Kind, elem Type) Type {
 	return intern(&typeData{kind: kind, elem: elem})
 }
 
-// Object returns the object type with the given attributes. Attribute names
+// ObjectType returns the object type with the given attributes. Attribute names
 // are normalized to Unicode Normalization Form C, and two names are the same
-// name when they are identical after normalization. Object does not retain
+// name when they are identical after normalization. ObjectType does not retain
 // the map.
 //
-// Object panics if a name is empty or not valid UTF-8, if two names in the map
-// are the same name, or if an attribute type is the zero Type. A program
+// ObjectType panics if a name is empty or not valid UTF-8, if two names in the
+// map are the same name, or if an attribute type is the zero Type. A program
 // building a type from names it did not write checks them with
-// CheckAttributeNames first; ObjectVal reports such names as data errors.
-func Object(attrs map[string]Type) Type {
+// CheckAttributeNames first; Object reports such names as data errors.
+func ObjectType(attrs map[string]Type) Type {
 	entries := attributeEntries(attrs, "object attribute")
 	list := make([]attribute, len(entries))
 	for i, e := range entries {
@@ -157,9 +157,9 @@ func Object(attrs map[string]Type) Type {
 	return intern(&typeData{kind: KindObject, attrs: list})
 }
 
-// Tuple returns the tuple type whose elements have the given types, in order.
-// Tuple does not retain the slice.
-func Tuple(elems ...Type) Type {
+// TupleType returns the tuple type whose elements have the given types, in
+// order. TupleType does not retain the slice.
+func TupleType(elems ...Type) Type {
 	for i, e := range elems {
 		if e.t == nil {
 			usagePanic("the type of tuple element %d is the zero Type", i)
@@ -289,13 +289,21 @@ func (t Type) HasAttribute(name string) bool {
 
 // AttributeType returns the type of the named attribute of an object type.
 // The name is normalized before the lookup. AttributeType panics if t is not
-// an object type or has no such attribute.
+// an object type or has no such attribute; LookupAttributeType is for a name
+// that may be absent.
 func (t Type) AttributeType(name string) Type {
 	typ, ok := t.mustKind(KindObject, "AttributeType").attribute(name)
 	if !ok {
 		usagePanic("%s has no attribute %q", t, name)
 	}
 	return typ
+}
+
+// LookupAttributeType returns the type of the named attribute of an object
+// type, and whether it has one. The name is normalized before the lookup. It
+// panics if t is not an object type.
+func (t Type) LookupAttributeType(name string) (Type, bool) {
+	return t.mustKind(KindObject, "LookupAttributeType").attribute(name)
 }
 
 // attribute looks up the attribute of an object type with the given name,

@@ -26,12 +26,12 @@ func TestConformance_ER002_DataErrorsAreValues(t *testing.T) {
 		{"a number out of range", tenon.NumberFromText("1e1000000"), tenon.CodeNumberOutOfRange},
 		{
 			"a map key that is not well-formed UTF-8",
-			tenon.MapVal(num, map[string]tenon.Value{"a\xff": one}),
+			tenon.Map(num, map[string]tenon.Value{"a\xff": one}),
 			tenon.CodeStringInvalidUTF8,
 		},
 		{
 			"map keys that are the same key",
-			tenon.MapVal(num, map[string]tenon.Value{"caf\u00e9": one, "cafe\u0301": two}),
+			tenon.Map(num, map[string]tenon.Value{"caf\u00e9": one, "cafe\u0301": two}),
 			tenon.CodeMapDuplicateKey,
 		},
 	} {
@@ -176,8 +176,8 @@ func TestFunctionsFailWithError(t *testing.T) {
 		},
 		{
 			"Unify",
-			errorOf(tenon.Unify(tenon.Safe, num, num)),
-			errorOf(tenon.Unify(tenon.Safe, num, boolean)),
+			errorOf(tenon.Unify([]tenon.Constraint{num, num}, tenon.Safe)),
+			errorOf(tenon.Unify([]tenon.Constraint{num, boolean}, tenon.Safe)),
 			tenon.CodeUnifyNoCommonConstraint,
 		},
 	} {

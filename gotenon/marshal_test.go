@@ -154,7 +154,7 @@ func TestConformance_GO040_MarshalersAtTheBoundary(t *testing.T) {
 	conformance.Covers(t, "GO-040", "GO-041", "GO-042")
 	// An unmarshaler is given the value as it is: unknown, marked or null.
 	marked := tenon.WithMarks(tenon.Unknown(num), stamp{id: "iso", policy: tenon.Isolate})
-	for _, v := range []tenon.Value{marked, tenon.NullVal(str), tenon.Narrow(tenon.Pending(tenon.Any()), tenon.NotNull())} {
+	for _, v := range []tenon.Value{marked, tenon.Null(str), tenon.Narrow(tenon.Pending(tenon.Any()), tenon.NotNull())} {
 		if got := decoded[observer](t, v, tenon.Safe); !tenon.Identical(got.got, v) {
 			t.Errorf("an unmarshaler was given %v, not %v", got.got, v)
 		}
@@ -163,7 +163,7 @@ func TestConformance_GO040_MarshalersAtTheBoundary(t *testing.T) {
 	// as encoding/json treats a pointer to an Unmarshaler: anything but an
 	// unmarked null, a marked null among them, goes to the method of a new
 	// value, and an unmarked null leaves the pointer nil.
-	markedNull := tenon.WithMarks(tenon.NullVal(str), stamp{id: "m"})
+	markedNull := tenon.WithMarks(tenon.Null(str), stamp{id: "m"})
 	pending := tenon.Narrow(tenon.Pending(tenon.Any()), tenon.NotNull())
 	for _, v := range []tenon.Value{marked, tenon.Unknown(num), pending, markedNull} {
 		if got := decoded[*observer](t, v, tenon.Safe); got == nil || !tenon.Identical(got.got, v) {
@@ -178,7 +178,7 @@ func TestConformance_GO040_MarshalersAtTheBoundary(t *testing.T) {
 	// Propagate marks: an Isolate mark reaches it too. A container holds no
 	// pending value.
 	holding := func(v tenon.Value) tenon.Value {
-		return obj(map[string]tenon.Value{"one": v, "many": tenon.TupleVal(v), "plain": v, "plains": tenon.TupleVal(v), "raw": v})
+		return obj(map[string]tenon.Value{"one": v, "many": tenon.Tuple(v), "plain": v, "plains": tenon.Tuple(v), "raw": v})
 	}
 	carried := tenon.WithMarks(tenon.Unknown(num), stamp{id: "p"})
 	for _, v := range []tenon.Value{marked, carried, tenon.Unknown(num), markedNull} {
@@ -202,7 +202,7 @@ func TestConformance_GO040_MarshalersAtTheBoundary(t *testing.T) {
 	// Unconverted as well: under Unsafe, a tuple of a number and a string
 	// converts to a list of strings, and each method takes its member as it
 	// was, the number a number.
-	mixed := tenon.TupleVal(n(1), s("a"))
+	mixed := tenon.Tuple(n(1), s("a"))
 	w := decoded[watched](t, obj(map[string]tenon.Value{"one": n(1), "many": mixed, "plain": n(1), "plains": mixed, "raw": mixed}), tenon.Unsafe)
 	for i, want := range mixed.Elements() {
 		if !tenon.Identical(w.Many[i].got, want) || !tenon.Identical(w.Plains[i].got, want) {
@@ -212,7 +212,7 @@ func TestConformance_GO040_MarshalersAtTheBoundary(t *testing.T) {
 	if !tenon.Identical(w.Raw, mixed) {
 		t.Errorf("a tenon.Value field given %v holds %v", mixed, w.Raw)
 	}
-	for _, v := range []tenon.Value{tenon.NullVal(str), tenon.Narrow(tenon.Pending(tenon.Any()), tenon.Null())} {
+	for _, v := range []tenon.Value{tenon.Null(str), tenon.Narrow(tenon.Pending(tenon.Any()), tenon.NullOnly())} {
 		if got := decoded[*observer](t, v, tenon.Safe); got != nil {
 			t.Errorf("a pointer to an unmarshaler, given the unmarked %v, decoded to %v, want nil", v, got)
 		}
@@ -220,7 +220,7 @@ func TestConformance_GO040_MarshalersAtTheBoundary(t *testing.T) {
 	// A failure is located where the Go value is: an error that carries
 	// diagnostics gives them, and any other error its text.
 	wantDecodeFailures[schedule](t, "a moment that is a number", obj(map[string]tenon.Value{
-		"start": n(1), "marks": tenon.TupleVal(s("not a time")), "at": s("x"), "log": tenon.TupleVal(),
+		"start": n(1), "marks": tenon.Tuple(s("not a time")), "at": s("x"), "log": tenon.Tuple(),
 	}), tenon.Safe,
 		wantDiag{tenon.CodeDecodeUnmarshalFailed, ".at"},
 		wantDiag{tenon.CodeDecodeUnmarshalFailed, ".marks[0]"},
@@ -237,7 +237,7 @@ func TestConformance_GO040_MarshalersAtTheBoundary(t *testing.T) {
 // method given its own.
 func TestConformance_GO012_CollectionsOfUnmarshalers(t *testing.T) {
 	conformance.Covers(t, "GO-012", "GO-040")
-	mixed := tenon.TupleVal(n(1), s("a"), tenon.Unknown(boo))
+	mixed := tenon.Tuple(n(1), s("a"), tenon.Unknown(boo))
 	for _, p := range []tenon.Policy{tenon.Safe, tenon.Unsafe} {
 		plain := decoded[[]observer](t, mixed, p)
 		pointers := decoded[[]*observer](t, mixed, p)
@@ -247,7 +247,7 @@ func TestConformance_GO012_CollectionsOfUnmarshalers(t *testing.T) {
 				t.Errorf("%s: member %d, %v, reached a slice, a slice of pointers and an array of unmarshalers as %v, %v and %v", p, i, want, plain[i].got, pointers[i], array[i].got)
 			}
 		}
-		nested := decoded[[][]observer](t, tenon.TupleVal(mixed, tenon.TupleVal(n(2))), p)
+		nested := decoded[[][]observer](t, tenon.Tuple(mixed, tenon.Tuple(n(2))), p)
 		if len(nested) != 2 || len(nested[0]) != 3 || !tenon.Identical(nested[0][1].got, s("a")) || !tenon.Identical(nested[1][0].got, n(2)) {
 			t.Errorf("%s: a slice of slices of unmarshalers decoded to %v", p, nested)
 		}
@@ -259,7 +259,7 @@ func TestConformance_GO012_CollectionsOfUnmarshalers(t *testing.T) {
 	// A value of another kind still decodes into none of them.
 	wantDecodeFailures[[]observer](t, "a number into a slice of unmarshalers", n(1), tenon.Safe,
 		wantDiag{tenon.CodeConvertNoConversion, "."})
-	wantDecodeFailures[map[string]observer](t, "a list into a map of unmarshalers", tenon.ListVal(num, n(1)), tenon.Safe,
+	wantDecodeFailures[map[string]observer](t, "a list into a map of unmarshalers", tenon.List(num, n(1)), tenon.Safe,
 		wantDiag{tenon.CodeConvertNoConversion, "."})
 }
 
@@ -355,12 +355,12 @@ func TestConformance_GO040_EachDirectionMapsOnItsOwn(t *testing.T) {
 
 	var nothing *encodesOnly
 	null := encoded(t, nothing)
-	wantValue(t, "a nil pointer to a struct that marshals itself", null, tenon.NullVal(tenon.Object(map[string]tenon.Type{"n": num})))
+	wantValue(t, "a nil pointer to a struct that marshals itself", null, tenon.Null(tenon.ObjectType(map[string]tenon.Type{"n": num})))
 	if back := decoded[*encodesOnly](t, null, tenon.Safe); back != nil {
 		t.Errorf("the null of a nil pointer decoded back as %+v", back)
 	}
 	var none *intKeyed
-	wantValue(t, "a nil pointer to a map with int keys that marshals itself", encoded(t, none), tenon.NullVal(tenon.Object(nil)))
+	wantValue(t, "a nil pointer to a map with int keys that marshals itself", encoded(t, none), tenon.Null(tenon.ObjectType(nil)))
 }
 
 // errFull is what fullDisk's methods fail with, wrapped.

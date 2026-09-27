@@ -32,7 +32,7 @@ func compareAsAFrontendDoes(p tenon.Policy, a, b tenon.Value) tenon.Value {
 // typed operand after unification, for operands of two types.
 func TestConformance_UN024_NullLiteralsCompareAsUsersExpect(t *testing.T) {
 	conformance.Covers(t, "UN-024", "EQ-005", "CV-040", "CV-032")
-	null := tenon.Narrow(tenon.Pending(tenon.Any()), tenon.Null())
+	null := tenon.Narrow(tenon.Pending(tenon.Any()), tenon.NullOnly())
 	unknownBool := tenon.Narrow(tenon.Unknown(boo), tenon.NotNull())
 	for _, tt := range []struct {
 		typ     tenon.Type
@@ -46,7 +46,7 @@ func TestConformance_UN024_NullLiteralsCompareAsUsersExpect(t *testing.T) {
 			operand tenon.Value
 			want    tenon.Value
 		}{
-			{"a null of the type", tenon.NullVal(tt.typ), tenon.Bool(true)},
+			{"a null of the type", tenon.Null(tt.typ), tenon.Bool(true)},
 			{"a value of the type", tt.present, tenon.Bool(false)},
 			{"an unknown that may be null", tenon.Unknown(tt.typ), unknownBool},
 			{"an unknown that is not null", tenon.Narrow(tenon.Unknown(tt.typ), tenon.NotNull()), tenon.Bool(false)},
@@ -58,12 +58,12 @@ func TestConformance_UN024_NullLiteralsCompareAsUsersExpect(t *testing.T) {
 			}
 		}
 		// Two typed nulls of one type are equal with or without unifying.
-		wantValue(t, "typed nulls of "+tt.typ.String(), compareAsAFrontendDoes(safe, tenon.NullVal(tt.typ), tenon.NullVal(tt.typ)), tenon.Bool(true))
+		wantValue(t, "typed nulls of "+tt.typ.String(), compareAsAFrontendDoes(safe, tenon.Null(tt.typ), tenon.Null(tt.typ)), tenon.Bool(true))
 
 		// The unification is what settles it: without it, a null literal
 		// could still take another type than the operand's, and a null of
 		// that type is not this one.
-		wantValue(t, "a null of "+tt.typ.String()+" == null, not unified", tenon.Equals(tenon.NullVal(tt.typ), null), unknownBool)
+		wantValue(t, "a null of "+tt.typ.String()+" == null, not unified", tenon.Equals(tenon.Null(tt.typ), null), unknownBool)
 	}
 
 	// Two null literals give unification no type, so both stay pending, and

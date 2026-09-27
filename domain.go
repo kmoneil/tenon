@@ -112,12 +112,12 @@ func mulCount(a, b int64) (int64, bool) {
 // (maxDomainSet).
 func fullSet(t Type) Value {
 	elem := t.t.elem
-	return SetVal(elem, memberValues(elem)...)
+	return Set(elem, memberValues(elem)...)
 }
 
 // memberValues returns every value a member of type t can be: the values of
 // its domain and null. The order is not the order a set holds them in, which
-// SetVal settles.
+// Set settles.
 //
 // The values are built once for the type and kept on it: every set over a
 // type holding few values asks for them as soon as it holds a member that is
@@ -128,7 +128,7 @@ func memberValues(t Type) []Value {
 	if kept := t.t.values.Load(); kept != nil {
 		return *kept
 	}
-	values := append(domainValues(t), NullVal(t))
+	values := append(domainValues(t), Null(t))
 	t.t.values.CompareAndSwap(nil, &values)
 	return *t.t.values.Load()
 }
@@ -142,7 +142,7 @@ func domainValues(t Type) []Value {
 	case KindTuple:
 		var out []Value
 		for _, row := range memberRows(d.elems) {
-			out = append(out, TupleVal(row...))
+			out = append(out, Tuple(row...))
 		}
 		return out
 	case KindObject:
@@ -156,7 +156,7 @@ func domainValues(t Type) []Value {
 			for i, v := range row {
 				attrs[d.attrs[i].name] = v
 			}
-			out = append(out, ObjectVal(attrs))
+			out = append(out, Object(attrs))
 		}
 		return out
 	case KindSet:
@@ -170,7 +170,7 @@ func domainValues(t Type) []Value {
 					members = append(members, v)
 				}
 			}
-			out = append(out, SetVal(d.elem, members...))
+			out = append(out, Set(d.elem, members...))
 		}
 		return out
 	}
