@@ -86,9 +86,9 @@ See `ExampleUnknown` and `ExampleNarrow`.
 # What must not be shown
 
 A mark is a label that travels with a value. A redacting mark keeps the value's
-contents out of display forms, diagnostic messages and JSON projections, and
-follows into whatever is derived from it, so a secret cannot reach a log by a
-route nobody thought about.
+contents, its keys and attribute names among them, out of display forms,
+diagnostics and JSON projections, and follows into whatever is derived from
+it, so a secret cannot reach a log by a route nobody thought about.
 
 ```go
 fmt.Println("200", checked)

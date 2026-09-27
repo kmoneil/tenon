@@ -55,7 +55,29 @@ func convertTop(v Value, cv conversion) Value {
 
 // value converts v, in whatever state, to c. The result carries none of v's
 // own marks: whoever asked for the conversion puts on the marks it calls for.
+//
+// Where v carries a redacting mark, what fails within it fails at v, since a
+// path within it and a message naming its type or what it holds would show
+// its structure: each code the failures have, once, located at v, with a
+// message naming v by the placeholder and c (MK-011, CV-050).
 func (x converter) value(v Value, c Constraint) Value {
+	ms := v.n.redactingMarks()
+	r := x.valueOf(v, c)
+	if ms == nil || r.n.state != stateError {
+		return r
+	}
+	message := redactedText(ms) + " does not convert to " + c.String()
+	var diags []Diagnostic
+	for _, d := range r.n.diagnostics() {
+		if !slices.ContainsFunc(diags, func(e Diagnostic) bool { return e.Code == d.Code }) {
+			diags = append(diags, Diagnostic{Code: d.Code, Message: message})
+		}
+	}
+	return Value{&node{state: stateError, data: diags, marks: r.n.marks}}
+}
+
+// valueOf is value for a value whose failures need not be moved.
+func (x converter) valueOf(v Value, c Constraint) Value {
 	n := v.n
 	switch n.state {
 	case statePending:
@@ -569,20 +591,85 @@ func (x converter) collection(v Value, c Constraint) Value {
 		low, high := setLengthBounds(n)
 		return Narrow(Unknown(List(elem)), NotNull(), LengthMin(int64(low)), LengthMax(int64(high)))
 	}
+	// An element type the members settle holds the attribute names of their
+	// object types, and every member is given those attributes, so one taken
+	// from a redacted member shows its structure in the result's type and
+	// in its siblings: the result carries that member's redacting marks
+	// (CV-033). A constraint that settles the type takes nothing from them.
+	var derived []Mark
+	if _, fixed := resultType(d.elem); withhold && !fixed {
+		derived = redactedStructure(converted)
+	}
 	for i, r := range converted {
 		converted[i] = x.fit(r, elem)
 	}
+	var result Value
 	switch d.kind {
 	case ConstraintListOf:
-		return ListVal(elem, converted...)
+		result = ListVal(elem, converted...)
 	case ConstraintSetOf:
-		return setOf(elem, converted)
+		result = setOf(elem, converted)
+	default:
+		entries := make(map[string]Value, len(converted))
+		for i, r := range converted {
+			entries[h.names[i]] = r
+		}
+		result = MapVal(elem, entries)
 	}
-	entries := make(map[string]Value, len(converted))
-	for i, r := range converted {
-		entries[h.names[i]] = r
+	if derived != nil {
+		result = WithMarks(result, derived...)
 	}
-	return MapVal(elem, entries)
+	return result
+}
+
+// redactedStructure returns the redacting marks of the values among members,
+// at any depth, that carry one and whose type names attributes: an object
+// type, or one holding an object type. Such a value's attribute names are its
+// structure, which its redacting marks withhold (MK-011).
+func redactedStructure(members []Value) []Mark {
+	var marks []Mark
+	var walk func(n *node)
+	walk = func(n *node) {
+		if ms := n.redactingMarks(); ms != nil && n.state != stateError {
+			if namesAttributes(n.typ) {
+				marks, _ = mergeMarks(marks, ms)
+			}
+			return
+		}
+		if !n.markedWithin {
+			return
+		}
+		switch data := n.data.(type) {
+		case []Value:
+			for _, m := range data {
+				walk(m.n)
+			}
+		case []mapEntry:
+			for _, e := range data {
+				walk(e.val.n)
+			}
+		}
+	}
+	for _, m := range members {
+		walk(m.n)
+	}
+	return marks
+}
+
+// namesAttributes reports whether t is an object type or holds one.
+func namesAttributes(t Type) bool {
+	if t.t == nil {
+		return false
+	}
+	switch d := t.t; d.kind {
+	case KindObject:
+		return true
+	case KindList, KindSet, KindMap:
+		return namesAttributes(d.elem)
+	case KindTuple:
+		return slices.ContainsFunc(d.elems, namesAttributes)
+	}
+	return false
 }
 
 // setOf returns the set of these members, which give their marks, at every

@@ -1,5 +1,23 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- A redacting mark withholds a value's structure as well as its contents, as
+  `SECURITY.md` promises: the keys of a map and the attribute names of an
+  object no longer reach a diagnostic's path, a message, or a type. A
+  conversion that fails within a redacted value fails at that value, once for
+  each code, its message naming the value by the placeholder and the
+  constraint converted to, where a redacted map `{"hunter2-key": "x"}`
+  converted to numbers failed at `.["hunter2-key"]`. A list whose element type
+  takes attribute names from a redacted member carries the member's redacting
+  marks, where converting it showed them in its type and in the members given
+  those attributes. An operation names a redacted operand by the placeholder,
+  where it said the operand was null or named its constraint, though the code
+  still says why. `Serialize` locates what fails within a redacted value at
+  the value. A diagnostic's code is unchanged in every case.
+
 ## 0.8.0 (2026-09-27)
 
 This release carries the rest of what the pre-1.0 audit found that needed no

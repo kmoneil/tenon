@@ -17,8 +17,9 @@ of them is a vulnerability:
 - Data that is wrong becomes an error value, never a panic. A panic is kept
   for a mistake in the calling program, such as passing a value of the wrong
   type to an operation.
-- A value carrying a redacting mark never shows its contents in a display
-  form, a diagnostic message or a JSON projection, nor in anything derived
+- A value carrying a redacting mark never shows its contents, the keys of a
+  map and the attribute names of an object among them, in a display form, a
+  diagnostic's message or path, or a JSON projection, nor in anything derived
   from it.
 - `Deserialize` does not panic whatever bytes it is given, does not allocate
   for a length the input declares that the rest of the input could not hold,

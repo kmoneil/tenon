@@ -181,18 +181,18 @@ func (o *op) applyValue(args []Value) Value {
 			// constraint admits is one it accepts.
 			c := n.data.(Constraint)
 			if _, ok := sharedType(c, o.operands[i].constraint); !ok {
-				diags = append(diags, o.wrongType(i, len(args), c))
+				diags = append(diags, o.wrongType(i, len(args), n, c))
 				continue
 			}
 			if !o.operands[i].nulls && n.null == nullOnly {
-				diags = append(diags, o.nullOperand(i, len(args)))
+				diags = append(diags, o.nullOperand(i, len(args), n))
 				continue
 			}
 			types[i], _ = settledType(n)
 		case stateNull:
 			types[i] = n.typ
 			if !o.operands[i].nulls {
-				diags = append(diags, o.nullOperand(i, len(args)))
+				diags = append(diags, o.nullOperand(i, len(args), n))
 			}
 		default:
 			types[i] = n.typ
@@ -286,11 +286,17 @@ func operandName(i, n int) string {
 }
 
 // nullOperand returns the diagnostic for an operand that is null where the
-// operation has no answer for null.
-func (o *op) nullOperand(i, n int) Diagnostic {
+// operation has no answer for null. Whether a value is null is among what a
+// redacting mark withholds (MK-011), so the message names a redacted operand
+// by the placeholder, though the code still says why.
+func (o *op) nullOperand(i, n int, arg *node) Diagnostic {
+	what := "null"
+	if ms := arg.redactingMarks(); ms != nil {
+		what = redactedText(ms)
+	}
 	return Diagnostic{
 		Code:    CodeOperationNullOperand,
-		Message: operandName(i, n) + " of " + o.name + " is null, which " + o.name + " cannot use",
+		Message: operandName(i, n) + " of " + o.name + " is " + what + ", which " + o.name + " cannot use",
 	}
 }
 
@@ -337,10 +343,15 @@ func (o *op) disagreement(args []Value, i, j int) Diagnostic {
 	}
 }
 
-// operandText describes an operand for a diagnostic: a pending operand by the
-// constraint its type will satisfy, since that is what rules it out, and any
-// other operand as describe names it.
+// operandText describes an operand for a diagnostic: one carrying a
+// redacting mark by the placeholder, since its type and its constraint are
+// among what the mark withholds (MK-011), a pending operand by the constraint
+// its type will satisfy, since that is what rules it out, and any other
+// operand as describe names it.
 func operandText(n *node) string {
+	if ms := n.redactingMarks(); ms != nil && n.state != stateError {
+		return redactedText(ms)
+	}
 	if n.state == statePending {
 		return "pending with constraint " + n.data.(Constraint).String()
 	}
@@ -349,11 +360,15 @@ func operandText(n *node) string {
 
 // wrongType returns the diagnostic for a pending operand that can never have a
 // type the operation accepts.
-func (o *op) wrongType(i, n int, c Constraint) Diagnostic {
+func (o *op) wrongType(i, n int, arg *node, c Constraint) Diagnostic {
+	what := "pending with constraint " + c.String()
+	if ms := arg.redactingMarks(); ms != nil {
+		what = redactedText(ms)
+	}
 	return Diagnostic{
 		Code: CodeOperationWrongType,
-		Message: operandName(i, n) + " of " + o.name + " is pending with constraint " +
-			c.String() + ", and no type it allows satisfies " + o.operands[i].constraint.String(),
+		Message: operandName(i, n) + " of " + o.name + " is " + what +
+			", and no type it allows satisfies " + o.operands[i].constraint.String(),
 	}
 }
 

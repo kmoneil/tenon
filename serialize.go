@@ -413,7 +413,35 @@ func (e *encoder) implies(ms *markSet) *impliedMarks {
 // content appends the content of the resolved value v, which at locates. The
 // value is held by a container implying deep marks on it, which v carries
 // because the container does, and which are therefore not listed on v.
+//
+// What fails within a value carrying a redacting mark fails at that value,
+// once for each code, named by the placeholder, since a path within it and a
+// message naming what it holds would show its structure (MK-011, SE-050).
 func (e *encoder) content(b []byte, v Value, at int, implied *impliedMarks) []byte {
+	ms := v.n.redactingMarks()
+	if ms == nil || v.n.state == stateError {
+		return e.contentOf(b, v, at, implied)
+	}
+	start := len(e.diags)
+	b = e.contentOf(b, v, at, implied)
+	if len(e.diags) > start {
+		within := e.diags[start:]
+		var codes []Code
+		for _, d := range within {
+			if !slices.Contains(codes, d.Code) {
+				codes = append(codes, d.Code)
+			}
+		}
+		e.diags = e.diags[:start]
+		for _, code := range codes {
+			e.diags = append(e.diags, Diagnostic{Code: code, Message: redactedText(ms) + " cannot be serialized", Path: e.trail.path(at)})
+		}
+	}
+	return b
+}
+
+// contentOf is content for a value whose failures need not be moved.
+func (e *encoder) contentOf(b []byte, v Value, at int, implied *impliedMarks) []byte {
 	defer e.leave()
 	if !e.enter(at) {
 		return b

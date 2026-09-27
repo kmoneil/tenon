@@ -32,7 +32,10 @@ type Mark interface {
 	// Redacting reports whether the contents of a value carrying the mark
 	// are withheld wherever the value is described: in the messages of
 	// diagnostics, and in String, which puts a placeholder naming the mark
-	// in their place.
+	// in their place. Its contents include its structure, the keys of a map
+	// and an object's attribute names: a diagnostic arising within the value
+	// is located at it, and a collection whose element type takes attribute
+	// names from it carries the mark.
 	Redacting() bool
 }
 
