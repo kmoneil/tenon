@@ -4,6 +4,11 @@
 
 ### Fixed
 
+- `Serialize` refuses a value nesting more than 512 levels deep, with
+  `CodeSerializeTooLarge` at the first part past the bound, where it wrote a
+  document that `Deserialize` then refused as too large: data written that
+  could not be read back. It counts levels as the decoder does, so whatever it
+  writes reads back.
 - `Diff`'s mark changes hold their own copies of the marks. `OldMarks` and
   `NewMarks` were the diffed values' own storage where no deep mark was set
   aside, so writing to them changed a value that is immutable: it no longer
