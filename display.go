@@ -101,6 +101,20 @@ type textWriter struct {
 	// of a value that is not an error and carries a redacting mark, and
 	// every other value without its marks.
 	plain bool
+	// implied is what the container whose members are being written implies
+	// on them: its deep marks, which every value within it carries and which
+	// its own display form shows once (DI-015). imp remembers it for each
+	// mark set, however many containers carry that set.
+	implied *impliedMarks
+	imp     implications
+}
+
+// within sets what the values within n are given by n's marks, and returns
+// what restores the setting it had.
+func (w *textWriter) within(n *node) func() {
+	was := w.implied
+	w.implied = w.imp.implies(n.marks)
+	return func() { w.implied = was }
 }
 
 // keepPlain sets whether w writes values plain, and returns what restores the

@@ -248,7 +248,13 @@ func TestConformance_DI015_MarksAndRedaction(t *testing.T) {
 		{"a marked unknown", tenon.WithMarks(tenon.Narrow(tenon.Unknown(num), tenon.NotNull()), stamp{id: "m"}), `marked(unknown(number, not null), "m")`},
 		{"a marked pending value", tenon.WithMarks(tenon.Pending(tenon.Any()), stamp{id: "m"}), `marked(pending(any), "m")`},
 		{"a marked member", tenon.ListVal(num, one, tenon.WithMarks(one, stamp{id: "m"})), `list(number)[1, marked(1, "m")]`},
-		{"a deep mark on a list", tenon.WithMarks(tenon.ListVal(num, one), deep), `marked(list(number)[marked(1, "d")], "d")`},
+		// A deep mark shows where it was attached, once: every value within
+		// carries it, and lists only the marks it carries beyond it.
+		{"a deep mark on a list", tenon.WithMarks(tenon.ListVal(num, one), deep), `marked(list(number)[1], "d")`},
+		{"a deep mark beside a member's own", tenon.WithMarks(tenon.ListVal(num, one, tenon.WithMarks(one, stamp{id: "m"})), deep),
+			`marked(list(number)[1, marked(1, "m")], "d")`},
+		{"deep marks at two levels", tenon.WithMarks(tenon.ListVal(tenon.List(num), tenon.WithMarks(tenon.ListVal(num, one), stamp{id: "e", deep: true})), deep),
+			`marked(list(list(number))[marked(list(number)[1], "e")], "d")`},
 		{"a deep mark on a set", tenon.WithMarks(tenon.SetVal(num, one), deep), `marked(set(number)[1], "d")`},
 		// A redacting mark withholds everything about the value but itself.
 		{"a redacted known value", tenon.WithMarks(one, secret), `redacted("s")`},
@@ -347,5 +353,40 @@ func TestConformance_DI003_AMessageWritesNoMoreThanItShows(t *testing.T) {
 	}
 	if grew := float64(sizes[1]) / float64(sizes[0]); grew > 2 {
 		t.Errorf("four times the display form allocated %.1f times as much for the message (%d bytes, then %d)", grew, sizes[0], sizes[1])
+	}
+}
+
+// TestConformance_DI015_DeepMarksDisplayOnce holds the display form of a
+// value under many deep marks to growing with the value: k members under k
+// deep marks of distinct identifiers list them once, on the list, where each
+// member listing all of them made the display the square of the value. Four
+// times the members and marks allocate under eight times as much.
+func TestConformance_DI015_DeepMarksDisplayOnce(t *testing.T) {
+	conformance.Covers(t, "DI-015", "MK-008")
+	var sizes [2]uint64
+	for i, k := range []int{500, 2000} {
+		members := make([]tenon.Value, k)
+		deep := make([]tenon.Mark, k)
+		for j := range members {
+			members[j] = tenon.WithMarks(tenon.NumberFromInt(int64(j)), stamp{id: fmt.Sprintf("own%05d", j)})
+			deep[j] = stamp{id: fmt.Sprintf("deep%05d", j), deep: true}
+		}
+		v := tenon.WithMarks(tenon.ListVal(tenon.NumberType(), members...), deep...)
+		var text string
+		var before, after runtime.MemStats
+		runtime.GC()
+		runtime.ReadMemStats(&before)
+		text = v.String()
+		runtime.ReadMemStats(&after)
+		sizes[i] = after.TotalAlloc - before.TotalAlloc
+		if n := strings.Count(text, `"deep00000"`); n != 1 {
+			t.Errorf("a deep mark on a list of %d members shows %d times", k, n)
+		}
+		if !strings.Contains(text, `marked(1, "own00001")`) {
+			t.Errorf("a member's own mark does not show: %.200s", text)
+		}
+	}
+	if grew := float64(sizes[1]) / float64(sizes[0]); grew > 8 {
+		t.Errorf("four times the members and deep marks allocated %.1f times as much to display (%d bytes, then %d)", grew, sizes[0], sizes[1])
 	}
 }

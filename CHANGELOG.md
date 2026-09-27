@@ -42,6 +42,16 @@
 
 ### Changed
 
+- A deep mark displays once, on the value it was attached to, and not again on
+  each value within it, which carries it too: `String` gives
+  `marked(list(number)[1, 2], "d")` where it gave
+  `marked(list(number)[marked(1, "d"), marked(2, "d")], "d")`. A member lists
+  only the marks it carries beyond its container's. The display form of k
+  members under k deep marks listed k identifiers on each, growing with the
+  square of the value, which `SECURITY.md` bounds `String` against; it now
+  grows with the value. Display forms of deep-marked values change, the
+  vector corpus's among them; encodings do not.
+
 - `SECURITY.md` and `gotenon.Encode` say what an input's length is where a Go
   value shares its parts: the tree the value describes, a slice, map or
   pointer reached from two places counted at each, as `encoding/json` counts

@@ -151,7 +151,7 @@
     {"name":"marks/one/unknown","vector":"marks/one","hex":"da74656e008201830002da74656e0282da74656e01a08181616d","diff":"~ .: marked(1, \"m\") -> marked(unknown(number), \"m\")\n"},
     {"name":"marks/in order/unknown","vector":"marks/in order","hex":"da74656e008201830001da74656e0282da74656e01a08381616d836170036178836170036179","diff":"~ .: marked(true, \"m\", \"p\") -> marked(unknown(bool), \"m\", \"p\")\n"},
     {"name":"marks/deep/marked","vector":"marks/deep","hex":"da74656e0082018300820402da74656e02828201028281616481616d","diff":"~ .: marks [\"d\"] -> [\"d\", \"m\"]\n"},
-    {"name":"marks/deep/unknown","vector":"marks/deep","hex":"da74656e0082018300820402da74656e0282da74656e01a081816164","diff":"~ .: marked(list(number)[marked(1, \"d\"), marked(2, \"d\")], \"d\") -> marked(unknown(list(number)), \"d\")\n"},
+    {"name":"marks/deep/unknown","vector":"marks/deep","hex":"da74656e0082018300820402da74656e0282da74656e01a081816164","diff":"~ .: marked(list(number)[1, 2], \"d\") -> marked(unknown(list(number)), \"d\")\n"},
     {"name":"marks/deep/member added","vector":"marks/deep","hex":"da74656e0082018300820402da74656e0282830102f681816164","diff":"+ .[2]: marked(null(number), \"d\")\n"},
     {"name":"marks/deep/member removed","vector":"marks/deep","hex":"da74656e0082018300820402da74656e0282810181816164","diff":"- .[1]: marked(2, \"d\")\n"},
     {"name":"marks/deep/member changed","vector":"marks/deep","hex":"da74656e0082018300820402da74656e028282f60281816164","diff":"~ .[0]: marked(1, \"d\") -> marked(null(number), \"d\")\n"},

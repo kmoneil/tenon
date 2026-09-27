@@ -73,7 +73,7 @@
     {"name":"error/paths","value":"error(vectors.failed: \"at a path\" at .a[0][\"k\"]; vectors.other: \"at a number\" at .[2.5])","hex":"da74656e008201820282836e766563746f72732e6661696c6564696174206120706174688361610081616b836d766563746f72732e6f746865726b61742061206e756d62657281c482201819"},
     {"name":"marks/one","value":"marked(1, \"m\")","hex":"da74656e008201830002da74656e0282018181616d"},
     {"name":"marks/in order","value":"marked(true, \"m\", \"p\")","hex":"da74656e008201830001da74656e0282f58381616d836170036178836170036179"},
-    {"name":"marks/deep","value":"marked(list(number)[marked(1, \"d\"), marked(2, \"d\")], \"d\")","hex":"da74656e0082018300820402da74656e028282010281816164"},
+    {"name":"marks/deep","value":"marked(list(number)[1, 2], \"d\")","hex":"da74656e0082018300820402da74656e028282010281816164"},
     {"name":"marks/member","value":"list(number)[1, marked(2, \"m\", \"p\")]","hex":"da74656e00820183008204028201da74656e0282028281616d836170036178"},
     {"name":"marks/null and unknown","value":"[marked(null(number), \"m\"), marked(unknown(string), \"p\")]","hex":"da74656e0082018300820782020382da74656e0282f68181616dda74656e0282da74656e01a081836170036175"},
     {"name":"marks/pending","value":"marked(pending(any), \"m\")","hex":"da74656e008201da74656e028283018102008181616d"},

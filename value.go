@@ -514,6 +514,11 @@ func (v Value) AsBigInt() (*big.Int, bool) {
 // its diagnostics, which withheld what they had to when they were made, and by
 // all its marks. To show what a redacting mark withholds, unmark the value
 // first.
+//
+// A deep mark shows once, on the value it was attached to: every value within
+// carries it, and lists only the marks it carries beyond it, as in
+// marked(list(number)[1, marked(2, "audited")], "tracked"). So the display
+// form grows with the value, however many deep marks it carries.
 func (v Value) String() string {
 	if v.n == nil {
 		return "<zero Value>"
@@ -539,10 +544,22 @@ func (v Value) write(b *textWriter) {
 		v.writeUnmarked(b)
 		return
 	}
+	// A deep mark shows once, where it was attached: a value within a
+	// container carrying one carries it too, and does not list it again.
+	var listed []Mark
+	if b.implied != nil {
+		listed = b.implied.listed(n.marks)
+	} else {
+		listed = n.markList()
+	}
+	if len(listed) == 0 {
+		v.writeUnmarked(b)
+		return
+	}
 	b.WriteString("marked(")
 	v.writeUnmarked(b)
 	b.WriteString(", ")
-	writeIdentifiers(b, n.markList())
+	writeIdentifiers(b, listed)
 	b.WriteByte(')')
 }
 
