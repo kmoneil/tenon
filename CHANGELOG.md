@@ -1,6 +1,37 @@
 # Changelog
 
-## Unreleased
+## 0.8.0 (2026-09-27)
+
+This release carries the rest of what the pre-1.0 audit found that needed no
+decision: three corrections to gotenon, work kept in proportion to its input
+across marks, paths, messages, ranges, sets, diffs, conversion, unification
+and the encoding, and documentation brought back to what the code does. It
+implements version 0.7.0 of the tenon specification, which amends `GO-011`,
+`GO-012`, `GO-013`, `GO-032`, `GO-040`, `GO-043`, `GO-050`, `SE-005` and
+`CV-040`, and scopes `CV-045`'s rationale: 196 rules, as before.
+
+**Upgrade if you decode documents from parties you do not trust.** In 0.7.0
+a set nested in sets was hashed again by every set holding it, so decoding a
+document whose bulk sits many sets down did work growing with its depth
+times its size, up to 512 times what the document's size alone calls for: a
+list 400 sets down took 15 ms to decode where it now takes 0.6 ms. Upgrade as
+well if you convert, unify or diff values built from data: several shapes did
+work growing with the square of their size, and each is below.
+
+The minor version moves because results change. `gotenon.Encode` fails where
+it met an error value, which it returned with a nil error. `gotenon.Decode`
+fails on a set holding members that are not known decoded into a slice or
+array, which it decoded as though its members were settled, and panics on a
+type holding an interface whatever the value, where a null let one through.
+A container's hash differs from 0.7.0's, as hashes may between any two runs.
+
+**Upgrading from 0.7.0.** Documents 0.7.0 wrote decode as they did, and
+values encode to the same bytes. A program that passes error values through
+`gotenon.Encode` now sees them as failures, with their diagnostics located
+where the part was.
+
+**What `CONFORMANCE.md` states.** 196 of 196, and no rule more widely than its
+test exercises.
 
 ### Fixed
 
