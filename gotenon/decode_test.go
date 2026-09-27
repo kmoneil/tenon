@@ -29,12 +29,12 @@ func decoded[T any](t *testing.T, v tenon.Value, p tenon.Policy) T {
 func wantDecodeFailures[T any](t *testing.T, what string, v tenon.Value, p tenon.Policy, want ...wantDiag) {
 	t.Helper()
 	x, err := gotenon.Decode[T](v, p)
-	var de *gotenon.DiagnosticError
+	var de *tenon.Error
 	if !errors.As(err, &de) {
-		t.Errorf("%s: Decode gave %v, %v, want a *DiagnosticError", what, x, err)
+		t.Errorf("%s: Decode gave %v, %v, want a *tenon.Error", what, x, err)
 		return
 	}
-	wantErrors(t, what, de.Value, want...)
+	wantErrors(t, what, de.Value(), want...)
 }
 
 func TestConformance_GO002_DecodingIsConversion(t *testing.T) {
@@ -91,7 +91,7 @@ func TestConformance_GO032_NumbersDecode(t *testing.T) {
 		{"1e39 into a float32", tenon.NumberFromText("1e39"), func(v tenon.Value) error { _, err := gotenon.Decode[float32](v, safe); return err }},
 		{"0.5 into a big.Int", tenon.NumberFromText("0.5"), func(v tenon.Value) error { _, err := gotenon.Decode[big.Int](v, safe); return err }},
 	} {
-		var de *gotenon.DiagnosticError
+		var de *tenon.Error
 		if err := tt.fn(tt.v); !errors.As(err, &de) || de.Diagnostics()[0].Code != tenon.CodeDecodeOutOfRange {
 			t.Errorf("%s: %v, want %s", tt.name, err, tenon.CodeDecodeOutOfRange)
 		}

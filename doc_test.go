@@ -64,7 +64,8 @@ func TestPackageDocNamesRealSymbols(t *testing.T) {
 		if at[0] > 0 && text[at[0]-1] != ' ' && text[at[0]-1] != '\n' {
 			continue
 		}
-		if inner := strings.Trim(m, "[]"); !links[inner] {
+		// A link to a pointer type is written with its star, as [*Error].
+		if inner := strings.TrimPrefix(strings.Trim(m, "[]"), "*"); !links[inner] {
 			t.Errorf("the package doc holds %s, which is not a documentation link", m)
 		}
 	}

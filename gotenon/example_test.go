@@ -86,7 +86,7 @@ func ExampleDecode_diagnostics() {
 		"address": tenon.Unknown(tenon.StringType()),
 	})
 	_, err := gotenon.Decode[service](value, tenon.Unsafe)
-	var failed *gotenon.DiagnosticError
+	var failed *tenon.Error
 	if !errors.As(err, &failed) {
 		fmt.Println("decoded:", err)
 		return

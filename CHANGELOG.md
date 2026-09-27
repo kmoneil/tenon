@@ -42,6 +42,23 @@
 
 ### Changed
 
+- `Serialize`, `Deserialize`, `ProjectJSON` and `Unify` return a result and
+  an `error`, where they returned the result, an error value and a bool of
+  which only some could be used; gotenon's `Encode` and `Decode` fail with
+  the same error. It is a `*tenon.Error`, which holds the error value
+  (`Value`) and its diagnostics (`Diagnostics`), renders them in `Error`
+  without ever panicking, and leads `errors.Is` and `errors.As` to the Go
+  errors that caused it (`Unwrap`); `NewError` builds one.
+  `gotenon.DiagnosticError` is gone. A marshaler or unmarshaler returns a
+  `*tenon.Error` to contribute diagnostics, and whatever error it returns is
+  kept as a cause of the failure, where only its text was kept, so
+  `errors.Is` finds it. Write `b, err := tenon.Serialize(v)` where a program
+  wrote `b, failure, ok := tenon.Serialize(v)`, and look for a
+  `*tenon.Error`, calling `Value()`, where it looked for a
+  `*gotenon.DiagnosticError` and read its field `Value`. A marshaler
+  returning a `*tenon.Error` that holds no error value fails the encoding as
+  any other error does, with its text, where it was a usage panic.
+
 - `Value`, `Constraint` and `Path` cannot be compared with `==` or used as
   map keys, and neither can `Step`, `Diagnostic` and `Change`, which hold
   them. `==` compared how two were held rather than what they said, so

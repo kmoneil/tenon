@@ -129,14 +129,14 @@ func TestConformance_EQ010_RangesCompareByRecord(t *testing.T) {
 	if tenon.Identical(implied, plain) {
 		t.Errorf("%v and %v are identical, want them told apart by what they record", implied, plain)
 	}
-	a, _, okA := tenon.Serialize(implied)
-	b, _, okB := tenon.Serialize(plain)
+	a, _, okA := trySerialize(implied)
+	b, _, okB := trySerialize(plain)
 	if !okA || !okB || string(a) == string(b) {
 		t.Errorf("the two encode alike, or not at all: %x and %x", a, b)
 	}
 	for _, v := range []tenon.Value{implied, plain} {
-		data, _, _ := tenon.Serialize(v)
-		if back, _, ok := tenon.Deserialize(data, tenon.Decoders{}); !ok || !tenon.Identical(back, v) {
+		data, _, _ := trySerialize(v)
+		if back, _, ok := tryDeserialize(data, tenon.Decoders{}); !ok || !tenon.Identical(back, v) {
 			t.Errorf("%v reads back as %v", v, back)
 		}
 	}

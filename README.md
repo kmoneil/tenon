@@ -95,8 +95,10 @@ fmt.Println("200", checked)
 
 // What comes back out is what a log or a response may hold. The
 // projection refuses the secret rather than printing it.
-if _, failure, ok := tenon.ProjectJSON(checked); !ok {
-	fmt.Println("   not loggable:", failure.Diagnostics()[0].Code, "at", failure.Diagnostics()[0].Path)
+var refused *tenon.Error
+if _, err := tenon.ProjectJSON(checked); errors.As(err, &refused) {
+	d := refused.Diagnostics()[0]
+	fmt.Println("   not loggable:", d.Code, "at", d.Path)
 }
 ```
 

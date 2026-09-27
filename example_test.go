@@ -1,6 +1,7 @@
 package tenon_test
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/kmoneil/tenon"
@@ -203,8 +204,8 @@ func ExampleIdentical() {
 	fmt.Println(tenon.Hash(fromParts) == tenon.Hash(written))
 
 	// Serialization agrees: one value has one encoding.
-	a, _, _ := tenon.Serialize(fromParts)
-	b, _, _ := tenon.Serialize(written)
+	a, _ := tenon.Serialize(fromParts)
+	b, _ := tenon.Serialize(written)
 	fmt.Println(string(a) == string(b))
 	// Output:
 	// true
@@ -219,16 +220,16 @@ func ExampleSerialize() {
 		"name": tenon.String("web"),
 		"port": tenon.Narrow(tenon.Unknown(tenon.NumberType()), tenon.NotNull(), tenon.NumberMin(tenon.NumberFromInt(1024), true)),
 	})
-	encoded, failure, ok := tenon.Serialize(value)
-	if !ok {
-		fmt.Println(failure)
+	encoded, err := tenon.Serialize(value)
+	if err != nil {
+		fmt.Println(err)
 		return
 	}
 	fmt.Println(len(encoded), "bytes")
 
-	back, failure, ok := tenon.Deserialize(encoded, tenon.Decoders{})
-	if !ok {
-		fmt.Println(failure)
+	back, err := tenon.Deserialize(encoded, tenon.Decoders{})
+	if err != nil {
+		fmt.Println(err)
 		return
 	}
 	fmt.Println(back)
@@ -246,18 +247,25 @@ func ExampleProjectJSON() {
 		"name": tenon.String("web"),
 		"port": tenon.NumberFromInt(443),
 	})
-	text, _, _ := tenon.ProjectJSON(known)
+	text, _ := tenon.ProjectJSON(known)
 	fmt.Println(string(text))
 
 	withUnknown := tenon.ObjectVal(map[string]tenon.Value{
 		"name": tenon.String("web"),
 		"port": tenon.Unknown(tenon.NumberType()),
 	})
-	_, failure, ok := tenon.ProjectJSON(withUnknown)
-	fmt.Println(ok, failure.Diagnostics()[0].Code, failure.Diagnostics()[0].Path)
+	// A failure is a *tenon.Error, whose diagnostics each say what part
+	// failed, and why.
+	_, err := tenon.ProjectJSON(withUnknown)
+	var failed *tenon.Error
+	if errors.As(err, &failed) {
+		fmt.Println(failed.Diagnostics()[0].Code, failed.Diagnostics()[0].Path)
+	}
+	fmt.Println(err)
 	// Output:
 	// {"name":"web","port":443}
-	// false serialize.not_known .port
+	// serialize.not_known .port
+	// serialize.not_known: an unknown value of type number has no content to project at .port
 }
 
 // Diff reports what changed between two values, each change located by its
@@ -283,12 +291,12 @@ func ExampleDiff() {
 func ExampleUnify() {
 	number := tenon.Exactly(tenon.NumberType())
 	text := tenon.Exactly(tenon.StringType())
-	common, _, ok := tenon.Unify(tenon.Unsafe, number, text)
-	fmt.Println(common, ok)
+	common, err := tenon.Unify(tenon.Unsafe, number, text)
+	fmt.Println(common, err)
 
-	_, failure, ok := tenon.Unify(tenon.Safe, number, text)
-	fmt.Println(ok, failure.Diagnostics()[0].Code)
+	_, err = tenon.Unify(tenon.Safe, number, text)
+	fmt.Println(err)
 	// Output:
-	// exactly(string) true
-	// false unify.no_common_constraint
+	// exactly(string) <nil>
+	// unify.no_common_constraint: exactly(number) and exactly(string) have no common constraint under the safe policy
 }

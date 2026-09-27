@@ -15,7 +15,7 @@ import (
 // wantProjection fails t unless v projects to want.
 func wantProjection(t *testing.T, what string, v tenon.Value, want string) {
 	t.Helper()
-	got, failure, ok := tenon.ProjectJSON(v)
+	got, failure, ok := tryProjectJSON(v)
 	switch {
 	case !ok:
 		t.Errorf("%s: ProjectJSON(%v) failed: %v", what, v, failure)
@@ -30,7 +30,7 @@ func wantProjection(t *testing.T, what string, v tenon.Value, want string) {
 // diagnostics.
 func wantProjectionFailure(t *testing.T, what string, v tenon.Value, want ...wantDiag) {
 	t.Helper()
-	got, failure, ok := tenon.ProjectJSON(v)
+	got, failure, ok := tryProjectJSON(v)
 	if ok {
 		t.Errorf("%s: ProjectJSON(%v) = %s, want a failure", what, v, got)
 		return
@@ -69,8 +69,8 @@ func TestConformance_SE062_Projection(t *testing.T) {
 		wantProjection(t, tt.name, tt.v, tt.want)
 	}
 	// One value, however it was built, projects to the same text.
-	a, _, _ := tenon.ProjectJSON(tenon.SetVal(str, s("b"), s("a")))
-	b, _, _ := tenon.ProjectJSON(tenon.SetVal(str, s("a"), s("b"), s("a")))
+	a, _, _ := tryProjectJSON(tenon.SetVal(str, s("b"), s("a")))
+	b, _, _ := tryProjectJSON(tenon.SetVal(str, s("a"), s("b"), s("a")))
 	if string(a) != string(b) {
 		t.Errorf("one set projects as %s and as %s", a, b)
 	}
@@ -84,7 +84,7 @@ func TestConformance_SE063_ProjectedStrings(t *testing.T) {
 	// A composed character stays composed, since the string holds it so.
 	wantProjection(t, "normalized", s("e\U00000301"), "\"\U000000e9\"")
 	var decoded string
-	got, _, _ := tenon.ProjectJSON(s("\x01\"x\\"))
+	got, _, _ := tryProjectJSON(s("\x01\"x\\"))
 	if err := json.Unmarshal(got, &decoded); err != nil || decoded != "\x01\"x\\" {
 		t.Errorf("%s reads back as %q, %v", got, decoded, err)
 	}
@@ -128,7 +128,7 @@ func TestConformance_SE061_WhatDoesNotProject(t *testing.T) {
 		wantDiag{tenon.CodeSerializeRedacted, "."})
 	wantProjectionFailure(t, "a redacted member", tenon.MapVal(str, map[string]tenon.Value{"password": tenon.WithMarks(s("hunter2"), secret)}),
 		wantDiag{tenon.CodeSerializeRedacted, `.["password"]`})
-	_, failure, _ := tenon.ProjectJSON(tenon.WithMarks(s("hunter2"), secret))
+	_, failure, _ := tryProjectJSON(tenon.WithMarks(s("hunter2"), secret))
 	if strings.Contains(failure.String(), "hunter2") {
 		t.Errorf("the failure shows what the mark withholds: %v", failure)
 	}
@@ -140,10 +140,10 @@ func TestConformance_SE061_WhatDoesNotProject(t *testing.T) {
 	wantProjectionFailure(t, "a capsule with no display form", tenon.ListVal(opaque, tenon.CapsuleVal(opaque, &celsius{})),
 		wantDiag{tenon.CodeSerializeUnencodableCapsule, ".[0]"})
 	failed := tenon.ErrorVal(tenon.Diagnostic{Code: "app.failed", Message: "it failed"})
-	if _, got, ok := tenon.ProjectJSON(failed); ok || !tenon.Identical(got, failed) {
+	if _, got, ok := tryProjectJSON(failed); ok || !tenon.Identical(got, failed) {
 		t.Errorf("projecting an error value gave %v", got)
 	}
-	mustPanicUsage(t, "use of the zero Value", func() { tenon.ProjectJSON(tenon.Value{}) })
+	mustPanicUsage(t, "use of the zero Value", func() { tryProjectJSON(tenon.Value{}) })
 }
 
 // TestConformance_SE061_EveryDiagnosticHasItsOwnPath holds the projection to
@@ -162,7 +162,7 @@ func TestConformance_SE061_EveryDiagnosticHasItsOwnPath(t *testing.T) {
 		"c": tenon.WithMarks(s("hunter2"), secret),
 		"d": unknown,
 	})
-	_, failure, ok := tenon.ProjectJSON(v)
+	_, failure, ok := tryProjectJSON(v)
 	if ok {
 		t.Fatalf("ProjectJSON(%v) succeeded", v)
 	}
@@ -180,7 +180,7 @@ func TestConformance_SE061_EveryDiagnosticHasItsOwnPath(t *testing.T) {
 	// value is given back as it is, diagnostics and all, so it says nothing
 	// about what the projector records.
 	for _, v := range values.All() {
-		if _, failure, ok := tenon.ProjectJSON(v); !ok && !v.IsError() {
+		if _, failure, ok := tryProjectJSON(v); !ok && !v.IsError() {
 			wantDistinct(t, v.String(), failure.Diagnostics())
 		}
 	}
@@ -211,7 +211,7 @@ func BenchmarkProjectJSON(b *testing.B) {
 		b.Run(fmt.Sprintf("unknowns/%d", size), func(b *testing.B) {
 			b.ReportAllocs()
 			for b.Loop() {
-				if _, _, ok := tenon.ProjectJSON(v); ok {
+				if _, _, ok := tryProjectJSON(v); ok {
 					b.Fatal("the value projected")
 				}
 			}

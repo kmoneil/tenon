@@ -32,9 +32,10 @@
 // its pointer, ValueUnmarshaler. A type implementing one is mapped by its kind
 // only in the other direction, and only when a value goes that way, so a map
 // with int keys, or a tree holding itself, that marshals itself encodes, and
-// decoding into it is the mistake. Failures are reported as a *DiagnosticError,
+// decoding into it is the mistake. Failures are reported as a *tenon.Error,
 // with a diagnostic for each part of the value that fails, located by its
-// path.
+// path, and the errors that marshalers and unmarshalers returned as its
+// causes, which errors.Is and errors.As find through it.
 //
 // # What Go has no type for
 //
@@ -66,5 +67,5 @@
 // malformed. Decode panics as well on an interface, or a type holding one,
 // whatever the value, where Encode takes what the interface holds. Data that
 // does not fit a type that maps is a failure in the data, and comes back as a
-// *DiagnosticError.
+// *tenon.Error.
 package gotenon

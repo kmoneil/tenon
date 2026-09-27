@@ -1076,8 +1076,8 @@ func TestConformance_VA003_TheFlagsAgreeWithAFullWalk(t *testing.T) {
 		checked += tenon.FlagsChecked(t, marked)
 		unmarked, _ := tenon.UnmarkDeep(marked)
 		checked += tenon.FlagsChecked(t, unmarked)
-		if b, _, ok := tenon.Serialize(v); ok {
-			if decoded, _, ok := tenon.Deserialize(b, decoders); ok {
+		if b, _, ok := trySerialize(v); ok {
+			if decoded, _, ok := tryDeserialize(b, decoders); ok {
 				checked += tenon.FlagsChecked(t, decoded)
 			}
 		}

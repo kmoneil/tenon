@@ -40,8 +40,9 @@ const (
 // type may implement it itself or through its pointer.
 type ValueMarshaler interface {
 	// MarshalValue returns the value the Go value encodes as, or an error.
-	// An error that is a *DiagnosticError contributes its diagnostics, and so
-	// does an error value returned in place of a value.
+	// An error that is a *tenon.Error contributes its diagnostics, and so
+	// does an error value returned in place of a value; any other error
+	// contributes its text. Encode's error keeps it as a cause.
 	MarshalValue() (tenon.Value, error)
 }
 
@@ -51,7 +52,8 @@ type ValueMarshaler interface {
 // mapping.
 type ValueUnmarshaler interface {
 	// UnmarshalValue sets the Go value from v, or returns an error. An error
-	// that is a *DiagnosticError contributes its diagnostics.
+	// that is a *tenon.Error contributes its diagnostics, and any other error
+	// its text. Decode's error keeps it as a cause.
 	UnmarshalValue(v tenon.Value) error
 }
 

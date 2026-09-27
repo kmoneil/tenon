@@ -20,7 +20,7 @@ func constraintOf(v tenon.Value) tenon.Constraint {
 // unify what the two say about their types, convert each to the result, and
 // compare what they convert to.
 func compareAsAFrontendDoes(p tenon.Policy, a, b tenon.Value) tenon.Value {
-	u, failure, ok := tenon.Unify(p, constraintOf(a), constraintOf(b))
+	u, failure, ok := tryUnify(p, constraintOf(a), constraintOf(b))
 	if !ok {
 		return failure
 	}

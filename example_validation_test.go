@@ -57,7 +57,7 @@ func Example_validation() {
 		// own types survive: 8080 is a number and "8080" is text.
 		request, err := gotenon.Encode(fields)
 		if err != nil {
-			var failed *gotenon.DiagnosticError
+			var failed *tenon.Error
 			errors.As(err, &failed)
 			for _, d := range failed.Diagnostics() {
 				fmt.Printf("400 %s at %s: %s\n", d.Code, d.Path, d.Message)
@@ -78,10 +78,12 @@ func Example_validation() {
 
 		// What comes back out is what a log or a response may hold. The
 		// projection refuses the secret rather than printing it.
-		if _, failure, ok := tenon.ProjectJSON(checked); !ok {
-			fmt.Println("   not loggable:", failure.Diagnostics()[0].Code, "at", failure.Diagnostics()[0].Path)
+		var refused *tenon.Error
+		if _, err := tenon.ProjectJSON(checked); errors.As(err, &refused) {
+			d := refused.Diagnostics()[0]
+			fmt.Println("   not loggable:", d.Code, "at", d.Path)
 		}
-		public, _, _ := tenon.ProjectJSON(tenon.ObjectVal(map[string]tenon.Value{
+		public, _ := tenon.ProjectJSON(tenon.ObjectVal(map[string]tenon.Value{
 			"name": checked.Attribute("name"),
 			"port": checked.Attribute("port"),
 		}))

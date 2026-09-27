@@ -1,6 +1,9 @@
 package tenon_test
 
 import (
+	"errors"
+	"fmt"
+	"slices"
 	"testing"
 
 	"github.com/kmoneil/tenon"
@@ -92,6 +95,98 @@ func TestConformance_ER004_ErrorValuesHaveNoType(t *testing.T) {
 		mustPanicUsage(t, "which has no type", func() { v.Type() })
 		if len(v.Diagnostics()) == 0 {
 			t.Errorf("%v carries no diagnostics", v)
+		}
+	}
+}
+
+// TestError holds tenon.Error to what a Go error is expected to do: render
+// its diagnostics, be found through wrapping, lead errors.Is and errors.As to
+// its causes, and never panic, even holding nothing.
+func TestError(t *testing.T) {
+	cause := errors.New("the disk is full")
+	failure := tenon.ErrorVal(
+		tenon.Diagnostic{Code: "app.failed", Message: "it failed", Path: tenon.Path{}.Attribute("a")},
+		tenon.Diagnostic{Code: "app.other", Message: "and again"},
+	)
+	e := tenon.NewError(failure, cause, nil)
+	if got, want := e.Error(), "app.failed: it failed at .a; app.other: and again"; got != want {
+		t.Errorf("Error() = %q, want %q", got, want)
+	}
+	if !tenon.Identical(e.Value(), failure) || !slices.EqualFunc(e.Diagnostics(), failure.Diagnostics(), tenon.Diagnostic.Equal) {
+		t.Errorf("the Error holds %v, want %v", e.Value(), failure)
+	}
+	causes := e.Unwrap()
+	if len(causes) != 1 || causes[0] != cause {
+		t.Errorf("Unwrap() = %v, want the one cause that is not nil", causes)
+	}
+	causes[0] = nil
+	if e.Unwrap()[0] != cause {
+		t.Error("changing the slice Unwrap returned changed the Error")
+	}
+	wrapped := fmt.Errorf("loading the plan: %w", e)
+	var found *tenon.Error
+	if !errors.As(wrapped, &found) || found != e {
+		t.Errorf("errors.As did not find the Error in %v", wrapped)
+	}
+	if !errors.Is(wrapped, cause) {
+		t.Errorf("errors.Is did not find the cause through %v", wrapped)
+	}
+	// An Error holding no error value answers as one with no diagnostics.
+	for _, empty := range []*tenon.Error{nil, {}} {
+		if empty.Error() == "" || empty.Diagnostics() != nil || !empty.Value().IsZero() || empty.Unwrap() != nil {
+			t.Errorf("an Error holding nothing answered %q, %v, %v, %v", empty.Error(), empty.Diagnostics(), empty.Value(), empty.Unwrap())
+		}
+	}
+	mustPanicUsage(t, "which is not an error value", func() { tenon.NewError(tenon.Bool(true)) })
+	mustPanicUsage(t, "use of the zero Value", func() { tenon.NewError(tenon.Value{}) })
+}
+
+// TestFunctionsFailWithError holds each function that fails with diagnostics
+// to failing with a *tenon.Error, not wrapped, holding them, and to returning
+// an error that is nil, not a nil *tenon.Error, where it succeeds.
+func TestFunctionsFailWithError(t *testing.T) {
+	num, boolean := tenon.Exactly(tenon.NumberType()), tenon.Exactly(tenon.BoolType())
+	encoded, err := tenon.Serialize(tenon.Bool(true))
+	if err != nil {
+		t.Fatalf("Serialize(true) failed: %v", err)
+	}
+	errorOf := func(_ any, err error) error { return err }
+	for _, tt := range []struct {
+		name          string
+		succeed, fail error
+		code          tenon.Code
+	}{
+		{
+			"Serialize",
+			errorOf(tenon.Serialize(tenon.Bool(true))),
+			errorOf(tenon.Serialize(tenon.WithMarks(tenon.Bool(true), stamp{id: "plain"}))),
+			tenon.CodeSerializeUnencodableMark,
+		},
+		{
+			"Deserialize",
+			errorOf(tenon.Deserialize(encoded, tenon.Decoders{})),
+			errorOf(tenon.Deserialize(nil, tenon.Decoders{})),
+			tenon.CodeSerializeMalformed,
+		},
+		{
+			"ProjectJSON",
+			errorOf(tenon.ProjectJSON(tenon.Bool(true))),
+			errorOf(tenon.ProjectJSON(tenon.Unknown(tenon.BoolType()))),
+			tenon.CodeSerializeNotKnown,
+		},
+		{
+			"Unify",
+			errorOf(tenon.Unify(tenon.Safe, num, num)),
+			errorOf(tenon.Unify(tenon.Safe, num, boolean)),
+			tenon.CodeUnifyNoCommonConstraint,
+		},
+	} {
+		if tt.succeed != nil {
+			t.Errorf("%s succeeded with the error %#v, want nil", tt.name, tt.succeed)
+		}
+		e, ok := tt.fail.(*tenon.Error)
+		if !ok || len(e.Diagnostics()) == 0 || e.Diagnostics()[0].Code != tt.code {
+			t.Errorf("%s failed with %#v, want a *tenon.Error of code %s", tt.name, tt.fail, tt.code)
 		}
 	}
 }

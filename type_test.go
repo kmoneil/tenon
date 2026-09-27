@@ -4,6 +4,7 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"maps"
 	"math/big"
 	"path/filepath"
 	"reflect"
@@ -398,9 +399,13 @@ func TestConformance_TY001_EveryValueHasOneConcreteType(t *testing.T) {
 	untyped := map[string]tenon.Value{
 		"ErrorVal":    tenon.ErrorVal(tenon.Diagnostic{Code: "app.failed", Message: "it failed"}),
 		"Pending":     tenon.Pending(tenon.Any()),
+		"Deserialize": deserializeFailure(),
+	}
+	// The error value a *tenon.Error holds has no type either, whichever
+	// function failed with it.
+	failures := map[string]tenon.Value{
 		"Unify":       unifyFailure(),
 		"Serialize":   serializeFailure(),
-		"Deserialize": deserializeFailure(),
 		"ProjectJSON": projectFailure(),
 	}
 	// Between them these are every function that makes a value, so one added
@@ -430,6 +435,7 @@ func TestConformance_TY001_EveryValueHasOneConcreteType(t *testing.T) {
 		}
 		concrete(t, name, got)
 	}
+	maps.Copy(untyped, failures)
 	for name, v := range untyped {
 		if v.IsResolved() {
 			t.Errorf("%s: %v is resolved, so it is covered by the wrong half of this test", name, v)
@@ -572,25 +578,25 @@ func operationLiterals(t *testing.T) []operationLiteral {
 
 // unifyFailure returns the error value of a unification that fails.
 func unifyFailure() tenon.Value {
-	_, failure, _ := tenon.Unify(tenon.Safe, tenon.Exactly(tenon.NumberType()), tenon.Exactly(tenon.BoolType()))
+	_, failure, _ := tryUnify(tenon.Safe, tenon.Exactly(tenon.NumberType()), tenon.Exactly(tenon.BoolType()))
 	return failure
 }
 
 // serializeFailure returns the error value of a value that cannot be
 // serialized.
 func serializeFailure() tenon.Value {
-	_, failure, _ := tenon.Serialize(tenon.WithMarks(tenon.Bool(true), stamp{id: "plain"}))
+	_, failure, _ := trySerialize(tenon.WithMarks(tenon.Bool(true), stamp{id: "plain"}))
 	return failure
 }
 
 // deserializeFailure returns the error value of input that is not a document.
 func deserializeFailure() tenon.Value {
-	_, failure, _ := tenon.Deserialize(nil, tenon.Decoders{})
+	_, failure, _ := tryDeserialize(nil, tenon.Decoders{})
 	return failure
 }
 
 // projectFailure returns the error value of a value that cannot be projected.
 func projectFailure() tenon.Value {
-	_, failure, _ := tenon.ProjectJSON(tenon.Unknown(tenon.NumberType()))
+	_, failure, _ := tryProjectJSON(tenon.Unknown(tenon.NumberType()))
 	return failure
 }

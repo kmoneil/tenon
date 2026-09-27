@@ -800,14 +800,14 @@ func TestConformance_EQ045_KnownMembersAreComparedInTheirOrder(t *testing.T) {
 	// the second about each value the first lists.
 	holdingA := tenon.Narrow(tenon.Unknown(set), tenon.Members(forwards...))
 	partlyA := tenon.SetVal(counting, append(members(0, size), tenon.Unknown(counting))...)
-	listed, failure, ok := tenon.Serialize(listing)
+	listed, failure, ok := trySerialize(listing)
 	if !ok {
 		t.Fatalf("Serialize(a listing of two partly known sets) failed: %v", failure)
 	}
 	// A document holding two sets that hold the same members: the outer value
 	// is a set, so the two are one member and the document is not its own
 	// encoding, which the decoder finds out by comparing them.
-	pair, failure, ok := tenon.Serialize(tenon.ListVal(set, a, b))
+	pair, failure, ok := trySerialize(tenon.ListVal(set, a, b))
 	if !ok {
 		t.Fatalf("Serialize(a list of two sets) failed: %v", failure)
 	}
@@ -839,7 +839,7 @@ func TestConformance_EQ045_KnownMembersAreComparedInTheirOrder(t *testing.T) {
 		{"Contains", "true", func() string { return tenon.Contains(a, value(size/2)).String() }, 4 * size},
 		{"Equals of a set listing a's members and a partly known set holding them", "unknown(bool, not null)", func() string { return tenon.Equals(holdingA, partlyA).String() }, 4 * size},
 		{"decoding a document of two sets holding the same members", string(tenon.CodeSerializeNotCanonical), func() string {
-			_, failure, ok := tenon.Deserialize(pair, read)
+			_, failure, ok := tryDeserialize(pair, read)
 			if ok {
 				return "decoded"
 			}
@@ -848,7 +848,7 @@ func TestConformance_EQ045_KnownMembersAreComparedInTheirOrder(t *testing.T) {
 		{"decoding a listing of two partly known sets", "true", func() string {
 			var failure tenon.Value
 			var ok bool
-			decoded, failure, ok = tenon.Deserialize(listed, read)
+			decoded, failure, ok = tryDeserialize(listed, read)
 			if !ok {
 				return "refused: " + failure.Diagnostics()[0].Message
 			}
@@ -924,7 +924,7 @@ func TestConformance_UN005_ASetOverFewValuesDecidesThemOnce(t *testing.T) {
 		for i := range members {
 			members[i] = tenon.SetVal(elem, tenon.Unknown(elem))
 		}
-		doc, failure, ok := tenon.Serialize(tenon.ListVal(tenon.Set(elem), members...))
+		doc, failure, ok := trySerialize(tenon.ListVal(tenon.Set(elem), members...))
 		if !ok {
 			t.Fatalf("Serialize(%d sets of %v) failed: %v", sets, elem, failure)
 		}
@@ -934,7 +934,7 @@ func TestConformance_UN005_ASetOverFewValuesDecidesThemOnce(t *testing.T) {
 		var before, after runtime.MemStats
 		runtime.GC()
 		runtime.ReadMemStats(&before)
-		if _, failure, ok := tenon.Deserialize(doc, decoders); !ok {
+		if _, failure, ok := tryDeserialize(doc, decoders); !ok {
 			t.Fatalf("a document of sets did not decode: %v", failure)
 		}
 		runtime.ReadMemStats(&after)

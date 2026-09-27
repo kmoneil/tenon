@@ -8,9 +8,8 @@ import (
 )
 
 // Unify returns the most specific constraint that a value satisfying any of cs
-// converts to under the policy p, and true. Where there is none, it returns an
-// error value with code CodeUnifyNoCommonConstraint, naming the constraints,
-// and false. A frontend unifies the types of the branches of a conditional, or
+// converts to under the policy p. Where there is none, it fails with code
+// CodeUnifyNoCommonConstraint, naming the constraints. A frontend unifies the types of the branches of a conditional, or
 // the operands of an equality, before converting each to the result.
 //
 // Any stands for a type not yet settled and takes whatever the others give, as
@@ -37,16 +36,24 @@ import (
 // attributes unify to a OneOf of every combination of them. Unify weighs each
 // pair of members it forms by their sizes, and where the pairs would weigh
 // more in all than a fixed multiple of the size of cs, it forms no more and
-// returns an error value with code CodeUnifyTooLarge instead. Unions that stay
+// fails with code CodeUnifyTooLarge instead. Unions that stay
 // small, because their pairs unify alike or fail, are never refused.
 //
-// Where it returns true, the error value is the zero Value, and where it
-// returns false, the constraint is the zero Constraint: neither is a value or
-// a constraint, and neither may be used.
+// Where the constraints do not unify, Unify returns the zero Constraint and a
+// [*Error] whose error value says why.
 //
 // Unify panics if p is not Safe or Unsafe, or if a constraint is the zero
 // Constraint.
-func Unify(p Policy, cs ...Constraint) (Constraint, Value, bool) {
+func Unify(p Policy, cs ...Constraint) (Constraint, error) {
+	c, failure, ok := unify(p, cs...)
+	if !ok {
+		return Constraint{}, asError(failure)
+	}
+	return c, nil
+}
+
+// unify is Unify, giving the error value it fails with and false.
+func unify(p Policy, cs ...Constraint) (Constraint, Value, bool) {
 	if p != Safe && p != Unsafe {
 		usagePanic("Unify called with %s, which is neither Safe nor Unsafe", p)
 	}

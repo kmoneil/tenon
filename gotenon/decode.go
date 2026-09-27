@@ -18,7 +18,7 @@ import (
 // refuses with the conversion's diagnostics. So an object decodes into a Go
 // map under either policy, and a map into a struct under Unsafe only.
 //
-// Decode fails with a *DiagnosticError, with a diagnostic for each part of v
+// Decode fails with a *tenon.Error, with a diagnostic for each part of v
 // that cannot be decoded, located by its path: a part that is unknown or
 // pending (tenon.CodeDecodeNotKnown), or carries a mark
 // (tenon.CodeDecodeMarked), other than parts decoded into a tenon.Value or by
@@ -77,7 +77,7 @@ func Decode[T any](v tenon.Value, p tenon.Policy) (T, error) {
 	d.decode(m, reflect.ValueOf(&out).Elem(), v, tenon.Path{}, false)
 	if len(d.fails.list) > 0 {
 		var zero T
-		return zero, &DiagnosticError{Value: tenon.ErrorVal(d.fails.list...)}
+		return zero, d.fails.err()
 	}
 	return out, nil
 }
