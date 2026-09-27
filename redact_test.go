@@ -278,3 +278,37 @@ func errorsOf(v tenon.Value) []tenon.Diagnostic {
 	}
 	return v.Diagnostics()
 }
+
+// TestConformance_MK002_RedactingMarksAlwaysPropagate holds a redacting mark
+// whose policy is Isolate to propagating as any redacting mark does, so that
+// nothing derived from the value it withholds shows it: a narrowing taken
+// from it, an operation over it, and a conversion of a set it is deep on. An
+// Isolate mark that does not redact still stays where it was put.
+func TestConformance_MK002_RedactingMarksAlwaysPropagate(t *testing.T) {
+	conformance.Covers(t, "MK-002", "MK-003", "MK-011")
+	num, str := tenon.NumberType(), tenon.StringType()
+	pii := stamp{id: "pii", policy: tenon.Isolate, redact: true}
+	deepPii := stamp{id: "pii", policy: tenon.Isolate, redact: true, deep: true}
+	fortyTwo := tenon.WithMarks(tenon.NumberFromInt(42), pii)
+	for _, tt := range []struct {
+		name string
+		got  tenon.Value
+		mark tenon.Mark
+	}{
+		{"a narrowing taken from it", tenon.Narrow(tenon.Unknown(num), tenon.NumberMin(fortyTwo, true)), pii},
+		{"an operation over it", tenon.Add(fortyTwo, tenon.NumberFromInt(0)), pii},
+		{"a set it is deep on, converted to a list", tenon.Convert(
+			tenon.WithMarks(tenon.SetVal(str, tenon.String("hunter2")), deepPii), tenon.ListOf(tenon.Exactly(str)), tenon.Safe), deepPii},
+	} {
+		if !tenon.HasMark(tt.got, tt.mark) {
+			t.Errorf("%s gave %v, not carrying the redacting mark", tt.name, tt.got)
+		}
+		if text := tt.got.String(); strings.Contains(text, "42") || strings.Contains(text, "hunter2") {
+			t.Errorf("%s displays as %s, showing what the mark withholds", tt.name, text)
+		}
+	}
+	quiet := stamp{id: "quiet", policy: tenon.Isolate}
+	if sum := tenon.Add(tenon.WithMarks(tenon.NumberFromInt(42), quiet), tenon.NumberFromInt(0)); tenon.HasMark(sum, quiet) || sum.String() != "42" {
+		t.Errorf("an Isolate mark that does not redact reached the sum: %v", sum)
+	}
+}

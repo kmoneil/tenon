@@ -164,7 +164,7 @@ func (c *carrying) part(s *markSet) *markSet {
 }
 
 // isolates reports whether m is a mark that no operation carries.
-func isolates(m Mark) bool { return m.Propagation() != Propagate }
+func isolates(m Mark) bool { return !propagates(m) }
 
 // attachment returns the attachment of layer, the same for every member it
 // is asked for, so that what one member's attaching learns serves the rest.
@@ -220,7 +220,7 @@ func (x converter) carry(r Value, from *node) Value {
 func propagateMarks(n *node) []Mark {
 	var ms []Mark
 	for _, m := range n.markList() {
-		if m.Propagation() == Propagate {
+		if propagates(m) {
 			ms = append(ms, m)
 		}
 	}
@@ -939,7 +939,7 @@ func pendingContainer(c Constraint, n *node) Value {
 // looked up in a set once there are many, so k members under k deep marks,
 // or k members each carrying a mark of its own, cost k and not k by k.
 func heldMarks(n *node) []Mark {
-	t := taking{keep: func(m Mark) bool { return m.Propagation() == Propagate }}
+	t := taking{keep: propagates}
 	var walk func(n *node)
 	walk = func(n *node) {
 		if !n.markedWithin {
