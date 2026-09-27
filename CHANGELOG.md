@@ -1,6 +1,72 @@
 # Changelog
 
-## Unreleased
+## 0.9.0 (2026-09-27)
+
+This release is the API that 1.0 keeps. The pre-1.0 audit left questions open
+about tenon's API, its encoding and its specification, and each answer is
+here: one naming rule, results of `(T, error)` with one error type, values
+that `==` cannot compare, a typed capsule handle, names from data that fail
+as data, gotenon's runtime forms and its reading of text marshalers, and the
+forms `log/slog` and `encoding/json` render values in. With them come the
+last of the audit's fixes, to redaction above all. It implements version
+0.8.0 of the tenon specification, which adds `UN-010`, `UN-011`, `TY-018`,
+`GO-044` and `DI-018`, amends `EQ-042`, `EQ-044`, `MK-002`, `MK-005`,
+`MK-011`, `CV-023`, `CV-033`, `CV-050`, `SE-002`, `SE-004`, `SE-050`,
+`GO-001`, `GO-004`, `GO-010`, `GO-011`, `GO-012`, `GO-015`, `GO-020`,
+`GO-021`, `GO-040`, `GO-050` and `DI-015`, and closes the provisional numbers
+and the canonical order in Appendix C: 201 rules.
+
+**Upgrade if a redacting mark guards anything you log, display or return.**
+In 0.8.0 a redacted map's keys and an object's attribute names reached
+diagnostics' paths and messages, and a redacting mark whose policy was
+`Isolate` stayed behind on its value, so what was derived from the value
+showed what it withheld. Each is fixed below.
+
+The minor version moves because nearly every program's source changes: the
+constructors are renamed, four functions return an error, and `==` no longer
+compiles on values. The deprecated `Type.Equals` goes at 1.0.
+
+**Upgrading from 0.8.0.** Documents 0.8.0 wrote decode as they did, and
+values encode to the same bytes. The compiler finds almost everything to
+change:
+
+- Rename by the table under Changed: the type constructors to `ListType`,
+  `SetType`, `MapType`, `TupleType` and `ObjectType` first, then the value
+  constructors to `List`, `Set`, `Map`, `Tuple`, `Object` and `Null`, and the
+  narrowing `Null()` to `NullOnly()`.
+- `Serialize`, `Deserialize`, `ProjectJSON` and `Unify` return `(T, error)`;
+  read a failure's diagnostics from the `*tenon.Error` that `errors.As`
+  finds. `Unify` takes the constraints first and the policy last.
+- Compare values with `Value.Equal` or `Identical` and test for the zero
+  value with `IsZero`; key a map by `Serialize`'s bytes.
+- Make capsule types with `NewCapsule`, and build and read their values
+  through the handle it returns.
+- In gotenon, look for a `*tenon.Error` where you looked for a
+  `*gotenon.DiagnosticError`, and give each `UnmarshalValue` method the
+  policy parameter.
+
+Five changes the compiler does not find:
+
+- An `UnmarshalValue` method left with one parameter compiles, and no longer
+  implements `ValueUnmarshaler`, so its type decodes by its kind. Assert
+  `var _ gotenon.ValueUnmarshaler = (*T)(nil)` beside each.
+- gotenon encodes `time.Time`, `netip.Addr` and any other type that marshals
+  itself to text as the string of its text, where it encoded `{}`, and a
+  struct whose state is all unexported, marshaling itself neither way,
+  panics as a usage error.
+- `Div` and `Mod` by a known zero fail now over a dividend not known yet,
+  where they gave an unknown number, and `Contains` answers `true` for a
+  member recorded in the range of a set that may still be null.
+- A name that cannot be an attribute name fails with the new
+  `CodeObjectEmptyName` or `CodeObjectDuplicateName` wherever it is met,
+  where a conversion or `gotenon.Encode` failed with
+  `CodeConvertUnexpectedAttribute` or `CodeMapDuplicateKey`.
+- A mark whose type holds a `Value` is no longer comparable, and `WithMarks`
+  panics on it; keep what the mark says as Go data, and build its payload
+  from that.
+
+**What `CONFORMANCE.md` states.** 201 of 201, and no rule more widely than its
+test exercises.
 
 ### Fixed
 
@@ -102,16 +168,16 @@
   object is closed, so an attribute no field names fails, and names match
   only exactly, case included.
 
-- `ObjectVal` gives an error value for attribute names that cannot be ones,
-  as `MapVal` does for keys, where it panicked: names come from data as often
+- `Object` gives an error value for attribute names that cannot be ones, as
+  `Map` does for keys, where it panicked: names come from data as often
   as from the program, and `SECURITY.md` promises that data never panics. An
   empty name fails with the new `CodeObjectEmptyName`, a name that is not
   well-formed UTF-8 with `CodeStringInvalidUTF8`, and names that are one once
   normalized with the new `CodeObjectDuplicateName`, in the order a map's keys
   report theirs. The new `CheckAttributeNames` reports the same of names
-  alone, so a program can check names from data before building an `Object`
-  type, an `ObjectWith` constraint or a `Path.Attribute` step, which still
-  panic on such a name. An empty map key that no attribute can be named fails
+  alone, so a program can check names from data before building an
+  `ObjectType`, an `ObjectWith` constraint or a `Path.Attribute` step, which
+  still panic on such a name. An empty map key that no attribute can be named fails
   with `CodeObjectEmptyName` as well where a conversion to an object or
   `gotenon.Encode` of a map meets it, where it failed with
   `CodeConvertUnexpectedAttribute`, and keys of a map that `gotenon.Encode`
