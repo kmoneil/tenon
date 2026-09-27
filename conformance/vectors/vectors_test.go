@@ -296,6 +296,8 @@ var invalid = []invalidVector{
 	{"map key twice", document + "83008206028282616101826161 02", "serialize.malformed"},
 	{"range no value lies in", document + "830002da74656e01a300f5018205f5028201f5", "serialize.malformed"},
 	{"range only null lies in", document + "830002da74656e01a2018205f5028201f5", "serialize.not_canonical"},
+	{"number as a bare bignum", document + "830002c249010000000000000000", "serialize.not_canonical"},
+	{"decimal fraction whose mantissa is a multiple of ten", document + "830002c48200c249056bc75e2d63100000", "serialize.not_canonical"},
 	{"number outside the window", document + "830002c4821a000f424001", "serialize.malformed"},
 	{"error with no diagnostics", document + "820280", "serialize.malformed"},
 	{"another format version", "da74656e008202830001f5", "serialize.unsupported_version"},

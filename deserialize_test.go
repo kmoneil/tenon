@@ -3,12 +3,14 @@ package tenon_test
 import (
 	"bytes"
 	"fmt"
+	"math/big"
 	"math/rand"
 	"runtime"
 	"strings"
 	"testing"
 
 	"github.com/kmoneil/tenon"
+	"github.com/kmoneil/tenon/internal/cbor"
 	"github.com/kmoneil/tenon/internal/conformance"
 	"github.com/kmoneil/tenon/internal/conformance/values"
 )
@@ -261,6 +263,11 @@ func TestConformance_SE002_OnlyTheEncodingDecodes(t *testing.T) {
 		// Crossed bounds on a range that holds null leave null alone, which
 		// is the null value and encodes as one (UN-004).
 		{"a range only null lies in", "83 00 02 da74656e01 a2 01 82 05 f5 02 82 01 f5"},
+		// 2^64, an integer beyond CBOR's, is the decimal fraction [0, 2^64],
+		// never a bare bignum; and 10^20's mantissa as a bignum is a multiple
+		// of ten, which the canonical [20, 1] is not.
+		{"a bignum standing for a number", "83 00 02 c2 49 010000000000000000"},
+		{"a decimal fraction whose bignum mantissa is a multiple of ten", "83 00 02 c4 82 00 c2 49 056bc75e2d63100000"},
 	} {
 		wantDecodeFailure(t, tt.name, document+tt.item, tenon.CodeSerializeNotCanonical)
 	}
@@ -615,6 +622,37 @@ func TestConformance_SE005_DeepMarksBesideMembersOwn(t *testing.T) {
 		if grew := float64(steps[i][1]) / float64(steps[i][0]); grew > 8 {
 			t.Errorf("%s four times as many allocated %.1f times as much (%d bytes, then %d)", name, grew, steps[i][0], steps[i][1])
 		}
+	}
+}
+
+// A decimal fraction whose mantissa is a multiple of ten is no number's
+// encoding, and is refused before its digits are worked out: telling the
+// trailing zeros of a mantissa of 200,000 digits by its text allocates many
+// times the document, where refusing it costs about the document.
+func TestConformance_SE005_NonCanonicalMantissasAreRefusedFirst(t *testing.T) {
+	conformance.Covers(t, "SE-005", "SE-032", "SE-002")
+	c := new(big.Int).Exp(big.NewInt(10), big.NewInt(200000), nil)
+	doc := cbor.AppendTag(nil, 1952804352)
+	doc = cbor.AppendArray(doc, 2)
+	doc = cbor.AppendUint(doc, 1)
+	doc = cbor.AppendArray(doc, 3)
+	doc = cbor.AppendUint(doc, 0)
+	doc = cbor.AppendUint(doc, 2)
+	doc = cbor.AppendTag(doc, 4)
+	doc = cbor.AppendArray(doc, 2)
+	doc = cbor.AppendUint(doc, 0)
+	doc = cbor.AppendTag(doc, 2)
+	doc = cbor.AppendBytes(doc, c.Bytes())
+	var before, after runtime.MemStats
+	runtime.GC()
+	runtime.ReadMemStats(&before)
+	_, failure, ok := tenon.Deserialize(doc, tenon.Decoders{})
+	runtime.ReadMemStats(&after)
+	if ok || failure.Diagnostics()[0].Code != tenon.CodeSerializeNotCanonical {
+		t.Fatalf("a mantissa of 10^200000 decoded as %v", failure)
+	}
+	if allocated := after.TotalAlloc - before.TotalAlloc; allocated > 4*uint64(len(doc)) {
+		t.Errorf("refusing a %d-byte document allocated %d bytes", len(doc), allocated)
 	}
 }
 
