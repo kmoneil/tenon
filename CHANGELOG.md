@@ -40,6 +40,19 @@
   encoding from it is the usage error. A nil pointer to a type that encodes
   itself encodes as the null decoding reads back as nil, as before.
 
+### Added
+
+- Values, types, paths and constraints log through `log/slog` as their
+  display forms, which withhold what a redacting mark withholds, where slog
+  wrote their representations. Types, paths and constraints implement
+  `encoding.TextMarshaler` with their display forms, so `encoding/json`
+  writes them as strings, and a value implements `json.Marshaler` with its
+  JSON projection, failing with a `*tenon.Error` where the projection fails:
+  a secret, or a value not known yet. The zero `Value` fails rather than
+  panics; a field that may hold it is tagged `omitzero`. gotenon encodes a
+  type, path or constraint held in a Go value as the text of its display
+  form, by the text marshaling it now honours.
+
 ### Changed
 
 - gotenon honours `encoding.TextMarshaler` and `encoding.TextUnmarshaler`: a

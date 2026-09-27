@@ -161,6 +161,11 @@
 // encoding: the bytes can be compared, hashed or used as a key in place of the
 // value.
 //
+// Values, types, paths and constraints log through log/slog as their display
+// forms; types, paths and constraints marshal as text in them, as
+// encoding/json writes them; and a value marshals through encoding/json as its
+// JSON projection, failing where the projection fails.
+//
 // [ProjectJSON] renders a value as JSON for a consumer that speaks JSON and
 // nothing else. The projection is one-way and lossy, and it refuses what JSON
 // cannot say: a value that is not known, or one a redacting mark withholds.
