@@ -327,7 +327,8 @@ func (t Type) TupleElementTypes() []Type {
 
 // Equal reports whether t and u are the same type: types of the same
 // structure are, and a capsule type is the same type only as itself. For types
-// other than the zero Type, Equal is t == u.
+// other than the zero Type, Equal is t == u. It panics if t or u is the zero
+// Type, which is no type.
 func (t Type) Equal(u Type) bool {
 	return t.data() == u.data()
 }

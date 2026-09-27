@@ -500,7 +500,8 @@ func (v Value) AsBigInt() (*big.Int, bool) {
 
 // String returns the display form of v (DI-010), as in "text",
 // list(number)[1, 2.5], null(string), unknown(number, >= 5),
-// marked(true, "audited") or error(number.divide_by_zero: "division by zero").
+// marked(true, "audited") or
+// error(number.divide_by_zero: "a number cannot be divided by zero").
 // It describes v for people, and is not a format for parsing. Values that are
 // not identical display differently, except where the display withholds what
 // a redacting mark withholds or names a mark, a capsule type or a capsule value

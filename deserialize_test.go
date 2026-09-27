@@ -427,6 +427,21 @@ func TestConformance_SE005_DecodingWorkIsBounded(t *testing.T) {
 		t.Errorf("512 levels were refused: %v", failure)
 	}
 	wantDecodeFailure(t, "513 levels", levels(511), tenon.CodeSerializeTooLarge)
+	// A mark's payload nests below the content the mark is on: its type is
+	// two levels below the item, so 509 list types around a number reach 512
+	// and 510 reach 513.
+	payloads := tenon.Decoders{Marks: map[string]tenon.MarkDecoder{
+		"p": func(p tenon.Value, _ bool) (tenon.Mark, []tenon.Diagnostic) { return holding{p}, nil },
+	}}
+	payload := func(k int) string {
+		return document + "830002da74656e02820181836170" + strings.Repeat("82 04 ", k) + "02 80"
+	}
+	if _, failure, ok := tenon.Deserialize(fromHex(t, payload(509)), payloads); !ok {
+		t.Errorf("a payload reaching 512 levels was refused: %v", failure)
+	}
+	if _, failure, _ := tenon.Deserialize(fromHex(t, payload(510)), payloads); !failure.IsError() || failure.Diagnostics()[0].Code != tenon.CodeSerializeTooLarge {
+		t.Errorf("a payload reaching 513 levels gave %v, want %s", failure, tenon.CodeSerializeTooLarge)
+	}
 
 	// A run of 40,000 marks out of canonical order, 80 KB, is refused as not
 	// canonical, which took 6.2 seconds when the run was sorted by insertion.
@@ -1279,3 +1294,11 @@ func TestConformance_SE003_OnlyValuesWithinTheBoundHaveAnEncoding(t *testing.T) 
 		t.Errorf("of the depths tried, %d serialized and %d were refused; want some of each", written, refused)
 	}
 }
+
+// holding is a mark serialized with whatever value it holds.
+type holding struct{ v tenon.Value }
+
+func (holding) MarkID() string                     { return "p" }
+func (holding) Propagation() tenon.Propagation     { return tenon.Propagate }
+func (holding) Redacting() bool                    { return false }
+func (m holding) MarkPayload() (tenon.Value, bool) { return m.v, true }

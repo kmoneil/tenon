@@ -95,7 +95,7 @@
 // [Diagnostic] holds a [Code] for programs, a message for people and a [Path]
 // locating the problem within the value that carries it, built of a [Step] per
 // attribute or index. [Value.Diagnostics] reads them back. The codes are
-// constants, from [CodeBoolInvalidSyntax] to [CodeSerializeUnknownMark], so a
+// constants, from [CodeBoolInvalidSyntax] to [CodeUnifyTooLarge], so a
 // caller switches on them rather than matching text.
 //
 // Passing a value of the wrong type to an operation is not a diagnostic but a

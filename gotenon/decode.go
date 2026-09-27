@@ -478,7 +478,11 @@ func (d *decoder) sequence(m *goMapping, dst reflect.Value, v, given tenon.Value
 	if m.kind == goSlice {
 		target = reflect.MakeSlice(m.rt, len(members), len(members))
 	} else if len(members) != m.rt.Len() {
-		d.fail(p, tenon.CodeDecodeLengthMismatch, "a list of "+strconv.Itoa(len(members))+" members does not decode into a Go "+m.rt.String())
+		counted := strconv.Itoa(len(members)) + " members"
+		if len(members) == 1 {
+			counted = "1 member"
+		}
+		d.fail(p, tenon.CodeDecodeLengthMismatch, "a "+strings.ToLower(v.Type().Kind().String())+" of "+counted+" does not decode into a Go "+m.rt.String())
 		return
 	}
 	for i, member := range members {

@@ -31,6 +31,9 @@ import (
 // form (CodeSerializeUnencodableCapsule). An error value gives itself. To
 // project what a redacting mark withholds, unmark the value first.
 //
+// Where it returns true, the error value is the zero Value, which is not a
+// value and must not be used; where it returns false, the bytes are nil.
+//
 // ProjectJSON panics on the zero Value.
 func ProjectJSON(v Value) ([]byte, Value, bool) {
 	if v.data().state == stateError {

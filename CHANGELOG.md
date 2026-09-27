@@ -66,6 +66,24 @@
 
 ### Changed
 
+- Documentation that had drifted from what the code does is corrected. Of
+  a range's listing, `Members` and `Narrow` describe the least length as
+  the known values listed, and only a listing of known values as becoming a
+  set. `Length` gives the element type's bound on a set's length. `Unify`
+  says a value satisfying only a `OneOf` member it leaves out does not
+  convert to the result. `Contains`, `Serialize` and `Deserialize` list the
+  panics they have, and `Serialize`, `Deserialize`, `ProjectJSON` and `Unify`
+  say the result they return beside a failure, or beside success, is a zero
+  value not to be used. `Type.Equal` says it panics on the zero Type. The
+  examples of a prefix narrowing and of a division's error show what the code
+  gives. gotenon says `Encode` takes an interface, where only `Decode`
+  panics on one.
+- gotenon's `CodeDecodeLengthMismatch` message names the kind decoded, a set
+  or a tuple as well as a list, and counts one member as one.
+- The vector corpus pins the depth bound: a value 512 levels deep, alone and
+  marked, since marks add no level, and 513 levels refused, alone, marked,
+  and in a mark's payload.
+
 - `gotenon.Decode` panics on a type that is an interface or holds one, as its
   documentation says, before it looks at the value. It panicked only once a
   known value reached the interface, so a null, an empty collection or an

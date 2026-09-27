@@ -14,8 +14,11 @@ import (
 // the operands of an equality, before converting each to the result.
 //
 // Any stands for a type not yet settled and takes whatever the others give, as
-// do the attributes an open ObjectWith leaves unnamed. OneOf unifies member by
-// member, leaving out members that do not unify. Otherwise constraints unify
+// do the attributes an open ObjectWith leaves unnamed, so a value that turns
+// out to be of another type than they are given does not convert to the
+// result. OneOf unifies member by member, leaving out members that do not
+// unify, so a value satisfying only a member left out does not convert to the
+// result either. Otherwise constraints unify
 // by kind: one type with itself; two of Bool, Number and String as String,
 // under the Unsafe policy only; lists, sets and maps element by element, with a
 // set and a list as a list; tuples of one length position by position, and of
@@ -36,6 +39,10 @@ import (
 // more in all than a fixed multiple of the size of cs, it forms no more and
 // returns an error value with code CodeUnifyTooLarge instead. Unions that stay
 // small, because their pairs unify alike or fail, are never refused.
+//
+// Where it returns true, the error value is the zero Value, and where it
+// returns false, the constraint is the zero Constraint: neither is a value or
+// a constraint, and neither may be used.
 //
 // Unify panics if p is not Safe or Unsafe, or if a constraint is the zero
 // Constraint.

@@ -50,11 +50,10 @@ func (r Range) AllowsNull() bool {
 	return false
 }
 
-// String describes r for messages, as in 5, "text" or
-// string, not null, prefix "ab". The text is canonical: ranges recording the
-// same narrowings render alike. It is not a format for parsing. The range of
-// a value carrying a redacting mark reads as that value does, as a
-// placeholder.
+// String describes r for messages, as in 5, "text" or string, not null,
+// prefix "v1-", length >= 3. The text is canonical: ranges recording the same
+// narrowings render alike. It is not a format for parsing. The range of a
+// value carrying a redacting mark reads as that value does, as a placeholder.
 func (r Range) String() string {
 	if r.v.n == nil {
 		return "<zero Range>"
@@ -398,12 +397,16 @@ func LengthMax(n int64) Narrowing {
 // and it may be unknown: the set then needs a member that the listed value's
 // range allows.
 //
-// The record a range keeps of a listing is canonical. Listed values that
-// could turn out to be one value promise one member between them, so the
-// least length of the set rises to the count of listed values that are
-// provably distinct, and a listed value whose range excludes nothing is kept
-// only as that least length, since it promises no more than that a member
-// exists.
+// The record a range keeps of a listing is canonical: each value once, and a
+// listed value whose range excludes nothing kept only as a least length of
+// one, since it promises no more than that a member exists. The least length
+// of the set rises to the number of known values listed, each counted once, or
+// to one where every value listed is not known: a value that is not known
+// could turn out to be one listed already. A listing of known values only,
+// null not among them, as many as the greatest length allows, leaves one set,
+// which Narrow gives, known; one that lists a value that is not known leaves
+// a range. A set value holding members that are not known is narrowed as
+// Narrow says, and counts the values listed that are provably distinct.
 //
 // Members panics if a listed value is an error value or a pending value: a
 // narrowing carries no diagnostics, and a value that has no type yet says
@@ -442,7 +445,7 @@ func lengthArg(fn string, n int64) int64 {
 	return n
 }
 
-// String describes nw for messages, as in not null, >= 5 or prefix "ab". It is
+// String describes nw for messages, as in not null, >= 5 or prefix "v1-". It is
 // not a format for parsing.
 func (nw Narrowing) String() string {
 	switch nw.kind {
@@ -561,9 +564,11 @@ func (n *node) length() int64 {
 //
 // A narrowing that brings a range down to a single value produces that value,
 // known: an unknown that nothing more could ever say is not unknown. A set
-// range recording as many members as its greatest length allows, all of them
-// provably distinct and null excluded, has come down to the set holding those
-// members, which is known when every member is.
+// range listing as many members as its greatest length allows, every one of
+// them known and null excluded, has come down to the set holding them, which
+// Narrow gives, known; a listing that holds a value that is not known leaves
+// the range a range, which may describe the sets a set holding such members
+// does.
 //
 // A set holding members that are not known has no range of its own to record
 // a narrowing in, and its length is a range, as Length reports it. Its

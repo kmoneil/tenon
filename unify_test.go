@@ -76,6 +76,12 @@ func TestConformance_CV040_Unification(t *testing.T) {
 		t.Errorf("a bool converted to the number that Any unified with gave %v", r)
 	}
 	wantUnified(t, safe, fields(false, "a", tenon.Optional(is(num))), fields(false), fields(true, "a", tenon.Required(is(num))))
+	// So does a OneOf, whose members that unify with nothing are left out: a
+	// bool satisfies the OneOf given, and does not convert to the result.
+	wantUnified(t, safe, is(num), tenon.OneOf(is(num), is(boo)), is(num))
+	if r := tenon.Convert(tenon.Bool(true), unifyOK(t, safe, tenon.OneOf(is(num), is(boo)), is(num)), safe); !r.IsError() {
+		t.Errorf("a bool converted to the unification that left its OneOf member out, giving %v", r)
+	}
 
 	// The failure is an error value naming what was unified.
 	_, failure, _ := tenon.Unify(safe, is(str), is(num))
