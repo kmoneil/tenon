@@ -43,10 +43,11 @@ func Unify(p Policy, cs ...Constraint) (Constraint, Value, bool) {
 	if p != Safe && p != Unsafe {
 		usagePanic("Unify called with %s, which is neither Safe nor Unsafe", p)
 	}
+	un := newUnifier(p)
 	given := make([]Constraint, len(cs))
 	for i, c := range cs {
 		c.data()
-		given[i] = canonical(c)
+		given[i] = un.memo.canonical(c)
 	}
 	if len(given) == 0 {
 		return Any(), Value{}, true
@@ -55,23 +56,119 @@ func Unify(p Policy, cs ...Constraint) (Constraint, Value, bool) {
 	// pass the bound, do not depend on the order cs are given in (CV-045).
 	ordered := slices.Clone(given)
 	slices.SortFunc(ordered, compareConstraints)
-	un := newUnifier(p)
 	var total int64
 	for _, c := range ordered {
 		total = saturatingAdd(total, un.size(c))
 	}
 	un.left = saturatingMul(unifyBound, total)
-	u := ordered[0]
-	for _, c := range ordered[1:] {
-		var ok bool
-		if u, ok = un.pair(u, c); !ok {
-			if un.over {
-				return Constraint{}, unifyTooLarge(len(given), total), false
-			}
-			return Constraint{}, unifyFailure(given, p), false
+	u, ok := un.fold(ordered[0], ordered[1:])
+	if !ok {
+		if un.over {
+			return Constraint{}, unifyTooLarge(len(given), total), false
 		}
+		return Constraint{}, unifyFailure(given, p), false
 	}
 	return u, Value{}, true
+}
+
+// fold unifies u with each of cs in turn, pair by pair, stopping at the first
+// that fails. Where u and the next are both objects, and the one after, they
+// are unified as one union (objectUnion), which forms the pairs folding them
+// forms, in the order it forms them, where folding built the union of every
+// field again for each object: 4,000 ObjectWith constraints of distinct fields
+// took 414 ms and 2.4 GB.
+func (un *unifier) fold(u Constraint, cs []Constraint) (Constraint, bool) {
+	var union *objectUnion
+	for _, c := range cs {
+		if union == nil && objectLike(u) && objectLike(c) {
+			union = newObjectUnion(spelledOut(u))
+		}
+		if union != nil {
+			if objectLike(c) {
+				if !union.add(un, spelledOut(c)) {
+					return Constraint{}, false
+				}
+				continue
+			}
+			u, union = union.constraint(un), nil
+		}
+		var ok bool
+		if u, ok = un.pair(u, c); !ok {
+			return Constraint{}, false
+		}
+	}
+	if union != nil {
+		u = union.constraint(un)
+	}
+	return u, true
+}
+
+// objectLike reports whether c is an ObjectWith or Exactly of an object type,
+// which rule 3 of CV-042 spells out as one.
+func objectLike(c Constraint) bool {
+	d := c.c
+	return d.kind == ConstraintObjectWith || d.kind == ConstraintExactly && d.typ.t.kind == KindObject
+}
+
+// objectUnion is the ObjectWith constraints of a fold unified so far, held so
+// that unifying one more touches only its own fields: rule 7 of CV-042 gives
+// a field for each name in either, its constraint the fields of that name
+// unified, required where both require it, closed where both are. So a field
+// is required where every object so far holds it and requires it, which a
+// count tells, and one more object pairs its fields with the union's of the
+// same names, in name order, stopping at the first that fails, which is what
+// unifying the union written out with it pairs. Written out between objects,
+// the union would be canonical and the same: its fields are canonical and
+// admit some value, since the constraints given and every pair formed do.
+type objectUnion struct {
+	fields  map[string]*unionField
+	objects int
+	closed  bool
+}
+
+// unionField is one field of an objectUnion.
+type unionField struct {
+	c        Constraint
+	required bool // required by every object that holds it
+	held     int  // how many of the objects hold it
+}
+
+func newObjectUnion(first Constraint) *objectUnion {
+	u := &objectUnion{fields: make(map[string]*unionField, len(first.c.fields)), objects: 1, closed: first.c.closed}
+	for _, f := range first.c.fields {
+		u.fields[f.name] = &unionField{c: f.Constraint, required: f.Required, held: 1}
+	}
+	return u
+}
+
+// add unifies the ObjectWith constraint o into the union, reporting whether
+// its fields unify with the union's.
+func (u *objectUnion) add(un *unifier, o Constraint) bool {
+	for _, f := range o.c.fields {
+		have, ok := u.fields[f.name]
+		if !ok {
+			u.fields[f.name] = &unionField{c: f.Constraint, required: f.Required, held: 1}
+			continue
+		}
+		c, ok := un.pair(have.c, f.Constraint)
+		if !ok {
+			return false
+		}
+		have.c, have.required, have.held = c, have.required && f.Required, have.held+1
+	}
+	u.objects++
+	u.closed = u.closed && o.c.closed
+	return true
+}
+
+// constraint writes the union out, canonically.
+func (u *objectUnion) constraint(un *unifier) Constraint {
+	fields := make([]field, 0, len(u.fields))
+	for name, f := range u.fields {
+		fields = append(fields, field{name, Field{Constraint: f.c, Required: f.required && f.held == u.objects}})
+	}
+	slices.SortFunc(fields, func(a, b field) int { return strings.Compare(a.name, b.name) })
+	return un.memo.canonical(Constraint{&constraintData{kind: ConstraintObjectWith, fields: fields, closed: u.closed}})
 }
 
 // unifyBound is the multiple of CV-045: the pairs a unification forms may
@@ -80,18 +177,20 @@ func Unify(p Policy, cs ...Constraint) (Constraint, Value, bool) {
 const unifyBound = 64
 
 // unifier holds what one Unify call has left to form: the weight of the pairs
-// it may still form, whether a OneOf has been refused its pairs, and the sizes
-// it has measured, since a member is weighed again at every pair it joins.
+// it may still form, whether a OneOf has been refused its pairs, the sizes it
+// has measured, since a member is weighed again at every pair it joins, and
+// the canonical forms it has written.
 type unifier struct {
 	p     Policy
 	left  int64
 	over  bool
 	sizes map[*constraintData]int64
 	types map[*typeData]int64
+	memo  *canonMemo
 }
 
 func newUnifier(p Policy) *unifier {
-	return &unifier{p: p, sizes: map[*constraintData]int64{}, types: map[*typeData]int64{}}
+	return &unifier{p: p, sizes: map[*constraintData]int64{}, types: map[*typeData]int64{}, memo: newCanonMemo()}
 }
 
 // size returns the size of c by CV-045: the constraints c is written with,
@@ -193,46 +292,93 @@ func unifyFailure(given []Constraint, p Policy) Value {
 // canonical returns c written canonically, at every depth: a constraint that
 // admits no type is OneOf(), one that admits exactly one type is Exactly of it,
 // an optional field no attribute can fill is left out, and a OneOf is written
-// as oneOf writes it.
-func canonical(c Constraint) Constraint {
-	if admitsNone(c) {
+// as canonMemo.oneOf writes it.
+func canonical(c Constraint) Constraint { return (*canonMemo)(nil).canonical(c) }
+
+// canonMemo remembers, for one unification, the canonical form of each
+// constraint it has written and the facts that form rests on: the type a
+// constraint admits alone (soleType) and whether it admits none (admitsNone).
+// Every pair a unification forms is written canonically, and each is made of
+// parts written so already, so remembering them makes that the work of the
+// pair alone, where it was the work of everything within it: unifying list
+// constraints nested 800 deep wrote each level out again from the bottom.
+// A nil *canonMemo remembers nothing.
+type canonMemo struct {
+	forms map[*constraintData]Constraint
+	sole  map[*constraintData]soleResult
+	none  map[*constraintData]bool
+}
+
+// soleResult is what soleType gives.
+type soleResult struct {
+	t  Type
+	ok bool
+}
+
+func newCanonMemo() *canonMemo {
+	return &canonMemo{
+		forms: map[*constraintData]Constraint{},
+		sole:  map[*constraintData]soleResult{},
+		none:  map[*constraintData]bool{},
+	}
+}
+
+// canonical is canonical, remembered in m where m is not nil, and a
+// constraint it gives is remembered as its own canonical form.
+func (m *canonMemo) canonical(c Constraint) Constraint {
+	if m != nil {
+		if r, ok := m.forms[c.c]; ok {
+			return r
+		}
+	}
+	r := m.canonicalOf(c)
+	if m != nil {
+		m.forms[c.c], m.forms[r.c] = r, r
+	}
+	return r
+}
+
+// canonicalOf writes c canonically, asking m of its parts.
+func (m *canonMemo) canonicalOf(c Constraint) Constraint {
+	if m.admitsNone(c) {
 		return Constraint{&constraintData{kind: ConstraintOneOf}}
 	}
-	if t, ok := soleType(c); ok {
+	if t, ok := m.soleType(c); ok {
 		return Exactly(t)
 	}
 	d := c.c
 	switch d.kind {
 	case ConstraintListOf, ConstraintSetOf, ConstraintMapOf:
-		return elementConstraint(d.kind, canonical(d.elem))
+		return elementConstraint(d.kind, m.canonical(d.elem))
 	case ConstraintTupleOf:
 		members := make([]Constraint, len(d.members))
-		for i, m := range d.members {
-			members[i] = canonical(m)
+		for i, member := range d.members {
+			members[i] = m.canonical(member)
 		}
 		return Constraint{&constraintData{kind: ConstraintTupleOf, members: members}}
 	case ConstraintObjectWith:
 		var fields []field
 		for _, f := range d.fields {
-			if !f.Required && admitsNone(f.Constraint) {
+			if !f.Required && m.admitsNone(f.Constraint) {
 				continue
 			}
-			fields = append(fields, field{f.name, Field{Constraint: canonical(f.Constraint), Required: f.Required}})
+			fields = append(fields, field{f.name, Field{Constraint: m.canonical(f.Constraint), Required: f.Required}})
 		}
 		return Constraint{&constraintData{kind: ConstraintObjectWith, fields: fields, closed: d.closed}}
 	case ConstraintOneOf:
-		return oneOf(d.members)
+		return m.oneOf(d.members)
 	}
 	return c
 }
 
 // oneOf returns the OneOf of members written canonically: members that are
 // OneOf are flattened into it, identical members appear once, in canonical
-// order, and a lone member stands for the OneOf.
-func oneOf(members []Constraint) Constraint {
+// order, and a lone member stands for the OneOf. m, which may be nil, gives
+// the members' canonical forms.
+func (m *canonMemo) oneOf(members []Constraint) Constraint {
 	var flat []Constraint
-	for _, m := range members {
-		if cm := canonical(m); cm.c.kind == ConstraintOneOf {
+	for _, member := range members {
+		if cm := m.canonical(member); cm.c.kind == ConstraintOneOf {
 			flat = append(flat, cm.c.members...)
 		} else {
 			flat = append(flat, cm)
@@ -347,13 +493,13 @@ func (un *unifier) pair(a, b Constraint) (Constraint, bool) {
 		if len(out) == 0 {
 			return Constraint{}, false
 		}
-		return oneOf(out), true
+		return un.memo.oneOf(out), true
 	}
 	r, ok := un.structures(spelledOut(a), spelledOut(b))
 	if !ok {
 		return Constraint{}, false
 	}
-	return canonical(r), true
+	return un.memo.canonical(r), true
 }
 
 // spelledOut returns Exactly of a collection or structural type as the
@@ -415,14 +561,7 @@ func (un *unifier) structures(x, y Constraint) (Constraint, bool) {
 func (un *unifier) all(cs []Constraint) (Constraint, bool) {
 	ordered := slices.Clone(cs)
 	slices.SortFunc(ordered, compareConstraints)
-	u := Any()
-	for _, c := range ordered {
-		var ok bool
-		if u, ok = un.pair(u, c); !ok {
-			return Constraint{}, false
-		}
-	}
-	return u, true
+	return un.fold(Any(), ordered)
 }
 
 // tuples unifies two TupleOf constraints: position by position where they are

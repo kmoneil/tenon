@@ -3,6 +3,7 @@ package tenon_test
 import (
 	"fmt"
 	"math/rand"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -466,6 +467,63 @@ func TestConformance_CV041_UnificationIsOrderIndependent(t *testing.T) {
 // of the pairs it forms: the bound falls where the rule's arithmetic puts it,
 // the multiplying shape is refused in every order with one diagnostic, and
 // unions that stay small pass however many of them there are.
+// TestConformance_CV045_UnificationGrowsWithWhatItIsGiven holds unification
+// to work in proportion to the constraints given, in two shapes the bound on
+// pairs does not reach, since they form no pairs of OneOf members: many
+// ObjectWith constraints of distinct fields, whose union folding built again
+// for each (4,000 of them allocated 2.4 GB), and OneOfs nested deep in lists,
+// whose every level was written canonically again from the bottom. Four times
+// as many, or as deep, allocate under eight times as much.
+func TestConformance_CV045_UnificationGrowsWithWhatItIsGiven(t *testing.T) {
+	conformance.Covers(t, "CV-045", "CV-042")
+	num, str, boo := tenon.NumberType(), tenon.StringType(), tenon.BoolType()
+	allocated := func(f func()) uint64 {
+		var before, after runtime.MemStats
+		runtime.GC()
+		runtime.ReadMemStats(&before)
+		f()
+		runtime.ReadMemStats(&after)
+		return after.TotalAlloc - before.TotalAlloc
+	}
+	objects := func(k int) func() tenon.Constraint {
+		cs := make([]tenon.Constraint, k)
+		for i := range cs {
+			cs[i] = tenon.ObjectWith(map[string]tenon.Field{fmt.Sprintf("f%05d", i): tenon.Required(tenon.Exactly(num))}, false)
+		}
+		return func() tenon.Constraint { return unifyOK(t, tenon.Safe, cs...) }
+	}
+	nested := func(depth int) func() tenon.Constraint {
+		x := tenon.OneOf(tenon.Exactly(num), tenon.Exactly(str))
+		y := tenon.OneOf(tenon.Exactly(num), tenon.Exactly(str), tenon.Exactly(boo))
+		for range depth {
+			x, y = tenon.ListOf(x), tenon.ListOf(y)
+		}
+		return func() tenon.Constraint { return unifyOK(t, tenon.Safe, x, y) }
+	}
+	for _, tt := range []struct {
+		name         string
+		small, large func() tenon.Constraint
+		check        func(small, large tenon.Constraint) bool
+	}{
+		{"objects of distinct fields", objects(1000), objects(4000), func(_, large tenon.Constraint) bool {
+			return strings.Count(large.String(), "?") == 4000
+		}},
+		{"OneOfs nested in lists", nested(100), nested(400), func(_, large tenon.Constraint) bool {
+			return strings.Count(large.String(), "list_of(") == 400 && strings.Contains(large.String(), "one_of([exactly(number), exactly(string)])")
+		}},
+	} {
+		var small, large tenon.Constraint
+		a := allocated(func() { small = tt.small() })
+		b := allocated(func() { large = tt.large() })
+		if !tt.check(small, large) {
+			t.Errorf("%s unified to %.120s...", tt.name, large)
+		}
+		if grew := float64(b) / float64(a); grew > 8 {
+			t.Errorf("%s: four times as many allocated %.1f times as much (%d bytes, then %d)", tt.name, grew, a, b)
+		}
+	}
+}
+
 func TestConformance_CV045_UnificationIsBounded(t *testing.T) {
 	conformance.Covers(t, "CV-045", "CV-041")
 	// singles returns n objects of one attribute each, their names distinct,

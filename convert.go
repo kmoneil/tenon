@@ -174,13 +174,30 @@ func makesSet(c Constraint) bool {
 }
 
 // soleType returns the type that c admits, and whether it admits exactly one.
-func soleType(c Constraint) (Type, bool) {
+func soleType(c Constraint) (Type, bool) { return (*canonMemo)(nil).soleType(c) }
+
+// soleType is soleType, remembered in m where m is not nil.
+func (m *canonMemo) soleType(c Constraint) (Type, bool) {
+	if m != nil {
+		if r, ok := m.sole[c.c]; ok {
+			return r.t, r.ok
+		}
+	}
+	t, ok := m.soleTypeOf(c)
+	if m != nil {
+		m.sole[c.c] = soleResult{t, ok}
+	}
+	return t, ok
+}
+
+// soleTypeOf works out soleType of c, asking m of its parts.
+func (m *canonMemo) soleTypeOf(c Constraint) (Type, bool) {
 	d := c.c
 	switch d.kind {
 	case ConstraintExactly:
 		return d.typ, true
 	case ConstraintListOf, ConstraintSetOf, ConstraintMapOf:
-		elem, ok := soleType(d.elem)
+		elem, ok := m.soleType(d.elem)
 		if !ok {
 			return Type{}, false
 		}
@@ -195,8 +212,8 @@ func soleType(c Constraint) (Type, bool) {
 		// Conversion asks this of every constraint it meets, so a tuple that
 		// admits more than one type allocates nothing to say so.
 		var elems []Type
-		for i, m := range d.members {
-			t, ok := soleType(m)
+		for i, member := range d.members {
+			t, ok := m.soleType(member)
 			if !ok {
 				return Type{}, false
 			}
@@ -214,7 +231,7 @@ func soleType(c Constraint) (Type, bool) {
 		// the attribute and one without, which is decided before anything is
 		// built. One that no type fills leaves one choice: no attribute.
 		for _, f := range d.fields {
-			if !f.Required && !admitsNone(f.Constraint) {
+			if !f.Required && !m.admitsNone(f.Constraint) {
 				return Type{}, false
 			}
 		}
@@ -223,7 +240,7 @@ func soleType(c Constraint) (Type, bool) {
 			if !f.Required {
 				continue
 			}
-			t, ok := soleType(f.Constraint)
+			t, ok := m.soleType(f.Constraint)
 			if !ok {
 				return Type{}, false
 			}
@@ -232,11 +249,11 @@ func soleType(c Constraint) (Type, bool) {
 		return Object(attrs), true
 	case ConstraintOneOf:
 		var sole Type
-		for _, m := range d.members {
-			if admitsNone(m) {
+		for _, member := range d.members {
+			if m.admitsNone(member) {
 				continue
 			}
-			t, ok := soleType(m)
+			t, ok := m.soleType(member)
 			if !ok || sole.t != nil && t != sole {
 				return Type{}, false
 			}
@@ -357,26 +374,43 @@ func complete(c Constraint, t Type) bool {
 }
 
 // admitsNone reports whether no type satisfies c.
-func admitsNone(c Constraint) bool {
+func admitsNone(c Constraint) bool { return (*canonMemo)(nil).admitsNone(c) }
+
+// admitsNone is admitsNone, remembered in m where m is not nil.
+func (m *canonMemo) admitsNone(c Constraint) bool {
+	if m != nil {
+		if r, ok := m.none[c.c]; ok {
+			return r
+		}
+	}
+	r := m.admitsNoneOf(c)
+	if m != nil {
+		m.none[c.c] = r
+	}
+	return r
+}
+
+// admitsNoneOf works out admitsNone of c, asking m of its parts.
+func (m *canonMemo) admitsNoneOf(c Constraint) bool {
 	d := c.c
 	switch d.kind {
 	case ConstraintListOf, ConstraintSetOf, ConstraintMapOf:
-		return admitsNone(d.elem)
+		return m.admitsNone(d.elem)
 	case ConstraintTupleOf:
-		for _, m := range d.members {
-			if admitsNone(m) {
+		for _, member := range d.members {
+			if m.admitsNone(member) {
 				return true
 			}
 		}
 	case ConstraintObjectWith:
 		for _, f := range d.fields {
-			if f.Required && admitsNone(f.Constraint) {
+			if f.Required && m.admitsNone(f.Constraint) {
 				return true
 			}
 		}
 	case ConstraintOneOf:
-		for _, m := range d.members {
-			if !admitsNone(m) {
+		for _, member := range d.members {
+			if !m.admitsNone(member) {
 				return false
 			}
 		}

@@ -547,6 +547,82 @@ func TestConformance_SE005_DecodingWorkIsBounded(t *testing.T) {
 	}
 }
 
+// TestConformance_SE005_NestedSetsCostWhatTheyHold holds a set nested in sets
+// to be hashed, encoded and decoded once however many sets hold it. A capsule
+// type counts how often its values are hashed: a list of 1,000 of them under
+// 200 sets is hashed 1,000 times to build and 1,000 to decode, where every
+// set rehashed all it held, 200,000 times each. And a list 400 sets down
+// encodes in under twice what one 100 sets down does, where every set copied
+// all it held into the next: 2.5 MB for a 7 KB document.
+func TestConformance_SE005_NestedSetsCostWhatTheyHold(t *testing.T) {
+	conformance.Covers(t, "SE-005", "EQ-030")
+	hashed := 0
+	counted := tenon.Capsule("counted", tenon.CapsuleOps[int64]{
+		Equals: func(a, b *int64) bool { return *a == *b },
+		Hash:   func(v *int64) uint64 { hashed++; return uint64(*v) },
+		Encoding: &tenon.CapsuleEncoding[int64]{
+			ID:     "tenon.test/counted",
+			Type:   tenon.NumberType(),
+			Encode: func(v *int64) tenon.Value { return tenon.NumberFromInt(*v) },
+			Decode: func(v tenon.Value) (*int64, []tenon.Diagnostic) {
+				x, _ := v.AsInt64()
+				return &x, nil
+			},
+		},
+	})
+	const size, depth = 1000, 200
+	members := make([]tenon.Value, size)
+	for i := range members {
+		x := int64(i)
+		members[i] = tenon.CapsuleVal(counted, &x)
+	}
+	nest := func(v tenon.Value, levels int) tenon.Value {
+		for range levels {
+			v = tenon.SetVal(v.Type(), v)
+		}
+		return v
+	}
+	hashed = 0
+	v := nest(tenon.ListVal(counted, members...), depth)
+	if hashed > 2*size {
+		t.Errorf("building %d sets around %d values hashed them %d times", depth, size, hashed)
+	}
+	doc, failure, ok := tenon.Serialize(v)
+	if !ok {
+		t.Fatalf("Serialize failed: %v", failure)
+	}
+	hashed = 0
+	back, failure, ok := tenon.Deserialize(doc, tenon.Decoders{Capsules: []tenon.Type{counted}})
+	if !ok || !tenon.Identical(back, v) {
+		t.Fatalf("the nested sets came back as %.80s (%v)", back, failure)
+	}
+	if hashed > 2*size {
+		t.Errorf("decoding %d sets around %d values hashed them %d times", depth, size, hashed)
+	}
+
+	num := tenon.NumberType()
+	leaves := make([]tenon.Value, 20000)
+	for i := range leaves {
+		leaves[i] = tenon.NumberFromInt(int64(i))
+	}
+	list := tenon.ListVal(num, leaves...)
+	var sizes [2]uint64
+	for i, levels := range []int{100, 400} {
+		deep := nest(list, levels)
+		var before, after runtime.MemStats
+		runtime.GC()
+		runtime.ReadMemStats(&before)
+		if _, failure, ok := tenon.Serialize(deep); !ok {
+			t.Fatalf("Serialize failed: %v", failure)
+		}
+		runtime.ReadMemStats(&after)
+		sizes[i] = after.TotalAlloc - before.TotalAlloc
+	}
+	if grew := float64(sizes[1]) / float64(sizes[0]); grew > 2 {
+		t.Errorf("encoding a list four times as many sets down allocated %.1f times as much (%d bytes, then %d)", grew, sizes[0], sizes[1])
+	}
+}
+
 // TestConformance_SE005_DeepMarksNestedLevelUponLevel holds decoding a nest of
 // lists, each level carrying a deep mark of its own, to work in proportion to
 // the marks it gives: every value holds the deep marks of every level above

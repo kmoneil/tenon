@@ -46,6 +46,23 @@
   68 MB, and now merges each in, 0.8 ms and 0.14 MB. Diffing two sets whose
   members are not known pairs identical members in one pass and writes each
   changed member's display form once.
+- A value is hashed once, however many sets hold it: a value's hash is kept,
+  and a container's is made from its members'. `Deserialize` and building a
+  set rehashed everything a nested set held at every level that held it, and
+  `Serialize` copied it into every enclosing set: a list 400 sets down took
+  15 ms to decode and 2.5 MB to encode as a 7 KB document, and now takes
+  0.6 ms and 80 KB. `Serialize` writes a set's members where they go, moving
+  them only when they are out of order.
+- `Unify` works in proportion to the constraints it is given where the bound
+  on pairs does not reach: 4,000 `ObjectWith` constraints of distinct fields
+  took 414 ms and 2.4 GB, and take 3 ms and 5 MB, their fields gathered as
+  they go; and a unification writes each constraint canonically once, where
+  OneOfs nested 400 lists deep allocated 6.7 MB, now 0.5 MB. Converting a list
+  of 4,000 objects of distinct attributes beside a map took 1.5 s and 1.9 GB
+  to find the element type, and takes 3 ms and 4.6 MB.
+- Numbers with long coefficients compare without making the same power of
+  ten again for every comparison, and trailing zeros are counted by dividing
+  rather than by writing the number out as text.
 
 ### Changed
 

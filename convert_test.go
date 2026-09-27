@@ -1417,6 +1417,38 @@ func TestConformance_CV033_CarryingMarksGrowsWithTheMembers(t *testing.T) {
 	}
 }
 
+// TestConformance_CV021_ManyObjectsBesideAMapGrowWithThem holds the element
+// type of a list converted from members of many types to work in proportion
+// to them where objects meet another kind: objects of distinct attributes
+// beside a map were folded one at a time, the union of their attributes
+// built again for each, 1.5 s and 1.9 GB at 4,000. Four times as many
+// allocate under eight times as much.
+func TestConformance_CV021_ManyObjectsBesideAMapGrowWithThem(t *testing.T) {
+	conformance.Covers(t, "CV-021", "CV-044")
+	var sizes [2]uint64
+	for i, k := range []int{1000, 4000} {
+		members := make([]tenon.Value, k+1)
+		for j := range k {
+			members[j] = tenon.ObjectVal(map[string]tenon.Value{fmt.Sprintf("a%05d", j): n(1)})
+		}
+		members[k] = tenon.MapVal(num, map[string]tenon.Value{"x": n(1)})
+		v := tenon.TupleVal(members...)
+		var r tenon.Value
+		var before, after runtime.MemStats
+		runtime.GC()
+		runtime.ReadMemStats(&before)
+		r = tenon.Convert(v, tenon.ListOf(tenon.Any()), uns)
+		runtime.ReadMemStats(&after)
+		sizes[i] = after.TotalAlloc - before.TotalAlloc
+		if r.IsError() || r.Type() != tenon.List(tenon.Map(num)) || len(r.Elements()) != k+1 {
+			t.Fatalf("%d objects and a map converted to %.100s", k, r)
+		}
+	}
+	if grew := float64(sizes[1]) / float64(sizes[0]); grew > 8 {
+		t.Errorf("four times the objects allocated %.1f times as much (%d bytes, then %d)", grew, sizes[0], sizes[1])
+	}
+}
+
 func TestConformance_CV033_FailuresCarryOnlyTheMarksTheyRead(t *testing.T) {
 	conformance.Covers(t, "CV-033", "MK-003")
 	prop := stamp{id: "prop"}
