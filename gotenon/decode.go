@@ -22,13 +22,16 @@ import (
 // that cannot be decoded, located by its path: a part that is unknown or
 // pending (tenon.CodeDecodeNotKnown), or carries a mark
 // (tenon.CodeDecodeMarked), other than parts decoded into a tenon.Value or by
-// an unmarshaler; a null decoded into a Go type that has no nil, other than a
-// field marked optional (tenon.CodeDecodeNull); a number the Go number type
-// cannot hold, or an integer type a fraction (tenon.CodeDecodeOutOfRange); a
-// list of another length than a Go array (tenon.CodeDecodeLengthMismatch); and
-// an UnmarshalValue method's failure (tenon.CodeDecodeUnmarshalFailed, or its
-// own diagnostics). An error value gives its own diagnostics. To decode a
-// marked value, unmark it with tenon.UnmarkDeep first and keep the marks.
+// an unmarshaler; a set holding members that are not known, which has no
+// settled length or order, decoded into a slice or array of any element type
+// (tenon.CodeDecodeNotKnown); a null decoded into a Go type that has no nil,
+// other than a field marked optional (tenon.CodeDecodeNull); a number the Go
+// number type cannot hold, or an integer type a fraction
+// (tenon.CodeDecodeOutOfRange); a list of another length than a Go array
+// (tenon.CodeDecodeLengthMismatch); and an UnmarshalValue method's failure
+// (tenon.CodeDecodeUnmarshalFailed, or its own diagnostics). An error value
+// gives its own diagnostics. To decode a marked value, unmark it with
+// tenon.UnmarkDeep first and keep the marks.
 //
 // A pointer, at any depth, to a type whose pointer implements
 // ValueUnmarshaler decodes by that method too, as encoding/json treats a
@@ -50,8 +53,9 @@ import (
 //
 // Decode panics where T does not map to tenon, as Encode does, and if p is
 // not Safe or Unsafe. It panics as well where T is an interface type, or holds
-// one: nothing in a value says which Go type it would take, and tenon.Value is
-// the Go type that holds any value, so decode into that.
+// one other than within a type that decodes by an unmarshaler, whatever v is,
+// a null among them: nothing in a value says which Go type it would take, and
+// tenon.Value is the Go type that holds any value, so decode into that.
 func Decode[T any](v tenon.Value, p tenon.Policy) (T, error) {
 	var out T
 	if v == (tenon.Value{}) {
@@ -61,6 +65,14 @@ func Decode[T any](v tenon.Value, p tenon.Policy) (T, error) {
 		usagePanic("Decode called with %s, which is neither Safe nor Unsafe", p)
 	}
 	m := mappingOf(reflect.TypeFor[T]())
+	// The type is refused whatever the value, before any of it is looked
+	// at: a null or an empty collection reaches no interface, and must not
+	// let a type through that the next value would fail [GO-011].
+	if m.iface == m.rt {
+		usagePanic("Decode: the Go type %s is an interface, which says nothing of the Go type it would take; decode into tenon.Value, which holds any value", m.rt)
+	} else if m.iface != nil {
+		usagePanic("Decode: the Go type %s holds %s, an interface, which says nothing of the Go type it would take; decode into tenon.Value, which holds any value", m.rt, m.iface)
+	}
 	d := decoder{policy: p, marked: map[string]tenon.Diagnostic{}}
 	d.decode(m, reflect.ValueOf(&out).Elem(), v, tenon.Path{}, false)
 	if len(d.fails.list) > 0 {
@@ -357,9 +369,6 @@ func (d *decoder) build(m *goMapping, dst reflect.Value, v, given tenon.Value, p
 		return
 	}
 	switch m.kind {
-	case goInterface:
-		// Nothing in a value says which Go type it would take [GO-011].
-		usagePanic("Decode: the value at %q is decoded into a Go %s, an interface, which says nothing of the Go type it would take; decode into tenon.Value, which holds any value", p.String(), m.rt)
 	case goBool:
 		dst.SetBool(v.AsBool())
 	case goString:
@@ -447,13 +456,20 @@ func (d *decoder) integer(m *goMapping, dst reflect.Value, v tenon.Value, p teno
 
 // sequence decodes a list into a slice or an array. A slice of elements that
 // take a value of any type, since they map to no type or decode by an
-// unmarshaler, decodes from a list, a set or a tuple, each member by its own
-// conversion.
+// unmarshaler, decodes from a list, a set whose members are all known, or a
+// tuple, each member by its own conversion.
 func (d *decoder) sequence(m *goMapping, dst reflect.Value, v, given tenon.Value, p tenon.Path) {
 	dynamic := m.elem.decodesAny()
 	switch k := v.Type().Kind(); {
 	case !dynamic && k != tenon.KindList, dynamic && k != tenon.KindList && k != tenon.KindSet && k != tenon.KindTuple:
 		d.fail(p, tenon.CodeConvertNoConversion, d.typeText(v.Type())+" does not decode into a Go "+m.rt.String())
+		return
+	case k == tenon.KindSet && !v.IsKnown():
+		// A set holding members that are not known has neither a settled
+		// number of members nor a settled order, and converts to a list as
+		// an unknown one [CV-031], which a typed slice refuses already; the
+		// members would decode, but not into a sequence of Go's [GO-012].
+		d.fail(p, tenon.CodeDecodeNotKnown, "a set holding members that are not known has no settled length or order, and cannot be decoded into a Go "+m.rt.String())
 		return
 	}
 	members := v.Elements()

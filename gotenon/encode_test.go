@@ -122,6 +122,29 @@ func TestConformance_GO011_UnsupportedTypes(t *testing.T) {
 	mustPanicUsage(t, "which says nothing of the Go type it would take", func() {
 		gotenon.Decode[map[string]any](obj(map[string]tenon.Value{"a": n(1)}), safe)
 	})
+	// The type is refused before any value reaches the interface, so a null,
+	// an unknown value, an empty collection or an absent field does not let
+	// it through.
+	mustPanicUsage(t, "the Go type interface {} is an interface", func() { gotenon.Decode[any](tenon.NullVal(num), safe) })
+	mustPanicUsage(t, "the Go type *interface {} holds interface {}, an interface", func() { gotenon.Decode[*any](tenon.NullVal(num), safe) })
+	mustPanicUsage(t, "the Go type []interface {} holds interface {}", func() { gotenon.Decode[[]any](tenon.TupleVal(), safe) })
+	mustPanicUsage(t, "the Go type map[string]interface {} holds interface {}", func() {
+		gotenon.Decode[map[string]any](tenon.Unknown(tenon.Map(num)), safe)
+	})
+	mustPanicUsage(t, "holds fmt.Stringer, an interface", func() {
+		gotenon.Decode[struct {
+			S fmt.Stringer `tenon:"s,optional"`
+		}](obj(nil), safe)
+	})
+	// A type that only encodes itself decodes by its fields, and one that
+	// decodes by its method holds what it likes.
+	mustPanicUsage(t, "the Go type gotenon_test.sendsOnly holds interface {}", func() { gotenon.Decode[sendsOnly](tenon.NullVal(num), safe) })
+	if got := decoded[keeps](t, n(1), safe); !tenon.Identical(got.Held.(tenon.Value), n(1)) {
+		t.Errorf("an unmarshaler holding an interface decoded as %+v", got)
+	}
+	if got := decoded[[]*keeps](t, tenon.TupleVal(s("x")), safe); len(got) != 1 || !tenon.Identical(got[0].Held.(tenon.Value), s("x")) {
+		t.Errorf("a slice of pointers to an unmarshaler holding an interface decoded as %v", got)
+	}
 	mustPanicUsage(t, "of kind chan", func() { gotenon.Encode(make(chan int)) })
 	mustPanicUsage(t, "of kind func", func() { gotenon.Encode(func() {}) })
 	mustPanicUsage(t, "of kind complex128", func() { gotenon.Encode(complex(1, 2)) })
@@ -151,6 +174,23 @@ func TestConformance_GO011_UnsupportedTypes(t *testing.T) {
 	// unexported one is not mapped.
 	wantValue(t, "an embedded field", encoded(t, embeds{Address: Address{Street: "Main"}, address: address{Street: "hidden"}, Name: "x"}),
 		obj(map[string]tenon.Value{"name": s("x"), "addr": obj(map[string]tenon.Value{"Street": s("Main")})}))
+}
+
+// sendsOnly holds an interface and encodes itself, so it decodes by its
+// fields, one of which says nothing of the Go type it would take.
+type sendsOnly struct {
+	X any `tenon:"x"`
+}
+
+func (sendsOnly) MarshalValue() (tenon.Value, error) { return tenon.NumberFromInt(0), nil }
+
+// keeps holds an interface and decodes itself, by a method that puts what it
+// is given there.
+type keeps struct{ Held any }
+
+func (k *keeps) UnmarshalValue(v tenon.Value) error {
+	k.Held = v
+	return nil
 }
 
 type holder struct {
@@ -261,7 +301,7 @@ func TestConformance_GO030_NumbersEncodeExactly(t *testing.T) {
 }
 
 func TestConformance_GO043_EncodingGivesKnownValues(t *testing.T) {
-	conformance.Covers(t, "GO-043")
+	conformance.Covers(t, "GO-043", "GO-040")
 	unit := 2
 	for _, x := range []any{
 		person{Name: "x", Home: address{Unit: &unit}},
@@ -286,6 +326,36 @@ func TestConformance_GO043_EncodingGivesKnownValues(t *testing.T) {
 	if v := encoded(t, holder{Name: "x", Extra: marked}); tenon.Identical(v, obj(map[string]tenon.Value{"name": s("x"), "extra": marked})) == false {
 		t.Errorf("a tenon.Value field encoded as %v", v)
 	}
+
+	// An error value is not: one a tenon.Value holds, or a marshaler gives,
+	// fails the encoding with its own diagnostics, located within the part,
+	// among the other failures in member order.
+	div := tenon.Div(n(1), n(0))
+	deep := tenon.ErrorVal(tenon.Diagnostic{Code: "app.failed", Message: "it failed", Path: tenon.Path{}.Attribute("deep")})
+	wantEncodeFailure(t, "an error value", div, wantDiag{tenon.CodeNumberDivideByZero, "."})
+	wantEncodeFailure(t, "an error value in an interface", any(div), wantDiag{tenon.CodeNumberDivideByZero, "."})
+	wantEncodeFailure(t, "an error value in a field", holder{Name: "x", Extra: deep}, wantDiag{"app.failed", ".extra.deep"})
+	wantEncodeFailure(t, "error values in a slice", []tenon.Value{n(1), div, deep},
+		wantDiag{tenon.CodeNumberDivideByZero, ".[1]"}, wantDiag{"app.failed", ".[2].deep"})
+	wantEncodeFailure(t, "an error value in a map", map[string]tenon.Value{"a": div}, wantDiag{tenon.CodeNumberDivideByZero, ".a"})
+	wantEncodeFailure(t, "error values from marshalers", struct {
+		A float64       `tenon:"a"`
+		F []givesError  `tenon:"f"`
+		G givesError    `tenon:"g"`
+		V []tenon.Value `tenon:"v"`
+	}{A: math.NaN(), F: []givesError{{}}, V: []tenon.Value{deep}},
+		wantDiag{tenon.CodeEncodeNotANumber, ".a"},
+		wantDiag{"app.no_value", ".f[0]"},
+		wantDiag{"app.no_value", ".g"},
+		wantDiag{"app.failed", ".v[0].deep"})
+}
+
+// givesError marshals itself as an error value, which fails the encoding as
+// an error the method returned would.
+type givesError struct{}
+
+func (givesError) MarshalValue() (tenon.Value, error) {
+	return tenon.ErrorVal(tenon.Diagnostic{Code: "app.no_value", Message: "there is no value to give"}), nil
 }
 
 // TestConformance_GO015_InterfacesEncodeWhatTheyHold holds an interface to the

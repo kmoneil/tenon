@@ -40,7 +40,8 @@ const (
 // type may implement it itself or through its pointer.
 type ValueMarshaler interface {
 	// MarshalValue returns the value the Go value encodes as, or an error.
-	// An error that is a *DiagnosticError contributes its diagnostics.
+	// An error that is a *DiagnosticError contributes its diagnostics, and so
+	// does an error value returned in place of a value.
 	MarshalValue() (tenon.Value, error)
 }
 
@@ -72,6 +73,11 @@ type goMapping struct {
 	// marshal and unmarshal say the Go type encodes or decodes itself, in
 	// place of its mapping in that direction.
 	marshal, unmarshal bool
+	// iface is the interface type that decoding into the Go type meets
+	// first, the Go type itself or one it holds, other than within a type
+	// that decodes by an unmarshaler, and nil where it meets none. Decode
+	// refuses such a type before it looks at the value (GO-011).
+	iface reflect.Type
 }
 
 // typed reports whether the Go type maps to a type.
@@ -209,8 +215,8 @@ func buildMapping(rt reflect.Type, building map[reflect.Type]bool) *goMapping {
 		case reflect.Interface:
 			// A value of an interface type encodes as what it holds, whose
 			// type is not known until it is in hand, so the interface maps
-			// to no type. Decoding into one is a usage error, which the
-			// decoder reports where it meets it.
+			// to no type. Decoding into one is a usage error, which Decode
+			// reports from iface before it looks at a value.
 			m.kind, m.constraint = goInterface, tenon.Any()
 		case reflect.Pointer:
 			if rt.Elem() == valueGoType {
@@ -230,9 +236,30 @@ func buildMapping(rt reflect.Type, building map[reflect.Type]bool) *goMapping {
 	}
 	if m.unmarshal {
 		m.constraint = tenon.Any()
+	} else {
+		m.iface = decodedInterface(m)
 	}
 	actual, _ := goMappings.LoadOrStore(rt, m)
 	return actual.(*goMapping)
+}
+
+// decodedInterface returns the interface type that decoding into m's Go type
+// meets first: the type itself where it is one, and otherwise the first that
+// its element or its fields, in name order, meet. The mappings m holds are
+// built already, and a type that decodes by an unmarshaler meets none.
+func decodedInterface(m *goMapping) reflect.Type {
+	switch {
+	case m.kind == goInterface:
+		return m.rt
+	case m.elem != nil:
+		return m.elem.iface
+	}
+	for _, f := range m.fields {
+		if f.m.iface != nil {
+			return f.m.iface
+		}
+	}
+	return nil
 }
 
 // structMapping fills in the mapping of a struct type from its exported fields
