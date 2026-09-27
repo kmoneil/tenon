@@ -488,19 +488,34 @@ func (e *encoder) bare(b []byte, v Value, at int) []byte {
 // bytewise order of their encodings. at locates the set or the range: a set's
 // member is a step below it, by its index, and a member a range records is
 // where the range is.
+//
+// The members are encoded where they go, one after another, and moved only
+// where they are out of that order, which a set's members, held in canonical
+// order, seldom are. Each encoded apart and then copied in placed every set
+// nested in sets once more for every set holding it: a list 400 sets down,
+// 7 KB written, allocated 2.5 MB.
 func (e *encoder) members(b []byte, members []Value, at int, indexed bool) []byte {
-	encoded := make([][]byte, len(members))
+	b = cbor.AppendArray(b, len(members))
+	start := len(b)
+	spans := make([][2]int, len(members))
 	for i, m := range members {
 		here := at
 		if indexed {
 			here = e.trail.down(at, element(i))
 		}
-		encoded[i] = e.content(nil, m, here, nil)
+		from := len(b)
+		b = e.content(b, m, here, nil)
+		spans[i] = [2]int{from, len(b)}
 	}
-	slices.SortFunc(encoded, bytes.Compare)
-	b = cbor.AppendArray(b, len(encoded))
-	for _, enc := range encoded {
-		b = append(b, enc...)
+	encoding := func(s [2]int) []byte { return b[s[0]:s[1]] }
+	if slices.IsSortedFunc(spans, func(x, y [2]int) int { return bytes.Compare(encoding(x), encoding(y)) }) {
+		return b
+	}
+	slices.SortFunc(spans, func(x, y [2]int) int { return bytes.Compare(encoding(x), encoding(y)) })
+	encoded := slices.Clone(b[start:])
+	w := start
+	for _, s := range spans {
+		w += copy(b[w:], encoded[s[0]-start:s[1]-start])
 	}
 	return b
 }

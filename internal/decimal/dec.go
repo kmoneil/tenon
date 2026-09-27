@@ -6,6 +6,7 @@ import (
 	"math/big"
 	"strconv"
 	"strings"
+	"sync/atomic"
 )
 
 // MaxAdjustedExponent bounds the places of the digits of every non-zero
@@ -119,23 +120,50 @@ func fromBig(c *big.Int, exp int64) (Dec, error) {
 		}
 		return Dec{big: c, exp: exp}, nil
 	}
-	digits := c.Text(10)
-	if c.Sign() < 0 {
-		digits = digits[1:]
-	}
-	trimmed := strings.TrimRight(digits, "0")
-	zeros := len(digits) - len(trimmed)
-	exp += int64(zeros)
-	if !inRange(exp, int64(len(trimmed))) {
+	c, zeros := trailingZeros(c)
+	exp += zeros
+	if !inRange(exp, digitCount(c)) {
 		return Dec{}, ErrOutOfRange
 	}
-	if zeros > 0 {
-		c.Quo(c, pow10(int64(zeros)))
-		if c.IsInt64() {
-			return Dec{small: c.Int64(), exp: exp}, nil
-		}
+	if c.IsInt64() {
+		return Dec{small: c.Int64(), exp: exp}, nil
 	}
 	return Dec{big: c, exp: exp}, nil
+}
+
+// trailingZeros returns c, which is not zero, divided by ten as often as ten
+// divides it, and how often that is, without writing c out as text, which
+// costs more than the divisions: 10^z divides c only where 2^z does, so the
+// count is at most c's trailing zero bits, and it is found by dividing by 10,
+// 100, 10^4 and so on while each divides, and then by each of those that is
+// smaller on the way down, the logarithm of the count in divisions. c may be
+// divided in place.
+func trailingZeros(c *big.Int) (*big.Int, int64) {
+	limit := int64(c.TrailingZeroBits())
+	var powers []*big.Int // 10^(2^i), each of which divided c in turn
+	var n int64
+	q, r := new(big.Int), new(big.Int)
+	for p, step := big.NewInt(10), int64(1); n+step <= limit; p, step = new(big.Int).Mul(p, p), 2*step {
+		if q.QuoRem(c, p, r); r.Sign() != 0 {
+			break
+		}
+		c, q = q, c
+		n += step
+		powers = append(powers, p)
+	}
+	// What is left is fewer zeros than the power that did not divide, twice
+	// the last that did, so each of those divides at most once more.
+	for i := len(powers) - 1; i >= 0; i-- {
+		step := int64(1) << i
+		if n+step > limit {
+			continue
+		}
+		if q.QuoRem(c, powers[i], r); r.Sign() == 0 {
+			c, q = q, c
+			n += step
+		}
+	}
+	return c, n
 }
 
 // inRange reports whether a non-zero number whose coefficient has the given
@@ -160,10 +188,29 @@ func digits64(c int64) int64 {
 	return n
 }
 
-// pow10 returns a new big.Int holding 10^n.
+// pow10 returns 10^n, which the caller reads and never changes: a power
+// below pow10Kept is made once and shared (pow10s).
 func pow10(n int64) *big.Int {
-	return new(big.Int).Exp(big.NewInt(10), big.NewInt(n), nil)
+	if n < 0 || n >= pow10Kept {
+		return new(big.Int).Exp(big.NewInt(10), big.NewInt(n), nil)
+	}
+	if p := pow10s[n].Load(); p != nil {
+		return p
+	}
+	p := new(big.Int).Exp(big.NewInt(10), big.NewInt(n), nil)
+	pow10s[n].Store(p)
+	return p
 }
+
+// pow10Kept bounds the powers of ten kept once made, all of them together
+// under a megabyte.
+const pow10Kept = 2048
+
+// pow10s holds the powers of ten below pow10Kept made so far. Comparing
+// numbers of long coefficients aligns them by such a power, and sorting a set
+// of them made the same few powers again for every comparison. Two goroutines
+// making one at once store equal values, and either will do.
+var pow10s [pow10Kept]atomic.Pointer[big.Int]
 
 // expLimit is the magnitude at which a parsed exponent saturates. An exponent
 // that large puts any number far out of range whatever its digits, since no

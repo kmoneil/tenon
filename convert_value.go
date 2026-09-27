@@ -177,7 +177,7 @@ func (x converter) carry(r Value, from *node) Value {
 		if p == nil {
 			return r
 		}
-		nn := *r.n
+		nn := r.n.clone()
 		nn.marks = p
 		deep := p
 		if !s.layer {

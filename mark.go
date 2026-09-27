@@ -158,7 +158,7 @@ func withoutMarks(v Value) Value {
 	if v.n.marks == nil {
 		return v
 	}
-	nn := *v.n
+	nn := v.n.clone()
 	nn.marks = nil
 	return Value{&nn}
 }
@@ -209,7 +209,7 @@ func WithMarks(v Value, marks ...Mark) Value {
 		// it was attached to those values when it was attached to v.
 		return v
 	}
-	nn := *n
+	nn := n.clone()
 	nn.marks = &markSet{list: merged}
 	if deep := deepMarks(marks); deep != nil {
 		newAttachment(deep, nil).within(&nn)
@@ -494,7 +494,7 @@ func (a *attachment) attach(n *node) *node {
 	if !grew {
 		return n
 	}
-	nn := *n
+	nn := n.clone()
 	nn.marks = marks
 	a.within(&nn)
 	return &nn
@@ -562,7 +562,7 @@ func withOwnMarks(v Value, marks []Mark) Value {
 	if !grew {
 		return v
 	}
-	nn := *v.n
+	nn := v.n.clone()
 	nn.marks = &markSet{list: merged}
 	return Value{&nn}
 }
@@ -586,7 +586,7 @@ func settleDeep(n *node, a *attachment) *node {
 	out := n
 	if a != nil {
 		if marks, grew := a.merged(n.marks); grew {
-			nn := *n
+			nn := n.clone()
 			nn.marks = marks
 			out = &nn
 		}
@@ -620,7 +620,7 @@ func settleDeep(n *node, a *attachment) *node {
 		}
 		if members != nil {
 			if out == n {
-				nn := *n
+				nn := n.clone()
 				out = &nn
 			}
 			out.data, out.markedWithin = members, true
@@ -637,7 +637,7 @@ func settleDeep(n *node, a *attachment) *node {
 		}
 		if entries != nil {
 			if out == n {
-				nn := *n
+				nn := n.clone()
 				out = &nn
 			}
 			out.data, out.markedWithin = entries, true
@@ -679,7 +679,7 @@ func Unmark(v Value) (Value, []Mark) {
 	if n.marks == nil {
 		return v, nil
 	}
-	nn := *n
+	nn := n.clone()
 	nn.marks = nil
 	return Value{&nn}, slices.Clone(n.marks.all())
 }
@@ -744,7 +744,7 @@ func (n *node) unmarkDeep(t *taking) *node {
 		return n
 	}
 	t.add(n.marks)
-	nn := *n
+	nn := n.clone()
 	nn.marks = nil
 	if n.markedWithin {
 		nn.markedWithin = false

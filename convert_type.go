@@ -1,6 +1,9 @@
 package tenon
 
-import "strconv"
+import (
+	"slices"
+	"strconv"
+)
 
 // keys says what a conversion of a type knows of the keys of the maps that a
 // value of the type holds, which is what settles the type a map converts to as
@@ -543,6 +546,18 @@ func count(n int, thing string) string {
 func unifyTypes(types []Type, p Policy) (Type, bool) {
 	if len(types) > 1 && allObjects(types) {
 		return unifyObjectTypes(types, p)
+	}
+	// The object types among others are unified in one pass too, and their
+	// union then with the rest, which the order not mattering allows: folded
+	// in among a map, 4,000 objects of distinct attributes built the union
+	// again for each, 1.5 s and 1.9 GB.
+	if objects := slices.DeleteFunc(slices.Clone(types), func(t Type) bool { return t.t.kind != KindObject }); len(objects) > 1 {
+		union, ok := unifyObjectTypes(objects, p)
+		if !ok {
+			return Type{}, false
+		}
+		rest := slices.DeleteFunc(slices.Clone(types), func(t Type) bool { return t.t.kind == KindObject })
+		types = append(rest, union)
 	}
 	u := types[0]
 	for _, t := range types[1:] {

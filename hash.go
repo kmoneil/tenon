@@ -3,6 +3,7 @@ package tenon
 import (
 	"hash/maphash"
 	"slices"
+	"sync/atomic"
 
 	"github.com/kmoneil/tenon/internal/decimal"
 )
@@ -39,12 +40,20 @@ func Hash(v Value) uint64 {
 }
 
 // hashNode returns the hash of a known value or of a member of one, which may
-// be null even where the value that holds it is not.
+// be null even where the value that holds it is not. It is worked out once
+// for a node and kept (node.hash), and a container's is made from its
+// members', so a value is hashed in proportion to it however many values
+// that hold it are hashed in turn.
 func hashNode(n *node) uint64 {
+	if h := atomic.LoadUint64(&n.hash); h != 0 {
+		return h
+	}
 	var h maphash.Hash
 	h.SetSeed(hashSeed)
 	writeHash(&h, n)
-	return h.Sum64()
+	sum := h.Sum64()
+	atomic.StoreUint64(&n.hash, sum)
+	return sum
 }
 
 // shapeOf returns a hash of a type's structure: its kind, the shapes of its
@@ -122,7 +131,7 @@ func writeHash(h *maphash.Hash, n *node) {
 			// every time, whatever order the map was built in.
 			writeUint(h, uint64(len(e.key)))
 			h.WriteString(e.key)
-			writeHash(h, e.val.n)
+			writeUint(h, hashNode(e.val.n))
 		}
 	default:
 		// A list, a tuple or an object: members in order, and for the last two
@@ -130,7 +139,7 @@ func writeHash(h *maphash.Hash, n *node) {
 		elems := n.data.([]Value)
 		writeUint(h, uint64(len(elems)))
 		for _, e := range elems {
-			writeHash(h, e.n)
+			writeUint(h, hashNode(e.n))
 		}
 	}
 }
