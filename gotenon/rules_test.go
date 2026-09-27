@@ -48,7 +48,9 @@ func TestConformance_GO014_ObjectsIntoMapsAndMapsIntoStructs(t *testing.T) {
 
 // TestConformance_GO020_FieldsAreNamedByTagOrName pins the attribute names a
 // struct maps to: the tenon tag where there is one, the field's own name
-// where there is none, a "-" tag and an unexported field left out.
+// where there is none, a "-" tag and an unexported field left out. Decoding
+// into it is closed and exact: an attribute no field names fails, and a name
+// that differs from a field's in case alone is such an attribute.
 func TestConformance_GO020_FieldsAreNamedByTagOrName(t *testing.T) {
 	conformance.Covers(t, "GO-020")
 	type tagged struct {
@@ -61,6 +63,14 @@ func TestConformance_GO020_FieldsAreNamedByTagOrName(t *testing.T) {
 	if got := v.Type().AttributeNames(); len(got) != 2 || got[0] != "A" || got[1] != "b" {
 		t.Errorf("the struct maps to attributes %v, want [A b]", got)
 	}
+	if got := decoded[tagged](t, v, safe); got.A != 1 || got.B != 2 {
+		t.Errorf("the struct's own encoding decoded to %+v", got)
+	}
+	wantDecodeFailures[tagged](t, "an attribute no field names", obj(map[string]tenon.Value{"A": n(1), "b": n(2), "c": n(3)}), safe,
+		wantDiag{tenon.CodeConvertUnexpectedAttribute, ".c"})
+	wantDecodeFailures[tagged](t, "names that differ in case", obj(map[string]tenon.Value{"a": n(1), "B": n(2)}), uns,
+		wantDiag{tenon.CodeConvertMissingAttribute, "."}, wantDiag{tenon.CodeConvertUnexpectedAttribute, ".B"},
+		wantDiag{tenon.CodeConvertUnexpectedAttribute, ".a"}, wantDiag{tenon.CodeConvertMissingAttribute, "."})
 }
 
 // TestConformance_GO021_MalformedTagsAreUsageErrors pins the panics: an

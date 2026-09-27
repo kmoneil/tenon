@@ -58,28 +58,98 @@ import (
 // tenon.Value is the Go type that holds any value, so decode into that.
 func Decode[T any](v tenon.Value, p tenon.Policy) (T, error) {
 	var out T
+	if err := decodeInto("Decode", v, reflect.ValueOf(&out).Elem(), p); err != nil {
+		var zero T
+		return zero, err
+	}
+	return out, nil
+}
+
+// DecodeInto decodes v into the Go value dst points to, as Decode does into
+// the type dst points to, for a program that has the type only when it runs.
+// Where the decoding fails, *dst is left as it was.
+//
+// DecodeInto panics where dst is not a non-nil pointer, and where Decode would
+// panic for the type dst points to.
+func DecodeInto(v tenon.Value, dst any, p tenon.Policy) error {
+	rv := reflect.ValueOf(dst)
+	if rv.Kind() != reflect.Pointer || rv.IsNil() {
+		usagePanic("DecodeInto called with %s, which is not a non-nil pointer", describeGo(dst))
+	}
+	out := reflect.New(rv.Type().Elem()).Elem()
+	if err := decodeInto("DecodeInto", v, out, p); err != nil {
+		return err
+	}
+	rv.Elem().Set(out)
+	return nil
+}
+
+// ConstraintFor returns the constraint that Decode converts a value to for
+// the Go type rt: what a value must satisfy to decode into it. It panics
+// where Decode would panic for rt, whatever the value.
+func ConstraintFor(rt reflect.Type) tenon.Constraint {
+	return decodable("ConstraintFor", rt).constraint
+}
+
+// TypeFor returns the type that Encode gives the values of the Go type rt,
+// and true, where rt maps to a type; and the zero Type and false where what
+// its values encode as depends on what they hold, as for tenon.Value, an
+// interface type, a type that marshals itself, and what holds one. It panics
+// where Encode would panic for rt.
+func TypeFor(rt reflect.Type) (tenon.Type, bool) {
+	if rt == nil {
+		usagePanic("TypeFor called with a nil reflect.Type")
+	}
+	m := mappingOf(rt, encoding)
+	return m.typ, m.typed()
+}
+
+// decodeInto decodes v into dst, which is settable and holds the zero value
+// of its type, for the function fn names.
+func decodeInto(fn string, v tenon.Value, dst reflect.Value, p tenon.Policy) error {
 	if v.IsZero() {
-		usagePanic("Decode called with the zero Value, which is not a value")
+		usagePanic("%s called with the zero Value, which is not a value", fn)
 	}
 	if p != tenon.Safe && p != tenon.Unsafe {
-		usagePanic("Decode called with %s, which is neither Safe nor Unsafe", p)
+		usagePanic("%s called with %s, which is neither Safe nor Unsafe", fn, p)
 	}
-	m := mappingOf(reflect.TypeFor[T](), decoding)
+	m := decodable(fn, dst.Type())
+	d := decoder{policy: p, marked: map[string]tenon.Diagnostic{}}
+	d.decode(m, dst, v, tenon.Path{}, false)
+	if len(d.fails.list) > 0 {
+		return d.fails.err()
+	}
+	return nil
+}
+
+// decodable returns the mapping that decoding into rt uses, panicking where
+// rt cannot be decoded into, for the function fn names.
+func decodable(fn string, rt reflect.Type) *goMapping {
+	if rt == nil {
+		usagePanic("%s called with a nil reflect.Type", fn)
+	}
+	m := mappingOf(rt, decoding)
 	// The type is refused whatever the value, before any of it is looked
 	// at: a null or an empty collection reaches no interface, and must not
 	// let a type through that the next value would fail [GO-011].
 	if m.iface == m.rt {
-		usagePanic("Decode: the Go type %s is an interface, which says nothing of the Go type it would take; decode into tenon.Value, which holds any value", m.rt)
+		usagePanic("%s: the Go type %s is an interface, which says nothing of the Go type it would take; decode into tenon.Value, which holds any value", fn, m.rt)
 	} else if m.iface != nil {
-		usagePanic("Decode: the Go type %s holds %s, an interface, which says nothing of the Go type it would take; decode into tenon.Value, which holds any value", m.rt, m.iface)
+		usagePanic("%s: the Go type %s holds %s, an interface, which says nothing of the Go type it would take; decode into tenon.Value, which holds any value", fn, m.rt, m.iface)
 	}
-	d := decoder{policy: p, marked: map[string]tenon.Diagnostic{}}
-	d.decode(m, reflect.ValueOf(&out).Elem(), v, tenon.Path{}, false)
-	if len(d.fails.list) > 0 {
-		var zero T
-		return zero, d.fails.err()
+	return m
+}
+
+// describeGo names a Go value for a panic message by its type.
+func describeGo(x any) string {
+	if x == nil {
+		return "nil"
 	}
-	return out, nil
+	rv := reflect.ValueOf(x)
+	if rv.Kind() == reflect.Pointer && rv.IsNil() {
+		return "a nil " + rv.Type().String()
+	}
+	return "a " + rv.Type().String()
 }
 
 // decoder decodes one value into Go, collecting what it cannot decode.
@@ -307,7 +377,7 @@ func givenElements(given tenon.Value, converted []tenon.Value) []tenon.Value {
 // giving it v as it is.
 func (d *decoder) unmarshal(dst reflect.Value, v tenon.Value, p tenon.Path) {
 	u := dst.Addr().Interface().(ValueUnmarshaler)
-	if err := u.UnmarshalValue(v); err != nil {
+	if err := u.UnmarshalValue(v, d.policy); err != nil {
 		d.fails.withError(p, tenon.CodeDecodeUnmarshalFailed, err)
 	}
 }

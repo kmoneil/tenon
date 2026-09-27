@@ -148,7 +148,9 @@ func (f *failures) withError(p tenon.Path, code tenon.Code, err error) {
 // or by the field's name: `tenon:"name"`, with `tenon:"name,optional"` marking
 // an attribute that may be absent or null when decoding, and `tenon:"-"`
 // leaving the field out. An embedded field must be named by its tag, and its
-// fields are not promoted.
+// fields are not promoted. Decoding into a struct is closed and exact: an
+// attribute that no field names fails, and names match only exactly, case
+// included.
 //
 // Numbers encode exactly: a float64 is the terminating decimal it holds, not a
 // rounded rendering of it. Encode fails with a *tenon.Error where a part of

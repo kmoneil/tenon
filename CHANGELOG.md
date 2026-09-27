@@ -42,6 +42,19 @@
 
 ### Changed
 
+- `gotenon.ValueUnmarshaler`'s method is `UnmarshalValue(v tenon.Value, p
+  tenon.Policy) error`: it is told the policy the decoding was given, so what
+  it converts it converts as the rest of the decoding does. Add the parameter
+  to each `UnmarshalValue` method; one left with the old signature no longer
+  implements the interface, and its type decodes by its kind.
+- `gotenon.DecodeInto(v, dst, p)` decodes into what a pointer points to, and
+  `gotenon.ConstraintFor` and `gotenon.TypeFor` give a `reflect.Type`'s
+  mapping, for a program that has a Go type only when it runs. `DecodeInto`
+  leaves `*dst` as it was where decoding fails.
+- gotenon's documentation says what decoding into a struct always did: the
+  object is closed, so an attribute no field names fails, and names match
+  only exactly, case included.
+
 - `ObjectVal` gives an error value for attribute names that cannot be ones,
   as `MapVal` does for keys, where it panicked: names come from data as often
   as from the program, and `SECURITY.md` promises that data never panics. An

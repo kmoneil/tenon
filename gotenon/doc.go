@@ -9,6 +9,17 @@
 // are named by their tenon tag, `tenon:"name,optional"`, or by the field's
 // name, and `tenon:"-"` leaves one out.
 //
+// A struct decodes from an object whose attributes are its fields, and no
+// others: the object is closed, so an attribute that no field names fails the
+// decoding, and a name matches a field's only exactly, case included, so
+// "Name" does not fill a field named "name". A struct that takes other
+// attributes, or other spellings, decodes by a method of its own.
+//
+// DecodeInto, ConstraintFor and TypeFor serve a program that has a Go type
+// only when it runs: DecodeInto decodes into what a pointer points to, and
+// ConstraintFor and TypeFor give a reflect.Type's mapping, the constraint
+// Decode converts to and the type Encode gives.
+//
 // # Data whose types are not known at compile time
 //
 // Such data reaches a Go program as any: encoding/json gives map[string]any,
