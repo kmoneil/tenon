@@ -1037,3 +1037,62 @@ func TestConformance_SE043_DecoderContracts(t *testing.T) {
 		tenon.Deserialize(fromHex(t, marked), plain)
 	})
 }
+
+// A value nesting deeper than a document may has no encoding: Serialize
+// refuses it where the decoder would, so whatever it writes reads back. The
+// bound is the decoder's: the item is the first level, and each type,
+// constraint and content another holds is one deeper.
+func TestConformance_SE003_OnlyValuesWithinTheBoundHaveAnEncoding(t *testing.T) {
+	conformance.Covers(t, "SE-003", "SE-005", "SE-050")
+	lists := func(n int) tenon.Type {
+		typ := tenon.NumberType()
+		for range n {
+			typ = tenon.List(typ)
+		}
+		return typ
+	}
+	// The item, then 510 list types around a number: 512 levels.
+	within := tenon.NullVal(lists(510))
+	data, fail, ok := tenon.Serialize(within)
+	if !ok {
+		t.Fatalf("a null of 510 list types did not serialize: %v", fail)
+	}
+	if back, fail, ok := tenon.Deserialize(data, tenon.Decoders{}); !ok || !tenon.Identical(back, within) {
+		t.Fatalf("a null of 510 list types read back as %v, %v", back, fail)
+	}
+	_, fail, ok = tenon.Serialize(tenon.NullVal(lists(511)))
+	if ok {
+		t.Fatal("a null of 511 list types serialized, which no decoder reads")
+	}
+	if ds := fail.Diagnostics(); len(ds) != 1 || ds[0].Code != tenon.CodeSerializeTooLarge || ds[0].Path.Len() != 0 {
+		t.Errorf("a null of 511 list types failed with %v, want one %s at .", fail, tenon.CodeSerializeTooLarge)
+	}
+	// Values nested list in list: whatever Serialize writes decodes, and what
+	// it refuses, it refuses as too large.
+	nested := func(d int) tenon.Value {
+		v := tenon.NumberFromInt(1)
+		for range d {
+			v = tenon.ListVal(v.Type(), v)
+		}
+		return v
+	}
+	written, refused := 0, 0
+	for d := 505; d <= 515; d++ {
+		v := nested(d)
+		data, fail, ok := tenon.Serialize(v)
+		if !ok {
+			refused++
+			if ds := fail.Diagnostics(); len(ds) != 1 || ds[0].Code != tenon.CodeSerializeTooLarge {
+				t.Errorf("%d lists deep: %v, want %s", d, fail, tenon.CodeSerializeTooLarge)
+			}
+			continue
+		}
+		written++
+		if back, fail, ok := tenon.Deserialize(data, tenon.Decoders{}); !ok || !tenon.Identical(back, v) {
+			t.Errorf("%d lists deep serialized, and read back as %v, %v", d, back, fail)
+		}
+	}
+	if written == 0 || refused == 0 {
+		t.Errorf("of the depths tried, %d serialized and %d were refused; want some of each", written, refused)
+	}
+}

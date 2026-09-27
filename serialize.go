@@ -5,6 +5,7 @@ import (
 	"math/big"
 	"math/bits"
 	"slices"
+	"strconv"
 	"unicode/utf8"
 
 	"github.com/kmoneil/tenon/internal/cbor"
@@ -40,8 +41,10 @@ const (
 // The error value has a diagnostic for each part of v that cannot be, located
 // by its path: a capsule value, or a type or constraint naming a capsule type,
 // whose capsule type declares no encoding or shares its identifier with
-// another (CodeSerializeUnencodableCapsule), and a mark that does not
-// implement EncodableMark (CodeSerializeUnencodableMark).
+// another (CodeSerializeUnencodableCapsule), a mark that does not implement
+// EncodableMark (CodeSerializeUnencodableMark), and the first part of a value
+// nesting more than 512 levels deep, which Deserialize would refuse to read
+// (CodeSerializeTooLarge).
 //
 // Serialize panics on the zero Value, and on a capsule encoding or a mark
 // payload that breaks its contract: one that is not a known, unmarked value of
@@ -84,7 +87,31 @@ type encoder struct {
 	// writes a member takes at, the depth of that member in the trail, which
 	// is 0 for the value Serialize is given.
 	trail trail
+	// depth is the level being written, counted as a decoder counts it
+	// (SE-005): each item, type, constraint and content one level below what
+	// holds it. tooDeep says a part has gone past maxDepth, which is
+	// recorded once.
+	depth   int
+	tooDeep bool
 }
+
+// enter records one more level of nesting and reports whether it is within
+// maxDepth. A value nesting deeper has no encoding, since no decoder would
+// read it back (SE-003, SE-005); the first part that goes past the bound is
+// where it fails, and nothing below it is written.
+func (e *encoder) enter(at int) bool {
+	e.depth++
+	if e.depth <= maxDepth {
+		return true
+	}
+	if !e.tooDeep {
+		e.tooDeep = true
+		e.fail(at, CodeSerializeTooLarge, "the value nests more than "+strconv.Itoa(maxDepth)+" levels deep, which no document holds")
+	}
+	return false
+}
+
+func (e *encoder) leave() { e.depth-- }
 
 // newEncoder returns an encoder for one value.
 func newEncoder() *encoder {
@@ -109,6 +136,10 @@ func (e *encoder) fail(at int, code Code, message string) {
 
 // item appends the item of v.
 func (e *encoder) item(b []byte, v Value) []byte {
+	defer e.leave()
+	if !e.enter(0) {
+		return b
+	}
 	n := v.n
 	if n.state.resolved() {
 		b = cbor.AppendArray(b, 3)
@@ -174,6 +205,10 @@ func appendDiagnostic(b []byte, d Diagnostic) []byte {
 
 // typ appends the encoding of a type, which at locates within the value.
 func (e *encoder) typ(b []byte, t Type, at int) []byte {
+	defer e.leave()
+	if !e.enter(at) {
+		return b
+	}
 	d := t.t
 	switch d.kind {
 	case KindBool, KindNumber, KindString:
@@ -226,6 +261,10 @@ func (e *encoder) capsuleID(t Type, at int) string {
 
 // constraint appends the encoding of a constraint.
 func (e *encoder) constraint(b []byte, c Constraint, at int) []byte {
+	defer e.leave()
+	if !e.enter(at) {
+		return b
+	}
 	d := c.c
 	switch d.kind {
 	case ConstraintExactly:
@@ -341,6 +380,10 @@ func (e *encoder) implies(ms *markSet) *impliedMarks {
 // value is held by a container implying deep marks on it, which v carries
 // because the container does, and which are therefore not listed on v.
 func (e *encoder) content(b []byte, v Value, at int, implied *impliedMarks) []byte {
+	defer e.leave()
+	if !e.enter(at) {
+		return b
+	}
 	own := v.n.markList()
 	if own != nil && implied != nil {
 		own = implied.listed(v.n.marks)
