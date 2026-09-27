@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Fixed
+
+- `Diff`'s mark changes hold their own copies of the marks. `OldMarks` and
+  `NewMarks` were the diffed values' own storage where no deep mark was set
+  aside, so writing to them changed a value that is immutable: it no longer
+  displayed, was no longer identical to its twin, and failed to serialize,
+  and another goroutine reading it raced with the write.
+
 ### Changed
 
 - A slice, array or map whose elements decode by an unmarshaler, directly or

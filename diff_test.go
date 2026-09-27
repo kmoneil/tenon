@@ -389,3 +389,40 @@ func TestConformance_DI037_DiffDisplay(t *testing.T) {
 		t.Errorf("a diff displays as %q, want %q", got, want)
 	}
 }
+
+// A change's mark lists are its own: writing to them leaves the values diffed
+// as they were, at the top and within a list alike.
+func TestConformance_VA005_ChangesHoldTheirOwnMarks(t *testing.T) {
+	conformance.Covers(t, "VA-005", "DI-030")
+	a1, a2, b1 := stamp{id: "a1"}, stamp{id: "a2"}, stamp{id: "b1"}
+	str := tenon.StringType()
+	for _, pair := range [][3]tenon.Value{
+		{tenon.WithMarks(tenon.String("x"), a1, a2), tenon.WithMarks(tenon.String("x"), a1, a2), tenon.WithMarks(tenon.String("x"), b1)},
+		{
+			tenon.ListVal(str, tenon.WithMarks(tenon.String("x"), a1, a2)),
+			tenon.ListVal(str, tenon.WithMarks(tenon.String("x"), a1, a2)),
+			tenon.ListVal(str, tenon.WithMarks(tenon.String("x"), b1)),
+		},
+	} {
+		a, twin, b := pair[0], pair[1], pair[2]
+		first := tenon.Diff(a, b)
+		changes := tenon.Diff(a, b)
+		if len(changes) == 0 {
+			t.Fatalf("no changes between %v and %v", a, b)
+		}
+		for _, c := range changes {
+			for i := range c.OldMarks {
+				c.OldMarks[i] = stamp{id: "overwritten"}
+			}
+			for i := range c.NewMarks {
+				c.NewMarks[i] = stamp{id: "overwritten"}
+			}
+		}
+		if !tenon.Identical(a, twin) {
+			t.Errorf("writing to a diff's mark lists changed %v", a)
+		}
+		if got := tenon.Diff(a, b).String(); got != first.String() {
+			t.Errorf("after writing to one diff's marks, diffing again gives %s, want %s", got, first)
+		}
+	}
+}

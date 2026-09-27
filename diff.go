@@ -48,7 +48,8 @@ func (k ChangeKind) String() string {
 
 // Change is one change in a diff: what happened at a path, and the parts or
 // marks it is about. Which of Old, New, OldMarks and NewMarks it carries
-// depends on its kind.
+// depends on its kind. OldMarks and NewMarks are slices of the change's own,
+// which the caller may keep or change without touching the values diffed.
 type Change struct {
 	Kind               ChangeKind
 	Path               Path
@@ -145,6 +146,13 @@ func Diff(a, b Value) Changes {
 	return d.changes
 }
 
+// marksChanged returns the change of a part's marks from ownA to ownB, at p.
+// The lists are copied: they may be the parts' own storage, which a value
+// never lets out.
+func marksChanged(p Path, ownA, ownB []Mark) Change {
+	return Change{Kind: ChangeMarks, Path: p, OldMarks: slices.Clone(ownA), NewMarks: slices.Clone(ownB)}
+}
+
 // differ collects the changes of a diff.
 type differ struct {
 	changes Changes
@@ -167,7 +175,7 @@ func (d *differ) compare(a, b Value, p Path, asideA, asideB []Mark) {
 		case na.redactingMarks() != nil || nb.redactingMarks() != nil:
 			d.add(Change{Kind: ChangeReplaced, Path: p, Old: a, New: b})
 		default:
-			d.add(Change{Kind: ChangeMarks, Path: p, OldMarks: ownA, NewMarks: ownB})
+			d.add(marksChanged(p, ownA, ownB))
 		}
 		return
 	}
@@ -175,7 +183,7 @@ func (d *differ) compare(a, b Value, p Path, asideA, asideB []Mark) {
 		return
 	}
 	if !sameOwn {
-		d.add(Change{Kind: ChangeMarks, Path: p, OldMarks: ownA, NewMarks: ownB})
+		d.add(marksChanged(p, ownA, ownB))
 	}
 	innerA, innerB := deepOf(na.markList()), deepOf(nb.markList())
 	switch na.typ.t.kind {
