@@ -17,6 +17,13 @@
   where it said the operand was null or named its constraint, though the code
   still says why. `Serialize` locates what fails within a redacted value at
   the value. A diagnostic's code is unchanged in every case.
+- A redacting mark propagates whatever its `Propagation` says, as the rest of
+  what `SECURITY.md` promises requires: a redacting mark whose policy is
+  `Isolate` stayed on its value, so what was derived from the value showed
+  what it withheld. A narrowing taken from a redacted 42 displayed `>= 42`,
+  adding 0 to it gave 42 unmarked, and a set it was deep on converted to a
+  list of its members in clear. Each now carries the mark. An `Isolate` mark
+  that does not redact stays where it is put, as before.
 
 ## 0.8.0 (2026-09-27)
 

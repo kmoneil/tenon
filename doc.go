@@ -107,11 +107,11 @@
 // attaches marks, [HasMark] asks, and [Unmark] and [UnmarkDeep] take them off
 // deliberately. A mark says how far it travels: [Propagate], the default,
 // reaches whatever is derived from the value, and [Isolate] stays where it was
-// put. A mark whose Redacting method reports true withholds the value's
-// contents, its structure among them, from display forms, diagnostics and
-// [ProjectJSON]: the keys of a map and an object's attribute names stay out of
-// messages and paths, a diagnostic arising within the value being located at
-// it. A mark
+// put, unless it redacts. A mark whose Redacting method reports true withholds
+// the value's contents, its structure among them, from display forms,
+// diagnostics and [ProjectJSON], and from anything derived from the value: the
+// keys of a map and an object's attribute names stay out of messages and
+// paths, a diagnostic arising within the value being located at it. A mark
 // that also implements [DeepMark] marks everything within the value it is
 // attached to, and one that implements [EncodableMark] survives serialization.
 //

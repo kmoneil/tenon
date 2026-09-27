@@ -27,7 +27,9 @@ type Mark interface {
 	// MarkID returns the stable identifier of the mark, used where the mark
 	// must be named without its value: redaction placeholders and encodings.
 	MarkID() string
-	// Propagation returns how the mark moves through operations.
+	// Propagation returns how the mark moves through operations. A
+	// redacting mark propagates whatever this says, since what it withholds
+	// must not show in anything derived from the value.
 	Propagation() Propagation
 	// Redacting reports whether the contents of a value carrying the mark
 	// are withheld wherever the value is described: in the messages of
@@ -80,7 +82,8 @@ const (
 	// says otherwise.
 	Propagate Propagation = iota
 	// Isolate keeps the mark on the value it is attached to; results
-	// derived from that value do not carry it.
+	// derived from that value do not carry it. A redacting mark propagates
+	// even so: a result that did not carry it would show what it withholds.
 	Isolate
 )
 
@@ -837,6 +840,13 @@ func (o *op) propagated(args []Value) []Mark {
 	return g.marks
 }
 
+// propagates reports whether m reaches what is derived from the value it is
+// on: a mark whose policy is Propagate does, and so does a redacting mark,
+// whatever its policy, since what it withholds must not show in anything
+// derived from the value (MK-002, MK-011). An Isolate redacting mark
+// propagates as any redacting mark does.
+func propagates(m Mark) bool { return m.Propagation() == Propagate || m.Redacting() }
+
 // propagating gathers the Propagate marks of what is consumed, each once, in
 // the order they are met: the operands of an operation and what it reads
 // within them, the error members of a container, the bounds of a narrowing. A
@@ -872,7 +882,7 @@ func (g *propagating) addSet(s *markSet) {
 func (g *propagating) add(ms []Mark) {
 	g.marks = slices.Grow(g.marks, len(ms))
 	for _, m := range ms {
-		if m.Propagation() == Propagate && !g.seen.holds(g.marks, m) {
+		if propagates(m) && !g.seen.holds(g.marks, m) {
 			g.marks = append(g.marks, m)
 		}
 	}
