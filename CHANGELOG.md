@@ -1,6 +1,39 @@
 # Changelog
 
-## Unreleased
+## 0.7.0 (2026-09-27)
+
+An audit of the whole library ahead of 1.0 found a few things that should not
+wait for it, and this release fixes them: one shape of document that breaks
+the bound SECURITY.md sets on decoding, an encoding that depended on the Go
+toolchain, capsule values kept alive for the life of the process, values
+`Serialize` wrote that `Deserialize` then refused, and `Diff` results that
+could alter the values they compared. It implements version 0.6.0 of the tenon
+specification, which amends `SE-003`, `SE-040` and `SE-051`, and restates
+`SE-005`'s rationale: 196 rules, as before.
+
+**Upgrade if you decode documents from parties you do not trust.** In 0.6.0 a
+list carrying k deep marks, whose k members each carry a mark of their own,
+decoded in time and memory growing with k by k: 85 KB of it took 354 ms and
+256 MB. It is a canonical document, which `Serialize` writes, and here it
+decodes in 4 ms and 6 MB. A security advisory follows this release. Upgrade as
+well if you build with more than one Go toolchain and encode `StringPrefix`
+narrowings: 0.6.0 built with Go 1.27 recorded a shorter prefix for some texts
+than built with Go 1.26, so the same value had two encodings.
+
+The minor version moves because results change. `StringPrefix` keeps more of
+its text in a few places, so those narrowings encode differently. `Capsule`
+panics on a type that declares an `Encoding` without `Equals`. `Serialize`
+refuses a value nesting more than 512 levels deep. A slice, array or map of a
+type that decodes by an unmarshaler decodes from members of differing types,
+where it failed. Each is below.
+
+**Upgrading from 0.6.0.** Documents 0.6.0 wrote decode as they did, a recorded
+prefix read as recorded, and 0.6.0 reads the longer prefixes 0.7.0 records. A
+capsule type that declares `Encoding` must declare `Equals` and `Hash` too,
+the equality its encoding already implies.
+
+**What `CONFORMANCE.md` states.** 196 of 196, and no rule more widely than its
+test exercises.
 
 ### Fixed
 
