@@ -4,6 +4,18 @@
 
 ### Fixed
 
+- `StringPrefix` records the same prefix whichever Go toolchain builds tenon.
+  It found the part of its text that text following it cannot change by
+  `golang.org/x/text`'s normalization boundary, whose Unicode data follows the
+  toolchain, so built with Go 1.27 it recorded `prefix "x"` for
+  `"x\U00011382"` where Go 1.26 recorded the whole text, and the narrowed
+  value encoded differently. That boundary also assumes text no longer than
+  thirty combining marks per run, which tenon does not limit, and past thirty
+  it recorded a prefix that a value beginning with it could fail. It is now
+  computed from tenon's own Unicode 15.0.0 data by plain normalization: the
+  same everywhere, sound for any run, and keeping more text in a few places
+  where the old boundary was needlessly cautious, such as a macron (U+00AF)
+  that nothing composes with.
 - `Serialize` refuses a value nesting more than 512 levels deep, with
   `CodeSerializeTooLarge` at the first part past the bound, where it wrote a
   document that `Deserialize` then refused as too large: data written that
