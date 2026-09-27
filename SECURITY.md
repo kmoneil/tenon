@@ -32,7 +32,11 @@ of them is a vulnerability:
 
 Any input that makes tenon do work out of proportion to its length, through
 `Deserialize`, `String`, `NumberFromText` or `gotenon.Encode`, is a
-vulnerability, and so is any input that makes it panic.
+vulnerability, and so is any input that makes it panic. The length of a Go
+value given to `gotenon.Encode` is the tree it describes: a slice, map or
+pointer reached from two places counts at each, as `encoding/json` counts it,
+so a value built by sharing one part many times is as long as what it
+spells out.
 
 ## Supported versions
 
