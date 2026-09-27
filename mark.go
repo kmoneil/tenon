@@ -917,3 +917,124 @@ func carryMarks(v, r Value) Value {
 	}
 	return WithMarks(r, v.n.marks.all()...)
 }
+
+// impliedMarks is what a container carrying deep marks implies on the values
+// it holds: they carry those marks because the container does, so [SE-031]
+// does not list them again, nor does a display form (DI-015). The marks a value lists for itself follow from
+// the mark set it holds, so they are decided once per set rather than once
+// per value: a container's members commonly share one set, the one the deep
+// marks were attached to them through.
+type impliedMarks struct {
+	deep   map[Mark]bool       // the container's deep marks
+	own    map[*markSet][]Mark // what a value holding that set lists for itself
+	layers map[*markSet]bool   // whether the container implies every mark of an outer layer
+}
+
+// impliesLayer reports whether the container implies every mark of the outer
+// layer l and the layers beyond it, asked once per layer: the members of a
+// container share the layer of the deep marks they inherit from it.
+func (im *impliedMarks) impliesLayer(l *markSet) bool {
+	if implied, ok := im.layers[l]; ok {
+		return implied
+	}
+	implied := true
+	for _, m := range l.all() {
+		if !im.deep[m] {
+			implied = false
+			break
+		}
+	}
+	if im.layers == nil {
+		im.layers = map[*markSet]bool{}
+	}
+	im.layers[l] = implied
+	return implied
+}
+
+// listed returns the marks a value holding held lists for itself, which are
+// those the container does not imply on it. The result is read, never
+// appended to: it is often held's own list, which the mark set shares.
+func (im *impliedMarks) listed(held *markSet) []Mark {
+	if own, ok := im.own[held]; ok {
+		return own
+	}
+	// Where the container implies every mark the set's outer layers hold, as
+	// it does of the layer its members inherit from it, only the set's own
+	// layer lists anything.
+	list := held.list
+	if held.outer != nil && !im.impliesLayer(held.outer) {
+		list = held.all()
+	}
+	own := list
+	for i, m := range list {
+		if !im.deep[m] {
+			continue
+		}
+		own = slices.Clone(list[:i:i])
+		for _, m := range list[i+1:] {
+			if !im.deep[m] {
+				own = append(own, m)
+			}
+		}
+		break
+	}
+	if im.own == nil {
+		im.own = map[*markSet][]Mark{}
+	}
+	im.own[held] = own
+	return own
+}
+
+// implications holds what the mark sets met on containers imply on the values
+// they hold, for writing each deep mark once: the encoding (SE-031) and the
+// display form (DI-015) both list a container's deep marks on the container
+// alone. Containers that carry the same marks share one answer.
+type implications struct {
+	implied map[*markSet]*impliedMarks
+	// deepMarks holds whether each mark met is deep, since a mark declares
+	// that once and for all and the marks of an enclosing value are in the
+	// mark set of every value under it.
+	deepMarks map[Mark]bool
+}
+
+// deep reports whether m is a deep mark, asking the mark once however many
+// mark sets hold it: a value nested deeply carries a set at every level, and
+// the marks of the levels above are in each of them.
+func (c *implications) deep(m Mark) bool {
+	if kept, asked := c.deepMarks[m]; asked {
+		return kept
+	}
+	if c.deepMarks == nil {
+		c.deepMarks = map[Mark]bool{}
+	}
+	d := isDeep(m)
+	c.deepMarks[m] = d
+	return d
+}
+
+// implies returns what a container carrying the marks in ms implies on the
+// values it holds, or nil where it implies nothing. Containers that carry the
+// same marks share one answer, which holds what the values under them list.
+func (c *implications) implies(ms *markSet) *impliedMarks {
+	if ms == nil {
+		return nil
+	}
+	if im, ok := c.implied[ms]; ok {
+		return im
+	}
+	var im *impliedMarks
+	for _, m := range ms.all() {
+		if !c.deep(m) {
+			continue
+		}
+		if im == nil {
+			im = &impliedMarks{deep: map[Mark]bool{}}
+		}
+		im.deep[m] = true
+	}
+	if c.implied == nil {
+		c.implied = map[*markSet]*impliedMarks{}
+	}
+	c.implied[ms] = im
+	return im
+}

@@ -842,6 +842,7 @@ func (v Value) Attribute(name string) Value {
 // writeContainer writes the content of a resolved collection or structural
 // value.
 func (n *node) writeContainer(b *textWriter) {
+	defer b.within(n)()
 	switch n.typ.t.kind {
 	case KindList, KindSet:
 		n.typ.write(b)

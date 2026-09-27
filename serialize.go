@@ -73,9 +73,9 @@ type encoder struct {
 	diags []Diagnostic
 	// ids holds the capsule identifiers met so far, and the type using each.
 	ids map[string]Type
-	// implied holds what each mark set met on a container implies on the
-	// values it holds, or nil where it implies nothing.
-	implied map[*markSet]*impliedMarks
+	// implications holds what each mark set met on a container implies on
+	// the values it holds, and which marks are deep.
+	implications
 	// failures counts the calls to fail. It is not len(diags), which
 	// records one diagnostic however many times an identical one arrives, and
 	// payloads that fail alike fail with the same message at the same path.
@@ -84,10 +84,6 @@ type encoder struct {
 	// that arrives again is known without comparing it with each before it:
 	// two diagnostics are equal exactly when their encodings are.
 	recorded map[string]struct{}
-	// deepMarks holds whether each mark met is deep, since a mark declares
-	// that once and for all and the marks of an enclosing value are in the
-	// mark set of every value under it.
-	deepMarks map[Mark]bool
 	// trail holds the steps to the member being written. Each function that
 	// writes a member takes at, the depth of that member in the trail, which
 	// is 0 for the value Serialize is given.
@@ -120,7 +116,7 @@ func (e *encoder) leave() { e.depth-- }
 
 // newEncoder returns an encoder for one value.
 func newEncoder() *encoder {
-	return &encoder{ids: map[string]Type{}, implied: map[*markSet]*impliedMarks{}}
+	return &encoder{ids: map[string]Type{}}
 }
 
 // fail records a diagnostic for what at locates, unless an identical one is
@@ -302,112 +298,6 @@ func (e *encoder) constraint(b []byte, c Constraint, at int) []byte {
 		b = e.constraint(b, m, at)
 	}
 	return b
-}
-
-// impliedMarks is what a container carrying deep marks implies on the values
-// it holds: they carry those marks because the container does, so [SE-031]
-// does not list them again. The marks a value lists for itself follow from
-// the mark set it holds, so they are decided once per set rather than once
-// per value: a container's members commonly share one set, the one the deep
-// marks were attached to them through.
-type impliedMarks struct {
-	deep   map[Mark]bool       // the container's deep marks
-	own    map[*markSet][]Mark // what a value holding that set lists for itself
-	layers map[*markSet]bool   // whether the container implies every mark of an outer layer
-}
-
-// impliesLayer reports whether the container implies every mark of the outer
-// layer l and the layers beyond it, asked once per layer: the members of a
-// container share the layer of the deep marks they inherit from it.
-func (im *impliedMarks) impliesLayer(l *markSet) bool {
-	if implied, ok := im.layers[l]; ok {
-		return implied
-	}
-	implied := true
-	for _, m := range l.all() {
-		if !im.deep[m] {
-			implied = false
-			break
-		}
-	}
-	if im.layers == nil {
-		im.layers = map[*markSet]bool{}
-	}
-	im.layers[l] = implied
-	return implied
-}
-
-// listed returns the marks a value holding held lists for itself, which are
-// those the container does not imply on it. The result is read, never
-// appended to: it is often held's own list, which the mark set shares.
-func (im *impliedMarks) listed(held *markSet) []Mark {
-	if own, ok := im.own[held]; ok {
-		return own
-	}
-	// Where the container implies every mark the set's outer layers hold, as
-	// it does of the layer its members inherit from it, only the set's own
-	// layer lists anything.
-	list := held.list
-	if held.outer != nil && !im.impliesLayer(held.outer) {
-		list = held.all()
-	}
-	own := list
-	for i, m := range list {
-		if !im.deep[m] {
-			continue
-		}
-		own = slices.Clone(list[:i:i])
-		for _, m := range list[i+1:] {
-			if !im.deep[m] {
-				own = append(own, m)
-			}
-		}
-		break
-	}
-	if im.own == nil {
-		im.own = map[*markSet][]Mark{}
-	}
-	im.own[held] = own
-	return own
-}
-
-// deep reports whether m is a deep mark, asking the mark once however many
-// mark sets hold it: a value nested deeply carries a set at every level, and
-// the marks of the levels above are in each of them.
-func (e *encoder) deep(m Mark) bool {
-	if kept, asked := e.deepMarks[m]; asked {
-		return kept
-	}
-	if e.deepMarks == nil {
-		e.deepMarks = map[Mark]bool{}
-	}
-	d := isDeep(m)
-	e.deepMarks[m] = d
-	return d
-}
-
-// implies returns what a container carrying the marks in ms implies on the
-// values it holds, or nil where it implies nothing. Containers that carry the
-// same marks share one answer, which holds what the values under them list.
-func (e *encoder) implies(ms *markSet) *impliedMarks {
-	if ms == nil {
-		return nil
-	}
-	if im, ok := e.implied[ms]; ok {
-		return im
-	}
-	var im *impliedMarks
-	for _, m := range ms.all() {
-		if !e.deep(m) {
-			continue
-		}
-		if im == nil {
-			im = &impliedMarks{deep: map[Mark]bool{}}
-		}
-		im.deep[m] = true
-	}
-	e.implied[ms] = im
-	return im
 }
 
 // content appends the content of the resolved value v, which at locates. The
