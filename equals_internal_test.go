@@ -17,11 +17,11 @@ import (
 // at its members but still goes through them.
 func TestConformance_EQ002_EqualsReadsNothingWithinWhatItShares(t *testing.T) {
 	conformance.Covers(t, "EQ-002")
-	numbers := List(NumberType())
+	numbers := ListType(NumberType())
 	unreadable := Value{n: &node{state: stateKnown, typ: numbers, data: "not a list"}}
-	part := ListVal(numbers, unreadable)
-	prior := ObjectVal(map[string]Value{"part": part, "version": NumberFromInt(1)})
-	planned := ObjectVal(map[string]Value{"part": part, "version": NumberFromText("1.0")})
+	part := List(numbers, unreadable)
+	prior := Object(map[string]Value{"part": part, "version": NumberFromInt(1)})
+	planned := Object(map[string]Value{"part": part, "version": NumberFromText("1.0")})
 	for _, tt := range []struct {
 		name string
 		a, b Value

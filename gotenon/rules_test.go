@@ -37,7 +37,7 @@ func TestConformance_GO014_ObjectsIntoMapsAndMapsIntoStructs(t *testing.T) {
 	type onlyA struct {
 		A int `tenon:"a"`
 	}
-	mv := tenon.MapVal(num, map[string]tenon.Value{"a": n(1)})
+	mv := tenon.Map(num, map[string]tenon.Value{"a": n(1)})
 	if got, err := gotenon.Decode[onlyA](mv, safe); err == nil {
 		t.Errorf("a map decoded into a struct safely: %v", got)
 	}
@@ -103,7 +103,7 @@ func TestConformance_GO022_OptionalFieldsCrossBothWays(t *testing.T) {
 	if got := v.Type().AttributeNames(); len(got) != 1 || got[0] != "p" {
 		t.Errorf("the zero optional Value encoded among %v, want [p] alone", got)
 	}
-	got := decoded[withOpt](t, obj(map[string]tenon.Value{"p": tenon.NullVal(num)}), uns)
+	got := decoded[withOpt](t, obj(map[string]tenon.Value{"p": tenon.Null(num)}), uns)
 	if got.P != 0 || !got.V.IsZero() {
 		t.Errorf("a null and an absence decoded to %+v, want the zero fields", got)
 	}
@@ -153,7 +153,7 @@ func TestConformance_GO042_TheBoundaryFailsWhereThePartIs(t *testing.T) {
 func TestConformance_GO050_TheCodesOfTheBoundary(t *testing.T) {
 	conformance.Covers(t, "GO-050")
 	wantDecodeFailures[[2]int](t, "decode.length_mismatch",
-		tenon.ListVal(num, n(1)), uns, wantDiag{tenon.CodeDecodeLengthMismatch, "."})
+		tenon.List(num, n(1)), uns, wantDiag{tenon.CodeDecodeLengthMismatch, "."})
 	wantDecodeFailures[moment](t, "decode.unmarshal_failed",
 		s("not a time"), uns, wantDiag{tenon.CodeDecodeUnmarshalFailed, "."})
 	wantDecodeFailures[int](t, "decode.marked",
@@ -161,7 +161,7 @@ func TestConformance_GO050_TheCodesOfTheBoundary(t *testing.T) {
 	wantDecodeFailures[int](t, "decode.not_known",
 		tenon.Unknown(num), uns, wantDiag{tenon.CodeDecodeNotKnown, "."})
 	wantDecodeFailures[int](t, "decode.null",
-		tenon.NullVal(num), uns, wantDiag{tenon.CodeDecodeNull, "."})
+		tenon.Null(num), uns, wantDiag{tenon.CodeDecodeNull, "."})
 	wantDecodeFailures[int8](t, "decode.out_of_range",
 		n(1000), uns, wantDiag{tenon.CodeDecodeOutOfRange, "."})
 	wantEncodeFailure(t, "encode.inexact", big.NewRat(1, 3), wantDiag{tenon.CodeEncodeInexact, "."})

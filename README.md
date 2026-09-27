@@ -17,7 +17,7 @@ beside its data.
 ```go
 // A service's configuration: the name is in hand, the address it will be
 // reachable at is not known until the service is created.
-config := tenon.ObjectVal(map[string]tenon.Value{
+config := tenon.Object(map[string]tenon.Value{
 	"name":     tenon.String("web"),
 	"replicas": tenon.NumberFromInt(3),
 	"address":  tenon.Unknown(tenon.StringType()),
@@ -118,7 +118,7 @@ part that failed. An operation over an error value gives an error value, so a
 failure travels to where it is handled instead of being checked at every step.
 
 ```go
-ports := tenon.ListVal(tenon.StringType(), tenon.String("80"), tenon.String("http"), tenon.String("443"))
+ports := tenon.List(tenon.StringType(), tenon.String("80"), tenon.String("http"), tenon.String("443"))
 converted := tenon.Convert(ports, tenon.ListOf(tenon.Exactly(tenon.NumberType())), tenon.Unsafe)
 for _, d := range converted.Diagnostics() {
 	fmt.Printf("%s at %s: %s\n", d.Code, d.Path, d.Message)

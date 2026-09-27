@@ -9,8 +9,9 @@ import (
 
 // Unify returns the most specific constraint that a value satisfying any of cs
 // converts to under the policy p. Where there is none, it fails with code
-// CodeUnifyNoCommonConstraint, naming the constraints. A frontend unifies the types of the branches of a conditional, or
-// the operands of an equality, before converting each to the result.
+// CodeUnifyNoCommonConstraint, naming the constraints. A frontend unifies the
+// types of the branches of a conditional, or the operands of an equality,
+// before converting each to the result.
 //
 // Any stands for a type not yet settled and takes whatever the others give, as
 // do the attributes an open ObjectWith leaves unnamed, so a value that turns
@@ -44,7 +45,7 @@ import (
 //
 // Unify panics if p is not Safe or Unsafe, or if a constraint is the zero
 // Constraint.
-func Unify(p Policy, cs ...Constraint) (Constraint, error) {
+func Unify(cs []Constraint, p Policy) (Constraint, error) {
 	c, failure, ok := unify(p, cs...)
 	if !ok {
 		return Constraint{}, asError(failure)

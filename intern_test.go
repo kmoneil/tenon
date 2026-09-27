@@ -11,11 +11,11 @@ import (
 // nested builds the same deeply structured type afresh on every call.
 func nested() tenon.Type {
 	str, num := tenon.StringType(), tenon.NumberType()
-	return tenon.Map(tenon.Object(map[string]tenon.Type{
+	return tenon.MapType(tenon.ObjectType(map[string]tenon.Type{
 		"id":     num,
-		"labels": tenon.Map(str),
-		"points": tenon.List(tenon.Tuple(num, num)),
-		"owner":  tenon.Object(map[string]tenon.Type{"name": str, "groups": tenon.Set(str)}),
+		"labels": tenon.MapType(str),
+		"points": tenon.ListType(tenon.TupleType(num, num)),
+		"owner":  tenon.ObjectType(map[string]tenon.Type{"name": str, "groups": tenon.SetType(str)}),
 	}))
 }
 
@@ -23,20 +23,20 @@ func TestConformance_TY014_ObjectAttributeOrder(t *testing.T) {
 	conformance.Covers(t, "TY-014")
 	first := map[string]tenon.Type{}
 	first["name"] = tenon.StringType()
-	first["tags"] = tenon.List(tenon.StringType())
+	first["tags"] = tenon.ListType(tenon.StringType())
 	second := map[string]tenon.Type{}
-	second["tags"] = tenon.List(tenon.StringType())
+	second["tags"] = tenon.ListType(tenon.StringType())
 	second["name"] = tenon.StringType()
-	a, b := tenon.Object(first), tenon.Object(second)
+	a, b := tenon.ObjectType(first), tenon.ObjectType(second)
 	if a != b || !a.Equal(b) {
 		t.Errorf("%v and %v are different types", a, b)
 	}
 
 	// A different name or attribute type makes a different type.
 	for _, other := range []tenon.Type{
-		tenon.Object(map[string]tenon.Type{"name": tenon.StringType()}),
-		tenon.Object(map[string]tenon.Type{"name": tenon.StringType(), "tags": tenon.Set(tenon.StringType())}),
-		tenon.Object(map[string]tenon.Type{"name": tenon.StringType(), "tag": tenon.List(tenon.StringType())}),
+		tenon.ObjectType(map[string]tenon.Type{"name": tenon.StringType()}),
+		tenon.ObjectType(map[string]tenon.Type{"name": tenon.StringType(), "tags": tenon.SetType(tenon.StringType())}),
+		tenon.ObjectType(map[string]tenon.Type{"name": tenon.StringType(), "tag": tenon.ListType(tenon.StringType())}),
 	} {
 		if a == other || a.Equal(other) {
 			t.Errorf("%v and %v are the same type", a, other)
@@ -47,16 +47,16 @@ func TestConformance_TY014_ObjectAttributeOrder(t *testing.T) {
 func TestConformance_TY015_TupleOrder(t *testing.T) {
 	conformance.Covers(t, "TY-015")
 	str, num := tenon.StringType(), tenon.NumberType()
-	a := tenon.Tuple(str, tenon.List(num))
-	b := tenon.Tuple(tenon.StringType(), tenon.List(tenon.NumberType()))
+	a := tenon.TupleType(str, tenon.ListType(num))
+	b := tenon.TupleType(tenon.StringType(), tenon.ListType(tenon.NumberType()))
 	if a != b || !a.Equal(b) {
 		t.Errorf("%v and %v are different types", a, b)
 	}
 	for _, p := range [][2]tenon.Type{
-		{tenon.Tuple(str, num), tenon.Tuple(num, str)},
-		{tenon.Tuple(str), tenon.Tuple(str, str)},
-		{tenon.Tuple(), tenon.Tuple(str)},
-		{tenon.Tuple(str, num), tenon.Tuple(str, tenon.List(num))},
+		{tenon.TupleType(str, num), tenon.TupleType(num, str)},
+		{tenon.TupleType(str), tenon.TupleType(str, str)},
+		{tenon.TupleType(), tenon.TupleType(str)},
+		{tenon.TupleType(str, num), tenon.TupleType(str, tenon.ListType(num))},
 	} {
 		if p[0] == p[1] || p[0].Equal(p[1]) {
 			t.Errorf("%v and %v are the same type", p[0], p[1])
@@ -74,7 +74,7 @@ func TestConformance_TY020_StructuralEquality(t *testing.T) {
 	counts := map[tenon.Type]int{}
 	for range 3 {
 		counts[nested()]++
-		counts[tenon.List(tenon.StringType())]++
+		counts[tenon.ListType(tenon.StringType())]++
 	}
 	if len(counts) != 2 || counts[nested()] != 3 {
 		t.Errorf("counts = %v, want 3 for each of two types", counts)
@@ -87,11 +87,11 @@ func TestConformance_TY021_DeterministicEquality(t *testing.T) {
 	attrType := func(i int) tenon.Type {
 		switch i % 3 {
 		case 0:
-			return tenon.List(tenon.NumberType())
+			return tenon.ListType(tenon.NumberType())
 		case 1:
-			return tenon.Tuple(tenon.StringType(), tenon.BoolType())
+			return tenon.TupleType(tenon.StringType(), tenon.BoolType())
 		}
-		return tenon.Object(map[string]tenon.Type{"n": tenon.NumberType()})
+		return tenon.ObjectType(map[string]tenon.Type{"n": tenon.NumberType()})
 	}
 	// build constructs the attribute types and fills the map in the given
 	// order.
@@ -100,7 +100,7 @@ func TestConformance_TY021_DeterministicEquality(t *testing.T) {
 		for _, i := range order {
 			attrs[names[i]] = attrType(i)
 		}
-		return tenon.Object(attrs)
+		return tenon.ObjectType(attrs)
 	}
 
 	want := build([]int{0, 1, 2, 3, 4, 5})
@@ -125,9 +125,9 @@ func TestConformance_TY021_DeterministicEquality(t *testing.T) {
 	// Equality is decided at once, however deep the types.
 	deep, deeper := tenon.StringType(), tenon.StringType()
 	for range 10000 {
-		deep, deeper = tenon.List(deep), tenon.List(deeper)
+		deep, deeper = tenon.ListType(deep), tenon.ListType(deeper)
 	}
-	if deep != deeper || !deep.Equal(deeper) || deep.Equal(tenon.List(deep)) {
+	if deep != deeper || !deep.Equal(deeper) || deep.Equal(tenon.ListType(deep)) {
 		t.Error("deeply nested list types compared wrongly")
 	}
 }

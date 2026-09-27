@@ -16,9 +16,9 @@ func TestConformance_VA002_RangeOfAResolvedValue(t *testing.T) {
 	for _, v := range []tenon.Value{
 		tenon.String("text"),
 		tenon.NumberFromInt(3),
-		tenon.NullVal(str),
+		tenon.Null(str),
 		tenon.Unknown(str),
-		tenon.Unknown(tenon.List(num)),
+		tenon.Unknown(tenon.ListType(num)),
 	} {
 		if !v.IsResolved() {
 			t.Fatalf("%v is not a resolved value", v)
@@ -33,7 +33,7 @@ func TestConformance_VA002_RangeOfAResolvedValue(t *testing.T) {
 		v    tenon.Value
 		null bool
 	}{
-		{tenon.NullVal(str), true},
+		{tenon.Null(str), true},
 		{tenon.Unknown(str), true},
 		{tenon.Narrow(tenon.Unknown(str), tenon.NotNull()), false},
 		{tenon.String("text"), false},
@@ -69,7 +69,7 @@ func TestConformance_UN001_RangesAreNeverEmpty(t *testing.T) {
 	}
 	// A range that holds null is never empty: the same narrowings leave it
 	// null alone, and so the null value (UN-004).
-	if got := tenon.Narrow(tenon.Unknown(num), crossed...); !tenon.Identical(got, tenon.NullVal(num)) {
+	if got := tenon.Narrow(tenon.Unknown(num), crossed...); !tenon.Identical(got, tenon.Null(num)) {
 		t.Errorf("narrowing a range holding null to no other value produced %v, want null(number)", got)
 	}
 }
@@ -78,7 +78,7 @@ func TestConformance_UN002_NarrowingTable(t *testing.T) {
 	conformance.Covers(t, "UN-002")
 	five := tenon.NumberFromInt(5)
 	str, num := tenon.StringType(), tenon.NumberType()
-	lst, set, mp := tenon.List(str), tenon.Set(str), tenon.Map(str)
+	lst, set, mp := tenon.ListType(str), tenon.SetType(str), tenon.MapType(str)
 	for _, tt := range []struct {
 		name string
 		v    tenon.Value
@@ -101,7 +101,7 @@ func TestConformance_UN002_NarrowingTable(t *testing.T) {
 		}
 	}
 	// The narrowing to null leaves null as the only possibility.
-	null := tenon.Narrow(tenon.Unknown(num), tenon.Null())
+	null := tenon.Narrow(tenon.Unknown(num), tenon.NullOnly())
 	if !null.Range().AllowsNull() {
 		t.Errorf("narrowing to null produced %v, whose range excludes null", null)
 	}
@@ -124,10 +124,10 @@ func TestConformance_UN002_NarrowingTable(t *testing.T) {
 	// A tuple and an object have the length their type fixes, so a length
 	// bound on one is a mistake, not a narrowing.
 	mustPanicUsage(t, "does not apply to a value of type tuple([string])", func() {
-		tenon.Narrow(tenon.Unknown(tenon.Tuple(str)), tenon.LengthMax(1))
+		tenon.Narrow(tenon.Unknown(tenon.TupleType(str)), tenon.LengthMax(1))
 	})
 	mustPanicUsage(t, "does not apply to a value of type object({})", func() {
-		tenon.Narrow(tenon.Unknown(tenon.Object(nil)), tenon.LengthMin(1))
+		tenon.Narrow(tenon.Unknown(tenon.ObjectType(nil)), tenon.LengthMin(1))
 	})
 }
 
@@ -135,7 +135,7 @@ func TestConformance_UN003_NarrowingIsMonotone(t *testing.T) {
 	conformance.Covers(t, "UN-003")
 	one, five := tenon.NumberFromInt(1), tenon.NumberFromInt(5)
 	str, num := tenon.StringType(), tenon.NumberType()
-	lst := tenon.List(str)
+	lst := tenon.ListType(str)
 	// Applying a weaker narrowing to a range that already says more leaves it
 	// as it was, whichever order the two arrive in: a narrowing can only ever
 	// remove possibilities.
@@ -170,9 +170,9 @@ func TestConformance_UN004_ContradictionIsAnErrorValue(t *testing.T) {
 	conformance.Covers(t, "UN-004", "UN-002")
 	one, two, three, five := tenon.NumberFromInt(1), tenon.NumberFromInt(2), tenon.NumberFromInt(3), tenon.NumberFromInt(5)
 	str, num := tenon.StringType(), tenon.NumberType()
-	lst := tenon.List(str)
+	lst := tenon.ListType(str)
 	// A set of one or two members: the unknown may turn out to be 1.
-	partial := tenon.SetVal(num, one, tenon.Unknown(num))
+	partial := tenon.Set(num, one, tenon.Unknown(num))
 	atLeastFive := tenon.Narrow(tenon.Unknown(num), tenon.NotNull(), tenon.NumberMin(five, true))
 	between := func(lo, hi string) tenon.Value {
 		return tenon.Narrow(tenon.Unknown(num), tenon.NotNull(),
@@ -190,7 +190,7 @@ func TestConformance_UN004_ContradictionIsAnErrorValue(t *testing.T) {
 			// Listed values that are not known force no more than one member
 			// (UN-002), so the least length here is the LengthMin's, however
 			// provably distinct the listed values are.
-			"a least length a listing does not force", tenon.Unknown(tenon.Set(num)),
+			"a least length a listing does not force", tenon.Unknown(tenon.SetType(num)),
 			[]tenon.Narrowing{tenon.NotNull(), tenon.LengthMin(2), tenon.Members(atLeastFive, between("-9", "0")), tenon.LengthMax(1)},
 			"no value of type set(number) satisfies both length >= 2 and length <= 1",
 		},
@@ -206,7 +206,7 @@ func TestConformance_UN004_ContradictionIsAnErrorValue(t *testing.T) {
 		},
 		{
 			"null after not null", tenon.Unknown(num),
-			[]tenon.Narrowing{tenon.NotNull(), tenon.Null()},
+			[]tenon.Narrowing{tenon.NotNull(), tenon.NullOnly()},
 			"no value of type number satisfies both not null and null",
 		},
 
@@ -231,7 +231,7 @@ func TestConformance_UN004_ContradictionIsAnErrorValue(t *testing.T) {
 			`the value "xy" does not satisfy prefix "ab-"`,
 		},
 		{
-			"a known null that cannot be not null", tenon.NullVal(str),
+			"a known null that cannot be not null", tenon.Null(str),
 			[]tenon.Narrowing{tenon.NotNull()},
 			"the value null(string) does not satisfy not null",
 		},
@@ -241,7 +241,7 @@ func TestConformance_UN004_ContradictionIsAnErrorValue(t *testing.T) {
 		// that range.
 		{
 			"a set that cannot be null", partial,
-			[]tenon.Narrowing{tenon.Null()},
+			[]tenon.Narrowing{tenon.NullOnly()},
 			"the value set(number)[1, unknown(number)] does not satisfy null",
 		},
 		{
@@ -304,7 +304,7 @@ func TestConformance_UN004_ContradictionIsAnErrorValue(t *testing.T) {
 			// lists a value either of them could be, which sorts ahead of both
 			// and counts in their place, but they are needed all the same.
 			"a listing that counts fewer beside an earlier one",
-			tenon.SetVal(num, one, tenon.Unknown(num), tenon.Unknown(num)),
+			tenon.Set(num, one, tenon.Unknown(num), tenon.Unknown(num)),
 			[]tenon.Narrowing{
 				tenon.Members(between("5", "6"), between("8", "9")),
 				tenon.Members(between("4.5", "9")),
@@ -319,7 +319,7 @@ func TestConformance_UN004_ContradictionIsAnErrorValue(t *testing.T) {
 		},
 		{
 			// Two members could be 3 and one more, but neither can be 3.
-			"a listed member the set provably lacks", tenon.SetVal(num, atLeastFive, atLeastFive),
+			"a listed member the set provably lacks", tenon.Set(num, atLeastFive, atLeastFive),
 			[]tenon.Narrowing{tenon.Members(three)},
 			"the value set(number)[unknown(number, not ... does not satisfy members {3}",
 		},
@@ -328,13 +328,13 @@ func TestConformance_UN004_ContradictionIsAnErrorValue(t *testing.T) {
 		// between 3 and 4 would have to be both of them.
 		{
 			"listed values that need one member twice over",
-			tenon.SetVal(num, between("1", "2"), between("1", "2"), between("3", "4")),
+			tenon.Set(num, between("1", "2"), between("1", "2"), between("3", "4")),
 			[]tenon.Narrowing{tenon.Members(three, tenon.NumberFromInt(4))},
 			"the value set(number)[unknown(number, not ... does not satisfy members {3, 4}",
 		},
 		{
 			"listed values that need four members from three",
-			tenon.SetVal(num, between("1", "2"), between("1", "2"), between("1", "2"), between("3", "4")),
+			tenon.Set(num, between("1", "2"), between("1", "2"), between("1", "2"), between("3", "4")),
 			[]tenon.Narrowing{tenon.Members(one, two, three, tenon.NumberFromInt(4))},
 			"the value set(number)[unknown(number, not ... does not satisfy members {1, 2, 3, 4}",
 		},
@@ -342,7 +342,7 @@ func TestConformance_UN004_ContradictionIsAnErrorValue(t *testing.T) {
 			// Three members that cannot be null leave no third value for a
 			// set of bools to hold.
 			"a set of bools asked for every one of them, with no member for null",
-			tenon.SetVal(tenon.BoolType(), notNullBool, notNullBool, notNullBool),
+			tenon.Set(tenon.BoolType(), notNullBool, notNullBool, notNullBool),
 			[]tenon.Narrowing{tenon.LengthMin(3)},
 			"the value set(bool)[unknown(bool, not null... does not satisfy length >= 3",
 		},
@@ -351,29 +351,29 @@ func TestConformance_UN004_ContradictionIsAnErrorValue(t *testing.T) {
 		// a length beyond the values that type holds is a contradiction where
 		// the set cannot be null. Where it can, null is left (the test below).
 		{
-			"a set of bools longer than bool has values", tenon.Unknown(tenon.Set(tenon.BoolType())),
+			"a set of bools longer than bool has values", tenon.Unknown(tenon.SetType(tenon.BoolType())),
 			[]tenon.Narrowing{tenon.NotNull(), tenon.LengthMin(4)},
 			"no value of type set(bool) satisfies both length <= 3 and length >= 4",
 		},
 		{
-			"a set of empty tuples longer than that type has values", tenon.Unknown(tenon.Set(tenon.Tuple())),
+			"a set of empty tuples longer than that type has values", tenon.Unknown(tenon.SetType(tenon.TupleType())),
 			[]tenon.Narrowing{tenon.NotNull(), tenon.LengthMin(3)},
 			"no value of type set(tuple([])) satisfies both length <= 2 and length >= 3",
 		},
 		{
 			// A listing of every value bool holds, and one more member.
 			"a set of bools listing them all, and a length beyond them",
-			tenon.Unknown(tenon.Set(tenon.BoolType())),
+			tenon.Unknown(tenon.SetType(tenon.BoolType())),
 			[]tenon.Narrowing{
 				tenon.NotNull(),
-				tenon.Members(tenon.Bool(true), tenon.NullVal(tenon.BoolType()), tenon.Bool(false)),
+				tenon.Members(tenon.Bool(true), tenon.Null(tenon.BoolType()), tenon.Bool(false)),
 				tenon.LengthMin(4),
 			},
 			"no value of type set(bool) satisfies both length <= 3 and length >= 4",
 		},
 		{
 			"a set holding unknowns, longer than its element type allows",
-			tenon.SetVal(tenon.BoolType(), unknownBool, unknownBool, unknownBool, unknownBool),
+			tenon.Set(tenon.BoolType(), unknownBool, unknownBool, unknownBool, unknownBool),
 			[]tenon.Narrowing{tenon.LengthMin(4)},
 			"the value set(bool)[unknown(bool), unknown... does not satisfy both length <= 3 and length >= 4",
 		},
@@ -381,7 +381,7 @@ func TestConformance_UN004_ContradictionIsAnErrorValue(t *testing.T) {
 			// Two listed values that are provably distinct need two members.
 			// Counted beside the member, which could be either of them and
 			// comes first, they would count as one.
-			"listed values the set has too few members for", tenon.SetVal(num, tenon.Unknown(num)),
+			"listed values the set has too few members for", tenon.Set(num, tenon.Unknown(num)),
 			[]tenon.Narrowing{tenon.Members(atLeastFive, tenon.Narrow(tenon.Unknown(num), tenon.NotNull(), tenon.NumberMax(one, true)))},
 			"the value set(number)[unknown(number)] does not satisfy members {unknown(number, not nul...",
 		},
@@ -443,27 +443,27 @@ func TestConformance_UN004_NullIsLeftWhereNullIsPossible(t *testing.T) {
 			`no value of type string satisfies both prefix "ab-" and length <= 1`,
 		},
 		{
-			"length bounds that cross", tenon.List(str),
+			"length bounds that cross", tenon.ListType(str),
 			[]tenon.Narrowing{tenon.LengthMin(3), tenon.LengthMax(2)},
 			"no value of type list(string) satisfies both length >= 3 and length <= 2",
 		},
 		{
-			"more listed members than the length allows", tenon.Set(num),
+			"more listed members than the length allows", tenon.SetType(num),
 			[]tenon.Narrowing{tenon.Members(one, two), tenon.LengthMax(1)},
 			"no value of type set(number) satisfies both members {1, 2} and length <= 1",
 		},
 		{
-			"a set of bools longer than bool has values", tenon.Set(tenon.BoolType()),
+			"a set of bools longer than bool has values", tenon.SetType(tenon.BoolType()),
 			[]tenon.Narrowing{tenon.LengthMin(4)},
 			"no value of type set(bool) satisfies both length <= 3 and length >= 4",
 		},
 		{
-			"a set of empty tuples longer than that type has values", tenon.Set(tenon.Tuple()),
+			"a set of empty tuples longer than that type has values", tenon.SetType(tenon.TupleType()),
 			[]tenon.Narrowing{tenon.LengthMin(3)},
 			"no value of type set(tuple([])) satisfies both length <= 2 and length >= 3",
 		},
 	} {
-		null := tenon.NullVal(tt.typ)
+		null := tenon.Null(tt.typ)
 		if got := tenon.Narrow(tenon.Unknown(tt.typ), tt.ns...); !tenon.Identical(got, null) {
 			t.Errorf("%s: an unknown that may be null narrows to %v, want %v", tt.name, got, null)
 		}
@@ -510,20 +510,20 @@ func TestConformance_UN004_ASetHoldingUnknownsHasTheLengthsItCanHave(t *testing.
 		ns   []tenon.Narrowing
 	}{
 		// 0.2.0 contradicted the first two, counting the members held.
-		{"two unknowns that may be one member", tenon.SetVal(num, unknown, unknown), []tenon.Narrowing{tenon.LengthMax(1)}},
+		{"two unknowns that may be one member", tenon.Set(num, unknown, unknown), []tenon.Narrowing{tenon.LengthMax(1)}},
 		{
-			"an unknown that may be either of two others", tenon.SetVal(num, n(1), atLeastFive, unknown),
+			"an unknown that may be either of two others", tenon.Set(num, n(1), atLeastFive, unknown),
 			[]tenon.Narrowing{tenon.LengthMax(2)},
 		},
-		{"two unknowns that may be two members", tenon.SetVal(num, unknown, unknown), []tenon.Narrowing{tenon.LengthMin(2)}},
-		{"exactly two", tenon.SetVal(num, unknown, unknown), []tenon.Narrowing{tenon.LengthMin(2), tenon.LengthMax(2)}},
+		{"two unknowns that may be two members", tenon.Set(num, unknown, unknown), []tenon.Narrowing{tenon.LengthMin(2)}},
+		{"exactly two", tenon.Set(num, unknown, unknown), []tenon.Narrowing{tenon.LengthMin(2), tenon.LengthMax(2)}},
 		{
-			"every length it can have, and not null", tenon.SetVal(num, unknown, unknown),
+			"every length it can have, and not null", tenon.Set(num, unknown, unknown),
 			[]tenon.Narrowing{tenon.NotNull(), tenon.LengthMin(1), tenon.LengthMax(2)},
 		},
-		{"a listed value an unknown may be", tenon.SetVal(num, unknown, unknown), []tenon.Narrowing{tenon.Members(n(1))}},
+		{"a listed value an unknown may be", tenon.Set(num, unknown, unknown), []tenon.Narrowing{tenon.Members(n(1))}},
 		{
-			"a listed value a known member is, and room for another", tenon.SetVal(num, n(1), unknown),
+			"a listed value a known member is, and room for another", tenon.Set(num, n(1), unknown),
 			[]tenon.Narrowing{tenon.Members(n(1)), tenon.LengthMin(2)},
 		},
 	} {
@@ -573,7 +573,7 @@ func TestConformance_UN004_ASetHoldingUnknownsHasTheLengthsItCanHave(t *testing.
 		for i, m := range spec {
 			elems[i] = value(m)
 		}
-		return tenon.SetVal(num, elems...)
+		return tenon.Set(num, elems...)
 	}
 	// choices returns the sets spec is tried as.
 	choices := func(spec []member) []tenon.Value {
@@ -581,11 +581,11 @@ func TestConformance_UN004_ASetHoldingUnknownsHasTheLengthsItCanHave(t *testing.
 		var walk func(i int, picked []tenon.Value)
 		walk = func(i int, picked []tenon.Value) {
 			if i == len(spec) {
-				out = append(out, tenon.SetVal(num, picked...))
+				out = append(out, tenon.Set(num, picked...))
 				return
 			}
 			if spec[i].null {
-				walk(i+1, append(slices.Clone(picked), tenon.NullVal(num)))
+				walk(i+1, append(slices.Clone(picked), tenon.Null(num)))
 			}
 			for half := 2 * spec[i].lo; half <= 2*spec[i].hi; half++ {
 				v := n(half / 2)
@@ -600,7 +600,7 @@ func TestConformance_UN004_ASetHoldingUnknownsHasTheLengthsItCanHave(t *testing.
 	}
 	var narrowings [][]tenon.Narrowing
 	listings := [][]tenon.Value{
-		nil, {n(0)}, {n(3)}, {n(0), n(1)}, {n(1), n(2)}, {tenon.NullVal(num)},
+		nil, {n(0)}, {n(3)}, {n(0), n(1)}, {n(1), n(2)}, {tenon.Null(num)},
 		{value(member{lo: 2, hi: 3})}, {n(0), value(member{lo: 2, hi: 3})},
 	}
 	for lo := int64(-1); lo <= 3; lo++ {
@@ -681,13 +681,13 @@ func TestNarrowingSaysNothingAboutNull(t *testing.T) {
 	// A bound, a prefix or a length says what a value is when it is not null,
 	// so null satisfies it: an optional attribute with a constraint on it
 	// stays optional.
-	null := tenon.NullVal(str)
+	null := tenon.Null(str)
 	if got := tenon.Narrow(null, tenon.StringPrefix("ab"), tenon.LengthMin(2)); !tenon.SameNode(got, null) {
 		t.Errorf("narrowing the null value produced %v, want the value itself", got)
 	}
 	// The same holds of a range that has been narrowed to null, and the
 	// narrowing leaves no trace, so the range of null has one spelling.
-	onlyNull := tenon.Narrow(tenon.Unknown(num), tenon.Null())
+	onlyNull := tenon.Narrow(tenon.Unknown(num), tenon.NullOnly())
 	if got := tenon.Narrow(onlyNull, tenon.NumberMin(five, true)); !tenon.SameNode(got, onlyNull) {
 		t.Errorf("narrowing a null range by a bound produced %v, want the range itself", got)
 	}
@@ -703,7 +703,7 @@ func TestNarrowingSaysNothingAboutNull(t *testing.T) {
 
 func TestUnknownAndNullValues(t *testing.T) {
 	str := tenon.StringType()
-	unknown, null := tenon.Unknown(str), tenon.NullVal(str)
+	unknown, null := tenon.Unknown(str), tenon.Null(str)
 	for _, tt := range []struct {
 		v       tenon.Value
 		known   bool
@@ -729,9 +729,9 @@ func TestUnknownAndNullValues(t *testing.T) {
 		mustPanicUsage(t, "AsString called on "+tt.content+", which has no content", func() { tt.v.AsString() })
 	}
 	// Containers of them are read through the same accessors, which refuse.
-	lst := tenon.List(str)
+	lst := tenon.ListType(str)
 	mustPanicUsage(t, "Len called on the null value of type list(string), which has no content", func() {
-		tenon.NullVal(lst).Len()
+		tenon.Null(lst).Len()
 	})
 	mustPanicUsage(t, "Index called on an unknown value of type list(string), which has no content", func() {
 		tenon.Unknown(lst).Index(0)
@@ -740,11 +740,11 @@ func TestUnknownAndNullValues(t *testing.T) {
 		tenon.Unknown(lst).Elements()
 	})
 	mustPanicUsage(t, "MapKeys called on an unknown value of type map(string), which has no content", func() {
-		tenon.Unknown(tenon.Map(str)).MapKeys()
+		tenon.Unknown(tenon.MapType(str)).MapKeys()
 	})
 	// Neither is a type.
 	mustPanicUsage(t, "use of the zero Type", func() { tenon.Unknown(tenon.Type{}) })
-	mustPanicUsage(t, "use of the zero Type", func() { tenon.NullVal(tenon.Type{}) })
+	mustPanicUsage(t, "use of the zero Type", func() { tenon.Null(tenon.Type{}) })
 }
 
 func TestNarrowingLengthIsGraphemeClusters(t *testing.T) {
@@ -851,8 +851,8 @@ func TestConformance_UN005_NarrowingToOneValue(t *testing.T) {
 	conformance.Covers(t, "UN-005")
 	one, five := tenon.NumberFromInt(1), tenon.NumberFromInt(5)
 	str, num := tenon.StringType(), tenon.NumberType()
-	lst, set, mp := tenon.List(str), tenon.Set(str), tenon.Map(str)
-	empty := tenon.Tuple()
+	lst, set, mp := tenon.ListType(str), tenon.SetType(str), tenon.MapType(str)
+	empty := tenon.TupleType()
 	boolType := tenon.BoolType()
 	bounded := func(ns ...tenon.Narrowing) tenon.Value {
 		return tenon.Narrow(tenon.Unknown(num), append([]tenon.Narrowing{tenon.NotNull()}, ns...)...)
@@ -861,9 +861,9 @@ func TestConformance_UN005_NarrowingToOneValue(t *testing.T) {
 	// be the first: its unknowns would need their one member between 3 and 4
 	// to be both of them.
 	n := tenon.NumberFromInt
-	fourKnown := tenon.SetVal(num, n(1), n(2), n(3), n(4))
+	fourKnown := tenon.Set(num, n(1), n(2), n(3), n(4))
 	oneOrTwo := bounded(tenon.NumberMin(n(1), true), tenon.NumberMax(n(2), true))
-	fourUnfit := tenon.SetVal(num, oneOrTwo, oneOrTwo, oneOrTwo, bounded(tenon.NumberMin(n(3), true), tenon.NumberMax(n(4), true)))
+	fourUnfit := tenon.Set(num, oneOrTwo, oneOrTwo, oneOrTwo, bounded(tenon.NumberMin(n(3), true), tenon.NumberMax(n(4), true)))
 	// A range that comes down to one value is that value, known.
 	for _, tt := range []struct {
 		name string
@@ -884,104 +884,104 @@ func TestConformance_UN005_NarrowingToOneValue(t *testing.T) {
 		{
 			"a list of no length", tenon.Unknown(lst),
 			[]tenon.Narrowing{tenon.NotNull(), tenon.LengthMax(0)},
-			tenon.ListVal(str),
+			tenon.List(str),
 		},
 		{
 			"a set of no length", tenon.Unknown(set),
 			[]tenon.Narrowing{tenon.NotNull(), tenon.LengthMax(0)},
-			tenon.SetVal(str),
+			tenon.Set(str),
 		},
 		{
 			"a map of no length", tenon.Unknown(mp),
 			[]tenon.Narrowing{tenon.NotNull(), tenon.LengthMax(0)},
-			tenon.MapVal(str, nil),
+			tenon.Map(str, nil),
 		},
-		{"null on a number", tenon.Unknown(num), []tenon.Narrowing{tenon.Null()}, tenon.NullVal(num)},
-		{"null on a list", tenon.Unknown(lst), []tenon.Narrowing{tenon.Null()}, tenon.NullVal(lst)},
+		{"null on a number", tenon.Unknown(num), []tenon.Narrowing{tenon.NullOnly()}, tenon.Null(num)},
+		{"null on a list", tenon.Unknown(lst), []tenon.Narrowing{tenon.NullOnly()}, tenon.Null(lst)},
 		{
 			"a type with one value", tenon.Unknown(empty),
 			[]tenon.Narrowing{tenon.NotNull()},
-			tenon.TupleVal(),
+			tenon.Tuple(),
 		},
 		{
-			"an object with no attributes", tenon.Unknown(tenon.Object(nil)),
+			"an object with no attributes", tenon.Unknown(tenon.ObjectType(nil)),
 			[]tenon.Narrowing{tenon.NotNull()},
-			tenon.ObjectVal(nil),
+			tenon.Object(nil),
 		},
 
 		// A set holding members that are not known, left no more members than
 		// its known ones, holds those alone: every other member must turn out
 		// to be one of them.
 		{
-			"a set left its known member", tenon.SetVal(num, one, tenon.Unknown(num)),
+			"a set left its known member", tenon.Set(num, one, tenon.Unknown(num)),
 			[]tenon.Narrowing{tenon.LengthMax(1)},
-			tenon.SetVal(num, one),
+			tenon.Set(num, one),
 		},
 		{
 			"a set left its known members, which hold what is listed",
-			tenon.SetVal(num, one, five, tenon.Unknown(num), bounded(tenon.NumberMax(five, false))),
+			tenon.Set(num, one, five, tenon.Unknown(num), bounded(tenon.NumberMax(five, false))),
 			[]tenon.Narrowing{tenon.NotNull(), tenon.Members(five), tenon.LengthMax(2)},
-			tenon.SetVal(num, one, five),
+			tenon.Set(num, one, five),
 		},
 		{
-			"a set left its null member", tenon.SetVal(num, tenon.NullVal(num), tenon.Unknown(num)),
+			"a set left its null member", tenon.Set(num, tenon.Null(num), tenon.Unknown(num)),
 			[]tenon.Narrowing{tenon.LengthMax(1)},
-			tenon.SetVal(num, tenon.NullVal(num)),
+			tenon.Set(num, tenon.Null(num)),
 		},
 		{
 			"a set left its known list",
-			tenon.SetVal(tenon.List(num), tenon.ListVal(num, one, five), tenon.ListVal(num, tenon.Unknown(num), five)),
+			tenon.Set(tenon.ListType(num), tenon.List(num, one, five), tenon.List(num, tenon.Unknown(num), five)),
 			[]tenon.Narrowing{tenon.LengthMax(1)},
-			tenon.SetVal(tenon.List(num), tenon.ListVal(num, one, five)),
+			tenon.Set(tenon.ListType(num), tenon.List(num, one, five)),
 		},
 
 		// A set required to hold as many members as its element type has
 		// values, null among them, holds every one of them.
 		{
-			"a set of every bool", tenon.Unknown(tenon.Set(boolType)),
+			"a set of every bool", tenon.Unknown(tenon.SetType(boolType)),
 			[]tenon.Narrowing{tenon.NotNull(), tenon.LengthMin(3)},
-			tenon.SetVal(boolType, tenon.NullVal(boolType), tenon.Bool(false), tenon.Bool(true)),
+			tenon.Set(boolType, tenon.Null(boolType), tenon.Bool(false), tenon.Bool(true)),
 		},
 		{
-			"a set of every empty tuple", tenon.Unknown(tenon.Set(empty)),
+			"a set of every empty tuple", tenon.Unknown(tenon.SetType(empty)),
 			[]tenon.Narrowing{tenon.NotNull(), tenon.LengthMin(2)},
-			tenon.SetVal(empty, tenon.NullVal(empty), tenon.TupleVal()),
+			tenon.Set(empty, tenon.Null(empty), tenon.Tuple()),
 		},
 		{
-			"a set of every bool, listed rather than counted", tenon.Unknown(tenon.Set(boolType)),
+			"a set of every bool, listed rather than counted", tenon.Unknown(tenon.SetType(boolType)),
 			[]tenon.Narrowing{
 				tenon.NotNull(),
-				tenon.Members(tenon.Bool(true), tenon.NullVal(boolType), tenon.Bool(false)),
+				tenon.Members(tenon.Bool(true), tenon.Null(boolType), tenon.Bool(false)),
 			},
-			tenon.SetVal(boolType, tenon.NullVal(boolType), tenon.Bool(false), tenon.Bool(true)),
+			tenon.Set(boolType, tenon.Null(boolType), tenon.Bool(false), tenon.Bool(true)),
 		},
 
 		// A set holding members that are not known has room for nothing but
 		// the values it must hold: the ones it holds already, and the ones a
 		// listing names, each of which takes a member of its own.
 		{
-			"a set left the values a listing names", tenon.SetVal(num, tenon.Unknown(num), tenon.Unknown(num)),
+			"a set left the values a listing names", tenon.Set(num, tenon.Unknown(num), tenon.Unknown(num)),
 			[]tenon.Narrowing{tenon.Members(one, five)},
-			tenon.SetVal(num, one, five),
+			tenon.Set(num, one, five),
 		},
 		{
-			"a set left its known member and a listed value", tenon.SetVal(num, one, tenon.Unknown(num)),
+			"a set left its known member and a listed value", tenon.Set(num, one, tenon.Unknown(num)),
 			[]tenon.Narrowing{tenon.Members(five)},
-			tenon.SetVal(num, one, five),
+			tenon.Set(num, one, five),
 		},
 		{
 			"a set of every bool its members can be",
-			tenon.SetVal(boolType, tenon.Unknown(boolType), tenon.Unknown(boolType), tenon.Unknown(boolType)),
+			tenon.Set(boolType, tenon.Unknown(boolType), tenon.Unknown(boolType), tenon.Unknown(boolType)),
 			[]tenon.Narrowing{tenon.LengthMin(3)},
-			tenon.SetVal(boolType, tenon.NullVal(boolType), tenon.Bool(false), tenon.Bool(true)),
+			tenon.Set(boolType, tenon.Null(boolType), tenon.Bool(false), tenon.Bool(true)),
 		},
 		{
 			// Equality tells that the second member could be the first, so a
 			// length of one leaves the set of the first alone.
 			"a set of sets left its known member",
-			tenon.SetVal(tenon.Set(num), tenon.SetVal(num, one), tenon.SetVal(num, tenon.Unknown(num))),
+			tenon.Set(tenon.SetType(num), tenon.Set(num, one), tenon.Set(num, tenon.Unknown(num))),
 			[]tenon.Narrowing{tenon.LengthMax(1)},
-			tenon.SetVal(tenon.Set(num), tenon.SetVal(num, one)),
+			tenon.Set(tenon.SetType(num), tenon.Set(num, one)),
 		},
 	} {
 		got := tenon.Narrow(tt.v, tt.ns...)
@@ -1012,49 +1012,49 @@ func TestConformance_UN005_NarrowingToOneValue(t *testing.T) {
 			[]tenon.Narrowing{tenon.LengthMax(0)},
 		},
 		{
-			"a member with more than one value", tenon.Unknown(tenon.Tuple(tenon.BoolType())),
+			"a member with more than one value", tenon.Unknown(tenon.TupleType(tenon.BoolType())),
 			[]tenon.Narrowing{tenon.NotNull()},
 		},
 		{
 			// Each member of the pair may be the empty tuple or null.
-			"members whose types have one value besides null", tenon.Unknown(tenon.Tuple(empty, empty)),
+			"members whose types have one value besides null", tenon.Unknown(tenon.TupleType(empty, empty)),
 			[]tenon.Narrowing{tenon.NotNull()},
 		},
 		{
 			"an attribute whose type has one value besides null",
-			tenon.Unknown(tenon.Object(map[string]tenon.Type{"a": tenon.Object(nil)})),
+			tenon.Unknown(tenon.ObjectType(map[string]tenon.Type{"a": tenon.ObjectType(nil)})),
 			[]tenon.Narrowing{tenon.NotNull()},
 		},
 		{
 			// A list of exactly three empty tuples holds one value too, but
 			// finding that out means building a value as large as the bounds
 			// allow, which the rule permits an implementation to decline.
-			"a length that pins a collection", tenon.Unknown(tenon.List(empty)),
+			"a length that pins a collection", tenon.Unknown(tenon.ListType(empty)),
 			[]tenon.Narrowing{tenon.NotNull(), tenon.LengthMin(3), tenon.LengthMax(3)},
 		},
 		{
 			// The second unknown is provably not 1, so the set holds two
 			// members, and one of them is not known.
 			"a set left room for a member that is not known",
-			tenon.SetVal(num, one, bounded(tenon.NumberMin(five, true)), tenon.Unknown(num)),
+			tenon.Set(num, one, bounded(tenon.NumberMin(five, true)), tenon.Unknown(num)),
 			[]tenon.Narrowing{tenon.LengthMax(2)},
 		},
 		{
-			"a set with no known member to be left", tenon.SetVal(num, tenon.Unknown(num), tenon.Unknown(num)),
+			"a set with no known member to be left", tenon.Set(num, tenon.Unknown(num), tenon.Unknown(num)),
 			[]tenon.Narrowing{tenon.LengthMax(1)},
 		},
 		{
 			// The set could still be null, which is a second value.
-			"a set of every bool that could be null instead", tenon.Unknown(tenon.Set(boolType)),
+			"a set of every bool that could be null instead", tenon.Unknown(tenon.SetType(boolType)),
 			[]tenon.Narrowing{tenon.LengthMin(3)},
 		},
 		{
-			"a set left room for fewer members than bool has values", tenon.Unknown(tenon.Set(boolType)),
+			"a set left room for fewer members than bool has values", tenon.Unknown(tenon.SetType(boolType)),
 			[]tenon.Narrowing{tenon.NotNull(), tenon.LengthMin(2)},
 		},
 		{
 			"a set holding a listed value and room for nothing else",
-			tenon.SetVal(num, tenon.Unknown(num), tenon.Unknown(num)),
+			tenon.Set(num, tenon.Unknown(num), tenon.Unknown(num)),
 			[]tenon.Narrowing{tenon.Members(one)},
 		},
 	} {
@@ -1068,15 +1068,15 @@ func TestConformance_UN005_NarrowingToOneValue(t *testing.T) {
 	// set at all, wherever within its members they lie.
 	for _, wrap := range []func(tenon.Value) tenon.Value{
 		func(s tenon.Value) tenon.Value { return s },
-		func(s tenon.Value) tenon.Value { return tenon.ListVal(s.Type(), s) },
-		func(s tenon.Value) tenon.Value { return tenon.MapVal(s.Type(), map[string]tenon.Value{"k": s}) },
-		func(s tenon.Value) tenon.Value { return tenon.TupleVal(s) },
+		func(s tenon.Value) tenon.Value { return tenon.List(s.Type(), s) },
+		func(s tenon.Value) tenon.Value { return tenon.Map(s.Type(), map[string]tenon.Value{"k": s}) },
+		func(s tenon.Value) tenon.Value { return tenon.Tuple(s) },
 		func(s tenon.Value) tenon.Value {
-			return tenon.ObjectVal(map[string]tenon.Value{"a": tenon.TupleVal(s)})
+			return tenon.Object(map[string]tenon.Value{"a": tenon.Tuple(s)})
 		},
 	} {
 		a, b := wrap(fourKnown), wrap(fourUnfit)
-		pair := tenon.SetVal(a.Type(), a, b)
+		pair := tenon.Set(a.Type(), a, b)
 		if got := tenon.Length(pair).String(); got != "2" {
 			t.Errorf("a set of %v has length %s, want 2", a.Type(), got)
 		}
@@ -1088,7 +1088,7 @@ func TestConformance_UN005_NarrowingToOneValue(t *testing.T) {
 	// and the set of them is built up to 256 members: the domain of a type can
 	// be far larger than the text of the type, and a set of every value of one
 	// could never be built.
-	threeBools := tenon.Tuple(boolType, boolType, boolType)
+	threeBools := tenon.TupleType(boolType, boolType, boolType)
 	for _, tt := range []struct {
 		name  string
 		elem  tenon.Type
@@ -1097,13 +1097,13 @@ func TestConformance_UN005_NarrowingToOneValue(t *testing.T) {
 	}{
 		{"two values", boolType, 3, true},
 		{"one value", empty, 2, true},
-		{"three values, which are an attribute and null", tenon.Object(map[string]tenon.Type{"a": boolType}), 4, true},
-		{"eight values, which are the sets of bools", tenon.Set(boolType), 9, true},
-		{"255 values", tenon.Tuple(boolType, tenon.Tuple(boolType, threeBools)), 256, true},
-		{"256 values", tenon.Tuple(empty, empty, empty, empty, empty, empty, empty, empty), 257, false},
-		{"729 values", tenon.Tuple(boolType, boolType, boolType, boolType, boolType, boolType), 730, false},
+		{"three values, which are an attribute and null", tenon.ObjectType(map[string]tenon.Type{"a": boolType}), 4, true},
+		{"eight values, which are the sets of bools", tenon.SetType(boolType), 9, true},
+		{"255 values", tenon.TupleType(boolType, tenon.TupleType(boolType, threeBools)), 256, true},
+		{"256 values", tenon.TupleType(empty, empty, empty, empty, empty, empty, empty, empty), 257, false},
+		{"729 values", tenon.TupleType(boolType, boolType, boolType, boolType, boolType, boolType), 730, false},
 	} {
-		full := tenon.Narrow(tenon.Unknown(tenon.Set(tt.elem)), tenon.NotNull(), tenon.LengthMin(tt.most))
+		full := tenon.Narrow(tenon.Unknown(tenon.SetType(tt.elem)), tenon.NotNull(), tenon.LengthMin(tt.most))
 		switch {
 		case full.IsError():
 			t.Errorf("%s: a set of every one of them is %v", tt.name, full)
@@ -1114,7 +1114,7 @@ func TestConformance_UN005_NarrowingToOneValue(t *testing.T) {
 		}
 		// One more member than the values allow is a contradiction, however
 		// many of them there are.
-		over := tenon.Narrow(tenon.Unknown(tenon.Set(tt.elem)), tenon.NotNull(), tenon.LengthMin(tt.most+1))
+		over := tenon.Narrow(tenon.Unknown(tenon.SetType(tt.elem)), tenon.NotNull(), tenon.LengthMin(tt.most+1))
 		if !over.IsError() {
 			t.Errorf("%s: a set of one more than every one of them is %v, want a contradiction", tt.name, over)
 		}
@@ -1127,12 +1127,12 @@ func TestConformance_UN005_NarrowingToOneValue(t *testing.T) {
 		fortyBools[i] = boolType
 	}
 	for _, v := range []tenon.Value{
-		tenon.Narrow(tenon.Unknown(tenon.Set(num)), tenon.NotNull(), tenon.LengthMin(1e15)),
-		tenon.Narrow(tenon.Unknown(tenon.Set(tenon.List(boolType))), tenon.NotNull(), tenon.LengthMin(1e15)),
-		tenon.Narrow(tenon.Unknown(tenon.Set(tenon.Map(boolType))), tenon.NotNull(), tenon.LengthMin(1e15)),
-		tenon.Narrow(tenon.Unknown(tenon.Set(tenon.Tuple(fortyBools...))), tenon.NotNull(), tenon.LengthMin(1e15)),
-		tenon.Narrow(tenon.Unknown(tenon.List(boolType)), tenon.NotNull(), tenon.LengthMin(1e15)),
-		tenon.Narrow(tenon.Unknown(tenon.Map(boolType)), tenon.NotNull(), tenon.LengthMin(1e15)),
+		tenon.Narrow(tenon.Unknown(tenon.SetType(num)), tenon.NotNull(), tenon.LengthMin(1e15)),
+		tenon.Narrow(tenon.Unknown(tenon.SetType(tenon.ListType(boolType))), tenon.NotNull(), tenon.LengthMin(1e15)),
+		tenon.Narrow(tenon.Unknown(tenon.SetType(tenon.MapType(boolType))), tenon.NotNull(), tenon.LengthMin(1e15)),
+		tenon.Narrow(tenon.Unknown(tenon.SetType(tenon.TupleType(fortyBools...))), tenon.NotNull(), tenon.LengthMin(1e15)),
+		tenon.Narrow(tenon.Unknown(tenon.ListType(boolType)), tenon.NotNull(), tenon.LengthMin(1e15)),
+		tenon.Narrow(tenon.Unknown(tenon.MapType(boolType)), tenon.NotNull(), tenon.LengthMin(1e15)),
 	} {
 		if v.IsError() || v.IsKnown() {
 			t.Errorf("a length of a million million million left %v", v)
@@ -1141,13 +1141,13 @@ func TestConformance_UN005_NarrowingToOneValue(t *testing.T) {
 
 	// A length bound the element type already sets is not recorded, so one
 	// range describes one set of values.
-	if got := tenon.Narrow(tenon.Unknown(tenon.Set(boolType)), tenon.LengthMax(3)); !tenon.Identical(got, tenon.Unknown(tenon.Set(boolType))) {
+	if got := tenon.Narrow(tenon.Unknown(tenon.SetType(boolType)), tenon.LengthMax(3)); !tenon.Identical(got, tenon.Unknown(tenon.SetType(boolType))) {
 		t.Errorf("a length bound bool already sets recorded %v", got)
 	}
 
 	// Both values that range holds exist.
-	pair := tenon.Tuple(empty, empty)
-	for _, v := range []tenon.Value{tenon.TupleVal(tenon.TupleVal(), tenon.TupleVal()), tenon.TupleVal(tenon.NullVal(empty), tenon.TupleVal())} {
+	pair := tenon.TupleType(empty, empty)
+	for _, v := range []tenon.Value{tenon.Tuple(tenon.Tuple(), tenon.Tuple()), tenon.Tuple(tenon.Null(empty), tenon.Tuple())} {
 		if v.Type() != pair || !v.IsKnown() {
 			t.Errorf("%v is not a known value of %v", v, pair)
 		}
@@ -1157,7 +1157,7 @@ func TestConformance_UN005_NarrowingToOneValue(t *testing.T) {
 func TestConformance_UN002_MembersNarrowing(t *testing.T) {
 	conformance.Covers(t, "UN-002")
 	num := tenon.NumberType()
-	set := tenon.Set(num)
+	set := tenon.SetType(num)
 	n := func(i int64) tenon.Value { return tenon.NumberFromInt(i) }
 	one, two, three := n(1), n(2), n(3)
 	// Listed members that cannot be null. Null is the one value every nullable
@@ -1182,7 +1182,7 @@ func TestConformance_UN002_MembersNarrowing(t *testing.T) {
 	if got := tenon.Narrow(a, tenon.Members(one, two)); !tenon.SameNode(got, a) {
 		t.Errorf("listing recorded members again produced %v, want the range unchanged", got)
 	}
-	if got, want := tenon.Narrow(tenon.Unknown(set), tenon.Members(tenon.NullVal(num), one)).String(),
+	if got, want := tenon.Narrow(tenon.Unknown(set), tenon.Members(tenon.Null(num), one)).String(),
 		"unknown(set(number), length >= 2, members {null(number), 1})"; got != want {
 		t.Errorf("a listed null member renders as %s, want %s", got, want)
 	}
@@ -1264,7 +1264,7 @@ func TestConformance_UN002_MembersNarrowing(t *testing.T) {
 		if diags := got.Diagnostics(); diags[0].Code != tenon.CodeRangeContradiction {
 			t.Errorf("code %s, want %s", diags[0].Code, tenon.CodeRangeContradiction)
 		}
-		if got := tenon.Narrow(tenon.Unknown(set), ns...); !tenon.Identical(got, tenon.NullVal(set)) {
+		if got := tenon.Narrow(tenon.Unknown(set), ns...); !tenon.Identical(got, tenon.Null(set)) {
 			t.Errorf("narrowing a set that may be null to no set produced %v, want null(set(number))", got)
 		}
 	}
@@ -1274,7 +1274,7 @@ func TestConformance_UN002_MembersNarrowing(t *testing.T) {
 	// known leaves the range standing, even where it describes the sets the
 	// set holding its values does, since telling that compares every pair.
 	full := tenon.Narrow(tenon.Unknown(set), tenon.NotNull(), tenon.Members(one, two), tenon.LengthMax(2))
-	if !full.IsKnown() || !tenon.Identical(full, tenon.SetVal(num, one, two)) {
+	if !full.IsKnown() || !tenon.Identical(full, tenon.Set(num, one, two)) {
 		t.Errorf("a full listing of known members produced %v, want the set holding them", full)
 	}
 	held := tenon.Narrow(tenon.Unknown(set), tenon.NotNull(),
@@ -1293,14 +1293,14 @@ func TestConformance_UN002_MembersNarrowing(t *testing.T) {
 	// A known set is a range of one: a listing it could satisfy leaves it,
 	// one it provably cannot contradicts it, and the null set satisfies any
 	// listing vacuously, since a narrowing says nothing about null.
-	s12 := tenon.SetVal(num, one, two)
+	s12 := tenon.Set(num, one, two)
 	if got := tenon.Narrow(s12, tenon.Members(one), tenon.Members(tenon.Unknown(num))); !tenon.SameNode(got, s12) {
 		t.Errorf("narrowing a known set it could satisfy produced %v, want the set itself", got)
 	}
 	if got := tenon.Narrow(s12, tenon.Members(three)); !got.IsError() {
 		t.Errorf("narrowing a known set by a member it provably lacks produced %v, want an error value", got)
 	}
-	nullSet := tenon.NullVal(set)
+	nullSet := tenon.Null(set)
 	if got := tenon.Narrow(nullSet, tenon.Members(one)); !tenon.SameNode(got, nullSet) {
 		t.Errorf("narrowing the null set produced %v, want the value itself", got)
 	}
@@ -1309,7 +1309,7 @@ func TestConformance_UN002_MembersNarrowing(t *testing.T) {
 	// that is not a set, a member of another type than the set's, and a
 	// listed value that is not resolved.
 	mustPanicUsage(t, "does not apply to a value of type list(number)", func() {
-		tenon.Narrow(tenon.Unknown(tenon.List(num)), tenon.Members(one))
+		tenon.Narrow(tenon.Unknown(tenon.ListType(num)), tenon.Members(one))
 	})
 	mustPanicUsage(t, "are of type number", func() {
 		tenon.Narrow(tenon.Unknown(set), tenon.Members(tenon.String("x")))
@@ -1333,10 +1333,10 @@ func TestConformance_ER001_NarrowChecksUsageFirst(t *testing.T) {
 	n := tenon.NumberFromInt
 	min := tenon.NumberMin(n(1), true)
 	mustPanicUsage(t, "does not apply to a pending value", func() {
-		tenon.Narrow(tenon.Pending(tenon.Any()), tenon.NotNull(), tenon.Null(), min)
+		tenon.Narrow(tenon.Pending(tenon.Any()), tenon.NotNull(), tenon.NullOnly(), min)
 	})
 	mustPanicUsage(t, "does not apply to a pending value", func() {
-		tenon.Narrow(tenon.Pending(tenon.Any()), min, tenon.NotNull(), tenon.Null())
+		tenon.Narrow(tenon.Pending(tenon.Any()), min, tenon.NotNull(), tenon.NullOnly())
 	})
 	failed := tenon.ErrorVal(tenon.Diagnostic{Code: "app.x", Message: "m"})
 	mustPanicUsage(t, "the zero Narrowing", func() {

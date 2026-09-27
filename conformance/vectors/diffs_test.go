@@ -45,7 +45,7 @@ func contents(v tenon.Value) (entries, bool) {
 	case tenon.KindMap:
 		var e entries
 		for _, k := range v.MapKeys() {
-			m, _ := v.MapElement(k)
+			m, _ := v.LookupMapElement(k)
 			e.members, e.names = append(e.members, m), append(e.names, k)
 		}
 		return e, true
@@ -64,20 +64,20 @@ func rebuilt(v tenon.Value, e entries) tenon.Value {
 	var w tenon.Value
 	switch v.Type().Kind() {
 	case tenon.KindList:
-		w = tenon.ListVal(v.Type().ElementType(), e.members...)
+		w = tenon.List(v.Type().ElementType(), e.members...)
 	case tenon.KindTuple:
-		w = tenon.TupleVal(e.members...)
+		w = tenon.Tuple(e.members...)
 	case tenon.KindSet:
-		w = tenon.SetVal(v.Type().ElementType(), e.members...)
+		w = tenon.Set(v.Type().ElementType(), e.members...)
 	case tenon.KindMap, tenon.KindObject:
 		attrs := map[string]tenon.Value{}
 		for i, name := range e.names {
 			attrs[name] = e.members[i]
 		}
 		if v.Type().Kind() == tenon.KindMap {
-			w = tenon.MapVal(v.Type().ElementType(), attrs)
+			w = tenon.Map(v.Type().ElementType(), attrs)
 		} else {
-			w = tenon.ObjectVal(attrs)
+			w = tenon.Object(attrs)
 		}
 	}
 	return ownMarks(v, w)
@@ -90,7 +90,7 @@ func filler(v tenon.Value) tenon.Value {
 	case tenon.KindTuple, tenon.KindObject:
 		return s("new")
 	}
-	return tenon.NullVal(v.Type().ElementType())
+	return tenon.Null(v.Type().ElementType())
 }
 
 var mutations = []mutation{

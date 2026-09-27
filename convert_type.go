@@ -248,11 +248,11 @@ func collectionTypeConvert(t Type, c Constraint, p Policy, k keys) typeOutcome {
 	}
 	switch d.kind {
 	case ConstraintListOf:
-		return typeOutcome{typ: List(elem)}
+		return typeOutcome{typ: ListType(elem)}
 	case ConstraintSetOf:
-		return typeOutcome{typ: Set(elem)}
+		return typeOutcome{typ: SetType(elem)}
 	}
-	return typeOutcome{typ: Map(elem)}
+	return typeOutcome{typ: MapType(elem)}
 }
 
 // elementType returns the element type of a collection whose members convert
@@ -368,7 +368,7 @@ func tupleTypeConvert(t Type, c Constraint, p Policy, k keys) typeOutcome {
 	if pending {
 		return typeOutcome{pending: true}
 	}
-	return typeOutcome{typ: Tuple(elems...)}
+	return typeOutcome{typ: TupleType(elems...)}
 }
 
 // objectTypeConvert converts t to an ObjectWith constraint.
@@ -419,7 +419,7 @@ func objectTypeConvert(t Type, c Constraint, p Policy, k keys) typeOutcome {
 	if pending {
 		return typeOutcome{pending: true}
 	}
-	return typeOutcome{typ: Object(attrs)}
+	return typeOutcome{typ: ObjectType(attrs)}
 }
 
 // addNull adds to attrs the attribute that an absent optional field f adds,
@@ -464,7 +464,7 @@ func mapObjectTypeConvert(t Type, c Constraint, p Policy, k keys) typeOutcome {
 	if pending {
 		return typeOutcome{pending: true}
 	}
-	return typeOutcome{typ: Object(attrs)}
+	return typeOutcome{typ: ObjectType(attrs)}
 }
 
 // typeConvertOneOf converts t to the first member of a OneOf constraint to
@@ -609,7 +609,7 @@ func unifyObjectTypes(types []Type, p Policy) (Type, bool) {
 		}
 		attrs[name] = u
 	}
-	return Object(attrs), true
+	return ObjectType(attrs), true
 }
 
 // unifyTwo unifies two types.
@@ -633,11 +633,11 @@ func unifyTwo(a, b Type, p Policy) (Type, bool) {
 		}
 	case ka == KindList && kb == KindSet:
 		if elem, ok := unifyTwo(a.t.elem, b.t.elem, p); ok {
-			return List(elem), true
+			return ListType(elem), true
 		}
 	case (ka == KindList || ka == KindSet) && kb == KindTuple:
 		if elem, ok := unifyTypes(append([]Type{a.t.elem}, b.t.elems...), p); ok {
-			return List(elem), true
+			return ListType(elem), true
 		}
 	case ka == KindTuple && kb == KindTuple:
 		return unifyTuples(a, b, p)
@@ -647,7 +647,7 @@ func unifyTwo(a, b Type, p Policy) (Type, bool) {
 			members = append(members, attr.typ)
 		}
 		if elem, ok := unifyTypes(members, p); ok {
-			return Map(elem), true
+			return MapType(elem), true
 		}
 	case ka == KindObject && kb == KindObject:
 		return unifyObjects(a, b, p)
@@ -662,7 +662,7 @@ func unifyTuples(a, b Type, p Policy) (Type, bool) {
 	if len(x) != len(y) {
 		all := append(append([]Type{}, x...), y...)
 		if elem, ok := unifyTypes(all, p); ok {
-			return List(elem), true
+			return ListType(elem), true
 		}
 		return Type{}, false
 	}
@@ -673,7 +673,7 @@ func unifyTuples(a, b Type, p Policy) (Type, bool) {
 			return Type{}, false
 		}
 	}
-	return Tuple(elems...), true
+	return TupleType(elems...), true
 }
 
 // unifyObjects unifies two object types to the object type holding every
@@ -694,5 +694,5 @@ func unifyObjects(a, b Type, p Policy) (Type, bool) {
 			return Type{}, false
 		}
 	}
-	return Object(attrs), true
+	return ObjectType(attrs), true
 }

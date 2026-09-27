@@ -16,17 +16,17 @@ func sampleTypes() []tenon.Type {
 	str, num, boolean := tenon.StringType(), tenon.NumberType(), tenon.BoolType()
 	return []tenon.Type{
 		boolean, num, str,
-		tenon.List(str), tenon.List(num), tenon.List(tenon.List(str)),
-		tenon.Set(str), tenon.Set(num),
-		tenon.Map(str), tenon.Map(tenon.Set(num)),
-		tenon.Tuple(), tenon.Tuple(str), tenon.Tuple(str, num), tenon.Tuple(num, str),
-		tenon.Object(nil),
-		tenon.Object(map[string]tenon.Type{"name": str}),
-		tenon.Object(map[string]tenon.Type{"name": num}),
-		tenon.Object(map[string]tenon.Type{"name": str, "tags": tenon.List(str)}),
-		tenon.Object(map[string]tenon.Type{"name": str, "extra": boolean}),
-		tenon.Object(map[string]tenon.Type{"tags": tenon.List(str)}),
-		sampleCapsule.Type(), tenon.List(sampleCapsule.Type()),
+		tenon.ListType(str), tenon.ListType(num), tenon.ListType(tenon.ListType(str)),
+		tenon.SetType(str), tenon.SetType(num),
+		tenon.MapType(str), tenon.MapType(tenon.SetType(num)),
+		tenon.TupleType(), tenon.TupleType(str), tenon.TupleType(str, num), tenon.TupleType(num, str),
+		tenon.ObjectType(nil),
+		tenon.ObjectType(map[string]tenon.Type{"name": str}),
+		tenon.ObjectType(map[string]tenon.Type{"name": num}),
+		tenon.ObjectType(map[string]tenon.Type{"name": str, "tags": tenon.ListType(str)}),
+		tenon.ObjectType(map[string]tenon.Type{"name": str, "extra": boolean}),
+		tenon.ObjectType(map[string]tenon.Type{"tags": tenon.ListType(str)}),
+		sampleCapsule.Type(), tenon.ListType(sampleCapsule.Type()),
 	}
 }
 
@@ -94,13 +94,13 @@ func TestConformance_TY030_ConstraintKinds(t *testing.T) {
 	if got := object.FieldNames(); !slices.Equal(got, []string{"name", "tags"}) {
 		t.Errorf("FieldNames() = %q", got)
 	}
-	if f, ok := object.Field("name"); !ok || !f.Required || f.Constraint.Type() != str {
+	if f, ok := object.LookupField("name"); !ok || !f.Required || f.Constraint.Type() != str {
 		t.Errorf("Field(%q) = %v, %t", "name", f, ok)
 	}
-	if f, ok := object.Field("tags"); !ok || f.Required || f.Constraint.Kind() != tenon.ConstraintAny {
+	if f, ok := object.LookupField("tags"); !ok || f.Required || f.Constraint.Kind() != tenon.ConstraintAny {
 		t.Errorf("Field(%q) = %v, %t", "tags", f, ok)
 	}
-	if _, ok := object.Field("missing"); ok {
+	if _, ok := object.LookupField("missing"); ok {
 		t.Errorf("Field(%q) found a field", "missing")
 	}
 	if !object.Closed() || tenon.ObjectWith(fields, false).Closed() {
@@ -129,7 +129,7 @@ func TestConformance_TY031_Any(t *testing.T) {
 func TestConformance_TY032_ObjectWith(t *testing.T) {
 	conformance.Covers(t, "TY-032")
 	str, num := tenon.StringType(), tenon.NumberType()
-	object := func(attrs map[string]tenon.Type) tenon.Type { return tenon.Object(attrs) }
+	object := func(attrs map[string]tenon.Type) tenon.Type { return tenon.ObjectType(attrs) }
 	fields := map[string]tenon.Field{
 		"name": tenon.Required(tenon.Exactly(str)),
 		"tags": tenon.Optional(tenon.ListOf(tenon.Any())),
@@ -141,14 +141,14 @@ func TestConformance_TY032_ObjectWith(t *testing.T) {
 		closed, open bool
 	}{
 		{"the required attribute", object(map[string]tenon.Type{"name": str}), true, true},
-		{"required and optional attributes", object(map[string]tenon.Type{"name": str, "tags": tenon.List(num)}), true, true},
+		{"required and optional attributes", object(map[string]tenon.Type{"name": str, "tags": tenon.ListType(num)}), true, true},
 		{"an extra attribute", object(map[string]tenon.Type{"name": str, "extra": num}), false, true},
-		{"optional and extra attributes", object(map[string]tenon.Type{"name": str, "tags": tenon.List(str), "zzz": num}), false, true},
-		{"no required attribute", object(map[string]tenon.Type{"tags": tenon.List(str)}), false, false},
+		{"optional and extra attributes", object(map[string]tenon.Type{"name": str, "tags": tenon.ListType(str), "zzz": num}), false, true},
+		{"no required attribute", object(map[string]tenon.Type{"tags": tenon.ListType(str)}), false, false},
 		{"no attributes", object(nil), false, false},
 		{"a required attribute of the wrong type", object(map[string]tenon.Type{"name": num}), false, false},
-		{"an optional attribute of the wrong type", object(map[string]tenon.Type{"name": str, "tags": tenon.Set(str)}), false, false},
-		{"not an object type", tenon.Map(str), false, false},
+		{"an optional attribute of the wrong type", object(map[string]tenon.Type{"name": str, "tags": tenon.SetType(str)}), false, false},
+		{"not an object type", tenon.MapType(str), false, false},
 	}
 	for _, tt := range tests {
 		if got := tenon.Satisfies(closed, tt.typ); got != tt.closed {
@@ -165,7 +165,7 @@ func TestConformance_TY032_ObjectWith(t *testing.T) {
 	if !tenon.Satisfies(tenon.ObjectWith(nil, true), object(nil)) || tenon.Satisfies(tenon.ObjectWith(nil, true), some) {
 		t.Error("a closed constraint without fields is not satisfied by exactly the empty object type")
 	}
-	if !tenon.Satisfies(tenon.ObjectWith(nil, false), some) || tenon.Satisfies(tenon.ObjectWith(nil, false), tenon.Tuple()) {
+	if !tenon.Satisfies(tenon.ObjectWith(nil, false), some) || tenon.Satisfies(tenon.ObjectWith(nil, false), tenon.TupleType()) {
 		t.Error("an open constraint without fields is not satisfied by exactly the object types")
 	}
 
@@ -174,7 +174,7 @@ func TestConformance_TY032_ObjectWith(t *testing.T) {
 	if !tenon.Satisfies(decomposed, object(map[string]tenon.Type{"caf\u00e9": num})) {
 		t.Errorf("%v is not satisfied by an attribute named in another normal form", decomposed)
 	}
-	if f, ok := decomposed.Field("caf\u00e9"); !ok || !f.Required {
+	if f, ok := decomposed.LookupField("caf\u00e9"); !ok || !f.Required {
 		t.Errorf("Field lookup did not normalize the name")
 	}
 	mustPanicUsage(t, "must not be empty", func() {
@@ -216,9 +216,9 @@ func TestConformance_TY034_SatisfiesIsTotal(t *testing.T) {
 	// Satisfaction is decided however deeply the inputs are nested.
 	deepType, deepConstraint := tenon.StringType(), tenon.Exactly(tenon.StringType())
 	for range 5000 {
-		deepType, deepConstraint = tenon.List(deepType), tenon.ListOf(deepConstraint)
+		deepType, deepConstraint = tenon.ListType(deepType), tenon.ListOf(deepConstraint)
 	}
-	if !tenon.Satisfies(deepConstraint, deepType) || tenon.Satisfies(deepConstraint, tenon.List(deepType)) {
+	if !tenon.Satisfies(deepConstraint, deepType) || tenon.Satisfies(deepConstraint, tenon.ListType(deepType)) {
 		t.Error("satisfaction of deeply nested inputs was decided wrongly")
 	}
 }
@@ -243,7 +243,7 @@ func TestConstraintString(t *testing.T) {
 		want string
 	}{
 		{tenon.Any(), "any"},
-		{tenon.Exactly(tenon.List(str)), "exactly(list(string))"},
+		{tenon.Exactly(tenon.ListType(str)), "exactly(list(string))"},
 		{tenon.MapOf(tenon.SetOf(tenon.ListOf(tenon.Any()))), "map_of(set_of(list_of(any)))"},
 		{tenon.TupleOf(), "tuple_of([])"},
 		{tenon.OneOf(tenon.Any(), tenon.TupleOf(tenon.Any())), "one_of([any, tuple_of([any])])"},
@@ -265,12 +265,12 @@ func TestConstraintsImmutable(t *testing.T) {
 	fields := map[string]tenon.Field{"a": tenon.Required(tenon.Any())}
 	object := tenon.ObjectWith(fields, true)
 	fields["a"], fields["b"] = tenon.Optional(tenon.Any()), tenon.Required(tenon.Any())
-	if f, ok := object.Field("a"); !ok || !f.Required || len(object.FieldNames()) != 1 {
+	if f, ok := object.LookupField("a"); !ok || !f.Required || len(object.FieldNames()) != 1 {
 		t.Errorf("changing the map passed to ObjectWith changed the constraint to %v", object)
 	}
 	names := object.FieldNames()
 	names[0] = "z"
-	if _, ok := object.Field("a"); !ok {
+	if _, ok := object.LookupField("a"); !ok {
 		t.Errorf("changing the slice from FieldNames changed the constraint to %v", object)
 	}
 
@@ -310,8 +310,8 @@ func TestConformance_UN023_SharedTypeDecidesEveryConstraint(t *testing.T) {
 	conformance.Covers(t, "UN-023", "EQ-005")
 	capsule := tenon.NewCapsule("cap", tenon.CapsuleOps[celsius]{}).Type()
 	open := []tenon.Type{
-		boo, num, str, capsule, tenon.List(num), tenon.Set(str), tenon.Map(str), tenon.Tuple(), tenon.Tuple(num, str),
-		tenon.Object(nil), tenon.Object(map[string]tenon.Type{"a": num}),
+		boo, num, str, capsule, tenon.ListType(num), tenon.SetType(str), tenon.MapType(str), tenon.TupleType(), tenon.TupleType(num, str),
+		tenon.ObjectType(nil), tenon.ObjectType(map[string]tenon.Type{"a": num}),
 	}
 	shared, none := 0, 0
 	check := func(cs ...tenon.Constraint) bool {
@@ -396,7 +396,7 @@ func TestConformance_UN023_SharedTypeDecidesEveryConstraint(t *testing.T) {
 			[]tenon.Constraint{tenon.OneOf(is(num), is(boo)), tenon.OneOf(is(str), is(boo)), tenon.OneOf(is(num), is(str))},
 			false,
 		},
-		{"a type and a constraint it satisfies", []tenon.Constraint{tenon.OneOf(tenon.ListOf(tenon.Any()), is(num)), is(tenon.List(str))}, true},
+		{"a type and a constraint it satisfies", []tenon.Constraint{tenon.OneOf(tenon.ListOf(tenon.Any()), is(num)), is(tenon.ListType(str))}, true},
 	} {
 		if got := check(tt.cs...); got != tt.want {
 			t.Errorf("%s: SharedType(%v) found one: %t, want %t", tt.name, tt.cs, got, tt.want)
@@ -472,7 +472,7 @@ func examples(c tenon.Constraint, open []tenon.Type) []tenon.Type {
 		return thinned(out)
 	case tenon.ConstraintListOf, tenon.ConstraintSetOf, tenon.ConstraintMapOf:
 		of := map[tenon.ConstraintKind]func(tenon.Type) tenon.Type{
-			tenon.ConstraintListOf: tenon.List, tenon.ConstraintSetOf: tenon.Set, tenon.ConstraintMapOf: tenon.Map,
+			tenon.ConstraintListOf: tenon.ListType, tenon.ConstraintSetOf: tenon.SetType, tenon.ConstraintMapOf: tenon.MapType,
 		}[c.Kind()]
 		var out []tenon.Type
 		for _, e := range examples(c.Element(), open) {
@@ -492,13 +492,13 @@ func examples(c tenon.Constraint, open []tenon.Type) []tenon.Type {
 		}
 		out := make([]tenon.Type, len(rows))
 		for i, row := range rows {
-			out[i] = tenon.Tuple(row...)
+			out[i] = tenon.TupleType(row...)
 		}
 		return out
 	}
 	rows := []map[string]tenon.Type{{}}
 	for _, name := range c.FieldNames() {
-		f, _ := c.Field(name)
+		f, _ := c.LookupField(name)
 		var next []map[string]tenon.Type
 		for _, row := range rows {
 			if !f.Required {
@@ -514,11 +514,11 @@ func examples(c tenon.Constraint, open []tenon.Type) []tenon.Type {
 	}
 	var out []tenon.Type
 	for _, row := range rows {
-		out = append(out, tenon.Object(row))
+		out = append(out, tenon.ObjectType(row))
 		if !c.Closed() {
 			with := maps.Clone(row)
 			with["z"] = boo
-			out = append(out, tenon.Object(with))
+			out = append(out, tenon.ObjectType(with))
 		}
 	}
 	return out
@@ -585,8 +585,8 @@ func meet(c, d tenon.Constraint) tenon.Constraint {
 	}
 	fields := map[string]tenon.Field{}
 	for _, name := range append(c.FieldNames(), d.FieldNames()...) {
-		fc, inC := c.Field(name)
-		fd, inD := d.Field(name)
+		fc, inC := c.LookupField(name)
+		fd, inD := d.LookupField(name)
 		switch {
 		case inC && inD:
 			fields[name] = tenon.Field{Constraint: meet(fc.Constraint, fd.Constraint), Required: fc.Required || fd.Required}

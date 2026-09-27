@@ -29,9 +29,9 @@
 // A [Value] is in exactly one of three states.
 //
 //   - A resolved value has a [Type]. It is known, built by [Bool], [String],
-//     [NumberFromInt], [NumberFromText], [ListVal], [SetVal], [MapVal],
-//     [TupleVal], [ObjectVal] or [CapsuleType.Value]; or it is null, the
-//     absence of a value at a type, built by [NullVal]; or it is unknown, a
+//     [NumberFromInt], [NumberFromText], [List], [Set], [Map],
+//     [Tuple], [Object] or [CapsuleType.Value]; or it is null, the
+//     absence of a value at a type, built by [Null]; or it is unknown, a
 //     value of a type whose content is not settled yet, built by [Unknown].
 //   - A pending value, built by [Pending], has no type yet, only a
 //     [Constraint] on what its type will be. [Resolve] settles it.
@@ -43,17 +43,17 @@
 // the first two hold. [Value.HasContent] reports whether there is content to
 // read, which a null, an unknown, a pending value and an error value have not.
 // Content is read with [Value.Len], [Value.Index], [Value.Elements],
-// [Value.Attribute], [Value.MapKeys], [Value.MapElement] and the accessors
-// [Value.AsBool], [Value.AsString], [Value.AsInt64], [Value.AsBigInt] and
-// [Value.AsBigRat]. [Value.String] is the display form, meant for people.
+// [Value.Attribute], [Value.MapKeys], [Value.LookupMapElement] and the
+// accessors [Value.AsBool], [Value.AsString], [Value.AsInt64], [Value.AsBigInt]
+// and [Value.AsBigRat]. [Value.String] is the display form, meant for people.
 //
 // # Types and constraints
 //
-// A [Type] is what a resolved value is: [BoolType], [NumberType],
-// [StringType], [List], [Set], [Map], [Tuple], [Object], and the type of a
-// [CapsuleType] for a Go type carried through unchanged. Types are interned,
-// so two types are the
-// same type exactly when they are ==, and a type can be a map key.
+// A [Type] is what a resolved value is: [BoolType], [NumberType], [StringType],
+// [ListType], [SetType], [MapType], [TupleType], [ObjectType], and the type of
+// a [CapsuleType] for a Go type carried through unchanged. Types are interned,
+// so two types are the same type exactly when they are ==, and a type can be a
+// map key.
 //
 // A [Constraint] is what a type must satisfy: [Any], [Exactly], [ListOf],
 // [SetOf], [MapOf], [TupleOf], [ObjectWith] with [Required] and [Optional]
@@ -69,7 +69,7 @@
 // known about it is its [Range]: whether it may be null, bounds on a number, a
 // prefix of a string, bounds on a length, the members a collection holds.
 // [Narrow] records more, through [NumberMin], [NumberMax], [StringPrefix],
-// [LengthMin], [LengthMax], [Members], [Null] and [NotNull].
+// [LengthMin], [LengthMax], [Members], [NullOnly] and [NotNull].
 //
 // Narrowing is monotone: the result says everything the value said and
 // everything the narrowing says. A narrowing that brings a range down to one

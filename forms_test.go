@@ -20,11 +20,11 @@ import (
 func TestConformance_DI018_HostForms(t *testing.T) {
 	conformance.Covers(t, "DI-018", "MK-011")
 	secret := stamp{id: "secret", redact: true}
-	v := tenon.ObjectVal(map[string]tenon.Value{
+	v := tenon.Object(map[string]tenon.Value{
 		"name":  tenon.String("web"),
 		"token": tenon.WithMarks(tenon.String("hunter2"), secret),
 	})
-	typ := tenon.List(tenon.StringType())
+	typ := tenon.ListType(tenon.StringType())
 	c := tenon.ListOf(tenon.Any())
 	p := tenon.Path{}.Attribute("a").Index(tenon.NumberFromInt(0))
 
@@ -48,7 +48,7 @@ func TestConformance_DI018_HostForms(t *testing.T) {
 
 	// encoding/json writes the text of types, constraints and paths, and a
 	// value's projection.
-	plain := tenon.ObjectVal(map[string]tenon.Value{"name": tenon.String("web"), "port": tenon.NumberFromInt(443)})
+	plain := tenon.Object(map[string]tenon.Value{"name": tenon.String("web"), "port": tenon.NumberFromInt(443)})
 	got, err := json.Marshal(struct {
 		T tenon.Type
 		C tenon.Constraint

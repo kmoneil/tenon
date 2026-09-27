@@ -71,7 +71,7 @@ func TestCapsuleOrderRetainsNothing(t *testing.T) {
 		for range n {
 			a, b := &blob{}, &blob{}
 			collected = append(collected, weak.Make(a), weak.Make(b))
-			if s := SetVal(opaque.Type(), opaque.Value(a), opaque.Value(b)); s.n.state != stateKnown {
+			if s := Set(opaque.Type(), opaque.Value(a), opaque.Value(b)); s.n.state != stateKnown {
 				t.Fatalf("a set of two capsule values is %v", s)
 			}
 		}
@@ -107,7 +107,7 @@ func TestCapsuleOrderRetainsNothing(t *testing.T) {
 		},
 	})
 	for _, order := range [][2]int{{2, 1}, {1, 2}} {
-		s := SetVal(colliding.Type(), colliding.Value(&capsulePoint{x: order[0]}), colliding.Value(&capsulePoint{x: order[1]}))
+		s := Set(colliding.Type(), colliding.Value(&capsulePoint{x: order[0]}), colliding.Value(&capsulePoint{x: order[1]}))
 		if first, _ := colliding.Of(s.Elements()[0]); first.x != 1 {
 			t.Errorf("given %v, the set orders %d first, want the smaller encoding, 1", order, first.x)
 		}

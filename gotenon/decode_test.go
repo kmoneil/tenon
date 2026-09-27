@@ -45,13 +45,13 @@ func TestConformance_GO002_DecodingIsConversion(t *testing.T) {
 	}
 	wantDecodeFailures[int](t, "a string, safely", s("42"), safe, wantDiag{tenon.CodeConvertUnsafe, "."})
 	wantDecodeFailures[int](t, "not a number", s("x"), uns, wantDiag{tenon.CodeNumberInvalidSyntax, "."})
-	if got := decoded[[]string](t, tenon.TupleVal(s("a"), s("b")), safe); !reflect.DeepEqual(got, []string{"a", "b"}) {
+	if got := decoded[[]string](t, tenon.Tuple(s("a"), s("b")), safe); !reflect.DeepEqual(got, []string{"a", "b"}) {
 		t.Errorf("a tuple decoded into %v", got)
 	}
 	// Conversion's diagnostics are located as they were.
 	wantDecodeFailures[person](t, "a misspelled attribute", obj(map[string]tenon.Value{
 		"name": s("x"), "age": n(1), "home": obj(map[string]tenon.Value{"stret": s("Main")}),
-		"scores": tenon.MapVal(num, nil), "Nickname": s("x"),
+		"scores": tenon.Map(num, nil), "Nickname": s("x"),
 	}), safe,
 		wantDiag{tenon.CodeConvertMissingAttribute, ".home"},
 		wantDiag{tenon.CodeConvertUnexpectedAttribute, ".home.stret"})
@@ -63,7 +63,7 @@ func TestConformance_GO002_DecodingIsConversion(t *testing.T) {
 			t.Errorf("an object decoded into %v under %s", got, p)
 		}
 	}
-	m := tenon.MapVal(str, map[string]tenon.Value{"street": s("Main")})
+	m := tenon.Map(str, map[string]tenon.Value{"street": s("Main")})
 	if got := decoded[address](t, m, uns); got.Street != "Main" || got.Unit != nil {
 		t.Errorf("a map decoded into %+v", got)
 	}
@@ -125,8 +125,8 @@ func TestConformance_GO041_TheBoundaryRefusesWhatGoCannotHold(t *testing.T) {
 	prop := stamp{id: "prop"}
 	iso := stamp{id: "iso", policy: tenon.Isolate}
 	input := obj(map[string]tenon.Value{
-		"name": tenon.WithMarks(s("x"), prop), "age": tenon.Unknown(num), "tags": tenon.ListVal(str, tenon.WithMarks(s("t"), iso)),
-		"home": obj(map[string]tenon.Value{"street": tenon.NullVal(str)}), "scores": tenon.NullVal(tenon.Map(num)),
+		"name": tenon.WithMarks(s("x"), prop), "age": tenon.Unknown(num), "tags": tenon.List(str, tenon.WithMarks(s("t"), iso)),
+		"home": obj(map[string]tenon.Value{"street": tenon.Null(str)}), "scores": tenon.Null(tenon.MapType(num)),
 		"Nickname": tenon.Narrow(tenon.Unknown(str), tenon.NotNull()),
 	})
 	wantDecodeFailures[person](t, "every part that fails, where it is", input, safe,
@@ -159,16 +159,16 @@ func TestConformance_GO041_TheBoundaryRefusesWhatGoCannotHold(t *testing.T) {
 		O    int            `tenon:"o,optional"`
 		Gone string         `tenon:"gone,optional"`
 	}
-	nullNum := tenon.NullVal(num)
+	nullNum := tenon.Null(num)
 	got := decoded[nullable](t, obj(map[string]tenon.Value{
-		"p": nullNum, "s": tenon.NullVal(tenon.List(num)), "m": tenon.NullVal(tenon.Map(num)), "o": nullNum,
+		"p": nullNum, "s": tenon.Null(tenon.ListType(num)), "m": tenon.Null(tenon.MapType(num)), "o": nullNum,
 	}), safe)
 	if got.P != nil || got.S != nil || got.M != nil || got.O != 0 || got.Gone != "" {
 		t.Errorf("nulls decoded as %+v", got)
 	}
 	wantDecodeFailures[int](t, "a null int", nullNum, safe, wantDiag{tenon.CodeDecodeNull, "."})
 	// A pending value known to be null is a null as well.
-	pendingNull := tenon.Narrow(tenon.Pending(tenon.Any()), tenon.Null())
+	pendingNull := tenon.Narrow(tenon.Pending(tenon.Any()), tenon.NullOnly())
 	if got := decoded[map[string]int](t, pendingNull, safe); got != nil {
 		t.Errorf("a pending null decoded into %v", got)
 	}
@@ -186,7 +186,7 @@ func TestConformance_GO041_MarksAreRefusedWhereTheConversionPutsThem(t *testing.
 		A string `tenon:"a"`
 		B string `tenon:"b"`
 	}
-	m := tenon.MapVal(str, map[string]tenon.Value{"a": tenon.WithMarks(s("x"), iso), "b": s("y")})
+	m := tenon.Map(str, map[string]tenon.Value{"a": tenon.WithMarks(s("x"), iso), "b": s("y")})
 	wantDecodeFailures[pair](t, "a map with a marked element", m, uns, wantDiag{tenon.CodeDecodeMarked, ".a"})
 	o := obj(map[string]tenon.Value{"a": tenon.WithMarks(s("x"), iso), "b b": tenon.WithMarks(s("y"), prop)})
 	wantDecodeFailures[map[string]string](t, "an object with marked attributes", o, safe,
@@ -194,7 +194,7 @@ func TestConformance_GO041_MarksAreRefusedWhereTheConversionPutsThem(t *testing.
 
 	// A member decoded by its own conversion is refused once, in member order
 	// among the other failures.
-	members := tenon.TupleVal(
+	members := tenon.Tuple(
 		obj(map[string]tenon.Value{"name": tenon.WithMarks(s("a"), iso)}),
 		obj(map[string]tenon.Value{"name": tenon.Unknown(str)}),
 		tenon.WithMarks(obj(map[string]tenon.Value{"name": s("c")}), prop))
@@ -205,9 +205,9 @@ func TestConformance_GO041_MarksAreRefusedWhereTheConversionPutsThem(t *testing.
 
 	// What the conversion refuses is refused whole, marks and all, and so is
 	// a list too long for its array.
-	wantDecodeFailures[[]pair](t, "a list of the wrong type", tenon.ListVal(str, tenon.WithMarks(s("x"), iso)), safe,
+	wantDecodeFailures[[]pair](t, "a list of the wrong type", tenon.List(str, tenon.WithMarks(s("x"), iso)), safe,
 		wantDiag{tenon.CodeConvertNoConversion, ".[0]"})
-	wantDecodeFailures[[2]string](t, "a long list", tenon.ListVal(str, s("a"), tenon.WithMarks(s("b"), iso), s("c")), safe,
+	wantDecodeFailures[[2]string](t, "a long list", tenon.List(str, s("a"), tenon.WithMarks(s("b"), iso), s("c")), safe,
 		wantDiag{tenon.CodeDecodeLengthMismatch, "."})
 }
 
@@ -215,19 +215,19 @@ func TestConformance_GO013_DecodingValuesOfManyTypes(t *testing.T) {
 	conformance.Covers(t, "GO-012", "GO-013", "GO-022")
 	// A slice of values takes a list, a set or a tuple, members as they are.
 	members := []tenon.Value{n(1), s("x"), tenon.Unknown(boo)}
-	if got := decoded[[]tenon.Value](t, tenon.TupleVal(members...), safe); len(got) != 3 || !tenon.Identical(got[2], members[2]) {
+	if got := decoded[[]tenon.Value](t, tenon.Tuple(members...), safe); len(got) != 3 || !tenon.Identical(got[2], members[2]) {
 		t.Errorf("a tuple decoded into %v", got)
 	}
-	wantDecodeFailures[[]tenon.Value](t, "a map into a slice of values", tenon.MapVal(num, nil), safe,
+	wantDecodeFailures[[]tenon.Value](t, "a map into a slice of values", tenon.Map(num, nil), safe,
 		wantDiag{tenon.CodeConvertNoConversion, "."})
 	// A slice of structs holding values converts each member on its own.
-	holders := decoded[[]holder](t, tenon.TupleVal(
+	holders := decoded[[]holder](t, tenon.Tuple(
 		obj(map[string]tenon.Value{"name": s("a")}),
 		obj(map[string]tenon.Value{"name": s("b"), "extra": n(2)})), safe)
 	if len(holders) != 2 || !holders[0].Extra.IsZero() || !tenon.Identical(holders[1].Extra, n(2)) {
 		t.Errorf("holders decoded as %+v", holders)
 	}
-	wantDecodeFailures[[3]int](t, "a short array", tenon.ListVal(num, n(1)), safe, wantDiag{tenon.CodeDecodeLengthMismatch, "."})
+	wantDecodeFailures[[3]int](t, "a short array", tenon.List(num, n(1)), safe, wantDiag{tenon.CodeDecodeLengthMismatch, "."})
 	if got := decoded[map[string]tenon.Value](t, obj(map[string]tenon.Value{"a": n(1)}), safe); !tenon.Identical(got["a"], n(1)) {
 		t.Errorf("an object decoded into %v", got)
 	}
@@ -242,9 +242,9 @@ func TestConformance_GO012_SetsOfMembersNotKnown(t *testing.T) {
 	conformance.Covers(t, "GO-012", "GO-041")
 	u := tenon.Unknown(num)
 	for _, v := range []tenon.Value{
-		tenon.SetVal(num, n(1), u, u),                        // one to three members, as the unknowns turn out
-		tenon.SetVal(num, u),                                 // one member, still not known
-		tenon.SetVal(tenon.List(num), tenon.ListVal(num, u)), // a member holding what is not known
+		tenon.Set(num, n(1), u, u),                         // one to three members, as the unknowns turn out
+		tenon.Set(num, u),                                  // one member, still not known
+		tenon.Set(tenon.ListType(num), tenon.List(num, u)), // a member holding what is not known
 	} {
 		what := v.String()
 		wantDecodeFailures[[]tenon.Value](t, what+" into a slice of values", v, safe, wantDiag{tenon.CodeDecodeNotKnown, "."})
@@ -256,20 +256,20 @@ func TestConformance_GO012_SetsOfMembersNotKnown(t *testing.T) {
 		wantDecodeFailures[[]*observer](t, what+" into a slice of pointers to them", v, uns, wantDiag{tenon.CodeDecodeNotKnown, "."})
 		// Within a container, at the set, and not at all where a tenon.Value
 		// takes it as it is.
-		wantDecodeFailures[[][]tenon.Value](t, what+" within a tuple", tenon.TupleVal(tenon.TupleVal(), v), safe,
+		wantDecodeFailures[[][]tenon.Value](t, what+" within a tuple", tenon.Tuple(tenon.Tuple(), v), safe,
 			wantDiag{tenon.CodeDecodeNotKnown, ".[1]"})
 		wantDecodeFailures[struct {
 			S []tenon.Value `tenon:"s"`
 		}](t, what+" in a field", obj(map[string]tenon.Value{"s": v}), safe, wantDiag{tenon.CodeDecodeNotKnown, ".s"})
-		if got := decoded[[]tenon.Value](t, tenon.TupleVal(n(1), v), safe); len(got) != 2 || !tenon.Identical(got[1], v) {
+		if got := decoded[[]tenon.Value](t, tenon.Tuple(n(1), v), safe); len(got) != 2 || !tenon.Identical(got[1], v) {
 			t.Errorf("a tuple holding %s decoded into %v", what, got)
 		}
 	}
 	// A slice of numbers refuses the set as its conversion leaves it, there.
-	wantDecodeFailures[[]int](t, "a set of numbers not known into a slice of numbers", tenon.SetVal(num, n(1), u), safe,
+	wantDecodeFailures[[]int](t, "a set of numbers not known into a slice of numbers", tenon.Set(num, n(1), u), safe,
 		wantDiag{tenon.CodeDecodeNotKnown, "."})
 	// A set whose members are known decodes in iteration order.
-	if got := decoded[[]tenon.Value](t, tenon.SetVal(num, n(2), n(1)), safe); len(got) != 2 || !tenon.Identical(got[0], n(1)) || !tenon.Identical(got[1], n(2)) {
+	if got := decoded[[]tenon.Value](t, tenon.Set(num, n(2), n(1)), safe); len(got) != 2 || !tenon.Identical(got[0], n(1)) || !tenon.Identical(got[1], n(2)) {
 		t.Errorf("a known set decoded into %v", got)
 	}
 }
@@ -278,7 +278,7 @@ func TestConformance_GO012_SetsOfMembersNotKnown(t *testing.T) {
 func genValue(r *rand.Rand, v reflect.Value, depth int) {
 	switch v.Type() {
 	case reflect.TypeFor[tenon.Value]():
-		pool := []tenon.Value{n(1), s("x"), tenon.Unknown(num), tenon.WithMarks(tenon.Bool(true), stamp{id: "m"}), tenon.NullVal(str)}
+		pool := []tenon.Value{n(1), s("x"), tenon.Unknown(num), tenon.WithMarks(tenon.Bool(true), stamp{id: "m"}), tenon.Null(str)}
 		v.Set(reflect.ValueOf(pool[r.Intn(len(pool))]))
 		return
 	case reflect.TypeFor[big.Int]():

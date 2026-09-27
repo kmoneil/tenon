@@ -49,15 +49,15 @@ func Example_configLanguage() {
 	// unifies what each branch says and converts both to it, so the answer
 	// has a type whichever branch is taken.
 	yes, no := tenon.NumberFromInt(8080), tenon.String("auto")
-	common, err := tenon.Unify(tenon.Unsafe, tenon.Exactly(yes.Type()), tenon.Exactly(no.Type()))
+	common, err := tenon.Unify([]tenon.Constraint{tenon.Exactly(yes.Type()), tenon.Exactly(no.Type())}, tenon.Unsafe)
 	fmt.Println(common, err == nil)
 	fmt.Println(tenon.Convert(yes, common, tenon.Unsafe), tenon.Convert(no, common, tenon.Unsafe))
 
 	// What the file says is checked against what the schema asks for, and
 	// each failure is located where a reader would look for it.
-	file := tenon.ObjectVal(map[string]tenon.Value{
+	file := tenon.Object(map[string]tenon.Value{
 		"name":  tenon.String("web"),
-		"ports": tenon.TupleVal(tenon.String("80"), tenon.String("https")),
+		"ports": tenon.Tuple(tenon.String("80"), tenon.String("https")),
 	})
 	schema := tenon.ObjectWith(map[string]tenon.Field{
 		"name":  tenon.Required(tenon.Exactly(tenon.StringType())),

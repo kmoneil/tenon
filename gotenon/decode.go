@@ -286,7 +286,7 @@ func entries(v tenon.Value, each func(name string, member tenon.Value)) {
 	switch v.Type().Kind() {
 	case tenon.KindMap:
 		for _, key := range v.MapKeys() {
-			e, _ := v.MapElement(key)
+			e, _ := v.LookupMapElement(key)
 			each(key, e)
 		}
 	case tenon.KindObject:
@@ -350,7 +350,7 @@ func givenEntry(given tenon.Value, name string, converted tenon.Value) tenon.Val
 			return given.Attribute(name)
 		}
 	case tenon.KindMap:
-		if e, ok := given.MapElement(name); ok {
+		if e, ok := given.LookupMapElement(name); ok {
 			return e
 		}
 	}
@@ -587,7 +587,7 @@ func (d *decoder) mapping(m *goMapping, dst reflect.Value, v, given tenon.Value,
 	switch k := v.Type().Kind(); {
 	case k == tenon.KindMap:
 		for _, key := range v.MapKeys() {
-			e, _ := v.MapElement(key)
+			e, _ := v.LookupMapElement(key)
 			names, members, steps = append(names, key), append(members, e), append(steps, p.Index(tenon.String(key)))
 		}
 	case dynamic && k == tenon.KindObject:

@@ -10,17 +10,17 @@ import (
 
 // CheckAttributeNames reports whether names can be the attribute names of one
 // object: it returns nil, or an [*Error] whose diagnostics say what is wrong
-// with them, as ObjectVal reports it (TY-018). A name that is empty fails with
+// with them, as Object reports it (TY-018). A name that is empty fails with
 // CodeObjectEmptyName, one that is not well-formed UTF-8 with
 // CodeStringInvalidUTF8, and names that are the same name once normalized to
 // Unicode Normalization Form C, identical names among them, with
 // CodeObjectDuplicateName.
 //
-// ObjectVal gives an error value for names that cannot be attribute names,
-// since they come from data as often as from the program. Object, ObjectWith
-// and Path.Attribute are given names the program writes, and panic on such a
-// name; a program that builds them from names it did not write checks the
-// names here first.
+// Object gives an error value for names that cannot be attribute names, since
+// they come from data as often as from the program. ObjectType, ObjectWith and
+// Path.Attribute are given names the program writes, and panic on such a name;
+// a program that builds them from names it did not write checks the names here
+// first.
 func CheckAttributeNames(names ...string) error {
 	entries := make([]namedEntry[struct{}], len(names))
 	for i, name := range names {

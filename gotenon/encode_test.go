@@ -65,9 +65,9 @@ func TestConformance_GO010_TheMapping(t *testing.T) {
 		Nickname: "ada", secret: "hidden", Skipped: true,
 	}
 	want := obj(map[string]tenon.Value{
-		"name": s("Ada"), "age": n(36), "tags": tenon.ListVal(str, s("a"), s("b")),
+		"name": s("Ada"), "age": n(36), "tags": tenon.List(str, s("a"), s("b")),
 		"home":     obj(map[string]tenon.Value{"street": s("Main"), "unit": n(4)}),
-		"scores":   tenon.MapVal(num, map[string]tenon.Value{"x": n(1)}),
+		"scores":   tenon.Map(num, map[string]tenon.Value{"x": n(1)}),
 		"Nickname": s("ada"),
 	})
 	wantValue(t, "a person", encoded(t, p), want)
@@ -80,9 +80,9 @@ func TestConformance_GO010_TheMapping(t *testing.T) {
 		{"bool", encoded(t, true), tenon.Bool(true)},
 		{"int8", encoded(t, int8(-8)), n(-8)},
 		{"uint64", encoded(t, uint64(math.MaxUint64)), tenon.NumberFromText("18446744073709551615")},
-		{"an array", encoded(t, [2]bool{true, false}), tenon.ListVal(boo, tenon.Bool(true), tenon.Bool(false))},
+		{"an array", encoded(t, [2]bool{true, false}), tenon.List(boo, tenon.Bool(true), tenon.Bool(false))},
 		{"a named type", encoded(t, celsiusDegrees(21)), n(21)},
-		{"a map with named keys", encoded(t, map[key]int{"k": 1}), tenon.MapVal(num, map[string]tenon.Value{"k": n(1)})},
+		{"a map with named keys", encoded(t, map[key]int{"k": 1}), tenon.Map(num, map[string]tenon.Value{"k": n(1)})},
 		{"a tenon.Value", encoded(t, tenon.Unknown(str)), tenon.Unknown(str)},
 		{"a pointer", encoded(t, &unit), n(4)},
 	} {
@@ -125,11 +125,11 @@ func TestConformance_GO011_UnsupportedTypes(t *testing.T) {
 	// The type is refused before any value reaches the interface, so a null,
 	// an unknown value, an empty collection or an absent field does not let
 	// it through.
-	mustPanicUsage(t, "the Go type interface {} is an interface", func() { gotenon.Decode[any](tenon.NullVal(num), safe) })
-	mustPanicUsage(t, "the Go type *interface {} holds interface {}, an interface", func() { gotenon.Decode[*any](tenon.NullVal(num), safe) })
-	mustPanicUsage(t, "the Go type []interface {} holds interface {}", func() { gotenon.Decode[[]any](tenon.TupleVal(), safe) })
+	mustPanicUsage(t, "the Go type interface {} is an interface", func() { gotenon.Decode[any](tenon.Null(num), safe) })
+	mustPanicUsage(t, "the Go type *interface {} holds interface {}, an interface", func() { gotenon.Decode[*any](tenon.Null(num), safe) })
+	mustPanicUsage(t, "the Go type []interface {} holds interface {}", func() { gotenon.Decode[[]any](tenon.Tuple(), safe) })
 	mustPanicUsage(t, "the Go type map[string]interface {} holds interface {}", func() {
-		gotenon.Decode[map[string]any](tenon.Unknown(tenon.Map(num)), safe)
+		gotenon.Decode[map[string]any](tenon.Unknown(tenon.MapType(num)), safe)
 	})
 	mustPanicUsage(t, "holds fmt.Stringer, an interface", func() {
 		gotenon.Decode[struct {
@@ -138,11 +138,11 @@ func TestConformance_GO011_UnsupportedTypes(t *testing.T) {
 	})
 	// A type that only encodes itself decodes by its fields, and one that
 	// decodes by its method holds what it likes.
-	mustPanicUsage(t, "the Go type gotenon_test.sendsOnly holds interface {}", func() { gotenon.Decode[sendsOnly](tenon.NullVal(num), safe) })
+	mustPanicUsage(t, "the Go type gotenon_test.sendsOnly holds interface {}", func() { gotenon.Decode[sendsOnly](tenon.Null(num), safe) })
 	if got := decoded[keeps](t, n(1), safe); !tenon.Identical(got.Held.(tenon.Value), n(1)) {
 		t.Errorf("an unmarshaler holding an interface decoded as %+v", got)
 	}
-	if got := decoded[[]*keeps](t, tenon.TupleVal(s("x")), safe); len(got) != 1 || !tenon.Identical(got[0].Held.(tenon.Value), s("x")) {
+	if got := decoded[[]*keeps](t, tenon.Tuple(s("x")), safe); len(got) != 1 || !tenon.Identical(got[0].Held.(tenon.Value), s("x")) {
 		t.Errorf("a slice of pointers to an unmarshaler holding an interface decoded as %v", got)
 	}
 	mustPanicUsage(t, "of kind chan", func() { gotenon.Encode(make(chan int)) })
@@ -201,7 +201,7 @@ type holder struct {
 func TestConformance_GO012_ValuesOfManyTypes(t *testing.T) {
 	conformance.Covers(t, "GO-012", "GO-013", "GO-022", "TY-018")
 	values := []tenon.Value{n(1), s("x"), tenon.Unknown(boo)}
-	wantValue(t, "a slice of values", encoded(t, values), tenon.TupleVal(values...))
+	wantValue(t, "a slice of values", encoded(t, values), tenon.Tuple(values...))
 	wantValue(t, "a map of values", encoded(t, map[string]tenon.Value{"a": n(1), "b": s("x")}),
 		obj(map[string]tenon.Value{"a": n(1), "b": s("x")}))
 	wantEncodeFailure(t, "an empty key", map[string]tenon.Value{"": n(1)},
@@ -219,19 +219,19 @@ func TestConformance_GO012_ValuesOfManyTypes(t *testing.T) {
 		name      string
 		got, want tenon.Value
 	}{
-		{"a nil slice", encoded(t, nilInts), tenon.NullVal(tenon.List(num))},
-		{"an empty slice", encoded(t, []int{}), tenon.ListVal(num)},
-		{"a nil map", encoded(t, nilMap), tenon.NullVal(tenon.Map(boo))},
-		{"a nil pointer", encoded(t, nilPtr), tenon.NullVal(tenon.Object(map[string]tenon.Type{"street": str, "unit": num}))},
-		{"a nil slice of values", encoded(t, nilValues), tenon.NullVal(tenon.Tuple())},
-		{"a nil pointer to a type of no type", encoded(t, nilHolder), tenon.NullVal(tenon.Object(map[string]tenon.Type{"name": str}))},
-		{"a nil pointer to a slice of values", encoded(t, &nilValues), tenon.NullVal(tenon.Tuple())},
+		{"a nil slice", encoded(t, nilInts), tenon.Null(tenon.ListType(num))},
+		{"an empty slice", encoded(t, []int{}), tenon.List(num)},
+		{"a nil map", encoded(t, nilMap), tenon.Null(tenon.MapType(boo))},
+		{"a nil pointer", encoded(t, nilPtr), tenon.Null(tenon.ObjectType(map[string]tenon.Type{"street": str, "unit": num}))},
+		{"a nil slice of values", encoded(t, nilValues), tenon.Null(tenon.TupleType())},
+		{"a nil pointer to a type of no type", encoded(t, nilHolder), tenon.Null(tenon.ObjectType(map[string]tenon.Type{"name": str}))},
+		{"a nil pointer to a slice of values", encoded(t, &nilValues), tenon.Null(tenon.TupleType())},
 		// Empty but not nil, of members whose types need not agree: the empty
 		// tuple and the empty object, where a slice or map of one type is an
 		// empty list or map.
-		{"an empty slice of values", encoded(t, []tenon.Value{}), tenon.TupleVal()},
+		{"an empty slice of values", encoded(t, []tenon.Value{}), tenon.Tuple()},
 		{"an empty map of values", encoded(t, map[string]tenon.Value{}), obj(nil)},
-		{"an empty map of numbers", encoded(t, map[string]int{}), tenon.MapVal(num, nil)},
+		{"an empty map of numbers", encoded(t, map[string]int{}), tenon.Map(num, nil)},
 	} {
 		wantValue(t, tt.name, tt.got, tt.want)
 	}
@@ -375,10 +375,10 @@ func TestConformance_GO015_InterfacesEncodeWhatTheyHold(t *testing.T) {
 	// A map of them is an object and a slice of them a tuple [GO-012].
 	wantValue(t, "a map of anything", encoded(t, map[string]any{"a": 1, "b": "x", "c": true}),
 		obj(map[string]tenon.Value{"a": n(1), "b": s("x"), "c": tenon.Bool(true)}))
-	wantValue(t, "a slice of anything", encoded(t, []any{1, "x"}), tenon.TupleVal(n(1), s("x")))
+	wantValue(t, "a slice of anything", encoded(t, []any{1, "x"}), tenon.Tuple(n(1), s("x")))
 	// What it holds may itself hold anything, at any depth.
 	wantValue(t, "anything within anything", encoded(t, map[string]any{"a": []any{map[string]any{"b": 1}}}),
-		obj(map[string]tenon.Value{"a": tenon.TupleVal(obj(map[string]tenon.Value{"b": n(1)}))}))
+		obj(map[string]tenon.Value{"a": tenon.Tuple(obj(map[string]tenon.Value{"b": n(1)}))}))
 	// A field of interface type carries what the struct's own types cannot.
 	wantValue(t, "a struct field", encoded(t, struct {
 		Extra any `tenon:"extra"`
@@ -429,7 +429,7 @@ func TestConformance_GO015_InterfacesEncodeWhatTheyHold(t *testing.T) {
 	grown := []any{"x"}
 	grown = append(grown, grown)
 	wantValue(t, "a slice holding what it held", encoded(t, grown),
-		tenon.TupleVal(s("x"), tenon.TupleVal(s("x"))))
+		tenon.Tuple(s("x"), tenon.Tuple(s("x"))))
 }
 
 // ringed is a struct that can hold anything, which is how a Go value comes to

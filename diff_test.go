@@ -38,7 +38,7 @@ func partAt(v tenon.Value, p tenon.Path) (tenon.Value, bool) {
 			}
 			v = v.Index(int(i))
 		case s.Kind() == tenon.StepIndex && k == tenon.KindMap && s.Key().Type() == tenon.StringType():
-			e, ok := v.MapElement(s.Key().AsString())
+			e, ok := v.LookupMapElement(s.Key().AsString())
 			if !ok {
 				return tenon.Value{}, false
 			}
@@ -95,13 +95,13 @@ func TestConformance_DI035_MembersThatReadAlikeMirror(t *testing.T) {
 	// run's own bookkeeping, which EQ-045 leaves to the implementation, and
 	// the mirror holds through it.
 	blank := tenon.NewCapsule("blank", tenon.CapsuleOps[celsius]{})
-	blankTuple := tenon.Tuple(blank.Type(), num)
-	m1 := tenon.TupleVal(blank.Value(&celsius{1}), tenon.Unknown(num))
-	m2 := tenon.TupleVal(blank.Value(&celsius{2}), tenon.Unknown(num))
+	blankTuple := tenon.TupleType(blank.Type(), num)
+	m1 := tenon.Tuple(blank.Value(&celsius{1}), tenon.Unknown(num))
+	m2 := tenon.Tuple(blank.Value(&celsius{2}), tenon.Unknown(num))
 	if m1.String() != m2.String() {
 		t.Fatalf("the members read %s and %s, not alike", m1, m2)
 	}
-	mirrorOf(t, "no operations", tenon.SetVal(blankTuple, m1), tenon.SetVal(blankTuple, m2))
+	mirrorOf(t, "no operations", tenon.Set(blankTuple, m1), tenon.Set(blankTuple, m2))
 
 	// A capsule type that encodes but does not display: the members read
 	// alike and their encodings differ, so the one with the lesser encoding
@@ -116,13 +116,13 @@ func TestConformance_DI035_MembersThatReadAlikeMirror(t *testing.T) {
 			Decode: func(v tenon.Value) (*celsius, []tenon.Diagnostic) { i, _ := v.AsInt64(); return &celsius{i}, nil },
 		},
 	})
-	codedTuple := tenon.Tuple(coded.Type(), num)
-	lesser := tenon.TupleVal(coded.Value(&celsius{1}), tenon.Unknown(num))
-	greater := tenon.TupleVal(coded.Value(&celsius{2}), tenon.Unknown(num))
+	codedTuple := tenon.TupleType(coded.Type(), num)
+	lesser := tenon.Tuple(coded.Value(&celsius{1}), tenon.Unknown(num))
+	greater := tenon.Tuple(coded.Value(&celsius{2}), tenon.Unknown(num))
 	if lesser.String() != greater.String() {
 		t.Fatalf("the members read %s and %s, not alike", lesser, greater)
 	}
-	forward := mirrorOf(t, "encodings differ", tenon.SetVal(codedTuple, lesser), tenon.SetVal(codedTuple, greater))
+	forward := mirrorOf(t, "encodings differ", tenon.Set(codedTuple, lesser), tenon.Set(codedTuple, greater))
 	if len(forward) != 2 || forward[0].Kind != tenon.ChangeMemberRemoved || !tenon.Identical(forward[0].Old, lesser) {
 		t.Errorf("the member with the lesser encoding does not lead: %s", forward)
 	}
@@ -133,13 +133,13 @@ func TestConformance_DI030_ChangesAndWhatTheyCarry(t *testing.T) {
 	num, str := tenon.NumberType(), tenon.StringType()
 	n, s := tenon.NumberFromInt, tenon.String
 	m := stamp{id: "m"}
-	a := tenon.ObjectVal(map[string]tenon.Value{
-		"gone": s("x"), "list": tenon.ListVal(num, n(1)), "set": tenon.SetVal(str, s("a")), "same": n(1),
-		"swap": n(1), "marked": tenon.ListVal(num),
+	a := tenon.Object(map[string]tenon.Value{
+		"gone": s("x"), "list": tenon.List(num, n(1)), "set": tenon.Set(str, s("a")), "same": n(1),
+		"swap": n(1), "marked": tenon.List(num),
 	})
-	b := tenon.ObjectVal(map[string]tenon.Value{
-		"list": tenon.ListVal(num, n(1), n(2)), "new": s("y"), "set": tenon.SetVal(str, s("b")), "same": n(1),
-		"swap": s("1"), "marked": tenon.WithMarks(tenon.ListVal(num), m),
+	b := tenon.Object(map[string]tenon.Value{
+		"list": tenon.List(num, n(1), n(2)), "new": s("y"), "set": tenon.Set(str, s("b")), "same": n(1),
+		"swap": s("1"), "marked": tenon.WithMarks(tenon.List(num), m),
 	})
 	got := tenon.Diff(a, b)
 	root := tenon.Path{}
@@ -177,7 +177,7 @@ func TestConformance_DI031_EmptyExactlyWhenIdentical(t *testing.T) {
 	// A deep mark set aside within is still a difference, counted on the part
 	// that carries it.
 	d := stamp{id: "d", deep: true}
-	l := tenon.ListVal(tenon.NumberType(), tenon.NumberFromInt(1))
+	l := tenon.List(tenon.NumberType(), tenon.NumberFromInt(1))
 	if len(tenon.Diff(l, tenon.WithMarks(l, d))) == 0 {
 		t.Error("a list and its deeply marked twin have an empty diff")
 	}
@@ -187,23 +187,23 @@ func TestConformance_DI032_WhereTheDiffLooksWithin(t *testing.T) {
 	conformance.Covers(t, "DI-032")
 	num, str := tenon.NumberType(), tenon.StringType()
 	n, s := tenon.NumberFromInt, tenon.String
-	one := tenon.ListVal(num, n(1))
+	one := tenon.List(num, n(1))
 	// Parts that do not match are replaced whole.
 	for _, tt := range []struct {
 		name string
 		a, b tenon.Value
 		want string
 	}{
-		{"kinds that differ", tenon.TupleVal(n(1)), one, `~ .: [1] -> list(number)[1]`},
-		{"a map and an object", tenon.MapVal(num, map[string]tenon.Value{"a": n(1)}), tenon.ObjectVal(map[string]tenon.Value{"a": n(1)}),
+		{"kinds that differ", tenon.Tuple(n(1)), one, `~ .: [1] -> list(number)[1]`},
+		{"a map and an object", tenon.Map(num, map[string]tenon.Value{"a": n(1)}), tenon.Object(map[string]tenon.Value{"a": n(1)}),
 			`~ .: map(number){"a": 1} -> {"a": 1}`},
-		{"element types that differ", tenon.ListVal(num), tenon.ListVal(str), `~ .: list(number)[] -> list(string)[]`},
-		{"a null", tenon.NullVal(tenon.List(num)), one, `~ .: null(list(number)) -> list(number)[1]`},
-		{"an unknown", tenon.Unknown(tenon.List(num)), one, `~ .: unknown(list(number)) -> list(number)[1]`},
+		{"element types that differ", tenon.List(num), tenon.List(str), `~ .: list(number)[] -> list(string)[]`},
+		{"a null", tenon.Null(tenon.ListType(num)), one, `~ .: null(list(number)) -> list(number)[1]`},
+		{"an unknown", tenon.Unknown(tenon.ListType(num)), one, `~ .: unknown(list(number)) -> list(number)[1]`},
 		{"a pending value", tenon.Pending(tenon.Any()), one, `~ .: pending(any) -> list(number)[1]`},
 		{"an error value", tenon.ErrorVal(tenon.Diagnostic{Code: "app.failed", Message: "x"}), one, `~ .: error(app.failed: "x") -> list(number)[1]`},
 		{"scalars", s("a"), s("b"), `~ .: "a" -> "b"`},
-		{"a redacted container", tenon.WithMarks(one, stamp{id: "s", redact: true}), tenon.WithMarks(tenon.ListVal(num, n(2)), stamp{id: "s", redact: true}),
+		{"a redacted container", tenon.WithMarks(one, stamp{id: "s", redact: true}), tenon.WithMarks(tenon.List(num, n(2)), stamp{id: "s", redact: true}),
 			`~ .: redacted("s") -> redacted("s")`},
 	} {
 		wantDiff(t, tt.name, tt.a, tt.b, tt.want)
@@ -219,12 +219,12 @@ func TestConformance_DI032_WhereTheDiffLooksWithin(t *testing.T) {
 	wantDiff(t, "a value gaining a redacting mark", n(1), tenon.WithMarks(n(1), stamp{id: "s", redact: true}), `~ .: 1 -> redacted("s")`)
 
 	// Parts that match are entered, their mark change first.
-	wantDiff(t, "a marked list with a new element", one, tenon.WithMarks(tenon.ListVal(num, n(1), n(2)), m),
+	wantDiff(t, "a marked list with a new element", one, tenon.WithMarks(tenon.List(num, n(1), n(2)), m),
 		`~ .: marks [] -> ["m"]`, `+ .[1]: 2`)
-	wantDiff(t, "tuples of other types", tenon.TupleVal(n(1), s("a")), tenon.TupleVal(n(1), n(2)), `~ .[1]: "a" -> 2`)
-	wantDiff(t, "objects of other attributes", tenon.ObjectVal(map[string]tenon.Value{"a": n(1)}), tenon.ObjectVal(map[string]tenon.Value{"b": n(1)}),
+	wantDiff(t, "tuples of other types", tenon.Tuple(n(1), s("a")), tenon.Tuple(n(1), n(2)), `~ .[1]: "a" -> 2`)
+	wantDiff(t, "objects of other attributes", tenon.Object(map[string]tenon.Value{"a": n(1)}), tenon.Object(map[string]tenon.Value{"b": n(1)}),
 		`- .a: 1`, `+ .b: 1`)
-	wantDiff(t, "a list holding an unknown", tenon.ListVal(num, tenon.Unknown(num)), tenon.ListVal(num, n(3)), `~ .[0]: unknown(number) -> 3`)
+	wantDiff(t, "a list holding an unknown", tenon.List(num, tenon.Unknown(num)), tenon.List(num, n(3)), `~ .[0]: unknown(number) -> 3`)
 }
 
 func TestConformance_DI033_MembersCompare(t *testing.T) {
@@ -232,22 +232,22 @@ func TestConformance_DI033_MembersCompare(t *testing.T) {
 	num, str := tenon.NumberType(), tenon.StringType()
 	n, s := tenon.NumberFromInt, tenon.String
 	// Lists compare by index, with no alignment.
-	wantDiff(t, "an element inserted first", tenon.ListVal(num, n(1), n(2)), tenon.ListVal(num, n(0), n(1), n(2)),
+	wantDiff(t, "an element inserted first", tenon.List(num, n(1), n(2)), tenon.List(num, n(0), n(1), n(2)),
 		`~ .[0]: 1 -> 0`, `~ .[1]: 2 -> 1`, `+ .[2]: 2`)
-	wantDiff(t, "elements removed", tenon.TupleVal(n(1), s("a"), n(3)), tenon.TupleVal(n(1)), `- .[1]: "a"`, `- .[2]: 3`)
+	wantDiff(t, "elements removed", tenon.Tuple(n(1), s("a"), n(3)), tenon.Tuple(n(1)), `- .[1]: "a"`, `- .[2]: 3`)
 	// Maps and objects by name, nested paths extended step by step.
-	wantDiff(t, "map entries", tenon.MapVal(num, map[string]tenon.Value{"a b": n(1), "c": n(2)}), tenon.MapVal(num, map[string]tenon.Value{"c": n(3), "d": n(4)}),
+	wantDiff(t, "map entries", tenon.Map(num, map[string]tenon.Value{"a b": n(1), "c": n(2)}), tenon.Map(num, map[string]tenon.Value{"c": n(3), "d": n(4)}),
 		`- .["a b"]: 1`, `~ .["c"]: 2 -> 3`, `+ .["d"]: 4`)
 	wantDiff(t, "nested attributes",
-		tenon.ObjectVal(map[string]tenon.Value{"x y": tenon.ObjectVal(map[string]tenon.Value{"z": tenon.ListVal(str, s("a"))})}),
-		tenon.ObjectVal(map[string]tenon.Value{"x y": tenon.ObjectVal(map[string]tenon.Value{"z": tenon.ListVal(str, s("b"))})}),
+		tenon.Object(map[string]tenon.Value{"x y": tenon.Object(map[string]tenon.Value{"z": tenon.List(str, s("a"))})}),
+		tenon.Object(map[string]tenon.Value{"x y": tenon.Object(map[string]tenon.Value{"z": tenon.List(str, s("b"))})}),
 		`~ ."x y".z[0]: "a" -> "b"`)
 	// Sets by membership, at the set's path, repeated members one for one.
 	u := tenon.Narrow(tenon.Unknown(num), tenon.NotNull())
-	wantDiff(t, "set members", tenon.SetVal(num, n(1), n(2), u), tenon.SetVal(num, n(2), n(3), u, u),
+	wantDiff(t, "set members", tenon.Set(num, n(1), n(2), u), tenon.Set(num, n(2), n(3), u, u),
 		`- .: member 1`, `+ .: member 3`, `+ .: member unknown(number, not null)`)
-	wantDiff(t, "a set within an object", tenon.ObjectVal(map[string]tenon.Value{"s": tenon.SetVal(str, s("a"))}),
-		tenon.ObjectVal(map[string]tenon.Value{"s": tenon.SetVal(str)}), `- .s: member "a"`)
+	wantDiff(t, "a set within an object", tenon.Object(map[string]tenon.Value{"s": tenon.Set(str, s("a"))}),
+		tenon.Object(map[string]tenon.Value{"s": tenon.Set(str)}), `- .s: member "a"`)
 }
 
 func TestConformance_DI034_DeepMarksCountOnce(t *testing.T) {
@@ -255,20 +255,20 @@ func TestConformance_DI034_DeepMarksCountOnce(t *testing.T) {
 	num := tenon.NumberType()
 	n := tenon.NumberFromInt
 	d, m := stamp{id: "d", deep: true}, stamp{id: "m"}
-	list := tenon.ListVal(num, n(1), n(2))
+	list := tenon.List(num, n(1), n(2))
 	wantDiff(t, "a deep mark added", list, tenon.WithMarks(list, d), `~ .: marks [] -> ["d"]`)
-	nested := tenon.ObjectVal(map[string]tenon.Value{"a": tenon.ObjectVal(map[string]tenon.Value{"b": list})})
+	nested := tenon.Object(map[string]tenon.Value{"a": tenon.Object(map[string]tenon.Value{"b": list})})
 	wantDiff(t, "a deep mark on an outer part", nested, tenon.WithMarks(nested, d), `~ .: marks [] -> ["d"]`)
-	wantDiff(t, "a deep mark on an inner part", nested, tenon.ObjectVal(map[string]tenon.Value{"a": tenon.WithMarks(nested.Attribute("a"), d)}),
+	wantDiff(t, "a deep mark on an inner part", nested, tenon.Object(map[string]tenon.Value{"a": tenon.WithMarks(nested.Attribute("a"), d)}),
 		`~ .a: marks [] -> ["d"]`)
-	wantDiff(t, "a deep mark on a set", tenon.SetVal(num, n(1)), tenon.WithMarks(tenon.SetVal(num, n(1)), d), `~ .: marks [] -> ["d"]`)
+	wantDiff(t, "a deep mark on a set", tenon.Set(num, n(1)), tenon.WithMarks(tenon.Set(num, n(1)), d), `~ .: marks [] -> ["d"]`)
 	// Other changes within still show, and so does a mark a member carries of
 	// its own once its holder's deep mark is gone.
-	wantDiff(t, "a deep mark and a change within", list, tenon.WithMarks(tenon.ListVal(num, n(1), n(3)), d),
+	wantDiff(t, "a deep mark and a change within", list, tenon.WithMarks(tenon.List(num, n(1), n(3)), d),
 		`~ .: marks [] -> ["d"]`, `~ .[1]: 2 -> marked(3, "d")`)
-	wantDiff(t, "a member marking of its own", tenon.WithMarks(list, d), tenon.ListVal(num, tenon.WithMarks(n(1), d), n(2)),
+	wantDiff(t, "a member marking of its own", tenon.WithMarks(list, d), tenon.List(num, tenon.WithMarks(n(1), d), n(2)),
 		`~ .: marks ["d"] -> []`, `~ .[0]: marks [] -> ["d"]`)
-	wantDiff(t, "a member mark beside a deep one", tenon.WithMarks(list, d), tenon.WithMarks(tenon.ListVal(num, tenon.WithMarks(n(1), m), n(2)), d),
+	wantDiff(t, "a member mark beside a deep one", tenon.WithMarks(list, d), tenon.WithMarks(tenon.List(num, tenon.WithMarks(n(1), m), n(2)), d),
 		`~ .[0]: marks [] -> ["m"]`)
 }
 
@@ -277,11 +277,11 @@ func TestConformance_DI035_OrderAndSymmetry(t *testing.T) {
 	num, str := tenon.NumberType(), tenon.StringType()
 	n, s := tenon.NumberFromInt, tenon.String
 	m := stamp{id: "m"}
-	a := tenon.ObjectVal(map[string]tenon.Value{
-		"B": n(1), "a": tenon.ListVal(num, n(1), n(2)), "c": tenon.SetVal(str, s("x"), s("z")),
+	a := tenon.Object(map[string]tenon.Value{
+		"B": n(1), "a": tenon.List(num, n(1), n(2)), "c": tenon.Set(str, s("x"), s("z")),
 	})
-	b := tenon.ObjectVal(map[string]tenon.Value{
-		"B": n(2), "a": tenon.WithMarks(tenon.ListVal(num, n(3)), m), "c": tenon.SetVal(str, s("y")),
+	b := tenon.Object(map[string]tenon.Value{
+		"B": n(2), "a": tenon.WithMarks(tenon.List(num, n(3)), m), "c": tenon.Set(str, s("y")),
 	})
 	wantDiff(t, "a walk from the top", a, b,
 		`~ .B: 1 -> 2`, `~ .a: marks [] -> ["m"]`, `~ .a[0]: 1 -> 3`, `- .a[1]: 2`,
@@ -330,15 +330,15 @@ func TestConformance_DI036_DiffsWithholdRedactedContents(t *testing.T) {
 	num, str := tenon.NumberType(), tenon.StringType()
 	secret := stamp{id: "s", redact: true}
 	deepSecret := stamp{id: "s", redact: true, deep: true}
-	before := tenon.ObjectVal(map[string]tenon.Value{
+	before := tenon.Object(map[string]tenon.Value{
 		"password": tenon.WithMarks(tenon.String("hunter2"), secret),
-		"keys":     tenon.WithMarks(tenon.MapVal(str, map[string]tenon.Value{"api": tenon.String("k-one")}), secret),
-		"pins":     tenon.WithMarks(tenon.SetVal(num, tenon.NumberFromInt(1234)), deepSecret),
+		"keys":     tenon.WithMarks(tenon.Map(str, map[string]tenon.Value{"api": tenon.String("k-one")}), secret),
+		"pins":     tenon.WithMarks(tenon.Set(num, tenon.NumberFromInt(1234)), deepSecret),
 	})
-	after := tenon.ObjectVal(map[string]tenon.Value{
+	after := tenon.Object(map[string]tenon.Value{
 		"password": tenon.WithMarks(tenon.String("hunter3"), secret),
-		"keys":     tenon.WithMarks(tenon.MapVal(str, map[string]tenon.Value{"api": tenon.String("k-two"), "new": tenon.String("k-three")}), secret),
-		"pins":     tenon.WithMarks(tenon.SetVal(num, tenon.NumberFromInt(5678)), deepSecret),
+		"keys":     tenon.WithMarks(tenon.Map(str, map[string]tenon.Value{"api": tenon.String("k-two"), "new": tenon.String("k-three")}), secret),
+		"pins":     tenon.WithMarks(tenon.Set(num, tenon.NumberFromInt(5678)), deepSecret),
 	})
 	for _, c := range tenon.Diff(before, after) {
 		if c.Path.Len() != 1 {
@@ -370,7 +370,7 @@ func TestConformance_DI037_DiffDisplay(t *testing.T) {
 		want string
 	}{
 		{tenon.Change{Kind: tenon.ChangeReplaced, Path: root, Old: n(1), New: n(2)}, `~ .: 1 -> 2`},
-		{tenon.Change{Kind: tenon.ChangeAdded, Path: root.Index(n(0)), New: tenon.NullVal(num)}, `+ .[0]: null(number)`},
+		{tenon.Change{Kind: tenon.ChangeAdded, Path: root.Index(n(0)), New: tenon.Null(num)}, `+ .[0]: null(number)`},
 		{tenon.Change{Kind: tenon.ChangeRemoved, Path: root.Attribute("a b"), Old: tenon.String("x")}, `- ."a b": "x"`},
 		{tenon.Change{Kind: tenon.ChangeMemberAdded, Path: root.Attribute("s"), New: n(3)}, `+ .s: member 3`},
 		{tenon.Change{Kind: tenon.ChangeMemberRemoved, Path: root.Attribute("s"), Old: n(3)}, `- .s: member 3`},
@@ -381,7 +381,7 @@ func TestConformance_DI037_DiffDisplay(t *testing.T) {
 			t.Errorf("%s change displays as %s, want %s", tt.c.Kind, got, tt.want)
 		}
 	}
-	changes := tenon.Diff(tenon.ListVal(num, n(1)), tenon.ListVal(num, n(2), n(3)))
+	changes := tenon.Diff(tenon.List(num, n(1)), tenon.List(num, n(2), n(3)))
 	if got, want := changes.String(), "~ .[0]: 1 -> 2\n+ .[1]: 3\n"; got != want {
 		t.Errorf("a diff displays as %q, want %q", got, want)
 	}
@@ -396,9 +396,9 @@ func TestConformance_VA005_ChangesHoldTheirOwnMarks(t *testing.T) {
 	for _, pair := range [][3]tenon.Value{
 		{tenon.WithMarks(tenon.String("x"), a1, a2), tenon.WithMarks(tenon.String("x"), a1, a2), tenon.WithMarks(tenon.String("x"), b1)},
 		{
-			tenon.ListVal(str, tenon.WithMarks(tenon.String("x"), a1, a2)),
-			tenon.ListVal(str, tenon.WithMarks(tenon.String("x"), a1, a2)),
-			tenon.ListVal(str, tenon.WithMarks(tenon.String("x"), b1)),
+			tenon.List(str, tenon.WithMarks(tenon.String("x"), a1, a2)),
+			tenon.List(str, tenon.WithMarks(tenon.String("x"), a1, a2)),
+			tenon.List(str, tenon.WithMarks(tenon.String("x"), b1)),
 		},
 	} {
 		a, twin, b := pair[0], pair[1], pair[2]

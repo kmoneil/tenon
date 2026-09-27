@@ -60,9 +60,9 @@ func ExampleEncode_numbers() {
 // Decode fills a Go value from a tenon value, converting it under the policy
 // the caller chooses.
 func ExampleDecode() {
-	value := tenon.ObjectVal(map[string]tenon.Value{
+	value := tenon.Object(map[string]tenon.Value{
 		"name":    tenon.String("web"),
-		"tags":    tenon.ListVal(tenon.StringType(), tenon.String("edge")),
+		"tags":    tenon.List(tenon.StringType(), tenon.String("edge")),
 		"address": tenon.String("10.0.0.7"),
 	})
 	got, err := gotenon.Decode[service](value, tenon.Safe)
@@ -79,10 +79,10 @@ func ExampleDecode() {
 // What cannot be decoded comes back as diagnostics, each located by its path,
 // rather than as a zero value or a panic.
 func ExampleDecode_diagnostics() {
-	value := tenon.ObjectVal(map[string]tenon.Value{
+	value := tenon.Object(map[string]tenon.Value{
 		"name":    tenon.String("web"),
 		"port":    tenon.String("http"),
-		"tags":    tenon.ListVal(tenon.StringType()),
+		"tags":    tenon.List(tenon.StringType()),
 		"address": tenon.Unknown(tenon.StringType()),
 	})
 	_, err := gotenon.Decode[service](value, tenon.Unsafe)

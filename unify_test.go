@@ -62,8 +62,8 @@ func TestConformance_CV040_Unification(t *testing.T) {
 	wantNoUnification(t, safe, is(num), is(str))
 
 	// Every value of each type given converts to the result.
-	u := unifyOK(t, uns, is(tenon.Tuple(num, boo)), is(tenon.List(str)))
-	for _, v := range []tenon.Value{tenon.TupleVal(n(1), tenon.Bool(true)), tenon.ListVal(str, s("x"))} {
+	u := unifyOK(t, uns, is(tenon.TupleType(num, boo)), is(tenon.ListType(str)))
+	for _, v := range []tenon.Value{tenon.Tuple(n(1), tenon.Bool(true)), tenon.List(str, s("x"))} {
 		if r := tenon.Convert(v, u, uns); r.IsError() {
 			t.Errorf("%v does not convert to the unification %v: %v", v, u, r)
 		}
@@ -94,7 +94,7 @@ func TestConformance_CV040_Unification(t *testing.T) {
 
 func TestConformance_CV042_UnificationRules(t *testing.T) {
 	conformance.Covers(t, "CV-042")
-	anyC, listNum := tenon.Any(), is(tenon.List(num))
+	anyC, listNum := tenon.Any(), is(tenon.ListType(num))
 
 	// 1. Any gives way to the other constraint.
 	wantUnified(t, safe, tenon.ListOf(anyC), anyC, tenon.ListOf(anyC))
@@ -109,7 +109,7 @@ func TestConformance_CV042_UnificationRules(t *testing.T) {
 
 	// 3. Exactly of a structure unifies as that structure.
 	wantUnified(t, safe, listNum, listNum, tenon.ListOf(anyC))
-	wantUnified(t, safe, is(tenon.Map(num)), is(tenon.Object(map[string]tenon.Type{"a": num})), tenon.MapOf(is(num)))
+	wantUnified(t, safe, is(tenon.MapType(num)), is(tenon.ObjectType(map[string]tenon.Type{"a": num})), tenon.MapOf(is(num)))
 
 	// 4. One type, and primitives as strings under the unsafe policy only.
 	wantUnified(t, safe, is(boo), is(boo), is(boo))
@@ -119,15 +119,15 @@ func TestConformance_CV042_UnificationRules(t *testing.T) {
 	}
 
 	// 5. Collections of one kind, and a set with a list as a list.
-	wantUnified(t, uns, is(tenon.Set(str)), tenon.SetOf(is(num)), tenon.SetOf(is(str)))
+	wantUnified(t, uns, is(tenon.SetType(str)), tenon.SetOf(is(num)), tenon.SetOf(is(str)))
 	wantUnified(t, safe, tenon.MapOf(anyC), tenon.MapOf(anyC), tenon.MapOf(anyC))
 	wantUnified(t, safe, tenon.ListOf(tenon.OneOf(is(num), is(str))), tenon.SetOf(tenon.OneOf(is(num), is(str))), tenon.ListOf(anyC))
 	wantNoUnification(t, safe, tenon.ListOf(anyC), tenon.MapOf(anyC))
 
 	// 6. Tuples of one length position by position; otherwise a list.
-	wantUnified(t, uns, is(tenon.Tuple(str, boo)), tenon.TupleOf(is(num), is(boo)), tenon.TupleOf(is(str), is(boo)))
-	wantUnified(t, safe, is(tenon.List(num)), tenon.TupleOf(is(num)), tenon.TupleOf(is(num), is(num)))
-	wantUnified(t, uns, is(tenon.List(str)), tenon.TupleOf(is(num), is(boo)), tenon.SetOf(is(str)))
+	wantUnified(t, uns, is(tenon.TupleType(str, boo)), tenon.TupleOf(is(num), is(boo)), tenon.TupleOf(is(str), is(boo)))
+	wantUnified(t, safe, is(tenon.ListType(num)), tenon.TupleOf(is(num)), tenon.TupleOf(is(num), is(num)))
+	wantUnified(t, uns, is(tenon.ListType(str)), tenon.TupleOf(is(num), is(boo)), tenon.SetOf(is(str)))
 	wantNoUnification(t, safe, tenon.TupleOf(is(num)), tenon.TupleOf(is(str)))
 
 	// 7. Objects field by field, and an object with a map as a map.
@@ -135,7 +135,7 @@ func TestConformance_CV042_UnificationRules(t *testing.T) {
 		fields(false, "a", tenon.Required(is(num)), "b", tenon.Optional(is(str)), "c", tenon.Optional(tenon.ListOf(anyC))),
 		fields(true, "a", tenon.Required(is(num)), "b", tenon.Required(is(str))),
 		fields(false, "a", tenon.Required(anyC), "c", tenon.Required(tenon.ListOf(anyC))))
-	wantUnified(t, uns, is(tenon.Map(str)), fields(false, "a", tenon.Required(is(num))), tenon.MapOf(is(boo)))
+	wantUnified(t, uns, is(tenon.MapType(str)), fields(false, "a", tenon.Required(is(num))), tenon.MapOf(is(boo)))
 	wantNoUnification(t, safe, fields(true, "a", tenon.Required(is(num))), fields(true, "a", tenon.Required(is(str))))
 
 	// 8. Everything else fails, capsule types that are not one type included.
@@ -159,7 +159,7 @@ func TestConformance_CV043_CanonicalForm(t *testing.T) {
 	opt := tenon.Optional
 	// A constraint that admits one type is Exactly of it, and one that admits
 	// none is OneOf(), at any depth.
-	wantUnified(t, safe, is(tenon.List(num)), tenon.ListOf(tenon.OneOf(is(num), tenon.OneOf())))
+	wantUnified(t, safe, is(tenon.ListType(num)), tenon.ListOf(tenon.OneOf(is(num), tenon.OneOf())))
 	wantUnified(t, safe, tenon.OneOf(), tenon.TupleOf(anyC, tenon.ListOf(tenon.OneOf())))
 	wantUnified(t, safe, tenon.ListOf(tenon.OneOf(anyC, tenon.ListOf(anyC))), tenon.ListOf(tenon.OneOf(tenon.ListOf(anyC), anyC)))
 	// An optional field no attribute can fill is left out.
@@ -176,8 +176,8 @@ func TestConformance_CV043_CanonicalForm(t *testing.T) {
 	}{
 		{"kinds", []tenon.Constraint{fields(false), tenon.TupleOf(anyC), tenon.MapOf(anyC), tenon.SetOf(anyC), tenon.ListOf(anyC), anyC, is(num)},
 			[]tenon.Constraint{is(num), anyC, tenon.ListOf(anyC), tenon.SetOf(anyC), tenon.MapOf(anyC), tenon.TupleOf(anyC), fields(false)}},
-		{"types", []tenon.Constraint{is(tenon.List(num)), is(str), is(boo), is(num)},
-			[]tenon.Constraint{is(boo), is(num), is(str), is(tenon.List(num))}},
+		{"types", []tenon.Constraint{is(tenon.ListType(num)), is(str), is(boo), is(num)},
+			[]tenon.Constraint{is(boo), is(num), is(str), is(tenon.ListType(num))}},
 		{"collection members", []tenon.Constraint{tenon.ListOf(tenon.TupleOf(anyC)), tenon.ListOf(anyC)},
 			[]tenon.Constraint{tenon.ListOf(anyC), tenon.ListOf(tenon.TupleOf(anyC))}},
 		{"tuple members in turn, shorter first", []tenon.Constraint{tenon.TupleOf(tenon.ListOf(anyC)), tenon.TupleOf(anyC, anyC), tenon.TupleOf(anyC)},
@@ -215,7 +215,7 @@ func TestConformance_CV043_CanonicalForm(t *testing.T) {
 func TestConformance_UN020_PendingValuesCarryAConstraint(t *testing.T) {
 	conformance.Covers(t, "UN-020", "UN-022")
 	c := tenon.ListOf(tenon.OneOf(is(num), is(str)))
-	v := tenon.WithMarks(tenon.Narrow(tenon.Pending(c), tenon.Null()), stamp{id: "m"})
+	v := tenon.WithMarks(tenon.Narrow(tenon.Pending(c), tenon.NullOnly()), stamp{id: "m"})
 	if got := v.Constraint(); !got.Equal(c) {
 		t.Errorf("the constraint of %v is %v, want %v", v, got, c)
 	}
@@ -227,8 +227,8 @@ func TestConformance_UN020_PendingValuesCarryAConstraint(t *testing.T) {
 // randomConstraint returns a constraint of every kind, nested up to depth.
 func randomConstraint(r *rand.Rand, depth int, capsule tenon.Type) tenon.Constraint {
 	leaves := []tenon.Constraint{
-		tenon.Any(), is(num), is(str), is(boo), is(tenon.List(num)), is(tenon.Tuple(num, str)),
-		is(tenon.Object(map[string]tenon.Type{"a": num})), is(tenon.Map(str)), is(capsule), tenon.OneOf(),
+		tenon.Any(), is(num), is(str), is(boo), is(tenon.ListType(num)), is(tenon.TupleType(num, str)),
+		is(tenon.ObjectType(map[string]tenon.Type{"a": num})), is(tenon.MapType(str)), is(capsule), tenon.OneOf(),
 	}
 	if depth == 0 || r.Intn(3) == 0 {
 		return leaves[r.Intn(len(leaves))]
@@ -303,7 +303,7 @@ func related(r *rand.Rand, c tenon.Constraint, capsule tenon.Type) tenon.Constra
 	case tenon.ConstraintObjectWith:
 		m := map[string]tenon.Field{}
 		for _, name := range c.FieldNames() {
-			f, _ := c.Field(name)
+			f, _ := c.LookupField(name)
 			if r.Intn(5) == 0 {
 				continue
 			}
@@ -377,7 +377,7 @@ func TestConformance_CV041_UnificationIsOrderIndependent(t *testing.T) {
 	// Any included. These are the triples make check-slow first found giving
 	// one answer in one order and another in another.
 	nothing := tenon.OneOf()
-	withAny := tenon.OneOf(tenon.Any(), is(tenon.Object(map[string]tenon.Type{"a": num})))
+	withAny := tenon.OneOf(tenon.Any(), is(tenon.ObjectType(map[string]tenon.Type{"a": num})))
 	for _, cs := range [][]tenon.Constraint{
 		{withAny, tenon.OneOf(tenon.Any()), tenon.MapOf(nothing)},
 		{tenon.OneOf(tenon.Any(), is(num), tenon.SetOf(is(str))), tenon.OneOf(tenon.Any(), is(num), tenon.Any()), nothing},
@@ -645,14 +645,14 @@ func TestConformance_CV044_UnificationAgreesWithTypeUnification(t *testing.T) {
 	objA := obj(map[string]tenon.Value{"a": n(1)})
 	objB := obj(map[string]tenon.Value{"b": s("x")})
 	values := []tenon.Value{
-		n(1), s("x"), tenon.Bool(true), tenon.ListVal(num, n(1)), tenon.SetVal(str, s("a")), tenon.TupleVal(n(1)),
-		tenon.TupleVal(s("a"), n(2)), tenon.MapVal(num, nil), objA, objB,
+		n(1), s("x"), tenon.Bool(true), tenon.List(num, n(1)), tenon.Set(str, s("a")), tenon.Tuple(n(1)),
+		tenon.Tuple(s("a"), n(2)), tenon.Map(num, nil), objA, objB,
 	}
 	for _, a := range values {
 		for _, b := range values {
 			for _, p := range []tenon.Policy{safe, uns} {
 				u, _, ok := tryUnify(p, is(a.Type()), is(b.Type()))
-				list := tenon.Convert(tenon.TupleVal(a, b), tenon.ListOf(tenon.Any()), p)
+				list := tenon.Convert(tenon.Tuple(a, b), tenon.ListOf(tenon.Any()), p)
 				differentObjects := a.Type().Kind() == tenon.KindObject && b.Type().Kind() == tenon.KindObject && a.Type() != b.Type()
 				switch {
 				case differentObjects:
@@ -693,8 +693,8 @@ func TestConformance_CV044_NestedUnificationAgreesWithConversion(t *testing.T) {
 			if flipped, _, ok := tryUnify(p, is(t2), is(t1)); ok != uok || (uok && !u.Equal(flipped)) {
 				t.Fatalf("under %s, %v and %v unify differently by order: %v and %v", p, t1, t2, u, flipped)
 			}
-			list := tenon.Convert(tenon.TupleVal(va, vb), tenon.ListOf(tenon.Any()), p)
-			backward := tenon.Convert(tenon.TupleVal(vb, va), tenon.ListOf(tenon.Any()), p)
+			list := tenon.Convert(tenon.Tuple(va, vb), tenon.ListOf(tenon.Any()), p)
+			backward := tenon.Convert(tenon.Tuple(vb, va), tenon.ListOf(tenon.Any()), p)
 			if list.IsError() != backward.IsError() {
 				t.Fatalf("under %s, a tuple of %v and %v converts to %v one way and %v the other", p, t1, t2, list, backward)
 			}

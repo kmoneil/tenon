@@ -27,7 +27,7 @@ type server struct {
 // each direction.
 func TestConformance_GO001_MappingsForTypesKnownWhenRunning(t *testing.T) {
 	conformance.Covers(t, "GO-001", "GO-002")
-	v := obj(map[string]tenon.Value{"name": s("web"), "ports": tenon.TupleVal(n(80), n(443))})
+	v := obj(map[string]tenon.Value{"name": s("web"), "ports": tenon.Tuple(n(80), n(443))})
 	rt := reflect.TypeFor[server]()
 
 	// A pointer made from a reflect.Type decodes as Decode decodes the type.
@@ -41,7 +41,7 @@ func TestConformance_GO001_MappingsForTypesKnownWhenRunning(t *testing.T) {
 	}
 	// A failure leaves the destination as it was.
 	kept := server{Name: "kept"}
-	err = gotenon.DecodeInto(obj(map[string]tenon.Value{"name": n(1), "ports": tenon.TupleVal()}), &kept, safe)
+	err = gotenon.DecodeInto(obj(map[string]tenon.Value{"name": n(1), "ports": tenon.Tuple()}), &kept, safe)
 	var failed *tenon.Error
 	if !errors.As(err, &failed) || kept.Name != "kept" {
 		t.Errorf("a failed DecodeInto gave %v and left %+v, want a *tenon.Error and the value kept", err, kept)
@@ -56,9 +56,9 @@ func TestConformance_GO001_MappingsForTypesKnownWhenRunning(t *testing.T) {
 	if got, want := gotenon.ConstraintFor(rt), tenon.ObjectWith(fields, true); !got.Equal(want) {
 		t.Errorf("ConstraintFor(server) = %v, want %v", got, want)
 	}
-	attrs := map[string]tenon.Type{"name": str, "ports": tenon.List(num), "tags": tenon.List(str)}
-	if got, ok := gotenon.TypeFor(rt); !ok || got != tenon.Object(attrs) {
-		t.Errorf("TypeFor(server) = %v, %t, want %v", got, ok, tenon.Object(attrs))
+	attrs := map[string]tenon.Type{"name": str, "ports": tenon.ListType(num), "tags": tenon.ListType(str)}
+	if got, ok := gotenon.TypeFor(rt); !ok || got != tenon.ObjectType(attrs) {
+		t.Errorf("TypeFor(server) = %v, %t, want %v", got, ok, tenon.ObjectType(attrs))
 	}
 	if got, ok := gotenon.TypeFor(reflect.TypeFor[server]()); ok && got != encoded(t, want).Type() {
 		t.Errorf("TypeFor(server) = %v, but Encode gives %v", got, encoded(t, want).Type())
@@ -96,7 +96,7 @@ func TestConformance_GO040_UnmarshalersAreGivenThePolicy(t *testing.T) {
 		if got := decoded[observer](t, n(1), p); got.policy != p {
 			t.Errorf("an unmarshaler decoded under %s was told %s", p, got.policy)
 		}
-		w := decoded[watched](t, obj(map[string]tenon.Value{"one": n(1), "many": tenon.TupleVal(n(1)), "plain": n(1), "plains": tenon.TupleVal(n(1)), "raw": n(1)}), p)
+		w := decoded[watched](t, obj(map[string]tenon.Value{"one": n(1), "many": tenon.Tuple(n(1)), "plain": n(1), "plains": tenon.Tuple(n(1)), "raw": n(1)}), p)
 		if w.One.policy != p || w.Many[0].policy != p || w.Plain.policy != p || w.Plains[0].policy != p {
 			t.Errorf("unmarshalers within a struct decoded under %s were told %s, %s, %s and %s", p, w.One.policy, w.Many[0].policy, w.Plain.policy, w.Plains[0].policy)
 		}
@@ -140,7 +140,7 @@ func TestConformance_GO044_TextMarshalers(t *testing.T) {
 	from := netip.MustParseAddr("10.0.0.1")
 	x := event{At: at, From: from}
 	v := encoded(t, x)
-	want := obj(map[string]tenon.Value{"at": s("2026-09-27T12:00:00Z"), "from": s("10.0.0.1"), "done": tenon.NullVal(str)})
+	want := obj(map[string]tenon.Value{"at": s("2026-09-27T12:00:00Z"), "from": s("10.0.0.1"), "done": tenon.Null(str)})
 	wantValue(t, "a struct of text marshalers", v, want)
 	if got, ok := gotenon.TypeFor(reflect.TypeFor[event]()); !ok || got != v.Type() {
 		t.Errorf("TypeFor(event) = %v, %t, want %v", got, ok, v.Type())
@@ -160,7 +160,7 @@ func TestConformance_GO044_TextMarshalers(t *testing.T) {
 		t.Errorf("decoding an unreadable time gave %v, want %s at .at with the time.ParseError as a cause", err, tenon.CodeDecodeUnmarshalFailed)
 	}
 	wantDecodeFailures[time.Time](t, "an unknown string", tenon.Unknown(str), safe, wantDiag{tenon.CodeDecodeNotKnown, "."})
-	wantDecodeFailures[time.Time](t, "a null", tenon.NullVal(str), safe, wantDiag{tenon.CodeDecodeNull, "."})
+	wantDecodeFailures[time.Time](t, "a null", tenon.Null(str), safe, wantDiag{tenon.CodeDecodeNull, "."})
 
 	// Encoding fails where the method does, or its text is not UTF-8.
 	_, err = gotenon.Encode(time.Date(10000, 1, 1, 0, 0, 0, 0, time.UTC))
@@ -200,7 +200,7 @@ func TestConformance_GO044_TenonHandlesCrossAsText(t *testing.T) {
 		C tenon.Constraint `tenon:"c"`
 		P tenon.Path       `tenon:"p"`
 	}
-	x := described{tenon.List(str), tenon.ListOf(tenon.Any()), tenon.Path{}.Attribute("a")}
+	x := described{tenon.ListType(str), tenon.ListOf(tenon.Any()), tenon.Path{}.Attribute("a")}
 	wantValue(t, "a struct of tenon handles", encoded(t, x),
 		obj(map[string]tenon.Value{"t": s("list(string)"), "c": s("list_of(any)"), "p": s(".a")}))
 	mustPanicUsage(t, "holds its state in unexported fields", func() {

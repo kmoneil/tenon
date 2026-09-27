@@ -215,7 +215,7 @@ func candidates(o Operand, typ *tenon.Type) []tenon.Value {
 	}
 	known = append(known, nulls...)
 	any := tenon.Pending(tenon.Any())
-	pending := []tenon.Value{any, tenon.Narrow(any, tenon.Null()), tenon.Narrow(any, tenon.NotNull())}
+	pending := []tenon.Value{any, tenon.Narrow(any, tenon.NullOnly()), tenon.Narrow(any, tenon.NotNull())}
 	for _, t := range candidateTypes() {
 		if tenon.Satisfies(o.Constraint, t) && (typ == nil || t == *typ) {
 			pending = append(pending, tenon.Pending(tenon.Exactly(t)))
@@ -249,8 +249,8 @@ func candidates(o Operand, typ *tenon.Type) []tenon.Value {
 func candidateTypes() []tenon.Type {
 	str := tenon.StringType()
 	return []tenon.Type{
-		tenon.BoolType(), tenon.NumberType(), str, tenon.List(str), tenon.Set(str),
-		tenon.Map(tenon.NumberType()), tenon.Tuple(), tenon.Object(nil),
+		tenon.BoolType(), tenon.NumberType(), str, tenon.ListType(str), tenon.SetType(str),
+		tenon.MapType(tenon.NumberType()), tenon.TupleType(), tenon.ObjectType(nil),
 	}
 }
 
@@ -369,7 +369,7 @@ func mark(op Operation, args []tenon.Value, marks []markedness) ([]tenon.Value, 
 		case holds:
 			elems := args[i].Elements()
 			elems[0] = tenon.WithMarks(elems[0], label{fmt.Sprintf("held-%d", i), tenon.Propagate})
-			out[i] = tenon.ListVal(args[i].Type().ElementType(), elems...)
+			out[i] = tenon.List(args[i].Type().ElementType(), elems...)
 			if op.Operands[i].Within {
 				want = append(want, fmt.Sprintf("held-%d", i))
 			}

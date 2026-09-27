@@ -25,7 +25,7 @@ func TestConformance_EQ001_EqualsIsAValueOperation(t *testing.T) {
 		{"two known values", tenon.Equals(one, one)},
 		{"a value and an unknown", tenon.Equals(one, tenon.Unknown(tenon.NumberType()))},
 		{"a value and a pending", tenon.Equals(one, tenon.Pending(tenon.Any()))},
-		{"two nulls", tenon.Equals(tenon.NullVal(str), tenon.NullVal(str))},
+		{"two nulls", tenon.Equals(tenon.Null(str), tenon.Null(str))},
 		{"values of different types", tenon.Equals(one, tenon.String("1"))},
 	} {
 		if !tt.got.IsResolved() || tt.got.Type() != tenon.BoolType() {
@@ -55,58 +55,58 @@ func TestConformance_EQ002_EqualsComparesValuesNotRepresentations(t *testing.T) 
 		{"booleans", tenon.Bool(true), tenon.Bool(true), "true"},
 		{
 			"lists, member by member",
-			tenon.ListVal(num, tenon.NumberFromInt(1), tenon.NumberFromText("2.0")),
-			tenon.ListVal(num, tenon.NumberFromText("1.000"), tenon.NumberFromInt(2)),
+			tenon.List(num, tenon.NumberFromInt(1), tenon.NumberFromText("2.0")),
+			tenon.List(num, tenon.NumberFromText("1.000"), tenon.NumberFromInt(2)),
 			"true",
 		},
 		{
 			"lists of different lengths",
-			tenon.ListVal(num, tenon.NumberFromInt(1)),
-			tenon.ListVal(num, tenon.NumberFromInt(1), tenon.NumberFromInt(1)),
+			tenon.List(num, tenon.NumberFromInt(1)),
+			tenon.List(num, tenon.NumberFromInt(1), tenon.NumberFromInt(1)),
 			"false",
 		},
 		{
 			"objects, attribute by attribute",
-			tenon.ObjectVal(map[string]tenon.Value{"a": tenon.NumberFromInt(1), "b": tenon.String("x")}),
-			tenon.ObjectVal(map[string]tenon.Value{"b": tenon.String("x"), "a": tenon.NumberFromText("1.0")}),
+			tenon.Object(map[string]tenon.Value{"a": tenon.NumberFromInt(1), "b": tenon.String("x")}),
+			tenon.Object(map[string]tenon.Value{"b": tenon.String("x"), "a": tenon.NumberFromText("1.0")}),
 			"true",
 		},
 		{
 			"maps, entry by entry",
-			tenon.MapVal(num, map[string]tenon.Value{"k": tenon.NumberFromInt(1)}),
-			tenon.MapVal(num, map[string]tenon.Value{"k": tenon.NumberFromText("1.0")}),
+			tenon.Map(num, map[string]tenon.Value{"k": tenon.NumberFromInt(1)}),
+			tenon.Map(num, map[string]tenon.Value{"k": tenon.NumberFromText("1.0")}),
 			"true",
 		},
 		{
 			"maps with different keys",
-			tenon.MapVal(num, map[string]tenon.Value{"k": tenon.NumberFromInt(1)}),
-			tenon.MapVal(num, map[string]tenon.Value{"j": tenon.NumberFromInt(1)}),
+			tenon.Map(num, map[string]tenon.Value{"k": tenon.NumberFromInt(1)}),
+			tenon.Map(num, map[string]tenon.Value{"j": tenon.NumberFromInt(1)}),
 			"false",
 		},
 		{
 			"tuples",
-			tenon.TupleVal(tenon.NumberFromInt(1), tenon.String("x")),
-			tenon.TupleVal(tenon.NumberFromText("1.0"), tenon.String("x")),
+			tenon.Tuple(tenon.NumberFromInt(1), tenon.String("x")),
+			tenon.Tuple(tenon.NumberFromText("1.0"), tenon.String("x")),
 			"true",
 		},
 		// A set is its members: the order they were given in is not part of
 		// the value, and neither is a member given twice.
 		{
 			"sets in different orders",
-			tenon.SetVal(str, tenon.String("a"), tenon.String("b")),
-			tenon.SetVal(str, tenon.String("b"), tenon.String("a")),
+			tenon.Set(str, tenon.String("a"), tenon.String("b")),
+			tenon.Set(str, tenon.String("b"), tenon.String("a")),
 			"true",
 		},
 		{
 			"a set with a member given twice",
-			tenon.SetVal(str, tenon.String("a"), tenon.String("a")),
-			tenon.SetVal(str, tenon.String("a")),
+			tenon.Set(str, tenon.String("a"), tenon.String("a")),
+			tenon.Set(str, tenon.String("a")),
 			"true",
 		},
 		{
 			"sets with different members",
-			tenon.SetVal(str, tenon.String("a")),
-			tenon.SetVal(str, tenon.String("b")),
+			tenon.Set(str, tenon.String("a")),
+			tenon.Set(str, tenon.String("b")),
 			"false",
 		},
 	} {
@@ -218,84 +218,84 @@ func TestConformance_EQ003_EqualsWithAnOperandThatIsNotKnown(t *testing.T) {
 		// there is nothing else for either of them to be.
 		{
 			"two unknowns that cannot differ",
-			tenon.Narrow(tenon.Unknown(tenon.Tuple()), tenon.NotNull()),
-			tenon.Narrow(tenon.Unknown(tenon.Tuple()), tenon.NotNull()),
+			tenon.Narrow(tenon.Unknown(tenon.TupleType()), tenon.NotNull()),
+			tenon.Narrow(tenon.Unknown(tenon.TupleType()), tenon.NotNull()),
 			"true",
 		},
 		{"two fresh unknowns", tenon.Unknown(num), tenon.Unknown(num), "unknown(bool, not null)"},
 		// Containers say what their members say.
 		{
 			"lists of different lengths",
-			tenon.ListVal(num, tenon.Unknown(num)),
-			tenon.ListVal(num, n(1), n(2)),
+			tenon.List(num, tenon.Unknown(num)),
+			tenon.List(num, n(1), n(2)),
 			"false",
 		},
 		{
 			"lists with a member that cannot match",
-			tenon.ListVal(num, n(1), tenon.Unknown(num)),
-			tenon.ListVal(num, n(2), tenon.Unknown(num)),
+			tenon.List(num, n(1), tenon.Unknown(num)),
+			tenon.List(num, n(2), tenon.Unknown(num)),
 			"false",
 		},
 		{
 			"lists that could still match",
-			tenon.ListVal(num, n(1), tenon.Unknown(num)),
-			tenon.ListVal(num, n(1), tenon.Unknown(num)),
+			tenon.List(num, n(1), tenon.Unknown(num)),
+			tenon.List(num, n(1), tenon.Unknown(num)),
 			"unknown(bool, not null)",
 		},
 		// A set holding a member that is not known has a length between the
 		// members provably distinct and all of them, and two sets are equal
 		// only where those lengths meet and every member of each could be a
 		// member of the other.
-		{"a set of one and an unknown, and the empty set", tenon.SetVal(num, n(1), tenon.Unknown(num)), tenon.SetVal(num), "false"},
-		{"a set of one unknown, and a set of two", tenon.SetVal(num, tenon.Unknown(num)), tenon.SetVal(num, n(1), n(2)), "false"},
+		{"a set of one and an unknown, and the empty set", tenon.Set(num, n(1), tenon.Unknown(num)), tenon.Set(num), "false"},
+		{"a set of one unknown, and a set of two", tenon.Set(num, tenon.Unknown(num)), tenon.Set(num, n(1), n(2)), "false"},
 		{
 			"sets whose lengths cannot meet",
-			tenon.SetVal(num, n(1), tenon.Unknown(num)),
-			tenon.SetVal(num, n(2), n(3), n(4)),
+			tenon.Set(num, n(1), tenon.Unknown(num)),
+			tenon.Set(num, n(2), n(3), n(4)),
 			"false",
 		},
 		{
 			"a member provably absent from the other set",
-			tenon.SetVal(num, n(1), between(5, 9)),
-			tenon.SetVal(num, n(1), n(2)),
+			tenon.Set(num, n(1), between(5, 9)),
+			tenon.Set(num, n(1), n(2)),
 			"false",
 		},
 		{
 			"sets that could still match",
-			tenon.SetVal(num, n(1), tenon.Unknown(num)),
-			tenon.SetVal(num, n(1), n(2)),
+			tenon.Set(num, n(1), tenon.Unknown(num)),
+			tenon.Set(num, n(1), n(2)),
 			"unknown(bool, not null)",
 		},
 		{
 			"two unknown members that could be one",
-			tenon.SetVal(num, tenon.Unknown(num), between(0, 9)),
-			tenon.SetVal(num, n(1)),
+			tenon.Set(num, tenon.Unknown(num), between(0, 9)),
+			tenon.Set(num, n(1)),
 			"unknown(bool, not null)",
 		},
 		// An unknown collection says as much against a container holding
 		// unknowns as against a known one.
 		{
 			"an unknown set too long for a set holding an unknown",
-			tenon.Narrow(tenon.Unknown(tenon.Set(num)), tenon.LengthMin(3)),
-			tenon.SetVal(num, n(1), tenon.Unknown(num)),
+			tenon.Narrow(tenon.Unknown(tenon.SetType(num)), tenon.LengthMin(3)),
+			tenon.Set(num, n(1), tenon.Unknown(num)),
 			"false",
 		},
 		{
 			"an unknown list too short for a list holding unknowns",
-			tenon.Narrow(tenon.Unknown(tenon.List(num)), tenon.LengthMax(1)),
-			tenon.ListVal(num, tenon.Unknown(num), tenon.Unknown(num)),
+			tenon.Narrow(tenon.Unknown(tenon.ListType(num)), tenon.LengthMax(1)),
+			tenon.List(num, tenon.Unknown(num), tenon.Unknown(num)),
 			"false",
 		},
 		{
 			"an unknown set requiring a member a set holding an unknown lacks",
-			tenon.Narrow(tenon.Unknown(tenon.Set(num)), tenon.Members(n(3))),
-			tenon.SetVal(num, n(1), between(5, 9)),
+			tenon.Narrow(tenon.Unknown(tenon.SetType(num)), tenon.Members(n(3))),
+			tenon.Set(num, n(1), between(5, 9)),
 			"false",
 		},
 		{
 			"an unknown set a set holding an unknown could be",
-			tenon.Narrow(tenon.Unknown(tenon.Set(num)), tenon.LengthMin(1)),
-			tenon.SetVal(num, n(1), tenon.Unknown(num)),
+			tenon.Narrow(tenon.Unknown(tenon.SetType(num)), tenon.LengthMin(1)),
+			tenon.Set(num, n(1), tenon.Unknown(num)),
 			"unknown(bool, not null)",
 		},
 		// A set holding unknowns is a known set only if its members can be
@@ -303,20 +303,20 @@ func TestConformance_EQ003_EqualsWithAnOperandThatIsNotKnown(t *testing.T) {
 		// leave the one between 3 and 4 to be both 3 and 4.
 		{
 			"a known set no member could be twice over",
-			tenon.SetVal(num, n(1), n(2), n(3), n(4)),
-			tenon.SetVal(num, notNull(between(1, 2)), notNull(between(1, 2)), notNull(between(1, 2)), notNull(between(3, 4))),
+			tenon.Set(num, n(1), n(2), n(3), n(4)),
+			tenon.Set(num, notNull(between(1, 2)), notNull(between(1, 2)), notNull(between(1, 2)), notNull(between(3, 4))),
 			"false",
 		},
 		{
 			"a known set the members can cover between them",
-			tenon.SetVal(num, n(1), n(2)),
-			tenon.SetVal(num, notNull(between(1, 2)), notNull(between(1, 2))),
+			tenon.Set(num, n(1), n(2)),
+			tenon.Set(num, notNull(between(1, 2)), notNull(between(1, 2))),
 			"unknown(bool, not null)",
 		},
 		{
 			"a known set with a member that no member of the other could be",
-			tenon.SetVal(num, n(1), n(2)),
-			tenon.SetVal(num, notNull(between(1, 2)), notNull(between(5, 9))),
+			tenon.Set(num, n(1), n(2)),
+			tenon.Set(num, notNull(between(1, 2)), notNull(between(5, 9))),
 			"false",
 		},
 	} {
@@ -335,12 +335,12 @@ func TestConformance_EQ003_EqualsWithAnOperandThatIsNotKnown(t *testing.T) {
 	for i := range conformance.Iterations(t, 200) {
 		for _, pair := range [][2]tenon.Value{
 			{
-				tenon.ObjectVal(map[string]tenon.Value{"a": tenon.Unknown(str), "b": tenon.String("z")}),
-				tenon.ObjectVal(map[string]tenon.Value{"a": tenon.String("x"), "b": tenon.String("y")}),
+				tenon.Object(map[string]tenon.Value{"a": tenon.Unknown(str), "b": tenon.String("z")}),
+				tenon.Object(map[string]tenon.Value{"a": tenon.String("x"), "b": tenon.String("y")}),
 			},
 			{
-				tenon.MapVal(str, map[string]tenon.Value{"a": tenon.Unknown(str), "b": tenon.String("z")}),
-				tenon.MapVal(str, map[string]tenon.Value{"a": tenon.String("x"), "b": tenon.String("y")}),
+				tenon.Map(str, map[string]tenon.Value{"a": tenon.Unknown(str), "b": tenon.String("z")}),
+				tenon.Map(str, map[string]tenon.Value{"a": tenon.String("x"), "b": tenon.String("y")}),
 			},
 		} {
 			if got := tenon.Equals(pair[0], pair[1]).String(); got != "false" {
@@ -355,7 +355,7 @@ func TestConformance_EQ003_EqualsWithAnOperandThatIsNotKnown(t *testing.T) {
 // holds one value in common with every other range of its type.
 func TestConformance_EQ003_NullIsDecidedBeforeRangesAreCompared(t *testing.T) {
 	conformance.Covers(t, "EQ-003", "EQ-004", "EQ-042", "EQ-043", "UN-002", "UN-007")
-	num, set, lst := tenon.NumberType(), tenon.Set(tenon.NumberType()), tenon.List(tenon.NumberType())
+	num, set, lst := tenon.NumberType(), tenon.SetType(tenon.NumberType()), tenon.ListType(tenon.NumberType())
 	n := func(i int64) tenon.Value { return tenon.NumberFromInt(i) }
 	// a and b hold no number in common, and each still holds null.
 	a := tenon.Narrow(tenon.Unknown(num), tenon.NumberMin(n(5), true))
@@ -367,10 +367,10 @@ func TestConformance_EQ003_NullIsDecidedBeforeRangesAreCompared(t *testing.T) {
 		t.Errorf("the other way about is %s, want %s", got, want)
 	}
 	// A set of the two holds one member if both are null, and two otherwise.
-	if got, want := tenon.Length(tenon.SetVal(num, a, b)).String(), "unknown(number, not null, >= 1, <= 2)"; got != want {
+	if got, want := tenon.Length(tenon.Set(num, a, b)).String(), "unknown(number, not null, >= 1, <= 2)"; got != want {
 		t.Errorf("the length of a set of the two is %s, want %s", got, want)
 	}
-	if got := tenon.Contains(tenon.SetVal(num, a), b); got.IsKnown() {
+	if got := tenon.Contains(tenon.Set(num, a), b); got.IsKnown() {
 		t.Errorf("membership of one in a set of the other is %v, want an unknown Bool", got)
 	}
 	// The set {null} satisfies a listing of the two at a length of one, so the
@@ -379,7 +379,7 @@ func TestConformance_EQ003_NullIsDecidedBeforeRangesAreCompared(t *testing.T) {
 		t.Errorf("listing two members that could be one member is %v, want a range", got)
 	}
 	// A set that could hold one member converts to a tuple of one.
-	if got := tenon.Convert(tenon.SetVal(num, a, b), tenon.TupleOf(tenon.Any()), tenon.Unsafe); got.IsError() {
+	if got := tenon.Convert(tenon.Set(num, a, b), tenon.TupleOf(tenon.Any()), tenon.Unsafe); got.IsError() {
 		t.Errorf("converting a set of the two to a tuple of one is %v, want a value", got)
 	}
 	// Lengths that cannot meet say no more than bounds that cannot, since the
@@ -399,13 +399,13 @@ func TestConformance_EQ003_NullIsDecidedBeforeRangesAreCompared(t *testing.T) {
 	if got, want := tenon.Equals(an, b).String(), "false"; got != want {
 		t.Errorf("a disjoint range against one that could be null is %s equal, want %s", got, want)
 	}
-	if got, want := tenon.Length(tenon.SetVal(num, an, bn)).String(), "2"; got != want {
+	if got, want := tenon.Length(tenon.Set(num, an, bn)).String(), "2"; got != want {
 		t.Errorf("the length of a set of two that cannot be null is %s, want %s", got, want)
 	}
 	// Two listed values that cannot be one need two members, which a set
 	// holding one has not got; the same two while each could still be null
 	// could both be null, which is one member.
-	one := tenon.SetVal(num, tenon.Unknown(num))
+	one := tenon.Set(num, tenon.Unknown(num))
 	if got := tenon.Narrow(one, tenon.Members(an, bn)); !got.IsError() {
 		t.Errorf("a set of one narrowed by two members that cannot be one is %v, want a contradiction", got)
 	}
@@ -417,36 +417,36 @@ func TestConformance_EQ003_NullIsDecidedBeforeRangesAreCompared(t *testing.T) {
 func TestConformance_EQ004_EqualsAndNull(t *testing.T) {
 	conformance.Covers(t, "EQ-004")
 	str, num := tenon.StringType(), tenon.NumberType()
-	null := tenon.NullVal(str)
-	untypedNull := tenon.Narrow(tenon.Pending(tenon.Any()), tenon.Null())
+	null := tenon.Null(str)
+	untypedNull := tenon.Narrow(tenon.Pending(tenon.Any()), tenon.NullOnly())
 	for _, tt := range []struct {
 		name string
 		a, b tenon.Value
 		want string
 	}{
-		{"two nulls of one type", null, tenon.NullVal(str), "true"},
+		{"two nulls of one type", null, tenon.Null(str), "true"},
 		{"null and a value of its type", null, tenon.String("x"), "false"},
 		{"null and a value of another type", null, tenon.NumberFromInt(1), "false"},
-		{"null and a list, which is not null", tenon.NullVal(tenon.List(str)), tenon.ListVal(str), "false"},
+		{"null and a list, which is not null", tenon.Null(tenon.ListType(str)), tenon.List(str), "false"},
 		// An unknown that has given up null cannot be it; one that has not
 		// might still turn out to be.
 		{"null and an unknown that cannot be null", null, tenon.Narrow(tenon.Unknown(str), tenon.NotNull()), "false"},
 		{"null and an unknown that may be null", null, tenon.Unknown(str), "unknown(bool, not null)"},
-		{"null and a pending known not to be null", tenon.NullVal(num), tenon.Narrow(tenon.Pending(tenon.Exactly(num)), tenon.NotNull()), "false"},
+		{"null and a pending known not to be null", tenon.Null(num), tenon.Narrow(tenon.Pending(tenon.Exactly(num)), tenon.NotNull()), "false"},
 		// A pending value known to be null is null, whatever its type turns
 		// out to be: it never equals a value that cannot be null, and it
 		// equals a null of the type its constraint names.
 		{"a value and a pending known to be null", tenon.NumberFromInt(1), untypedNull, "false"},
-		{"a list and a pending known to be null", tenon.ListVal(str), untypedNull, "false"},
+		{"a list and a pending known to be null", tenon.List(str), untypedNull, "false"},
 		{"an unknown that cannot be null and a pending known to be null", tenon.Narrow(tenon.Unknown(str), tenon.NotNull()), untypedNull, "false"},
 		{"null and a pending of any type known not to be null", null, tenon.Narrow(tenon.Pending(tenon.Any()), tenon.NotNull()), "false"},
-		{"null and a pending known to be null of its type", null, tenon.Narrow(tenon.Pending(tenon.Exactly(str)), tenon.Null()), "true"},
-		{"null and a pending known to be null of another type", null, tenon.Narrow(tenon.Pending(tenon.Exactly(num)), tenon.Null()), "false"},
+		{"null and a pending known to be null of its type", null, tenon.Narrow(tenon.Pending(tenon.Exactly(str)), tenon.NullOnly()), "true"},
+		{"null and a pending known to be null of another type", null, tenon.Narrow(tenon.Pending(tenon.Exactly(num)), tenon.NullOnly()), "false"},
 		{"null and a pending known to be null of any type", null, untypedNull, "unknown(bool, not null)"},
 		{
 			"two pendings known to be null of one named type",
-			tenon.Narrow(tenon.Pending(tenon.Exactly(num)), tenon.Null()),
-			tenon.Narrow(tenon.Pending(tenon.Exactly(num)), tenon.Null()),
+			tenon.Narrow(tenon.Pending(tenon.Exactly(num)), tenon.NullOnly()),
+			tenon.Narrow(tenon.Pending(tenon.Exactly(num)), tenon.NullOnly()),
 			"true",
 		},
 		{"two pendings known to be null of any type", untypedNull, untypedNull, "unknown(bool, not null)"},
@@ -469,10 +469,10 @@ func TestConformance_EQ005_ValuesOfDifferentTypes(t *testing.T) {
 	}{
 		{"a number and a string", tenon.NumberFromInt(1), tenon.String("1")},
 		{"a bool and a number", tenon.Bool(true), tenon.NumberFromInt(1)},
-		{"a list and a set of one element type", tenon.ListVal(str), tenon.SetVal(str)},
-		{"lists of different element types", tenon.ListVal(str), tenon.ListVal(num)},
-		{"a tuple and a list that look alike", tenon.TupleVal(tenon.String("a")), tenon.ListVal(str, tenon.String("a"))},
-		{"nulls of different types", tenon.NullVal(str), tenon.NullVal(num)},
+		{"a list and a set of one element type", tenon.List(str), tenon.Set(str)},
+		{"lists of different element types", tenon.List(str), tenon.List(num)},
+		{"a tuple and a list that look alike", tenon.Tuple(tenon.String("a")), tenon.List(str, tenon.String("a"))},
+		{"nulls of different types", tenon.Null(str), tenon.Null(num)},
 		{"an unknown and a value of another type", tenon.Unknown(str), tenon.NumberFromInt(1)},
 		// A pending value whose constraint no type of the other operand's
 		// satisfies will have another type, whatever it turns out to be.
@@ -509,7 +509,7 @@ func TestConformance_UN023_EqualsWithAPendingOperand(t *testing.T) {
 		{"a value and a pending", tenon.Equals(tenon.NumberFromInt(1), pending)},
 		{"two pendings", tenon.Equals(pending, pending)},
 		{"an unknown and a pending", tenon.Equals(tenon.Unknown(num), pending)},
-		{"a null and a pending that may be null", tenon.Equals(tenon.NullVal(num), pending)},
+		{"a null and a pending that may be null", tenon.Equals(tenon.Null(num), pending)},
 		{"two pendings that could share a type", tenon.Equals(anyList, tenon.Pending(tenon.ListOf(tenon.Exactly(num))))},
 		{"a pending list and a pending that could be one", tenon.Equals(anyList, tenon.Pending(tenon.OneOf(tenon.Exactly(num), tenon.ListOf(tenon.Any()))))},
 	} {
@@ -532,7 +532,7 @@ func TestConformance_UN023_EqualsWithAPendingOperand(t *testing.T) {
 	}{
 		{"a pending string and a number", tenon.Equals(tenon.Pending(tenon.Exactly(str)), tenon.NumberFromInt(1))},
 		{"a pending list and a number", tenon.Equals(anyList, tenon.NumberFromInt(1))},
-		{"a pending known to be null and a number", tenon.Equals(tenon.Narrow(pending, tenon.Null()), tenon.NumberFromInt(1))},
+		{"a pending known to be null and a number", tenon.Equals(tenon.Narrow(pending, tenon.NullOnly()), tenon.NumberFromInt(1))},
 		{"a pending list and a pending set", tenon.Equals(anyList, tenon.Pending(tenon.SetOf(tenon.Any())))},
 		{
 			"two pendings of one of several types each, none of them shared",
@@ -549,16 +549,16 @@ func TestConformance_UN023_EqualsWithAPendingOperand(t *testing.T) {
 	}
 	// A pending value known to be null equals the null of the one type its
 	// constraint admits, however the constraint names that type.
-	empty := tenon.Tuple()
+	empty := tenon.TupleType()
 	for _, tt := range []struct {
 		name string
 		got  tenon.Value
 	}{
-		{"exactly the empty tuple", tenon.Equals(tenon.Narrow(tenon.Pending(tenon.Exactly(empty)), tenon.Null()), tenon.NullVal(empty))},
-		{"a tuple of nothing", tenon.Equals(tenon.Narrow(tenon.Pending(tenon.TupleOf()), tenon.Null()), tenon.NullVal(empty))},
+		{"exactly the empty tuple", tenon.Equals(tenon.Narrow(tenon.Pending(tenon.Exactly(empty)), tenon.NullOnly()), tenon.Null(empty))},
+		{"a tuple of nothing", tenon.Equals(tenon.Narrow(tenon.Pending(tenon.TupleOf()), tenon.NullOnly()), tenon.Null(empty))},
 		{
 			"two pendings, each written its own way",
-			tenon.Equals(tenon.Narrow(tenon.Pending(tenon.TupleOf()), tenon.Null()), tenon.Narrow(tenon.Pending(tenon.OneOf(tenon.Exactly(empty))), tenon.Null())),
+			tenon.Equals(tenon.Narrow(tenon.Pending(tenon.TupleOf()), tenon.NullOnly()), tenon.Narrow(tenon.Pending(tenon.OneOf(tenon.Exactly(empty))), tenon.NullOnly())),
 		},
 	} {
 		if got := tt.got.String(); got != "true" {
@@ -586,7 +586,7 @@ func TestConformance_EQ003_EqualsDecidesOnlyWhatCannotChange(t *testing.T) {
 
 	// Pending operands, against every resolved value of the generator: a
 	// settled answer must hold for every type the pending value can take.
-	types := []tenon.Type{bl, num, str, tenon.List(str), tenon.Set(str), tenon.Map(num), tenon.Tuple(), tenon.Object(nil)}
+	types := []tenon.Type{bl, num, str, tenon.ListType(str), tenon.SetType(str), tenon.MapType(num), tenon.TupleType(), tenon.ObjectType(nil)}
 	type pending struct {
 		p       tenon.Value
 		c       tenon.Constraint
@@ -596,11 +596,11 @@ func TestConformance_EQ003_EqualsDecidesOnlyWhatCannotChange(t *testing.T) {
 	for _, c := range []tenon.Constraint{
 		tenon.Any(), tenon.Exactly(num), tenon.Exactly(str),
 		tenon.OneOf(tenon.Exactly(str), tenon.Exactly(bl)), tenon.ListOf(tenon.Any()),
-		tenon.SetOf(tenon.Any()), tenon.TupleOf(), tenon.OneOf(tenon.Exactly(tenon.Tuple())),
+		tenon.SetOf(tenon.Any()), tenon.TupleOf(), tenon.OneOf(tenon.Exactly(tenon.TupleType())),
 		tenon.OneOf(tenon.Exactly(num), tenon.SetOf(tenon.Any())),
 	} {
 		p := tenon.Pending(c)
-		pendings = append(pendings, pending{p, c, false}, pending{tenon.Narrow(p, tenon.Null()), c, false}, pending{tenon.Narrow(p, tenon.NotNull()), c, true})
+		pendings = append(pendings, pending{p, c, false}, pending{tenon.Narrow(p, tenon.NullOnly()), c, false}, pending{tenon.Narrow(p, tenon.NotNull()), c, true})
 	}
 	checked := 0
 	for _, pc := range pendings {
@@ -696,7 +696,7 @@ func TestConformance_EQ003_EqualsDecidesOnlyWhatCannotChange(t *testing.T) {
 				elems[i] = tenon.Narrow(tenon.Unknown(num), tenon.NotNull(), tenon.NumberMin(n(m.lo), true), tenon.NumberMax(n(m.hi), true))
 			}
 		}
-		return tenon.SetVal(num, elems...)
+		return tenon.Set(num, elems...)
 	}
 	// choices returns every set spec can turn out to be, each marked with
 	// whether some member of it was chosen null.
@@ -709,11 +709,11 @@ func TestConformance_EQ003_EqualsDecidesOnlyWhatCannotChange(t *testing.T) {
 		var walk func(i int, picked []tenon.Value, sawNull bool)
 		walk = func(i int, picked []tenon.Value, sawNull bool) {
 			if i == len(spec) {
-				out = append(out, choice{tenon.SetVal(num, picked...), sawNull})
+				out = append(out, choice{tenon.Set(num, picked...), sawNull})
 				return
 			}
 			if spec[i].null {
-				walk(i+1, append(slices.Clone(picked), tenon.NullVal(num)), true)
+				walk(i+1, append(slices.Clone(picked), tenon.Null(num)), true)
 			}
 			for v := spec[i].lo; v <= spec[i].hi; v++ {
 				walk(i+1, append(slices.Clone(picked), n(v)), sawNull)
@@ -747,7 +747,7 @@ func TestConformance_EQ003_EqualsDecidesOnlyWhatCannotChange(t *testing.T) {
 	// where Equals settles false, no set the other could be satisfies the
 	// narrowings. Every listing is generated both with and without NotNull,
 	// since a range that has not ruled null out still holds the null set, and
-	// a narrowing other than Null and NotNull says nothing about null.
+	// a narrowing other than NullOnly and NotNull says nothing about null.
 	var ranges [][]tenon.Narrowing
 	for lo := int64(0); lo <= 3; lo++ {
 		for hi := int64(-1); hi <= 3; hi++ {
@@ -769,10 +769,10 @@ func TestConformance_EQ003_EqualsDecidesOnlyWhatCannotChange(t *testing.T) {
 			}
 		}
 	}
-	nullSet := tenon.NullVal(tenon.Set(num))
+	nullSet := tenon.Null(tenon.SetType(num))
 	settledRanges, nullRanges := 0, 0
 	for _, ns := range ranges {
-		r := tenon.Narrow(tenon.Unknown(tenon.Set(num)), ns...)
+		r := tenon.Narrow(tenon.Unknown(tenon.SetType(num)), ns...)
 		if r.IsError() || r.IsKnown() {
 			continue
 		}
@@ -837,18 +837,18 @@ func TestConformance_EQ002_AKnownValueEqualsItselfAtOnce(t *testing.T) {
 		entries[fmt.Sprintf("a%04d", i)] = m
 	}
 	parts := map[string]tenon.Value{
-		"list":   tenon.ListVal(counted.Type(), members...),
-		"set":    tenon.SetVal(counted.Type(), members...),
-		"map":    tenon.MapVal(counted.Type(), entries),
-		"tuple":  tenon.TupleVal(members...),
-		"object": tenon.ObjectVal(entries),
+		"list":   tenon.List(counted.Type(), members...),
+		"set":    tenon.Set(counted.Type(), members...),
+		"map":    tenon.Map(counted.Type(), entries),
+		"tuple":  tenon.Tuple(members...),
+		"object": tenon.Object(entries),
 	}
-	whole := tenon.ObjectVal(parts)
+	whole := tenon.Object(parts)
 	// A prior value and two planned ones sharing its parts. Attributes are
 	// held in name order, so the parts are compared before the version.
-	prior := tenon.ObjectVal(map[string]tenon.Value{"parts": whole, "version": tenon.NumberFromInt(1)})
-	rewritten := tenon.ObjectVal(map[string]tenon.Value{"parts": whole, "version": tenon.NumberFromText("1.0")})
-	moved := tenon.ObjectVal(map[string]tenon.Value{"parts": whole, "version": tenon.NumberFromInt(2)})
+	prior := tenon.Object(map[string]tenon.Value{"parts": whole, "version": tenon.NumberFromInt(1)})
+	rewritten := tenon.Object(map[string]tenon.Value{"parts": whole, "version": tenon.NumberFromText("1.0")})
+	moved := tenon.Object(map[string]tenon.Value{"parts": whole, "version": tenon.NumberFromInt(2)})
 	for _, tt := range []struct {
 		name string
 		a, b tenon.Value
@@ -875,7 +875,7 @@ func TestConformance_EQ002_AKnownValueEqualsItselfAtOnce(t *testing.T) {
 	// The count is real: the same members built apart are other values, and
 	// are compared one by one.
 	asked = 0
-	if got := tenon.Equals(parts["list"], tenon.ListVal(counted.Type(), built()...)).String(); got != "true" || asked < size {
+	if got := tenon.Equals(parts["list"], tenon.List(counted.Type(), built()...)).String(); got != "true" || asked < size {
 		t.Errorf("a list and its members built apart: Equals gave %s after asking %d times, want true after %d", got, asked, size)
 	}
 }
@@ -897,16 +897,16 @@ func TestConformance_EQ003_AValueComparedWithItself(t *testing.T) {
 		v    tenon.Value
 		want string
 	}{
-		{"a known value", tenon.ListVal(num, n(1), n(2)), "true"},
-		{"null", tenon.NullVal(num), "true"},
+		{"a known value", tenon.List(num, n(1), n(2)), "true"},
+		{"null", tenon.Null(num), "true"},
 		{"an unknown", unknown, "unknown(bool, not null)"},
 		{"an unknown that cannot be null", tenon.Narrow(unknown, tenon.NotNull()), "unknown(bool, not null)"},
-		{"a partly known list", tenon.ListVal(num, n(1), unknown), "unknown(bool, not null)"},
-		{"a partly known set", tenon.SetVal(num, n(1), unknown), "unknown(bool, not null)"},
-		{"a partly known object", tenon.ObjectVal(map[string]tenon.Value{"a": n(1), "b": unknown}), "unknown(bool, not null)"},
+		{"a partly known list", tenon.List(num, n(1), unknown), "unknown(bool, not null)"},
+		{"a partly known set", tenon.Set(num, n(1), unknown), "unknown(bool, not null)"},
+		{"a partly known object", tenon.Object(map[string]tenon.Value{"a": n(1), "b": unknown}), "unknown(bool, not null)"},
 		{
 			"a list holding a partly known list",
-			tenon.ListVal(tenon.List(num), tenon.ListVal(num, n(1)), tenon.ListVal(num, unknown)),
+			tenon.List(tenon.ListType(num), tenon.List(num, n(1)), tenon.List(num, unknown)),
 			"unknown(bool, not null)",
 		},
 		{"a pending value", tenon.Pending(tenon.Any()), "unknown(bool, not null)"},
@@ -926,7 +926,7 @@ func TestConformance_EQ003_AValueComparedWithItself(t *testing.T) {
 	// The result carries the Propagate marks of the value and of what it
 	// holds, which equality reads, and not its Isolate mark.
 	own, held, iso := stamp{id: "own"}, stamp{id: "held"}, stamp{id: "iso", policy: tenon.Isolate}
-	marked := tenon.WithMarks(tenon.ListVal(num, n(1), tenon.WithMarks(n(2), held)), own, iso)
+	marked := tenon.WithMarks(tenon.List(num, n(1), tenon.WithMarks(n(2), held)), own, iso)
 	if got, marks := tenon.Unmark(tenon.Equals(marked, marked)); got.String() != "true" || !slices.Equal(marks, []tenon.Mark{held, own}) {
 		t.Errorf("a marked value compared with itself is %v carrying %v, want true carrying held and own", got, marks)
 	}
@@ -960,15 +960,15 @@ func BenchmarkEqualsSharedParts(b *testing.B) {
 	for _, size := range []int{1000, 4000} {
 		resources := make([]tenon.Value, size)
 		for i := range resources {
-			resources[i] = tenon.ObjectVal(map[string]tenon.Value{
+			resources[i] = tenon.Object(map[string]tenon.Value{
 				"name":  tenon.String(fmt.Sprintf("r%05d", i)),
 				"count": tenon.NumberFromInt(int64(i)),
-				"tags":  tenon.ListVal(str, tenon.String("a"), tenon.String("b")),
+				"tags":  tenon.List(str, tenon.String("a"), tenon.String("b")),
 			})
 		}
-		shared := tenon.ListVal(resources[0].Type(), resources...)
-		prior := tenon.ObjectVal(map[string]tenon.Value{"resources": shared, "version": tenon.NumberFromInt(1)})
-		planned := tenon.ObjectVal(map[string]tenon.Value{"resources": shared, "version": tenon.NumberFromText("1.0")})
+		shared := tenon.List(resources[0].Type(), resources...)
+		prior := tenon.Object(map[string]tenon.Value{"resources": shared, "version": tenon.NumberFromInt(1)})
+		planned := tenon.Object(map[string]tenon.Value{"resources": shared, "version": tenon.NumberFromText("1.0")})
 		for _, shape := range []struct {
 			name string
 			a, b tenon.Value

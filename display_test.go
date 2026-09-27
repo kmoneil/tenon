@@ -41,22 +41,22 @@ func TestConformance_DI010_EveryValueHasADisplayForm(t *testing.T) {
 			`error(number.divide_by_zero: "division by zero" at .a[0]; app.failed: "it failed")`},
 		{"a pending value", tenon.Pending(tenon.Any()), `pending(any)`},
 		{"a pending value known not to be null", tenon.Narrow(tenon.Pending(tenon.ListOf(tenon.Exactly(num))), tenon.NotNull()), `pending(list_of(exactly(number)), not null)`},
-		{"a pending value known to be null", tenon.Narrow(tenon.Pending(tenon.Any()), tenon.Null()), `pending(any, null)`},
-		{"a null", tenon.NullVal(tenon.Map(num)), `null(map(number))`},
+		{"a pending value known to be null", tenon.Narrow(tenon.Pending(tenon.Any()), tenon.NullOnly()), `pending(any, null)`},
+		{"a null", tenon.Null(tenon.MapType(num)), `null(map(number))`},
 		{"an unknown value", tenon.Unknown(str), `unknown(string)`},
 		{"an unknown value with facts", tenon.Narrow(tenon.Unknown(num), tenon.NotNull(), tenon.NumberMin(one, false)), `unknown(number, not null, > 1)`},
 		{"false", tenon.Bool(false), `false`},
 		{"a number", tenon.NumberFromText("-12.50e-1"), `-1.25`},
 		{"a large number", tenon.NumberFromText("1e21"), `1e21`},
 		{"a string", tenon.String(`say "hi"`), `"say \"hi\""`},
-		{"a list", tenon.ListVal(num, one, tenon.Unknown(num)), `list(number)[1, unknown(number)]`},
-		{"an empty list", tenon.ListVal(str), `list(string)[]`},
-		{"a set", tenon.SetVal(num, tenon.NumberFromInt(2), one), `set(number)[1, 2]`},
-		{"a map", tenon.MapVal(num, map[string]tenon.Value{"b": one, "a": tenon.NullVal(num)}), `map(number){"a": null(number), "b": 1}`},
-		{"a tuple", tenon.TupleVal(one, tenon.String("x"), tenon.NullVal(str)), `[1, "x", null(string)]`},
-		{"an empty tuple", tenon.TupleVal(), `[]`},
-		{"an object", tenon.ObjectVal(map[string]tenon.Value{"name": tenon.String("x"), "list": tenon.ListVal(num)}), `{"list": list(number)[], "name": "x"}`},
-		{"an empty object", tenon.ObjectVal(nil), `{}`},
+		{"a list", tenon.List(num, one, tenon.Unknown(num)), `list(number)[1, unknown(number)]`},
+		{"an empty list", tenon.List(str), `list(string)[]`},
+		{"a set", tenon.Set(num, tenon.NumberFromInt(2), one), `set(number)[1, 2]`},
+		{"a map", tenon.Map(num, map[string]tenon.Value{"b": one, "a": tenon.Null(num)}), `map(number){"a": null(number), "b": 1}`},
+		{"a tuple", tenon.Tuple(one, tenon.String("x"), tenon.Null(str)), `[1, "x", null(string)]`},
+		{"an empty tuple", tenon.Tuple(), `[]`},
+		{"an object", tenon.Object(map[string]tenon.Value{"name": tenon.String("x"), "list": tenon.List(num)}), `{"list": list(number)[], "name": "x"}`},
+		{"an empty object", tenon.Object(nil), `{}`},
 		{"a capsule value", tenon.NewCapsule("spot", tenon.CapsuleOps[spot]{}).Value(&spot{1, 2}), `capsule("spot")`},
 		{"a marked value", tenon.WithMarks(one, stamp{id: "m"}), `marked(1, "m")`},
 		{"a redacted value", tenon.WithMarks(one, stamp{id: "s", redact: true}), `redacted("s")`},
@@ -91,11 +91,11 @@ func TestConformance_DI011_DisplayTellsValuesApart(t *testing.T) {
 	one := tenon.NumberFromInt(1)
 	for _, pair := range [][2]tenon.Value{
 		{one, tenon.WithMarks(one, stamp{id: "m"})},
-		{tenon.NullVal(num), tenon.NullVal(str)},
-		{tenon.TupleVal(), tenon.ListVal(num)},
-		{tenon.ListVal(num), tenon.ListVal(str)},
-		{tenon.ListVal(num, one), tenon.SetVal(num, one)},
-		{tenon.ObjectVal(map[string]tenon.Value{"a": one}), tenon.MapVal(num, map[string]tenon.Value{"a": one})},
+		{tenon.Null(num), tenon.Null(str)},
+		{tenon.Tuple(), tenon.List(num)},
+		{tenon.List(num), tenon.List(str)},
+		{tenon.List(num, one), tenon.Set(num, one)},
+		{tenon.Object(map[string]tenon.Value{"a": one}), tenon.Map(num, map[string]tenon.Value{"a": one})},
 		{tenon.Unknown(num), tenon.Narrow(tenon.Unknown(num), tenon.NotNull())},
 		{tenon.Pending(tenon.Any()), tenon.Narrow(tenon.Pending(tenon.Any()), tenon.NotNull())},
 		{tenon.String("a b"), tenon.String("a\U000000A0b")},
@@ -162,8 +162,8 @@ func TestConformance_DI012_QuotedText(t *testing.T) {
 		got  interface{ String() string }
 		want string
 	}{
-		{"a map key", tenon.MapVal(num, map[string]tenon.Value{zw: tenon.NumberFromInt(1)}), `map(number){` + quoted + `: 1}`},
-		{"an attribute name", tenon.Object(map[string]tenon.Type{zw: num}), `object({` + quoted + `: number})`},
+		{"a map key", tenon.Map(num, map[string]tenon.Value{zw: tenon.NumberFromInt(1)}), `map(number){` + quoted + `: 1}`},
+		{"an attribute name", tenon.ObjectType(map[string]tenon.Type{zw: num}), `object({` + quoted + `: number})`},
 		{"a mark identifier", tenon.WithMarks(tenon.Bool(true), stamp{id: zw}), `marked(true, ` + quoted + `)`},
 		{"a capsule", capsule.Value(&spot{}), `capsule(` + quoted + `, ` + quoted + `)`},
 		{"a message", tenon.ErrorVal(tenon.Diagnostic{Code: "app.failed", Message: zw}), `error(app.failed: ` + quoted + `)`},
@@ -209,12 +209,12 @@ func TestConformance_DI014_TypeAndConstraintDisplay(t *testing.T) {
 		want string
 	}{
 		{"bool", boo, `bool`},
-		{"a list", tenon.List(num), `list(number)`},
-		{"a set of maps", tenon.Set(tenon.Map(str)), `set(map(string))`},
-		{"a tuple", tenon.Tuple(num, str), `tuple([number, string])`},
-		{"the empty tuple", tenon.Tuple(), `tuple([])`},
-		{"an object", tenon.Object(map[string]tenon.Type{"b": num, "a b": str, "B": boo}), `object({"B": bool, "a b": string, "b": number})`},
-		{"the empty object", tenon.Object(nil), `object({})`},
+		{"a list", tenon.ListType(num), `list(number)`},
+		{"a set of maps", tenon.SetType(tenon.MapType(str)), `set(map(string))`},
+		{"a tuple", tenon.TupleType(num, str), `tuple([number, string])`},
+		{"the empty tuple", tenon.TupleType(), `tuple([])`},
+		{"an object", tenon.ObjectType(map[string]tenon.Type{"b": num, "a b": str, "B": boo}), `object({"B": bool, "a b": string, "b": number})`},
+		{"the empty object", tenon.ObjectType(nil), `object({})`},
 		{"a capsule type", tenon.NewCapsule("spot", tenon.CapsuleOps[spot]{}).Type(), `capsule("spot")`},
 		{"any", tenon.Any(), `any`},
 		{"exactly", tenon.Exactly(num), `exactly(number)`},
@@ -244,26 +244,26 @@ func TestConformance_DI015_MarksAndRedaction(t *testing.T) {
 	}{
 		{"marks in string order", tenon.WithMarks(one, stamp{id: "b"}, stamp{id: "a"}, stamp{id: "B"}), `marked(1, "B", "a", "b")`},
 		{"one identifier once", tenon.WithMarks(one, stamp{id: "m"}, stamp{id: "m", policy: tenon.Isolate}), `marked(1, "m")`},
-		{"a marked null", tenon.WithMarks(tenon.NullVal(num), stamp{id: "m"}), `marked(null(number), "m")`},
+		{"a marked null", tenon.WithMarks(tenon.Null(num), stamp{id: "m"}), `marked(null(number), "m")`},
 		{"a marked unknown", tenon.WithMarks(tenon.Narrow(tenon.Unknown(num), tenon.NotNull()), stamp{id: "m"}), `marked(unknown(number, not null), "m")`},
 		{"a marked pending value", tenon.WithMarks(tenon.Pending(tenon.Any()), stamp{id: "m"}), `marked(pending(any), "m")`},
-		{"a marked member", tenon.ListVal(num, one, tenon.WithMarks(one, stamp{id: "m"})), `list(number)[1, marked(1, "m")]`},
+		{"a marked member", tenon.List(num, one, tenon.WithMarks(one, stamp{id: "m"})), `list(number)[1, marked(1, "m")]`},
 		// A deep mark shows where it was attached, once: every value within
 		// carries it, and lists only the marks it carries beyond it.
-		{"a deep mark on a list", tenon.WithMarks(tenon.ListVal(num, one), deep), `marked(list(number)[1], "d")`},
-		{"a deep mark beside a member's own", tenon.WithMarks(tenon.ListVal(num, one, tenon.WithMarks(one, stamp{id: "m"})), deep),
+		{"a deep mark on a list", tenon.WithMarks(tenon.List(num, one), deep), `marked(list(number)[1], "d")`},
+		{"a deep mark beside a member's own", tenon.WithMarks(tenon.List(num, one, tenon.WithMarks(one, stamp{id: "m"})), deep),
 			`marked(list(number)[1, marked(1, "m")], "d")`},
-		{"deep marks at two levels", tenon.WithMarks(tenon.ListVal(tenon.List(num), tenon.WithMarks(tenon.ListVal(num, one), stamp{id: "e", deep: true})), deep),
+		{"deep marks at two levels", tenon.WithMarks(tenon.List(tenon.ListType(num), tenon.WithMarks(tenon.List(num, one), stamp{id: "e", deep: true})), deep),
 			`marked(list(list(number))[marked(list(number)[1], "e")], "d")`},
-		{"a deep mark on a set", tenon.WithMarks(tenon.SetVal(num, one), deep), `marked(set(number)[1], "d")`},
+		{"a deep mark on a set", tenon.WithMarks(tenon.Set(num, one), deep), `marked(set(number)[1], "d")`},
 		// A redacting mark withholds everything about the value but itself.
 		{"a redacted known value", tenon.WithMarks(one, secret), `redacted("s")`},
-		{"a redacted null", tenon.WithMarks(tenon.NullVal(str), secret), `redacted("s")`},
+		{"a redacted null", tenon.WithMarks(tenon.Null(str), secret), `redacted("s")`},
 		{"a redacted unknown", tenon.WithMarks(tenon.Narrow(tenon.Unknown(str), tenon.StringPrefix("ab")), secret), `redacted("s")`},
 		{"a redacted pending value", tenon.WithMarks(tenon.Pending(tenon.Any()), secret), `redacted("s")`},
 		{"other marks withheld too", tenon.WithMarks(one, secret, other, stamp{id: "m"}), `redacted("r", "s")`},
-		{"a redacted member", tenon.ObjectVal(map[string]tenon.Value{"a": one, "b": tenon.WithMarks(tenon.String("x"), secret)}), `{"a": 1, "b": redacted("s")}`},
-		{"a deep redacting mark", tenon.WithMarks(tenon.SetVal(str, tenon.String("x")), secretDeep), `redacted("s")`},
+		{"a redacted member", tenon.Object(map[string]tenon.Value{"a": one, "b": tenon.WithMarks(tenon.String("x"), secret)}), `{"a": 1, "b": redacted("s")}`},
+		{"a deep redacting mark", tenon.WithMarks(tenon.Set(str, tenon.String("x")), secretDeep), `redacted("s")`},
 		// An error value shows its diagnostics, which withheld what they had
 		// to, and all its marks.
 		{"a redacted error", tenon.WithMarks(tenon.ErrorVal(tenon.Diagnostic{Code: "app.failed", Message: "it failed"}), secret, stamp{id: "m"}),
@@ -273,7 +273,7 @@ func TestConformance_DI015_MarksAndRedaction(t *testing.T) {
 	}
 	// A set member read out of a deeply marked set carries the mark, and the
 	// set shows it once, on the set.
-	set := tenon.WithMarks(tenon.SetVal(num, one), deep)
+	set := tenon.WithMarks(tenon.Set(num, one), deep)
 	wantDisplay(t, "a member read out", set.Elements()[0], `marked(1, "d")`)
 }
 
@@ -285,8 +285,8 @@ func TestConformance_DI016_CapsuleDisplay(t *testing.T) {
 	})
 	wantDisplay(t, "a capsule declaring no display form", plain.Value(&spot{1, 2}), `capsule("spot")`)
 	wantDisplay(t, "a capsule declaring one", shown.Value(&spot{1, 2}), `capsule("shown spot", "*\n**")`)
-	wantDisplay(t, "a capsule within a list", tenon.ListVal(shown.Type(), shown.Value(&spot{0, 1})), `list(capsule("shown spot"))[capsule("shown spot", "\n*")]`)
-	wantDisplay(t, "a null capsule", tenon.NullVal(shown.Type()), `null(capsule("shown spot"))`)
+	wantDisplay(t, "a capsule within a list", tenon.List(shown.Type(), shown.Value(&spot{0, 1})), `list(capsule("shown spot"))[capsule("shown spot", "\n*")]`)
+	wantDisplay(t, "a null capsule", tenon.Null(shown.Type()), `null(capsule("shown spot"))`)
 }
 
 func TestConformance_DI017_OrderWithinADisplayForm(t *testing.T) {
@@ -298,16 +298,16 @@ func TestConformance_DI017_OrderWithinADisplayForm(t *testing.T) {
 		v    tenon.Value
 		want string
 	}{
-		{"list elements in order", tenon.ListVal(num, n(3), n(1), n(2)), `list(number)[3, 1, 2]`},
-		{"tuple elements in order", tenon.TupleVal(tenon.String("b"), n(1)), `["b", 1]`},
-		{"map keys in string order", tenon.MapVal(num, map[string]tenon.Value{"b": n(1), "B": n(2), "\U000000E9": n(3), "a": n(4)}),
+		{"list elements in order", tenon.List(num, n(3), n(1), n(2)), `list(number)[3, 1, 2]`},
+		{"tuple elements in order", tenon.Tuple(tenon.String("b"), n(1)), `["b", 1]`},
+		{"map keys in string order", tenon.Map(num, map[string]tenon.Value{"b": n(1), "B": n(2), "\U000000E9": n(3), "a": n(4)}),
 			"map(number){\"B\": 2, \"a\": 4, \"b\": 1, \"\U000000E9\": 3}"},
-		{"attributes in string order", tenon.ObjectVal(map[string]tenon.Value{"z": n(1), "Z": n(2), "_": n(3)}), `{"Z": 2, "_": 3, "z": 1}`},
-		{"set members in iteration order", tenon.SetVal(num, tenon.Unknown(num), n(10), tenon.NullVal(num), n(2)), `set(number)[null(number), 2, 10, unknown(number)]`},
+		{"attributes in string order", tenon.Object(map[string]tenon.Value{"z": n(1), "Z": n(2), "_": n(3)}), `{"Z": 2, "_": 3, "z": 1}`},
+		{"set members in iteration order", tenon.Set(num, tenon.Unknown(num), n(10), tenon.Null(num), n(2)), `set(number)[null(number), 2, 10, unknown(number)]`},
 		{"number facts", tenon.Narrow(tenon.Unknown(num), tenon.NumberMax(n(9), true), tenon.NumberMin(n(1), false), tenon.NotNull()), `unknown(number, not null, > 1, <= 9)`},
 		{"string facts", tenon.Narrow(tenon.Unknown(str), tenon.LengthMax(5), tenon.StringPrefix("ab-"), tenon.NotNull(), tenon.LengthMin(3)),
 			`unknown(string, not null, prefix "ab-", length >= 3, length <= 5)`},
-		{"members last", tenon.Narrow(tenon.Unknown(tenon.Set(num)), tenon.Members(n(2), tenon.Narrow(tenon.Unknown(num), tenon.NumberMin(n(5), true)), n(1)), tenon.LengthMax(4)),
+		{"members last", tenon.Narrow(tenon.Unknown(tenon.SetType(num)), tenon.Members(n(2), tenon.Narrow(tenon.Unknown(num), tenon.NumberMin(n(5), true)), n(1)), tenon.LengthMax(4)),
 			`unknown(set(number), length >= 2, length <= 4, members {1, 2, unknown(number, >= 5)})`},
 	} {
 		wantDisplay(t, tt.name, tt.v, tt.want)
@@ -329,12 +329,12 @@ func TestConformance_DI003_AMessageWritesNoMoreThanItShows(t *testing.T) {
 		for j := range k {
 			attrs[fmt.Sprintf("a%d", j)] = tenon.NumberType()
 		}
-		object := tenon.Object(attrs)
+		object := tenon.ObjectType(attrs)
 		nulls := make([]tenon.Value, k)
 		for j := range nulls {
-			nulls[j] = tenon.NullVal(object)
+			nulls[j] = tenon.Null(object)
 		}
-		v := tenon.ListVal(object, nulls...)
+		v := tenon.List(object, nulls...)
 		var r tenon.Value
 		var before, after runtime.MemStats
 		runtime.GC()
@@ -371,7 +371,7 @@ func TestConformance_DI015_DeepMarksDisplayOnce(t *testing.T) {
 			members[j] = tenon.WithMarks(tenon.NumberFromInt(int64(j)), stamp{id: fmt.Sprintf("own%05d", j)})
 			deep[j] = stamp{id: fmt.Sprintf("deep%05d", j), deep: true}
 		}
-		v := tenon.WithMarks(tenon.ListVal(tenon.NumberType(), members...), deep...)
+		v := tenon.WithMarks(tenon.List(tenon.NumberType(), members...), deep...)
 		var text string
 		var before, after runtime.MemStats
 		runtime.GC()

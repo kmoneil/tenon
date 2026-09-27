@@ -42,11 +42,11 @@ func TestConformance_TY010_TypeKinds(t *testing.T) {
 		{tenon.BoolType(), tenon.KindBool, "Bool"},
 		{tenon.NumberType(), tenon.KindNumber, "Number"},
 		{str, tenon.KindString, "String"},
-		{tenon.List(str), tenon.KindList, "List"},
-		{tenon.Set(str), tenon.KindSet, "Set"},
-		{tenon.Map(str), tenon.KindMap, "Map"},
-		{tenon.Object(map[string]tenon.Type{"a": str}), tenon.KindObject, "Object"},
-		{tenon.Tuple(str), tenon.KindTuple, "Tuple"},
+		{tenon.ListType(str), tenon.KindList, "List"},
+		{tenon.SetType(str), tenon.KindSet, "Set"},
+		{tenon.MapType(str), tenon.KindMap, "Map"},
+		{tenon.ObjectType(map[string]tenon.Type{"a": str}), tenon.KindObject, "Object"},
+		{tenon.TupleType(str), tenon.KindTuple, "Tuple"},
 		{sampleCapsule.Type(), tenon.KindCapsule, "Capsule"},
 	}
 	for _, tt := range tests {
@@ -70,8 +70,8 @@ func TestConformance_TY010_TypeKinds(t *testing.T) {
 
 func TestConformance_TY011_CollectionTypes(t *testing.T) {
 	conformance.Covers(t, "TY-011")
-	elem := tenon.List(tenon.NumberType())
-	for _, typ := range []tenon.Type{tenon.List(elem), tenon.Set(elem), tenon.Map(elem)} {
+	elem := tenon.ListType(tenon.NumberType())
+	for _, typ := range []tenon.Type{tenon.ListType(elem), tenon.SetType(elem), tenon.MapType(elem)} {
 		if !typ.IsCollection() || typ.IsStructural() {
 			t.Errorf("%v: IsCollection() = %t, IsStructural() = %t; want a collection type", typ, typ.IsCollection(), typ.IsStructural())
 		}
@@ -79,7 +79,7 @@ func TestConformance_TY011_CollectionTypes(t *testing.T) {
 			t.Errorf("%v: ElementType() = %v, want %v", typ, got, elem)
 		}
 	}
-	for _, typ := range []tenon.Type{tenon.BoolType(), tenon.StringType(), tenon.Object(nil), tenon.Tuple(elem)} {
+	for _, typ := range []tenon.Type{tenon.BoolType(), tenon.StringType(), tenon.ObjectType(nil), tenon.TupleType(elem)} {
 		if typ.IsCollection() {
 			t.Errorf("%v: IsCollection() = true", typ)
 		}
@@ -89,9 +89,9 @@ func TestConformance_TY011_CollectionTypes(t *testing.T) {
 
 func TestConformance_TY012_StructuralTypes(t *testing.T) {
 	conformance.Covers(t, "TY-012")
-	str, num, tags := tenon.StringType(), tenon.NumberType(), tenon.Set(tenon.StringType())
-	obj := tenon.Object(map[string]tenon.Type{"name": str, "count": num, "tags": tags})
-	tup := tenon.Tuple(str, num, tags)
+	str, num, tags := tenon.StringType(), tenon.NumberType(), tenon.SetType(tenon.StringType())
+	obj := tenon.ObjectType(map[string]tenon.Type{"name": str, "count": num, "tags": tags})
+	tup := tenon.TupleType(str, num, tags)
 	for _, typ := range []tenon.Type{obj, tup} {
 		if !typ.IsStructural() || typ.IsCollection() {
 			t.Errorf("%v: IsStructural() = %t, IsCollection() = %t; want a structural type", typ, typ.IsStructural(), typ.IsCollection())
@@ -118,7 +118,7 @@ func TestConformance_TY012_StructuralTypes(t *testing.T) {
 
 	mustPanicUsage(t, "whose kind is Tuple, not Object", func() { tup.AttributeNames() })
 	mustPanicUsage(t, "whose kind is Object, not Tuple", func() { obj.TupleLength() })
-	mustPanicUsage(t, "whose kind is List, not Object", func() { tenon.List(str).HasAttribute("name") })
+	mustPanicUsage(t, "whose kind is List, not Object", func() { tenon.ListType(str).HasAttribute("name") })
 	mustPanicUsage(t, `has no attribute "missing"`, func() { obj.AttributeType("missing") })
 	mustPanicUsage(t, "which has 3 elements", func() { tup.TupleElementType(3) })
 }
@@ -130,8 +130,8 @@ func TestConformance_TY013_AttributeNames(t *testing.T) {
 
 	// A name that is not in NFC and its NFC form construct equal types, and
 	// the name is kept in its normalized form.
-	fromDecomposed := tenon.Object(map[string]tenon.Type{decomposed: num})
-	fromComposed := tenon.Object(map[string]tenon.Type{composed: num})
+	fromDecomposed := tenon.ObjectType(map[string]tenon.Type{decomposed: num})
+	fromComposed := tenon.ObjectType(map[string]tenon.Type{composed: num})
 	if !fromDecomposed.Equal(fromComposed) {
 		t.Errorf("%v and %v are not equal", fromDecomposed, fromComposed)
 	}
@@ -149,11 +149,11 @@ func TestConformance_TY013_AttributeNames(t *testing.T) {
 
 	// Names are non-empty strings of Unicode scalar values, and one object
 	// type cannot have two attributes with the same name.
-	mustPanicUsage(t, "must not be empty", func() { tenon.Object(map[string]tenon.Type{"": num}) })
-	mustPanicUsage(t, "not valid UTF-8", func() { tenon.Object(map[string]tenon.Type{"a\xff": num}) })
-	mustPanicUsage(t, "not valid UTF-8", func() { tenon.Object(map[string]tenon.Type{"\xed\xa0\x80": num}) }) // a surrogate
+	mustPanicUsage(t, "must not be empty", func() { tenon.ObjectType(map[string]tenon.Type{"": num}) })
+	mustPanicUsage(t, "not valid UTF-8", func() { tenon.ObjectType(map[string]tenon.Type{"a\xff": num}) })
+	mustPanicUsage(t, "not valid UTF-8", func() { tenon.ObjectType(map[string]tenon.Type{"\xed\xa0\x80": num}) }) // a surrogate
 	mustPanicUsage(t, "the same name after normalization", func() {
-		tenon.Object(map[string]tenon.Type{composed: num, decomposed: tenon.StringType()})
+		tenon.ObjectType(map[string]tenon.Type{composed: num, decomposed: tenon.StringType()})
 	})
 }
 
@@ -162,9 +162,9 @@ func TestConformance_TY022_TypesImmutable(t *testing.T) {
 	str, num := tenon.StringType(), tenon.NumberType()
 
 	attrs := map[string]tenon.Type{"a": str}
-	obj := tenon.Object(attrs)
+	obj := tenon.ObjectType(attrs)
 	attrs["a"], attrs["b"] = num, num
-	if want := tenon.Object(map[string]tenon.Type{"a": str}); !obj.Equal(want) {
+	if want := tenon.ObjectType(map[string]tenon.Type{"a": str}); !obj.Equal(want) {
 		t.Errorf("changing the map passed to Object changed the type to %v", obj)
 	}
 	names := obj.AttributeNames()
@@ -174,7 +174,7 @@ func TestConformance_TY022_TypesImmutable(t *testing.T) {
 	}
 
 	elems := []tenon.Type{str, num}
-	tup := tenon.Tuple(elems...)
+	tup := tenon.TupleType(elems...)
 	elems[0] = num
 	if !tup.TupleElementType(0).Equal(str) {
 		t.Errorf("changing the slice passed to Tuple changed the type to %v", tup)
@@ -195,24 +195,24 @@ func TestConformance_TY022_TypesImmutable(t *testing.T) {
 
 func TestTypeEqual(t *testing.T) {
 	str, num := tenon.StringType(), tenon.NumberType()
-	object := func(attrs map[string]tenon.Type) tenon.Type { return tenon.Object(attrs) }
+	object := func(attrs map[string]tenon.Type) tenon.Type { return tenon.ObjectType(attrs) }
 	equal := [][2]tenon.Type{
 		{str, tenon.StringType()},
-		{tenon.List(tenon.Map(num)), tenon.List(tenon.Map(num))},
+		{tenon.ListType(tenon.MapType(num)), tenon.ListType(tenon.MapType(num))},
 		{object(map[string]tenon.Type{"a": str, "b": num}), object(map[string]tenon.Type{"b": num, "a": str})},
-		{tenon.Tuple(str, num), tenon.Tuple(str, num)},
-		{tenon.Tuple(), tenon.Tuple()},
+		{tenon.TupleType(str, num), tenon.TupleType(str, num)},
+		{tenon.TupleType(), tenon.TupleType()},
 		{object(nil), object(map[string]tenon.Type{})},
 	}
 	unequal := [][2]tenon.Type{
 		{str, num},
-		{tenon.List(str), tenon.Set(str)},
-		{tenon.List(str), tenon.List(num)},
+		{tenon.ListType(str), tenon.SetType(str)},
+		{tenon.ListType(str), tenon.ListType(num)},
 		{object(map[string]tenon.Type{"a": str}), object(map[string]tenon.Type{"a": num})},
 		{object(map[string]tenon.Type{"a": str}), object(map[string]tenon.Type{"a": str, "b": str})},
-		{tenon.Tuple(str, num), tenon.Tuple(num, str)},
-		{tenon.Tuple(str), tenon.Tuple(str, str)},
-		{tenon.Tuple(), object(nil)},
+		{tenon.TupleType(str, num), tenon.TupleType(num, str)},
+		{tenon.TupleType(str), tenon.TupleType(str, str)},
+		{tenon.TupleType(), object(nil)},
 	}
 	// Equals, deprecated until 1.0, answers as Equal does.
 	for _, p := range equal {
@@ -234,11 +234,11 @@ func TestTypeString(t *testing.T) {
 		want string
 	}{
 		{tenon.BoolType(), "bool"},
-		{tenon.Map(tenon.Set(num)), "map(set(number))"},
-		{tenon.Tuple(), "tuple([])"},
-		{tenon.Object(nil), "object({})"},
+		{tenon.MapType(tenon.SetType(num)), "map(set(number))"},
+		{tenon.TupleType(), "tuple([])"},
+		{tenon.ObjectType(nil), "object({})"},
 		{
-			tenon.Object(map[string]tenon.Type{"b": tenon.Tuple(tenon.BoolType(), num), "a": tenon.List(str)}),
+			tenon.ObjectType(map[string]tenon.Type{"b": tenon.TupleType(tenon.BoolType(), num), "a": tenon.ListType(str)}),
 			`object({"a": list(string), "b": tuple([bool, number])})`,
 		},
 		{tenon.Type{}, "<zero Type>"},
@@ -262,9 +262,9 @@ func TestZeroType(t *testing.T) {
 	if !zero.IsZero() || str.IsZero() {
 		t.Error("IsZero does not tell the zero Type from a type")
 	}
-	mustPanicUsage(t, "zero Type", func() { tenon.List(zero) })
-	mustPanicUsage(t, "zero Type", func() { tenon.Tuple(str, zero) })
-	mustPanicUsage(t, "zero Type", func() { tenon.Object(map[string]tenon.Type{"a": zero}) })
+	mustPanicUsage(t, "zero Type", func() { tenon.ListType(zero) })
+	mustPanicUsage(t, "zero Type", func() { tenon.TupleType(str, zero) })
+	mustPanicUsage(t, "zero Type", func() { tenon.ObjectType(map[string]tenon.Type{"a": zero}) })
 }
 
 // exportedFuncs returns the names of the package's exported functions whose
@@ -374,20 +374,20 @@ func TestConformance_TY001_EveryValueHasOneConcreteType(t *testing.T) {
 		"NumberFromText":    tenon.NumberFromText("1.5"),
 		"String":            tenon.String("x"),
 		"CapsuleType.Value": held.Value(&thing{}),
-		"NullVal":           tenon.NullVal(str),
+		"Null":              tenon.Null(str),
 		"Unknown":           tenon.Unknown(str),
-		"ListVal":           tenon.ListVal(str, tenon.String("a")),
-		"SetVal":            tenon.SetVal(str),
-		"MapVal":            tenon.MapVal(str, map[string]tenon.Value{"k": tenon.String("v")}),
-		"TupleVal":          tenon.TupleVal(one, tr),
-		"ObjectVal":         tenon.ObjectVal(map[string]tenon.Value{"a": one}),
+		"List":              tenon.List(str, tenon.String("a")),
+		"Set":               tenon.Set(str),
+		"Map":               tenon.Map(str, map[string]tenon.Value{"k": tenon.String("v")}),
+		"Tuple":             tenon.Tuple(one, tr),
+		"Object":            tenon.Object(map[string]tenon.Value{"a": one}),
 		"Narrow":            tenon.Narrow(tenon.Unknown(num), tenon.NotNull()),
 		"Resolve":           tenon.Resolve(tenon.Pending(tenon.Any()), str),
 		"And":               tenon.And(tr, tenon.Bool(false)),
 		"Equals":            tenon.Equals(one, one),
 		"LessThan":          tenon.LessThan(one, one),
-		"Length":            tenon.Length(tenon.ListVal(str, tenon.String("a"))),
-		"Contains":          tenon.Contains(tenon.SetVal(str), one),
+		"Length":            tenon.Length(tenon.List(str, tenon.String("a"))),
+		"Contains":          tenon.Contains(tenon.Set(str), one),
 		"Or":                tenon.Or(tr, tenon.Bool(false)),
 		"Not":               tenon.Not(tr),
 		"IsNull":            tenon.IsNull(one),
@@ -399,17 +399,17 @@ func TestConformance_TY001_EveryValueHasOneConcreteType(t *testing.T) {
 		"Convert":           tenon.Convert(one, tenon.Exactly(str), tenon.Unsafe),
 		"WithMarks":         tenon.WithMarks(one, stamp{id: "m"}),
 		"Unmark":            unmarked(tenon.WithMarks(one, stamp{id: "m"})),
-		"UnmarkDeep":        unmarkedDeep(tenon.ListVal(num, tenon.WithMarks(one, stamp{id: "m"}))),
+		"UnmarkDeep":        unmarkedDeep(tenon.List(num, tenon.WithMarks(one, stamp{id: "m"}))),
 	}
 	want := map[string]tenon.Type{
 		"Bool": bl, "NumberFromInt": num, "NumberFromBigInt": num, "NumberFromText": num, "String": str,
-		"CapsuleType.Value": held.Type(), "NullVal": str, "Unknown": str,
-		"ListVal": tenon.List(str), "SetVal": tenon.Set(str), "MapVal": tenon.Map(str),
-		"TupleVal": tenon.Tuple(num, bl), "ObjectVal": tenon.Object(map[string]tenon.Type{"a": num}),
+		"CapsuleType.Value": held.Type(), "Null": str, "Unknown": str,
+		"List": tenon.ListType(str), "Set": tenon.SetType(str), "Map": tenon.MapType(str),
+		"Tuple": tenon.TupleType(num, bl), "Object": tenon.ObjectType(map[string]tenon.Type{"a": num}),
 		"Narrow": num, "Resolve": str, "And": bl, "Or": bl, "Not": bl, "IsNull": bl,
 		"Equals": bl, "LessThan": bl, "Length": num, "Contains": bl,
 		"Add": num, "Sub": num, "Mul": num, "Div": num, "Mod": num, "Convert": str,
-		"WithMarks": num, "Unmark": num, "UnmarkDeep": tenon.List(num),
+		"WithMarks": num, "Unmark": num, "UnmarkDeep": tenon.ListType(num),
 	}
 	// A value with no type is the other half of the rule.
 	untyped := map[string]tenon.Value{
@@ -465,21 +465,21 @@ func TestConformance_TY002_NoWildcardInATypeAtAnyDepth(t *testing.T) {
 	// The package makes types in nine ways, one for each kind, and each takes
 	// types and names. There is no tenth that takes a constraint or a
 	// placeholder, and adding one would have to start here.
-	want := []string{"BoolType", "CapsuleType.Type", "List", "Map", "NumberType", "Object", "Set", "StringType", "Tuple"}
+	want := []string{"BoolType", "CapsuleType.Type", "ListType", "MapType", "NumberType", "ObjectType", "SetType", "StringType", "TupleType"}
 	if got := exportedFuncs(t, "Type"); !slices.Equal(got, want) {
 		t.Errorf("the package makes types with\n%q\nwant\n%q", got, want)
 	}
 	// Nesting the kinds as deeply as they go finds nothing that is not a kind.
 	str, bl := tenon.StringType(), tenon.BoolType()
-	deep := tenon.Object(map[string]tenon.Type{
-		"a": tenon.List(tenon.Map(tenon.Set(tenon.Tuple(str, tenon.List(bl))))),
+	deep := tenon.ObjectType(map[string]tenon.Type{
+		"a": tenon.ListType(tenon.MapType(tenon.SetType(tenon.TupleType(str, tenon.ListType(bl))))),
 	})
 	concrete(t, "a deeply nested type", deep)
 	// Optionality is an acceptance test, and stays on that side: a constraint
 	// can leave an attribute out, and the two object types it then answers for
 	// are different types, each of them concrete.
 	c := tenon.ObjectWith(map[string]tenon.Field{"a": tenon.Optional(tenon.Exactly(str))}, false)
-	with, without := tenon.Object(map[string]tenon.Type{"a": str}), tenon.Object(nil)
+	with, without := tenon.ObjectType(map[string]tenon.Type{"a": str}), tenon.ObjectType(nil)
 	if !tenon.Satisfies(c, with) || !tenon.Satisfies(c, without) {
 		t.Error("an optional field did not accept the object with and the object without")
 	}
@@ -496,8 +496,8 @@ func TestConformance_TY003_AcceptanceIsExpressedAsConstraints(t *testing.T) {
 	// A conversion target is a constraint: a value converts to a type the
 	// constraint accepts, an optional attribute absent from it included.
 	target := tenon.ObjectWith(map[string]tenon.Field{"tags": tenon.Optional(tenon.ListOf(tenon.Exactly(str)))}, true)
-	want := tenon.ObjectVal(map[string]tenon.Value{"tags": tenon.NullVal(tenon.List(str))})
-	if got := tenon.Convert(tenon.ObjectVal(nil), target, tenon.Safe); !tenon.Identical(got, want) {
+	want := tenon.Object(map[string]tenon.Value{"tags": tenon.Null(tenon.ListType(str))})
+	if got := tenon.Convert(tenon.Object(nil), target, tenon.Safe); !tenon.Identical(got, want) {
 		t.Errorf("converting an empty object to %v gave %v, want %v", target, got, want)
 	}
 	// A schema is a constraint, which is what lets it accept a set of types
@@ -510,10 +510,10 @@ func TestConformance_TY003_AcceptanceIsExpressedAsConstraints(t *testing.T) {
 		ty   tenon.Type
 		want bool
 	}{
-		{tenon.Object(map[string]tenon.Type{"name": str}), true},
-		{tenon.Object(map[string]tenon.Type{"name": str, "tags": tenon.List(str)}), true},
-		{tenon.Object(map[string]tenon.Type{"name": str, "tags": tenon.Set(str)}), false},
-		{tenon.Object(nil), false},
+		{tenon.ObjectType(map[string]tenon.Type{"name": str}), true},
+		{tenon.ObjectType(map[string]tenon.Type{"name": str, "tags": tenon.ListType(str)}), true},
+		{tenon.ObjectType(map[string]tenon.Type{"name": str, "tags": tenon.SetType(str)}), false},
+		{tenon.ObjectType(nil), false},
 	} {
 		if got := tenon.Satisfies(schema, tt.ty); got != tt.want {
 			t.Errorf("%v satisfies the schema: %t, want %t", tt.ty, got, tt.want)

@@ -29,7 +29,7 @@ func tryProjectJSON(v tenon.Value) ([]byte, tenon.Value, bool) {
 }
 
 func tryUnify(p tenon.Policy, cs ...tenon.Constraint) (tenon.Constraint, tenon.Value, bool) {
-	c, err := tenon.Unify(p, cs...)
+	c, err := tenon.Unify(cs, p)
 	failure, ok := failureOf(err)
 	return c, failure, ok
 }

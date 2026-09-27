@@ -31,30 +31,30 @@ func TestConformance_EQ010_IdenticalComparesEverything(t *testing.T) {
 		{"a string in two normal forms", tenon.String("e\U00000301"), tenon.String("\U000000e9"), true},
 		{
 			"a set given its members in either order",
-			tenon.SetVal(str, tenon.String("a"), tenon.String("b")),
-			tenon.SetVal(str, tenon.String("b"), tenon.String("a")),
+			tenon.Set(str, tenon.String("a"), tenon.String("b")),
+			tenon.Set(str, tenon.String("b"), tenon.String("a")),
 			true,
 		},
 		// A set holding an unknown member twice has a range that holding it
 		// once does not: it could have two members.
 		{
 			"a set holding an unknown twice and once",
-			tenon.SetVal(str, tenon.Unknown(str), tenon.Unknown(str)),
-			tenon.SetVal(str, tenon.Unknown(str)),
+			tenon.Set(str, tenon.Unknown(str), tenon.Unknown(str)),
+			tenon.Set(str, tenon.Unknown(str)),
 			false,
 		},
 		{
 			"sets holding an unknown twice, built apart",
-			tenon.SetVal(str, tenon.String("a"), tenon.Unknown(str), tenon.Unknown(str)),
-			tenon.SetVal(str, tenon.Unknown(str), tenon.String("a"), tenon.Unknown(str)),
+			tenon.Set(str, tenon.String("a"), tenon.Unknown(str), tenon.Unknown(str)),
+			tenon.Set(str, tenon.Unknown(str), tenon.String("a"), tenon.Unknown(str)),
 			true,
 		},
 		// The state is part of it.
 		{"a value and an unknown of its type", one, tenon.Unknown(num), false},
-		{"an unknown and a null", tenon.Unknown(str), tenon.NullVal(str), false},
+		{"an unknown and a null", tenon.Unknown(str), tenon.Null(str), false},
 		{"an error and a pending value", tenon.ErrorVal(failed), pending, false},
 		// The type is part of it.
-		{"nulls of different types", tenon.NullVal(str), tenon.NullVal(num), false},
+		{"nulls of different types", tenon.Null(str), tenon.Null(num), false},
 		{"unknowns of different types", tenon.Unknown(str), tenon.Unknown(num), false},
 		// The range is part of it, which is a question Equals cannot answer.
 		{"unknowns with one range", bounded(true), bounded(true), true},
@@ -78,7 +78,7 @@ func TestConformance_EQ010_IdenticalComparesEverything(t *testing.T) {
 		// A pending value is its constraint and what it says about null.
 		{"pendings with one constraint", tenon.Pending(tenon.Exactly(str)), tenon.Pending(tenon.Exactly(str)), true},
 		{"pendings with different constraints", tenon.Pending(tenon.Exactly(str)), pending, false},
-		{"pendings that differ about null", tenon.Narrow(pending, tenon.Null()), pending, false},
+		{"pendings that differ about null", tenon.Narrow(pending, tenon.NullOnly()), pending, false},
 		{
 			"pendings that agree about null",
 			tenon.Narrow(pending, tenon.NotNull()), tenon.Narrow(pending, tenon.NotNull()), true,
@@ -87,11 +87,11 @@ func TestConformance_EQ010_IdenticalComparesEverything(t *testing.T) {
 		// holding an unknown is identical to one holding the same unknown.
 		{
 			"lists holding one unknown",
-			tenon.ListVal(num, tenon.Unknown(num)), tenon.ListVal(num, tenon.Unknown(num)), true,
+			tenon.List(num, tenon.Unknown(num)), tenon.List(num, tenon.Unknown(num)), true,
 		},
 		{
 			"lists holding different unknowns",
-			tenon.ListVal(num, tenon.Unknown(num)), tenon.ListVal(num, bounded(true)), false,
+			tenon.List(num, tenon.Unknown(num)), tenon.List(num, bounded(true)), false,
 		},
 	} {
 		if got := tenon.Identical(tt.a, tt.b); got != tt.want {
@@ -119,7 +119,7 @@ func TestConformance_EQ010_IdenticalComparesEverything(t *testing.T) {
 func TestConformance_EQ010_RangesCompareByRecord(t *testing.T) {
 	conformance.Covers(t, "EQ-010", "UN-002", "SE-001")
 	num := tenon.NumberType()
-	set := tenon.Set(num)
+	set := tenon.SetType(num)
 	one := tenon.NumberFromInt(1)
 	atLeastZero := tenon.Narrow(tenon.Unknown(num), tenon.NotNull(), tenon.NumberMin(tenon.NumberFromInt(0), true))
 	// 1 is at least 0, so a set holding 1 holds a member the second
@@ -141,10 +141,10 @@ func TestConformance_EQ010_RangesCompareByRecord(t *testing.T) {
 		}
 	}
 	for _, s := range []tenon.Value{
-		tenon.SetVal(num, one),
-		tenon.SetVal(num, one, tenon.NumberFromInt(-1)),
-		tenon.SetVal(num, tenon.NumberFromInt(2)),
-		tenon.SetVal(num),
+		tenon.Set(num, one),
+		tenon.Set(num, one, tenon.NumberFromInt(-1)),
+		tenon.Set(num, tenon.NumberFromInt(2)),
+		tenon.Set(num),
 	} {
 		if x, y := tenon.Equals(implied, s), tenon.Equals(plain, s); !tenon.Identical(x, y) {
 			t.Errorf("against %v the two answer %v and %v, want them alike", s, x, y)
@@ -197,7 +197,7 @@ func TestConformance_EQ012_IdenticalDoesNotDependOnMapOrder(t *testing.T) {
 	attrs := map[string]tenon.Value{
 		"a": one,
 		"b": tenon.Unknown(num),
-		"c": tenon.NullVal(num),
+		"c": tenon.Null(num),
 		"d": tenon.Narrow(tenon.Unknown(num), tenon.NumberMin(one, true)),
 		"e": tenon.NumberFromInt(2),
 		"f": tenon.Unknown(num),
@@ -212,16 +212,16 @@ func TestConformance_EQ012_IdenticalDoesNotDependOnMapOrder(t *testing.T) {
 	// Objects and maps are built by walking a Go map, whose order changes from
 	// one walk to the next. The answer does not.
 	for i := range conformance.Iterations(t, 500) {
-		if !tenon.Identical(tenon.ObjectVal(attrs), tenon.ObjectVal(attrs)) {
+		if !tenon.Identical(tenon.Object(attrs), tenon.Object(attrs)) {
 			t.Fatalf("pass %d: two objects built from one map are not identical", i)
 		}
-		if tenon.Identical(tenon.ObjectVal(attrs), tenon.ObjectVal(differs)) {
+		if tenon.Identical(tenon.Object(attrs), tenon.Object(differs)) {
 			t.Fatalf("pass %d: two objects that differ in one attribute are identical", i)
 		}
-		if !tenon.Identical(tenon.MapVal(num, attrs), tenon.MapVal(num, attrs)) {
+		if !tenon.Identical(tenon.Map(num, attrs), tenon.Map(num, attrs)) {
 			t.Fatalf("pass %d: two maps built from one Go map are not identical", i)
 		}
-		if tenon.Identical(tenon.MapVal(num, attrs), tenon.MapVal(num, differs)) {
+		if tenon.Identical(tenon.Map(num, attrs), tenon.Map(num, differs)) {
 			t.Fatalf("pass %d: two maps that differ in one entry are identical", i)
 		}
 	}

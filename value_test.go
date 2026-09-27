@@ -25,7 +25,7 @@ func TestConformance_VA001_ThreeStates(t *testing.T) {
 		{tenon.NumberFromText("-1.5e3"), "resolved"},
 		{tenon.String("text"), "resolved"},
 		{holder.Value(&thing{}), "resolved"},
-		{tenon.NullVal(tenon.StringType()), "resolved"},
+		{tenon.Null(tenon.StringType()), "resolved"},
 		{tenon.Unknown(tenon.StringType()), "resolved"},
 		{tenon.String("\xff"), "error"},
 		{tenon.NumberFromText("1,000"), "error"},
@@ -111,16 +111,16 @@ func TestConformance_BO001_BoolDomain(t *testing.T) {
 
 func TestHasContent(t *testing.T) {
 	str := tenon.StringType()
-	partial := tenon.ListVal(str, tenon.Unknown(str))
+	partial := tenon.List(str, tenon.Unknown(str))
 	for _, tt := range []struct {
 		v    tenon.Value
 		want bool
 	}{
-		{tenon.ListVal(str, tenon.String("x")), true},
+		{tenon.List(str, tenon.String("x")), true},
 		{partial, true},
-		{tenon.WithMarks(tenon.ListVal(str), stamp{id: "m"}), true},
-		{tenon.NullVal(tenon.List(str)), false},
-		{tenon.Unknown(tenon.List(str)), false},
+		{tenon.WithMarks(tenon.List(str), stamp{id: "m"}), true},
+		{tenon.Null(tenon.ListType(str)), false},
+		{tenon.Unknown(tenon.ListType(str)), false},
 		{tenon.Pending(tenon.ListOf(tenon.Exactly(str))), false},
 		{tenon.ErrorVal(tenon.Diagnostic{Code: "app.failed", Message: "it failed"}), false},
 	} {
@@ -197,7 +197,7 @@ func TestCapsuleValues(t *testing.T) {
 	twin := tenon.NewCapsule("point", tenon.CapsuleOps[point]{})
 	for _, w := range []tenon.Value{
 		tenon.Bool(true),
-		tenon.NullVal(pointType.Type()),
+		tenon.Null(pointType.Type()),
 		tenon.Unknown(pointType.Type()),
 		twin.Value(p),
 		tenon.Pending(tenon.Any()),
@@ -253,7 +253,7 @@ func TestConformance_VA003_KnownIsASingletonRange(t *testing.T) {
 		known bool
 	}{
 		{"a string", tenon.String("text"), true},
-		{"the null value", tenon.NullVal(str), true},
+		{"the null value", tenon.Null(str), true},
 		{"a fresh unknown", tenon.Unknown(str), false},
 		{"an unknown that cannot be null", tenon.Narrow(tenon.Unknown(str), tenon.NotNull()), false},
 		{
@@ -261,21 +261,21 @@ func TestConformance_VA003_KnownIsASingletonRange(t *testing.T) {
 			tenon.Narrow(tenon.Unknown(num), tenon.NumberMin(five, true), tenon.NumberMax(five, true), tenon.NotNull()),
 			true,
 		},
-		{"an empty list", tenon.ListVal(str), true},
-		{"a list of known elements", tenon.ListVal(str, tenon.String("a")), true},
-		{"a list holding a null", tenon.ListVal(num, tenon.NullVal(num)), true},
-		{"a list holding an unknown", tenon.ListVal(num, tenon.Unknown(num)), false},
+		{"an empty list", tenon.List(str), true},
+		{"a list of known elements", tenon.List(str, tenon.String("a")), true},
+		{"a list holding a null", tenon.List(num, tenon.Null(num)), true},
+		{"a list holding an unknown", tenon.List(num, tenon.Unknown(num)), false},
 		{
 			"a list holding a list that holds an unknown",
-			tenon.ListVal(tenon.List(num), tenon.ListVal(num, tenon.Unknown(num))),
+			tenon.List(tenon.ListType(num), tenon.List(num, tenon.Unknown(num))),
 			false,
 		},
-		{"a set holding an unknown", tenon.SetVal(num, tenon.Unknown(num)), false},
-		{"a tuple of known elements", tenon.TupleVal(tenon.Bool(true)), true},
-		{"a tuple holding an unknown", tenon.TupleVal(tenon.Bool(true), tenon.Unknown(str)), false},
-		{"an object with an unknown attribute", tenon.ObjectVal(map[string]tenon.Value{"a": tenon.Unknown(str)}), false},
-		{"a map with an unknown element", tenon.MapVal(str, map[string]tenon.Value{"k": tenon.Unknown(str)}), false},
-		{"a map of known elements", tenon.MapVal(str, map[string]tenon.Value{"k": tenon.String("v")}), true},
+		{"a set holding an unknown", tenon.Set(num, tenon.Unknown(num)), false},
+		{"a tuple of known elements", tenon.Tuple(tenon.Bool(true)), true},
+		{"a tuple holding an unknown", tenon.Tuple(tenon.Bool(true), tenon.Unknown(str)), false},
+		{"an object with an unknown attribute", tenon.Object(map[string]tenon.Value{"a": tenon.Unknown(str)}), false},
+		{"a map with an unknown element", tenon.Map(str, map[string]tenon.Value{"k": tenon.Unknown(str)}), false},
+		{"a map of known elements", tenon.Map(str, map[string]tenon.Value{"k": tenon.String("v")}), true},
 	} {
 		if !tt.v.IsResolved() {
 			t.Errorf("%s: %v is not a resolved value", tt.name, tt.v)
@@ -286,7 +286,7 @@ func TestConformance_VA003_KnownIsASingletonRange(t *testing.T) {
 	}
 	// A value that is not known still holds the members it was built from:
 	// knownness is a fact about the range, not about what is there to read.
-	l := tenon.ListVal(num, tenon.Unknown(num))
+	l := tenon.List(num, tenon.Unknown(num))
 	if l.Len() != 1 || l.Index(0).IsKnown() {
 		t.Errorf("a list holding an unknown does not read back as one: %v", l)
 	}
@@ -295,7 +295,7 @@ func TestConformance_VA003_KnownIsASingletonRange(t *testing.T) {
 func TestConformance_VA004_NullIsAMemberOfTheRange(t *testing.T) {
 	conformance.Covers(t, "VA-004")
 	str := tenon.StringType()
-	null := tenon.NullVal(str)
+	null := tenon.Null(str)
 	// A known null is an ordinary resolved value of its type, not a state of
 	// its own, and it is known, because its range holds one value.
 	if !null.IsResolved() || null.Type() != str || !null.IsKnown() {
@@ -306,7 +306,7 @@ func TestConformance_VA004_NullIsAMemberOfTheRange(t *testing.T) {
 	}
 	// It is the value whose range is exactly null: narrowing to null reaches
 	// it, and narrowing null away from it leaves nothing.
-	if got := tenon.Narrow(tenon.Unknown(str), tenon.Null()); !got.IsKnown() || got.String() != null.String() {
+	if got := tenon.Narrow(tenon.Unknown(str), tenon.NullOnly()); !got.IsKnown() || got.String() != null.String() {
 		t.Errorf("narrowing to null gave %v, want %v", got, null)
 	}
 	if got := tenon.Narrow(null, tenon.NotNull()); !got.IsError() {
@@ -321,7 +321,7 @@ func TestConformance_VA004_NullIsAMemberOfTheRange(t *testing.T) {
 	}{
 		{"the null value", null, "true"},
 		{"a known string", tenon.String("text"), "false"},
-		{"a list, which is a value and not null", tenon.ListVal(str), "false"},
+		{"a list, which is a value and not null", tenon.List(str), "false"},
 		{"a fresh unknown", tenon.Unknown(str), "unknown(bool, not null)"},
 		{"an unknown that cannot be null", tenon.Narrow(tenon.Unknown(str), tenon.NotNull()), "false"},
 		{"an unknown that is still open about it", tenon.Narrow(tenon.Unknown(str), tenon.LengthMax(3)), "unknown(bool, not null)"},
@@ -335,7 +335,7 @@ func TestConformance_VA004_NullIsAMemberOfTheRange(t *testing.T) {
 func TestConformance_UN020_PendingCarriesAConstraint(t *testing.T) {
 	conformance.Covers(t, "UN-020")
 	str := tenon.StringType()
-	lst := tenon.List(str)
+	lst := tenon.ListType(str)
 	p := tenon.Pending(tenon.ListOf(tenon.Exactly(str)))
 	if !p.IsPending() {
 		t.Fatalf("%v is not a pending value", p)
@@ -364,11 +364,11 @@ func TestConformance_UN021_PendingAnyIsTheLeastInformative(t *testing.T) {
 		tenon.BoolType(),
 		tenon.NumberType(),
 		tenon.StringType(),
-		tenon.List(tenon.StringType()),
-		tenon.Set(tenon.NumberType()),
-		tenon.Map(tenon.BoolType()),
-		tenon.Tuple(),
-		tenon.Object(nil),
+		tenon.ListType(tenon.StringType()),
+		tenon.SetType(tenon.NumberType()),
+		tenon.MapType(tenon.BoolType()),
+		tenon.TupleType(),
+		tenon.ObjectType(nil),
 		tenon.NewCapsule("thing", tenon.CapsuleOps[thing]{}).Type(),
 	} {
 		if got := tenon.Resolve(p, ty); got.Type() != ty {
@@ -395,7 +395,7 @@ func TestConformance_UN022_PendingHasNoType(t *testing.T) {
 	// Every other value answers the same discriminator.
 	for _, v := range []tenon.Value{
 		tenon.String("text"),
-		tenon.NullVal(str),
+		tenon.Null(str),
 		tenon.Unknown(str),
 		tenon.String("\xff"),
 	} {
@@ -409,7 +409,7 @@ func TestConformance_UN024_PendingNullness(t *testing.T) {
 	conformance.Covers(t, "UN-024")
 	str := tenon.StringType()
 	p := tenon.Pending(tenon.Any())
-	null, notNull := tenon.Narrow(p, tenon.Null()), tenon.Narrow(p, tenon.NotNull())
+	null, notNull := tenon.Narrow(p, tenon.NullOnly()), tenon.Narrow(p, tenon.NotNull())
 	// The fact is there to read before the type is.
 	for _, tt := range []struct {
 		name string
@@ -448,7 +448,7 @@ func TestConformance_UN024_PendingNullness(t *testing.T) {
 	}
 	mustPanicUsage(t, "does not apply to a pending value", func() { tenon.Narrow(p, tenon.LengthMax(1)) })
 	// A narrowing that says nothing new leaves the value as it was.
-	if again := tenon.Narrow(null, tenon.Null()); !tenon.SameNode(again, null) {
+	if again := tenon.Narrow(null, tenon.NullOnly()); !tenon.SameNode(again, null) {
 		t.Errorf("narrowing a pending null to null again produced a new value")
 	}
 }

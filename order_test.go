@@ -113,12 +113,12 @@ func TestConformance_EQ020_Ordering(t *testing.T) {
 		v    tenon.Value
 	}{
 		{"a bool", tenon.Bool(true)},
-		{"a list", tenon.ListVal(str)},
-		{"a set", tenon.SetVal(str)},
-		{"a map", tenon.MapVal(str, nil)},
-		{"a tuple", tenon.TupleVal()},
-		{"an object", tenon.ObjectVal(nil)},
-		{"an unknown of a type with no order", tenon.Unknown(tenon.List(str))},
+		{"a list", tenon.List(str)},
+		{"a set", tenon.Set(str)},
+		{"a map", tenon.Map(str, nil)},
+		{"a tuple", tenon.Tuple()},
+		{"an object", tenon.Object(nil)},
+		{"an unknown of a type with no order", tenon.Unknown(tenon.ListType(str))},
 	} {
 		mustPanicUsage(t, "does not satisfy one_of([exactly(number), exactly(string)])", func() {
 			tenon.LessThan(tt.v, tt.v)
@@ -132,7 +132,7 @@ func TestConformance_EQ020_Ordering(t *testing.T) {
 		tenon.LessThan(tenon.Unknown(num), s("1"))
 	})
 	// Null has no place in an order, and an error operand carries forward.
-	nullOrder := tenon.LessThan(tenon.NullVal(num), n("1"))
+	nullOrder := tenon.LessThan(tenon.Null(num), n("1"))
 	if !nullOrder.IsError() || nullOrder.Diagnostics()[0].Code != tenon.CodeOperationNullOperand {
 		t.Errorf("a null operand gave %v, want a null-operand error value", nullOrder)
 	}
@@ -142,7 +142,7 @@ func TestConformance_EQ020_Ordering(t *testing.T) {
 	}
 	// A pending operand that can never be ordered is bad data rather than a
 	// panic: nothing about the call was wrong when it was made.
-	wrong := tenon.LessThan(tenon.Pending(tenon.Exactly(tenon.List(str))), n("1"))
+	wrong := tenon.LessThan(tenon.Pending(tenon.Exactly(tenon.ListType(str))), n("1"))
 	if !wrong.IsError() || wrong.Diagnostics()[0].Code != tenon.CodeOperationWrongType {
 		t.Errorf("a pending list operand gave %v, want a wrong-type error value", wrong)
 	}

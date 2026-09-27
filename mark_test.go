@@ -87,7 +87,7 @@ func TestConformance_MK001_MarksAreTypedMetadata(t *testing.T) {
 
 	// Every state can carry a mark: marks are metadata, not content.
 	for _, v := range []tenon.Value{
-		tenon.NullVal(num),
+		tenon.Null(num),
 		tenon.Unknown(num),
 		tenon.Pending(tenon.Any()),
 		tenon.ErrorVal(tenon.Diagnostic{Code: "app.x", Message: "m"}),
@@ -150,7 +150,7 @@ func TestConformance_MK002_PropagationPolicies(t *testing.T) {
 	if !tenon.HasMark(k, prop) || !tenon.HasMark(k, iso) {
 		t.Errorf("collapsing to one value dropped marks: %v", k)
 	}
-	s := tenon.Narrow(tenon.WithMarks(tenon.SetVal(num, five, tenon.Unknown(num)), prop, iso), tenon.LengthMax(1))
+	s := tenon.Narrow(tenon.WithMarks(tenon.Set(num, five, tenon.Unknown(num)), prop, iso), tenon.LengthMax(1))
 	if !s.IsKnown() || !tenon.HasMark(s, prop) || !tenon.HasMark(s, iso) {
 		t.Errorf("a set left its known member produced %v, want that set, known, with both marks", s)
 	}
@@ -219,8 +219,8 @@ func TestConformance_MK003_ResultMarksAreTheUnion(t *testing.T) {
 	// what it compares, and membership reads the value it looks for. One that
 	// reads only an operand's shape does not: a length counts members without
 	// reading them, and a list is not null whatever it holds.
-	held := tenon.ListVal(num, tenon.WithMarks(tenon.NumberFromInt(1), a, iso))
-	plain := tenon.ListVal(num, tenon.NumberFromInt(1))
+	held := tenon.List(num, tenon.WithMarks(tenon.NumberFromInt(1), a, iso))
+	plain := tenon.List(num, tenon.NumberFromInt(1))
 	for _, tt := range []struct {
 		name string
 		r    tenon.Value
@@ -228,7 +228,7 @@ func TestConformance_MK003_ResultMarksAreTheUnion(t *testing.T) {
 	}{
 		{"Equals", tenon.Equals(held, plain), true},
 		{"Equals the other way about", tenon.Equals(plain, held), true},
-		{"Contains", tenon.Contains(tenon.SetVal(tenon.List(num), plain), held), true},
+		{"Contains", tenon.Contains(tenon.Set(tenon.ListType(num), plain), held), true},
 		{"Length", tenon.Length(held), false},
 		{"IsNull", tenon.IsNull(held), false},
 	} {
@@ -254,8 +254,8 @@ func TestConformance_MK004_EqualsIgnoresMarksIdenticalDoesNot(t *testing.T) {
 	for name, pair := range map[string][2]tenon.Value{
 		"marked and unmarked":  {mOne, one},
 		"differently marked":   {mOne, tenon.WithMarks(one, m2)},
-		"marked list members":  {tenon.ListVal(num, mOne), tenon.ListVal(num, one)},
-		"marked null and null": {tenon.WithMarks(tenon.NullVal(num), m1), tenon.NullVal(num)},
+		"marked list members":  {tenon.List(num, mOne), tenon.List(num, one)},
+		"marked null and null": {tenon.WithMarks(tenon.Null(num), m1), tenon.Null(num)},
 		"marked error operand": {tenon.WithMarks(tenon.Bool(true), m1), tenon.Bool(true)},
 	} {
 		if got := unmarked(tenon.Equals(pair[0], pair[1])).String(); got != "true" {
@@ -278,7 +278,7 @@ func TestConformance_MK004_EqualsIgnoresMarksIdenticalDoesNot(t *testing.T) {
 		t.Error("attachment order is part of identity, but a set has no order")
 	}
 	// A mark deep inside a container is part of the container's identity.
-	if tenon.Identical(tenon.ListVal(num, mOne), tenon.ListVal(num, one)) {
+	if tenon.Identical(tenon.List(num, mOne), tenon.List(num, one)) {
 		t.Error("a list holding a marked member is identical to one holding it unmarked")
 	}
 	// Error values carry marks too, and Identical sees them.
@@ -295,14 +295,14 @@ func TestConformance_MK005_MarksDoNotAffectResults(t *testing.T) {
 	one, two, zero := tenon.NumberFromInt(1), tenon.NumberFromInt(2), tenon.NumberFromInt(0)
 	tr, fa := tenon.Bool(true), tenon.Bool(false)
 	unNum, unBool := tenon.Unknown(num), tenon.Unknown(bl)
-	nullNum, nullBool := tenon.NullVal(num), tenon.NullVal(bl)
+	nullNum, nullBool := tenon.Null(num), tenon.Null(bl)
 	errV := tenon.ErrorVal(tenon.Diagnostic{Code: "app.x", Message: "m"})
 	pendNum := tenon.Pending(tenon.Exactly(num))
-	list := tenon.ListVal(str, tenon.String("a"), tenon.String("b"))
-	set1 := tenon.SetVal(num, one)
-	setPartial := tenon.SetVal(num, unNum)
-	unSet := tenon.Narrow(tenon.Unknown(tenon.Set(num)), tenon.NotNull(), tenon.Members(one))
-	nullSet := tenon.NullVal(tenon.Set(num))
+	list := tenon.List(str, tenon.String("a"), tenon.String("b"))
+	set1 := tenon.Set(num, one)
+	setPartial := tenon.Set(num, unNum)
+	unSet := tenon.Narrow(tenon.Unknown(tenon.SetType(num)), tenon.NotNull(), tenon.Members(one))
+	nullSet := tenon.Null(tenon.SetType(num))
 
 	un := func(f func(tenon.Value) tenon.Value) func([]tenon.Value) tenon.Value {
 		return func(vs []tenon.Value) tenon.Value { return f(vs[0]) }
@@ -332,7 +332,7 @@ func TestConformance_MK005_MarksDoNotAffectResults(t *testing.T) {
 		{"Mul", bin(tenon.Mul), [][]tenon.Value{{one, two}}},
 		{"Div", bin(tenon.Div), [][]tenon.Value{{one, two}, {one, zero}}},
 		{"Mod", bin(tenon.Mod), [][]tenon.Value{{one, two}}},
-		{"Length", un(tenon.Length), [][]tenon.Value{{list}, {setPartial}, {unSet}, {tenon.NullVal(tenon.List(str))}}},
+		{"Length", un(tenon.Length), [][]tenon.Value{{list}, {setPartial}, {unSet}, {tenon.Null(tenon.ListType(str))}}},
 		{"Contains", bin(tenon.Contains), [][]tenon.Value{{set1, one}, {set1, two}, {unSet, one}, {nullSet, one}}},
 	} {
 		for _, args := range row.args {
@@ -403,32 +403,32 @@ func TestConformance_MK005_MarksDoNotAffectResults(t *testing.T) {
 		{"a string that is not a bool",
 			tenon.Convert(both(yes), tenon.Exactly(bl), tenon.Unsafe), tenon.Convert(yes, tenon.Exactly(bl), tenon.Unsafe)},
 		{"a string outside the range of numbers", toNum(both(huge)), toNum(huge)},
-		{"a list member", toNums(tenon.ListVal(str, b, both(a))), toNums(tenon.ListVal(str, b, a))},
-		{"a list under a deep mark", toNums(tenon.WithMarks(tenon.ListVal(str, a), deep)), toNums(tenon.ListVal(str, a))},
+		{"a list member", toNums(tenon.List(str, b, both(a))), toNums(tenon.List(str, b, a))},
+		{"a list under a deep mark", toNums(tenon.WithMarks(tenon.List(str, a), deep)), toNums(tenon.List(str, a))},
 		{"an attribute",
-			tenon.Convert(tenon.ObjectVal(map[string]tenon.Value{"x": both(a)}),
+			tenon.Convert(tenon.Object(map[string]tenon.Value{"x": both(a)}),
 				tenon.ObjectWith(map[string]tenon.Field{"x": tenon.Required(tenon.Exactly(num))}, true), tenon.Unsafe),
-			tenon.Convert(tenon.ObjectVal(map[string]tenon.Value{"x": a}),
+			tenon.Convert(tenon.Object(map[string]tenon.Value{"x": a}),
 				tenon.ObjectWith(map[string]tenon.Field{"x": tenon.Required(tenon.Exactly(num))}, true), tenon.Unsafe)},
 		{"a map element",
-			tenon.Convert(tenon.MapVal(str, map[string]tenon.Value{"k": both(a)}), tenon.MapOf(tenon.Exactly(num)), tenon.Unsafe),
-			tenon.Convert(tenon.MapVal(str, map[string]tenon.Value{"k": a}), tenon.MapOf(tenon.Exactly(num)), tenon.Unsafe)},
+			tenon.Convert(tenon.Map(str, map[string]tenon.Value{"k": both(a)}), tenon.MapOf(tenon.Exactly(num)), tenon.Unsafe),
+			tenon.Convert(tenon.Map(str, map[string]tenon.Value{"k": a}), tenon.MapOf(tenon.Exactly(num)), tenon.Unsafe)},
 		{"a member beside a redacting mark",
 			toNum(tenon.WithMarks(a, secret, origin, apart)), toNum(tenon.WithMarks(a, secret))},
 		{"a member of a redacted list",
-			toNums(tenon.WithMarks(tenon.ListVal(str, both(a)), secret)), toNums(tenon.WithMarks(tenon.ListVal(str, a), secret))},
+			toNums(tenon.WithMarks(tenon.List(str, both(a)), secret)), toNums(tenon.WithMarks(tenon.List(str, a), secret))},
 		{"a known value narrowed", tenon.Narrow(both(one), tenon.NumberMin(two, true)), tenon.Narrow(one, tenon.NumberMin(two, true))},
 		{"a value within a known value narrowed",
-			tenon.Narrow(tenon.ListVal(str, both(a), b), tenon.LengthMax(1)), tenon.Narrow(tenon.ListVal(str, a, b), tenon.LengthMax(1))},
+			tenon.Narrow(tenon.List(str, both(a), b), tenon.LengthMax(1)), tenon.Narrow(tenon.List(str, a, b), tenon.LengthMax(1))},
 		{"an element of a map narrowed",
-			tenon.Narrow(tenon.MapVal(str, map[string]tenon.Value{"k": both(a)}), tenon.LengthMax(0)),
-			tenon.Narrow(tenon.MapVal(str, map[string]tenon.Value{"k": a}), tenon.LengthMax(0))},
+			tenon.Narrow(tenon.Map(str, map[string]tenon.Value{"k": both(a)}), tenon.LengthMax(0)),
+			tenon.Narrow(tenon.Map(str, map[string]tenon.Value{"k": a}), tenon.LengthMax(0))},
 		{"a value under a deep mark narrowed",
-			tenon.Narrow(tenon.WithMarks(tenon.ListVal(str, a, b), deep), tenon.LengthMax(1)), tenon.Narrow(tenon.ListVal(str, a, b), tenon.LengthMax(1))},
+			tenon.Narrow(tenon.WithMarks(tenon.List(str, a, b), deep), tenon.LengthMax(1)), tenon.Narrow(tenon.List(str, a, b), tenon.LengthMax(1))},
 		// A long rendering is cut short, so the marked value comes first.
 		{"beside a redacted value within a value narrowed",
-			tenon.Narrow(tenon.ListVal(str, both(b), tenon.WithMarks(a, secret)), tenon.LengthMax(1)),
-			tenon.Narrow(tenon.ListVal(str, b, tenon.WithMarks(a, secret)), tenon.LengthMax(1))},
+			tenon.Narrow(tenon.List(str, both(b), tenon.WithMarks(a, secret)), tenon.LengthMax(1)),
+			tenon.Narrow(tenon.List(str, b, tenon.WithMarks(a, secret)), tenon.LengthMax(1))},
 	} {
 		want, _ := tenon.UnmarkDeep(tt.plain)
 		if !want.IsError() {
@@ -449,23 +449,23 @@ func TestConformance_MK005_MarksDoNotAffectResults(t *testing.T) {
 	}{
 		{
 			"Length",
-			tenon.Length(tenon.ListVal(str, within(tenon.String("a")))),
-			tenon.Length(tenon.ListVal(str, tenon.String("a"))),
+			tenon.Length(tenon.List(str, within(tenon.String("a")))),
+			tenon.Length(tenon.List(str, tenon.String("a"))),
 		},
 		{
 			"Equals",
-			tenon.Equals(tenon.ListVal(num, within(one)), tenon.ListVal(num, one)),
-			tenon.Equals(tenon.ListVal(num, one), tenon.ListVal(num, one)),
+			tenon.Equals(tenon.List(num, within(one)), tenon.List(num, one)),
+			tenon.Equals(tenon.List(num, one), tenon.List(num, one)),
 		},
 		{
 			"Contains",
-			tenon.Contains(tenon.SetVal(tenon.List(num), tenon.ListVal(num, one)), tenon.ListVal(num, within(one))),
-			tenon.Contains(tenon.SetVal(tenon.List(num), tenon.ListVal(num, one)), tenon.ListVal(num, one)),
+			tenon.Contains(tenon.Set(tenon.ListType(num), tenon.List(num, one)), tenon.List(num, within(one))),
+			tenon.Contains(tenon.Set(tenon.ListType(num), tenon.List(num, one)), tenon.List(num, one)),
 		},
 		{
 			"IsNull",
-			tenon.IsNull(tenon.TupleVal(within(unNum))),
-			tenon.IsNull(tenon.TupleVal(unNum)),
+			tenon.IsNull(tenon.Tuple(within(unNum))),
+			tenon.IsNull(tenon.Tuple(unNum)),
 		},
 	} {
 		if got, _ := tenon.Unmark(tt.got); !tenon.Identical(got, tt.want) {
@@ -477,13 +477,13 @@ func TestConformance_MK005_MarksDoNotAffectResults(t *testing.T) {
 func TestConformance_MK006_MarkedValuesHaveNoHashAndNoPlaceInASet(t *testing.T) {
 	conformance.Covers(t, "MK-006")
 	num := tenon.NumberType()
-	lists := tenon.List(num)
+	lists := tenon.ListType(num)
 	m, iso := stamp{id: "m"}, stamp{id: "iso", policy: tenon.Isolate}
 	one, two := tenon.NumberFromInt(1), tenon.NumberFromInt(2)
 	marked := tenon.WithMarks(one, m)
 	// A value is marked when it carries a mark or holds, at any depth, a value
 	// that does. This list carries none, and its element holds one.
-	holding := tenon.ListVal(lists, tenon.ListVal(num, two, marked))
+	holding := tenon.List(lists, tenon.List(num, two, marked))
 
 	// Hashing a marked value, ordering one canonically, placing one into a set
 	// and listing one as a set's member are mistakes in the calling program.
@@ -494,19 +494,19 @@ func TestConformance_MK006_MarkedValuesHaveNoHashAndNoPlaceInASet(t *testing.T) 
 	}{
 		{"Hash called on a value of type number that carries marks", func() { tenon.Hash(marked) }},
 		{"that holds a marked value at .[0][1]", func() { tenon.Hash(holding) }},
-		{"that holds a marked value at .[1], and", func() { tenon.Hash(tenon.ListVal(num, two, marked, marked)) }},
+		{"that holds a marked value at .[1], and", func() { tenon.Hash(tenon.List(num, two, marked, marked)) }},
 		{"hash the value UnmarkDeep returns", func() { tenon.Hash(holding) }},
 		{"CanonicalCompare called on a value of type number that carries marks", func() { tenon.CanonicalCompare(marked, one) }},
 		{"that holds a marked value at .[0][1]", func() { tenon.CanonicalCompare(one, holding) }},
 		{"compare the values UnmarkDeep returns", func() { tenon.CanonicalCompare(one, holding) }},
-		{"SetVal: element 1 is a value of type number that carries marks", func() { tenon.SetVal(num, two, marked) }},
+		{"Set: element 1 is a value of type number that carries marks", func() { tenon.Set(num, two, marked) }},
 		{
-			"SetVal: element 0 is a value of type list(number) that holds a marked value at .[1]",
-			func() { tenon.SetVal(lists, holding.Index(0)) },
+			"Set: element 0 is a value of type list(number) that holds a marked value at .[1]",
+			func() { tenon.Set(lists, holding.Index(0)) },
 		},
-		{"an unknown value of type number that carries marks", func() { tenon.SetVal(num, tenon.WithMarks(tenon.Unknown(num), m)) }},
-		{"the null value of type number that carries marks", func() { tenon.SetVal(num, tenon.WithMarks(tenon.NullVal(num), iso)) }},
-		{"unmark it with UnmarkDeep and reapply the marks to the set", func() { tenon.SetVal(num, marked) }},
+		{"an unknown value of type number that carries marks", func() { tenon.Set(num, tenon.WithMarks(tenon.Unknown(num), m)) }},
+		{"the null value of type number that carries marks", func() { tenon.Set(num, tenon.WithMarks(tenon.Null(num), iso)) }},
+		{"unmark it with UnmarkDeep and reapply the marks to the set", func() { tenon.Set(num, marked) }},
 		{"Members called with a value of type number that carries marks as member 1", func() { tenon.Members(two, marked) }},
 		{"unmark it with UnmarkDeep and reapply the marks to the set", func() { tenon.Members(marked) }},
 	} {
@@ -518,32 +518,32 @@ func TestConformance_MK006_MarkedValuesHaveNoHashAndNoPlaceInASet(t *testing.T) 
 	// member beside it is refused all the same: an error does not mask a
 	// mistake in the calling program.
 	failed := tenon.WithMarks(tenon.ErrorVal(tenon.Diagnostic{Code: "app.failed", Message: "it failed"}), m)
-	if got := tenon.SetVal(num, one, failed); !got.IsError() {
+	if got := tenon.Set(num, one, failed); !got.IsError() {
 		t.Errorf("a set given a marked error member is %v, want an error value", got)
 	}
-	mustPanicUsage(t, "SetVal: element 0 is a value of type number that carries marks", func() {
-		tenon.SetVal(num, marked, failed)
+	mustPanicUsage(t, "Set: element 0 is a value of type number that carries marks", func() {
+		tenon.Set(num, marked, failed)
 	})
 
 	// Nothing else is refused. A list holds a marked member as it is, and
 	// asking whether a set holds a marked value places nothing in the set: the
 	// answer carries the mark, as the answer of any operation would.
-	if l := tenon.ListVal(num, marked); !tenon.HasMark(l.Index(0), m) {
+	if l := tenon.List(num, marked); !tenon.HasMark(l.Index(0), m) {
 		t.Errorf("the list %v lost its member's mark", l)
 	}
-	if got := tenon.Contains(tenon.SetVal(num, one), marked); unmarked(got).String() != "true" || !tenon.HasMark(got, m) {
+	if got := tenon.Contains(tenon.Set(num, one), marked); unmarked(got).String() != "true" || !tenon.HasMark(got, m) {
 		t.Errorf("asking whether a set holds a marked member gave %v", got)
 	}
 
 	// UnmarkDeep takes every mark, the value's own and those of everything it
 	// holds, each once, sorted by identifier, and changes nothing else.
-	deep := tenon.WithMarks(tenon.ObjectVal(map[string]tenon.Value{
-		"a": tenon.ListVal(num, marked, tenon.WithMarks(two, iso)),
-		"b": tenon.MapVal(num, map[string]tenon.Value{"k": marked}),
+	deep := tenon.WithMarks(tenon.Object(map[string]tenon.Value{
+		"a": tenon.List(num, marked, tenon.WithMarks(two, iso)),
+		"b": tenon.Map(num, map[string]tenon.Value{"k": marked}),
 	}), m)
-	plain := tenon.ObjectVal(map[string]tenon.Value{
-		"a": tenon.ListVal(num, one, two),
-		"b": tenon.MapVal(num, map[string]tenon.Value{"k": one}),
+	plain := tenon.Object(map[string]tenon.Value{
+		"a": tenon.List(num, one, two),
+		"b": tenon.Map(num, map[string]tenon.Value{"k": one}),
 	})
 	u, ms := tenon.UnmarkDeep(deep)
 	if len(ms) != 2 || ms[0] != iso || ms[1] != m {
@@ -574,21 +574,21 @@ func TestConformance_MK006_MarkedValuesHaveNoHashAndNoPlaceInASet(t *testing.T) 
 			members[i], ms = tenon.UnmarkDeep(v)
 			marks = append(marks, ms...)
 		}
-		return tenon.WithMarks(tenon.SetVal(lists, members...), marks...)
+		return tenon.WithMarks(tenon.Set(lists, members...), marks...)
 	}
-	listOne, listTwo := tenon.ListVal(num, one), tenon.ListVal(num, two)
-	set := build(tenon.ListVal(num, marked), tenon.WithMarks(listTwo, iso), listOne)
-	want := tenon.WithMarks(tenon.SetVal(lists, listOne, listTwo), m, iso)
+	listOne, listTwo := tenon.List(num, one), tenon.List(num, two)
+	set := build(tenon.List(num, marked), tenon.WithMarks(listTwo, iso), listOne)
+	want := tenon.WithMarks(tenon.Set(lists, listOne, listTwo), m, iso)
 	if !tenon.Identical(set, want) {
 		t.Errorf("the set built by the pattern is %v, want %v", set, want)
 	}
-	if again := build(listOne, tenon.WithMarks(listTwo, iso), tenon.ListVal(num, marked)); !tenon.Identical(set, again) {
+	if again := build(listOne, tenon.WithMarks(listTwo, iso), tenon.List(num, marked)); !tenon.Identical(set, again) {
 		t.Errorf("the pattern built %v one way about and %v the other", set, again)
 	}
 	// A Members narrowing takes the same pattern, with the marks going on the
 	// set that is narrowed.
 	listed, listedMarks := tenon.UnmarkDeep(marked)
-	r := tenon.Narrow(tenon.WithMarks(tenon.Unknown(tenon.Set(num)), listedMarks...), tenon.NotNull(), tenon.Members(listed))
+	r := tenon.Narrow(tenon.WithMarks(tenon.Unknown(tenon.SetType(num)), listedMarks...), tenon.NotNull(), tenon.Members(listed))
 	if got := tenon.Contains(r, one); unmarked(got).String() != "true" || !tenon.HasMark(got, m) {
 		t.Errorf("membership of the listed value gave %v", got)
 	}
@@ -608,9 +608,9 @@ func TestConformance_MK006_MarkedValuesHaveNoHashAndNoPlaceInASet(t *testing.T) 
 		if v.IsResolved() {
 			if ms != nil {
 				refused++
-				mustPanicUsage(t, "reapply the marks to the set", func() { tenon.SetVal(v.Type(), v) })
+				mustPanicUsage(t, "reapply the marks to the set", func() { tenon.Set(v.Type(), v) })
 			}
-			tenon.SetVal(u.Type(), u)
+			tenon.Set(u.Type(), u)
 		}
 		if v.IsKnown() && ms != nil {
 			mustPanicUsage(t, "UnmarkDeep", func() { tenon.CanonicalCompare(u, v) })
@@ -638,7 +638,7 @@ func readable(v tenon.Value) []tenon.Value {
 		}
 	case tenon.KindMap:
 		for _, k := range v.MapKeys() {
-			e, _ := v.MapElement(k)
+			e, _ := v.LookupMapElement(k)
 			out = append(out, readable(e)...)
 		}
 	case tenon.KindObject:
@@ -654,20 +654,20 @@ func TestConformance_MK008_DeepMarks(t *testing.T) {
 	num, str := tenon.NumberType(), tenon.StringType()
 	deep := stamp{id: "deep", deep: true}
 	one, two := tenon.NumberFromInt(1), tenon.NumberFromInt(2)
-	set := tenon.SetVal(str, tenon.String("a"), tenon.String("b"))
+	set := tenon.Set(str, tenon.String("a"), tenon.String("b"))
 	// A value with every kind of container in it, a set among them, a null and
 	// a member that is not known.
-	tree := tenon.ObjectVal(map[string]tenon.Value{
-		"list":  tenon.ListVal(num, one, tenon.Unknown(num)),
-		"map":   tenon.MapVal(num, map[string]tenon.Value{"k": two}),
-		"tuple": tenon.TupleVal(set, tenon.NullVal(str)),
+	tree := tenon.Object(map[string]tenon.Value{
+		"list":  tenon.List(num, one, tenon.Unknown(num)),
+		"map":   tenon.Map(num, map[string]tenon.Value{"k": two}),
+		"tuple": tenon.Tuple(set, tenon.Null(str)),
 	})
 
 	// A deep mark attached to a value is attached to every value within it,
 	// whatever state that value is in and however it is read.
 	marked := tenon.WithMarks(tree, deep)
 	list, tuple := marked.Attribute("list"), marked.Attribute("tuple")
-	k, _ := marked.Attribute("map").MapElement("k")
+	k, _ := marked.Attribute("map").LookupMapElement("k")
 	for _, r := range []struct {
 		where string
 		v     tenon.Value
@@ -733,7 +733,7 @@ func TestConformance_MK008_DeepMarks(t *testing.T) {
 		t.Errorf("the set within the deep-marked value holds marked members: %v", stored)
 	}
 	// Retrieval applies the mark deeply, to what a member holds.
-	lists := tenon.WithMarks(tenon.SetVal(tenon.List(num), tenon.ListVal(num, one)), deep)
+	lists := tenon.WithMarks(tenon.Set(tenon.ListType(num), tenon.List(num, one)), deep)
 	if got := lists.Elements()[0].Index(0); !tenon.HasMark(got, deep) {
 		t.Errorf("the element of a retrieved member does not carry the deep mark: %v", got)
 	}
@@ -744,7 +744,7 @@ func TestConformance_MK008_DeepMarks(t *testing.T) {
 
 	// A deep mark is added to the marks a value within carries, and replaces
 	// none of them.
-	owned := tenon.WithMarks(tenon.ListVal(num, tenon.WithMarks(one, shallow), tenon.WithMarks(two, plain)), deep)
+	owned := tenon.WithMarks(tenon.List(num, tenon.WithMarks(one, shallow), tenon.WithMarks(two, plain)), deep)
 	for i, want := range []tenon.Mark{shallow, plain} {
 		if e := owned.Index(i); !tenon.HasMark(e, want) || !tenon.HasMark(e, deep) {
 			t.Errorf("element %d of the deep-marked list is %v, without its own mark or the deep one", i, e)
@@ -754,8 +754,8 @@ func TestConformance_MK008_DeepMarks(t *testing.T) {
 	// Marking a value whose members carry the mark already gives what marking
 	// it unmarked gives: one value, one representation. Attaching the mark
 	// again gives the value itself.
-	got := tenon.WithMarks(tenon.ListVal(num, tenon.WithMarks(one, deep)), deep)
-	if want := tenon.WithMarks(tenon.ListVal(num, one), deep); !tenon.Identical(got, want) {
+	got := tenon.WithMarks(tenon.List(num, tenon.WithMarks(one, deep)), deep)
+	if want := tenon.WithMarks(tenon.List(num, one), deep); !tenon.Identical(got, want) {
 		t.Errorf("marking a list whose element carries the mark gave %v, want %v", got, want)
 	}
 	if !tenon.SameNode(tenon.WithMarks(marked, deep), marked) {
@@ -765,22 +765,22 @@ func TestConformance_MK008_DeepMarks(t *testing.T) {
 	// A mark carried onto a value that narrowing comes down to stays on it:
 	// on the empty tuple, and on the set a listing describes, where Elements
 	// applies it to the members.
-	tup := tenon.Narrow(tenon.WithMarks(tenon.Unknown(tenon.Tuple()), deep), tenon.NotNull())
+	tup := tenon.Narrow(tenon.WithMarks(tenon.Unknown(tenon.TupleType()), deep), tenon.NotNull())
 	if !tup.IsKnown() || !tenon.HasMark(tup, deep) {
 		t.Errorf("narrowing came down to %v, which does not carry the deep mark", tup)
 	}
-	listed := tenon.Narrow(tenon.WithMarks(tenon.Unknown(tenon.Set(num)), deep),
+	listed := tenon.Narrow(tenon.WithMarks(tenon.Unknown(tenon.SetType(num)), deep),
 		tenon.NotNull(), tenon.Members(one), tenon.LengthMax(1))
-	if stored, _ := tenon.Unmark(listed); !tenon.Identical(stored, tenon.SetVal(num, one)) || !tenon.HasMark(listed.Elements()[0], deep) {
+	if stored, _ := tenon.Unmark(listed); !tenon.Identical(stored, tenon.Set(num, one)) || !tenon.HasMark(listed.Elements()[0], deep) {
 		t.Errorf("narrowing came down to the set %v, marked in the wrong place", listed)
 	}
 
 	// A deep mark survives the trip into a set and back out: unmark the member,
 	// reapply its marks to the set, and retrieval puts the mark back where it
 	// was.
-	member := tenon.WithMarks(tenon.ListVal(num, one, two), deep)
+	member := tenon.WithMarks(tenon.List(num, one, two), deep)
 	u, ms := tenon.UnmarkDeep(member)
-	outer := tenon.WithMarks(tenon.SetVal(tenon.List(num), u), ms...)
+	outer := tenon.WithMarks(tenon.Set(tenon.ListType(num), u), ms...)
 	if back := outer.Elements()[0]; !tenon.Identical(back, member) {
 		t.Errorf("the member came back out of the set as %v, want %v", back, member)
 	}
@@ -831,7 +831,7 @@ func TestConformance_MK010_ErrorValuesCarryMarks(t *testing.T) {
 		},
 		{
 			"a null operand",
-			tenon.And(tenon.WithMarks(tenon.NullVal(bl), p), tenon.Bool(true)),
+			tenon.And(tenon.WithMarks(tenon.Null(bl), p), tenon.Bool(true)),
 			"operation.null_operand", []string{"p"},
 		},
 		{
@@ -857,22 +857,22 @@ func TestConformance_MK010_ErrorValuesCarryMarks(t *testing.T) {
 		// to itself.
 		{
 			"an error element",
-			tenon.ListVal(num, tenon.WithMarks(one, q), tenon.WithMarks(failed, p, iso)),
+			tenon.List(num, tenon.WithMarks(one, q), tenon.WithMarks(failed, p, iso)),
 			"app.failed at .[1]", []string{"p"},
 		},
 		{
 			"an error hoisted twice",
-			tenon.TupleVal(tenon.ObjectVal(map[string]tenon.Value{"a": tenon.WithMarks(failed, p)})),
+			tenon.Tuple(tenon.Object(map[string]tenon.Value{"a": tenon.WithMarks(failed, p)})),
 			"app.failed at .[0].a", []string{"p"},
 		},
 		{
 			"an error entry of a map",
-			tenon.MapVal(num, map[string]tenon.Value{"k": tenon.WithMarks(failed, p)}),
+			tenon.Map(num, map[string]tenon.Value{"k": tenon.WithMarks(failed, p)}),
 			`app.failed at .["k"]`, []string{"p"},
 		},
 		{
 			"an error member of a set",
-			tenon.SetVal(num, tenon.WithMarks(failed, p)),
+			tenon.Set(num, tenon.WithMarks(failed, p)),
 			"app.failed at .[0]", []string{"p"},
 		},
 		// Narrowing and resolving refine the value they are given, so an error
@@ -958,7 +958,7 @@ func TestConformance_MK003_ManyMarksAreGatheredEachOnce(t *testing.T) {
 			failed := tenon.ErrorVal(tenon.Diagnostic{Code: "app.failed", Message: fmt.Sprintf("member %d", i)})
 			members[i] = tenon.WithMarks(failed, marks[i], marks[(i+1)%m], kept)
 		}
-		carries(fmt.Sprintf("a list of %d marked error members", m), tenon.ListVal(num, members...), marks)
+		carries(fmt.Sprintf("a list of %d marked error members", m), tenon.List(num, members...), marks)
 		// The bounds share half of their marks.
 		lo, hi := tenon.WithMarks(n(1), marks[:m*3/4]...), tenon.WithMarks(n(9), marks[m/4:]...)
 		carries(fmt.Sprintf("a narrowing by bounds carrying %d marks", m),
@@ -966,8 +966,8 @@ func TestConformance_MK003_ManyMarksAreGatheredEachOnce(t *testing.T) {
 		// A list's deep marks are set aside from its members, so a member
 		// that gains a mark of its own has changed by that mark alone.
 		deep, extra := manyStamps(m, true), stamp{id: "extra"}
-		before := tenon.WithMarks(tenon.ListVal(num, n(1)), deep...)
-		after := tenon.WithMarks(tenon.ListVal(num, tenon.WithMarks(n(1), extra)), deep...)
+		before := tenon.WithMarks(tenon.List(num, n(1)), deep...)
+		after := tenon.WithMarks(tenon.List(num, tenon.WithMarks(n(1), extra)), deep...)
 		changes := tenon.Diff(before, after)
 		if len(changes) != 1 || changes[0].Kind != tenon.ChangeMarks || len(changes[0].OldMarks) != 0 ||
 			!slices.Equal(changes[0].NewMarks, []tenon.Mark{extra}) {
@@ -993,11 +993,11 @@ func TestConformance_MK003_GatheringManyMarksGrowsWithThem(t *testing.T) {
 			members[i] = tenon.WithMarks(tenon.ErrorVal(tenon.Diagnostic{Code: "app.failed", Message: fmt.Sprintf("member %d", i)}), marks[i])
 		}
 		lo, hi := tenon.WithMarks(n(1), marks[:m/2]...), tenon.WithMarks(n(9), marks[m/2:]...)
-		before := tenon.WithMarks(tenon.ListVal(num, n(1)), deep...)
-		after := tenon.WithMarks(tenon.ListVal(num, tenon.WithMarks(n(1), stamp{id: "extra"})), deep...)
+		before := tenon.WithMarks(tenon.List(num, n(1)), deep...)
+		after := tenon.WithMarks(tenon.List(num, tenon.WithMarks(n(1), stamp{id: "extra"})), deep...)
 		return map[string]func(){
 			"an operation": func() { tenon.Add(lo, hi) },
-			"a container":  func() { tenon.ListVal(num, members...) },
+			"a container":  func() { tenon.List(num, members...) },
 			"a narrowing":  func() { tenon.Narrow(tenon.Unknown(num), tenon.NumberMin(lo, true), tenon.NumberMax(hi, true)) },
 			"a diff":       func() { tenon.Diff(before, after) },
 		}
@@ -1037,14 +1037,14 @@ func BenchmarkMarkUnions(b *testing.B) {
 			members[i] = tenon.WithMarks(tenon.ErrorVal(tenon.Diagnostic{Code: "app.failed", Message: fmt.Sprintf("member %d", i)}), marks[i])
 		}
 		lo, hi := tenon.WithMarks(n(1), marks[:m/2]...), tenon.WithMarks(n(9), marks[m/2:]...)
-		before := tenon.WithMarks(tenon.ListVal(num, n(1)), deep...)
-		after := tenon.WithMarks(tenon.ListVal(num, tenon.WithMarks(n(1), stamp{id: "extra"})), deep...)
+		before := tenon.WithMarks(tenon.List(num, n(1)), deep...)
+		after := tenon.WithMarks(tenon.List(num, tenon.WithMarks(n(1), stamp{id: "extra"})), deep...)
 		for _, shape := range []struct {
 			name string
 			run  func()
 		}{
 			{"operation", func() { tenon.Add(lo, hi) }},
-			{"container", func() { tenon.ListVal(num, members...) }},
+			{"container", func() { tenon.List(num, members...) }},
 			{"narrowing", func() { tenon.Narrow(tenon.Unknown(num), tenon.NumberMin(lo, true), tenon.NumberMax(hi, true)) }},
 			{"diff", func() { tenon.Diff(before, after) }},
 		} {

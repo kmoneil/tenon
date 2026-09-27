@@ -83,7 +83,7 @@ func Example_validation() {
 			d := refused.Diagnostics()[0]
 			fmt.Println("   not loggable:", d.Code, "at", d.Path)
 		}
-		public, _ := tenon.ProjectJSON(tenon.ObjectVal(map[string]tenon.Value{
+		public, _ := tenon.ProjectJSON(tenon.Object(map[string]tenon.Value{
 			"name": checked.Attribute("name"),
 			"port": checked.Attribute("port"),
 		}))
