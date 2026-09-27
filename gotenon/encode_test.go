@@ -188,7 +188,7 @@ func (sendsOnly) MarshalValue() (tenon.Value, error) { return tenon.NumberFromIn
 // is given there.
 type keeps struct{ Held any }
 
-func (k *keeps) UnmarshalValue(v tenon.Value) error {
+func (k *keeps) UnmarshalValue(v tenon.Value, _ tenon.Policy) error {
 	k.Held = v
 	return nil
 }

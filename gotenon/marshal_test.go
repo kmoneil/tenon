@@ -21,7 +21,7 @@ func (m moment) MarshalValue() (tenon.Value, error) {
 	return tenon.String(m.t.Format(time.RFC3339Nano)), nil
 }
 
-func (m *moment) UnmarshalValue(v tenon.Value) error {
+func (m *moment) UnmarshalValue(v tenon.Value, _ tenon.Policy) error {
 	if !v.IsKnown() || v.IsError() || v.Type() != tenon.StringType() {
 		return tenon.NewError(tenon.ErrorVal(tenon.Diagnostic{Code: "app.not_a_moment", Message: "a moment is a known string, not " + v.String()}))
 	}
@@ -59,7 +59,7 @@ func (i *instant) MarshalValue() (tenon.Value, error) {
 	return timeType.Value(&t), nil
 }
 
-func (i *instant) UnmarshalValue(v tenon.Value) error {
+func (i *instant) UnmarshalValue(v tenon.Value, _ tenon.Policy) error {
 	t, ok := timeType.Of(v)
 	if !ok {
 		return errors.New("an instant is a time capsule")
@@ -116,13 +116,28 @@ func TestConformance_GO040_MarshalersRoundTrip(t *testing.T) {
 	}
 }
 
-// observer records the value it is given, whatever it is.
-type observer struct{ got tenon.Value }
+// observer records the value it is given, whatever it is, and the policy.
+type observer struct {
+	got    tenon.Value
+	policy tenon.Policy
+}
 
-func (o *observer) UnmarshalValue(v tenon.Value) error {
-	o.got = v
+func (o *observer) UnmarshalValue(v tenon.Value, p tenon.Policy) error {
+	o.got, o.policy = v, p
 	return nil
 }
+
+// The test types that decode themselves implement the interface, so that a
+// change to its method fails to compile here rather than leaving them decoded
+// by their kinds.
+var (
+	_ gotenon.ValueUnmarshaler = (*moment)(nil)
+	_ gotenon.ValueUnmarshaler = (*instant)(nil)
+	_ gotenon.ValueUnmarshaler = (*observer)(nil)
+	_ gotenon.ValueUnmarshaler = (*callback)(nil)
+	_ gotenon.ValueUnmarshaler = (*fullDisk)(nil)
+	_ gotenon.ValueUnmarshaler = (*keeps)(nil)
+)
 
 // watched holds unmarshalers in fields and slices, behind pointers and not,
 // and a tenon.Value, all of which take what they are given as it is.
@@ -295,7 +310,7 @@ func (t tree) MarshalValue() (tenon.Value, error) {
 // it decodes and nothing encodes from it.
 type callback func() int
 
-func (c *callback) UnmarshalValue(v tenon.Value) error {
+func (c *callback) UnmarshalValue(v tenon.Value, _ tenon.Policy) error {
 	n, _ := v.AsInt64()
 	*c = func() int { return int(n) }
 	return nil
@@ -342,7 +357,7 @@ func (fullDisk) MarshalValue() (tenon.Value, error) {
 	return tenon.Value{}, fmt.Errorf("writing the log: %w", errFull)
 }
 
-func (*fullDisk) UnmarshalValue(tenon.Value) error {
+func (*fullDisk) UnmarshalValue(tenon.Value, tenon.Policy) error {
 	return tenon.NewError(tenon.ErrorVal(tenon.Diagnostic{Code: "app.full", Message: "no room"}), errFull)
 }
 

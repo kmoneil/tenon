@@ -51,10 +51,12 @@ type ValueMarshaler interface {
 // null, unknown and marked values included, in place of the Go type's own
 // mapping.
 type ValueUnmarshaler interface {
-	// UnmarshalValue sets the Go value from v, or returns an error. An error
-	// that is a *tenon.Error contributes its diagnostics, and any other error
-	// its text. Decode's error keeps it as a cause.
-	UnmarshalValue(v tenon.Value) error
+	// UnmarshalValue sets the Go value from v, or returns an error. It is
+	// given the policy the decoding was given, for converting v as the rest
+	// of the decoding does. An error that is a *tenon.Error contributes its
+	// diagnostics, and any other error its text. Decode's error keeps it as
+	// a cause.
+	UnmarshalValue(v tenon.Value, p tenon.Policy) error
 }
 
 // goMapping is how a Go type maps to tenon: the type its values encode as,
