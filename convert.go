@@ -56,7 +56,10 @@ func (p Policy) String() string {
 // converted to a number does, gives an error value, never a value of another
 // type. A failure within a container is reported where it happens: a
 // diagnostic for each member that fails, located by its path within v, with
-// the member's own code.
+// the member's own code. A failure within a value carrying a redacting mark
+// is reported at that value instead, once for each code, its message naming
+// the value by the placeholder, since a path within it or a message about
+// what it holds would show its keys or attribute names.
 //
 // A null value converts to the null of the result type, and an unknown value
 // to the unknown of it. A container converts member by member, so members that
@@ -69,7 +72,9 @@ func (p Policy) String() string {
 // The result carries the Propagate marks of v. A member converted within v
 // carries its own Propagate marks, a member carried across unchanged keeps
 // every mark it has, and a member placed into a set, whose members carry no
-// marks, gives all of its marks, at every depth, to the set instead.
+// marks, gives all of its marks, at every depth, to the set instead. A
+// collection whose element type takes attribute names from a member carrying
+// a redacting mark carries that mark too, since its type would show them.
 //
 // Convert returns an error value if v is one. It panics if c is the zero
 // Constraint or p is not Safe or Unsafe.

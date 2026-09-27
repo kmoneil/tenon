@@ -117,7 +117,7 @@ func TestConformance_MK011_DiagnosticsWithholdRedactedContents(t *testing.T) {
 		{
 			"a string that is not a number, redacted",
 			tenon.Convert(tenon.WithMarks(hunter, secret, plain), tenon.Exactly(num), tenon.Unsafe),
-			`redacted("secret") is not a number`,
+			`redacted("secret") does not convert to exactly(number)`,
 		},
 	} {
 		if !tt.got.IsError() {
@@ -178,4 +178,103 @@ func TestConformance_MK011_DiagnosticsWithholdRedactedContents(t *testing.T) {
 			t.Errorf("%s reads %s, want %s", tt.name, tt.got, tt.want)
 		}
 	}
+}
+
+// TestConformance_MK011_RedactionWithholdsStructure holds a redacting mark to
+// withholding a value's structure as well as its contents: the keys of a map
+// and the names of an object's attributes, which a diagnostic's path, a
+// message naming the value's type, or a result whose type is built from them
+// would otherwise show.
+func TestConformance_MK011_RedactionWithholdsStructure(t *testing.T) {
+	conformance.Covers(t, "MK-011", "MK-005", "CV-050", "CV-033", "SE-050")
+	num, str := tenon.NumberType(), tenon.StringType()
+	secret := stamp{id: "secret", redact: true}
+	leaks := func(what string, v tenon.Value) {
+		t.Helper()
+		for _, d := range errorsOf(v) {
+			if strings.Contains(d.Message, "hunter2") || strings.Contains(d.Path.String(), "hunter2") {
+				t.Errorf("%s: %s at %s shows what the mark withholds", what, d.Message, d.Path)
+			}
+		}
+		if strings.Contains(v.String(), "hunter2") {
+			t.Errorf("%s: %v shows what the mark withholds", what, v)
+		}
+	}
+	vault := tenon.WithMarks(tenon.MapVal(str, map[string]tenon.Value{"hunter2": tenon.String("x"), "other": tenon.String("y")}), secret)
+
+	// A failure within a redacted map is located at the map, once for each
+	// code, named by the placeholder and the constraint converted to, which
+	// a field that admits one type gives as Exactly of it (CV-026); the code
+	// is kept (MK-005).
+	for _, tt := range []struct {
+		name  string
+		v     tenon.Value
+		c     tenon.Constraint
+		p     tenon.Policy
+		code  tenon.Code
+		path  string
+		inner string
+	}{
+		{"the map itself", vault, tenon.MapOf(tenon.Exactly(num)), tenon.Unsafe, tenon.CodeNumberInvalidSyntax, ".", "map_of(exactly(number))"},
+		{"a map within an object", tenon.ObjectVal(map[string]tenon.Value{"vault": vault}), tenon.ObjectWith(map[string]tenon.Field{"vault": tenon.Required(tenon.MapOf(tenon.Exactly(num)))}, true),
+			tenon.Unsafe, tenon.CodeNumberInvalidSyntax, ".vault", "exactly(map(number))"},
+		{"under the safe policy", vault, tenon.MapOf(tenon.Exactly(num)), tenon.Safe, tenon.CodeConvertUnsafe, ".", "map_of(exactly(number))"},
+	} {
+		got := tenon.Convert(tt.v, tt.c, tt.p)
+		ds := errorsOf(got)
+		want := `redacted("secret") does not convert to ` + tt.inner
+		if len(ds) != 1 || ds[0].Code != tt.code || ds[0].Path.String() != tt.path || ds[0].Message != want {
+			t.Errorf("%s: %v, want %s: %q at %s", tt.name, got, tt.code, want, tt.path)
+		}
+		leaks(tt.name, got)
+	}
+
+	// A redacted object that does not convert names no attribute.
+	record := tenon.WithMarks(tenon.ObjectVal(map[string]tenon.Value{"hunter2": tenon.NumberFromInt(1)}), secret)
+	leaks("a redacted object converted to a number", tenon.Convert(record, tenon.Exactly(num), tenon.Unsafe))
+
+	// A list whose element type takes attribute names from a redacted map,
+	// through the object it converts to, carries the mark, since its type and
+	// the members given those attributes would show them. One whose element
+	// type takes nothing from its redacted members is left as it is.
+	mixed := tenon.ListVal(tenon.Map(num),
+		tenon.WithMarks(tenon.MapVal(num, map[string]tenon.Value{"hunter2": tenon.NumberFromInt(1)}), secret),
+		tenon.MapVal(num, map[string]tenon.Value{"b": tenon.NumberFromInt(2)}))
+	objects := tenon.Convert(mixed, tenon.ListOf(tenon.ObjectWith(nil, false)), tenon.Unsafe)
+	if objects.IsError() || !tenon.HasMark(objects, secret) {
+		t.Errorf("a list taking attribute names from a redacted map converted to %v, not carrying its mark", objects)
+	}
+	leaks("a list taking attribute names from a redacted map", objects)
+	numbers := tenon.Convert(tenon.ListVal(num, tenon.WithMarks(tenon.NumberFromInt(1), secret), tenon.NumberFromInt(2)), tenon.ListOf(tenon.Any()), tenon.Safe)
+	if _, marks := tenon.Unmark(numbers); len(marks) != 0 || numbers.String() != `list(number)[redacted("secret"), 2]` {
+		t.Errorf("a list of numbers, one redacted, converted to %v", numbers)
+	}
+
+	// An operand is named by the placeholder: whether it is null, and the
+	// constraint a pending one will satisfy, are what the mark withholds.
+	null := tenon.Add(tenon.WithMarks(tenon.NullVal(num), secret), tenon.NumberFromInt(1))
+	if ds := errorsOf(null); len(ds) != 1 || ds[0].Code != tenon.CodeOperationNullOperand || strings.Contains(ds[0].Message, "null") {
+		t.Errorf("adding to a redacted null gave %v", null)
+	}
+	pending := tenon.Add(tenon.WithMarks(tenon.Pending(tenon.Exactly(str)), secret), tenon.NumberFromInt(1))
+	if ds := errorsOf(pending); len(ds) != 1 || ds[0].Code != tenon.CodeOperationWrongType || strings.Contains(ds[0].Message, "string") {
+		t.Errorf("adding to a redacted pending string gave %v", pending)
+	}
+
+	// Serialize locates what fails within a redacted value at the value.
+	holder := tenon.ObjectVal(map[string]tenon.Value{"vault": tenon.WithMarks(
+		tenon.MapVal(num, map[string]tenon.Value{"hunter2": tenon.WithMarks(tenon.NumberFromInt(1), stamp{id: "plain"})}), secret)})
+	_, failure, ok := tenon.Serialize(holder)
+	if ds := errorsOf(failure); ok || len(ds) != 1 || ds[0].Code != tenon.CodeSerializeUnencodableMark || ds[0].Path.String() != ".vault" {
+		t.Errorf("serializing a redacted map holding an unencodable mark gave %v", failure)
+	}
+	leaks("serializing a redacted map", failure)
+}
+
+// errorsOf returns the diagnostics of v, or none where v is no error value.
+func errorsOf(v tenon.Value) []tenon.Diagnostic {
+	if v == (tenon.Value{}) || !v.IsError() {
+		return nil
+	}
+	return v.Diagnostics()
 }
