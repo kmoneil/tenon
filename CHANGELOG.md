@@ -42,6 +42,17 @@
 
 ### Changed
 
+- An operation that its known operands alone make fail fails now: `Div` and
+  `Mod` by a known zero give `CodeNumberDivideByZero` and
+  `CodeNumberModuloByZero` where the dividend is unknown or pending, where
+  they gave an unknown number that could only ever become that error. A plan
+  that can never apply is refused before anything is applied.
+- `Contains` answers `true` for a member recorded in an unknown set's range
+  even while the set could still turn out null, where it answered unknown
+  until the set was narrowed `NotNull`: a null set would make the answer an
+  error, not `false`. `LessThan`, `Length` and `And` already answered this
+  way, and the specification now says so for every operation.
+
 - A document's envelope is an array whose first element is the format
   version, which `Deserialize` reads before anything else, so a document of a
   later version is refused as `CodeSerializeUnsupportedVersion` whatever its

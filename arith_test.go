@@ -139,3 +139,72 @@ func TestConformance_UN007_ArithmeticBoundsWhatItCan(t *testing.T) {
 		}
 	}
 }
+
+// TestConformance_UN010_AnswersFromValuesOtherThanNull holds an operation over
+// an operand that may still be null to the answer its other values settle:
+// were the operand null, the operation would fail rather than answer
+// otherwise.
+func TestConformance_UN010_AnswersFromValuesOtherThanNull(t *testing.T) {
+	conformance.Covers(t, "UN-010")
+	num := tenon.NumberType()
+	one := tenon.NumberFromInt(1)
+	set := tenon.Narrow(tenon.Unknown(tenon.Set(num)), tenon.Members(one))
+	large := tenon.Narrow(tenon.Unknown(num), tenon.NumberMin(tenon.NumberFromInt(1024), true))
+	list := tenon.Narrow(tenon.Unknown(tenon.List(num)), tenon.LengthMin(3), tenon.LengthMax(3))
+	for _, tt := range []struct {
+		name string
+		got  tenon.Value
+		want string
+	}{
+		{"Contains of a recorded member", tenon.Contains(set, one), "true"},
+		{"LessThan of a number of 1024 or more and 80", tenon.LessThan(large, tenon.NumberFromInt(80)), "false"},
+		{"Length of a list of 3", tenon.Length(list), "3"},
+		{"And with false", tenon.And(tenon.Unknown(tenon.BoolType()), tenon.Bool(false)), "false"},
+	} {
+		if got := tt.got.String(); got != tt.want {
+			t.Errorf("%s over an operand that may be null = %s, want %s", tt.name, got, tt.want)
+		}
+	}
+	// Null itself still fails: the answer is for the operand's other values.
+	if got := tenon.Contains(tenon.NullVal(tenon.Set(num)), one); !got.IsError() {
+		t.Errorf("Contains of a null set = %v, want an error", got)
+	}
+}
+
+// TestConformance_UN011_SureFailuresFailNow holds an operation that its known
+// operands alone make fail to failing now, with the error every outcome
+// shares: a dividend not known yet, bounded or not, or one that may still be
+// null, divided by a known zero, or taken modulo one. A divisor not known yet
+// makes nothing sure, and neither does a zero dividend.
+func TestConformance_UN011_SureFailuresFailNow(t *testing.T) {
+	conformance.Covers(t, "UN-011", "UN-010")
+	num := tenon.NumberType()
+	zero := tenon.NumberFromInt(0)
+	for _, dividend := range []tenon.Value{
+		tenon.Narrow(tenon.Unknown(num), tenon.NotNull()),
+		tenon.Narrow(tenon.Unknown(num), tenon.NotNull(), tenon.NumberMin(tenon.NumberFromInt(5), true)),
+		tenon.Unknown(num),
+		tenon.Narrow(tenon.Pending(tenon.Any()), tenon.NotNull()),
+	} {
+		for _, tt := range []struct {
+			name string
+			got  tenon.Value
+			code tenon.Code
+		}{
+			{"Div", tenon.Div(dividend, zero), tenon.CodeNumberDivideByZero},
+			{"Mod", tenon.Mod(dividend, zero), tenon.CodeNumberModuloByZero},
+		} {
+			if !tt.got.IsError() || tt.got.Diagnostics()[0].Code != tt.code {
+				t.Errorf("%s(%v, 0) = %v, want %s", tt.name, dividend, tt.got, tt.code)
+			}
+		}
+	}
+	for _, v := range []tenon.Value{
+		tenon.Div(tenon.NumberFromInt(1), tenon.Narrow(tenon.Unknown(num), tenon.NotNull())),
+		tenon.Div(zero, tenon.Narrow(tenon.Unknown(num), tenon.NotNull())),
+	} {
+		if v.IsError() || v.IsKnown() {
+			t.Errorf("%v is settled, where the divisor is not known", v)
+		}
+	}
+}
