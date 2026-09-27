@@ -188,3 +188,22 @@ func TestConformance_GO044_TextMarshalers(t *testing.T) {
 	mustPanicUsage(t, "holds its state in unexported fields", func() { gotenon.Decode[opaque](obj(nil), safe) })
 	wantValue(t, "an empty struct", encoded(t, struct{}{}), obj(nil))
 }
+
+// TestConformance_GO044_TenonHandlesCrossAsText holds a tenon.Type, a
+// tenon.Constraint and a tenon.Path held in a Go value to encoding as the
+// text of their display forms, which they marshal themselves to; none
+// unmarshals itself from text, so decoding into one is refused.
+func TestConformance_GO044_TenonHandlesCrossAsText(t *testing.T) {
+	conformance.Covers(t, "GO-044", "DI-018")
+	type described struct {
+		T tenon.Type       `tenon:"t"`
+		C tenon.Constraint `tenon:"c"`
+		P tenon.Path       `tenon:"p"`
+	}
+	x := described{tenon.List(str), tenon.ListOf(tenon.Any()), tenon.Path{}.Attribute("a")}
+	wantValue(t, "a struct of tenon handles", encoded(t, x),
+		obj(map[string]tenon.Value{"t": s("list(string)"), "c": s("list_of(any)"), "p": s(".a")}))
+	mustPanicUsage(t, "holds its state in unexported fields", func() {
+		gotenon.Decode[described](obj(map[string]tenon.Value{"t": s("string"), "c": s("any"), "p": s(".")}), safe)
+	})
+}
