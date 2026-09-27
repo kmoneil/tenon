@@ -137,6 +137,7 @@ var (
 	_ gotenon.ValueUnmarshaler = (*callback)(nil)
 	_ gotenon.ValueUnmarshaler = (*fullDisk)(nil)
 	_ gotenon.ValueUnmarshaler = (*keeps)(nil)
+	_ gotenon.ValueUnmarshaler = (*decodesOnly)(nil)
 )
 
 // watched holds unmarshalers in fields and slices, behind pointers and not,
@@ -281,7 +282,24 @@ func TestConformance_GO040_MarshalingOneWay(t *testing.T) {
 		t.Errorf("decoding by the struct mapping gave %+v", got)
 	}
 	// And the other way about.
-	wantValue(t, "encoding an observer by its mapping", encoded(t, observer{}), obj(nil))
+	wantValue(t, "encoding by the struct mapping", encoded(t, decodesOnly{N: 5}), obj(map[string]tenon.Value{"n": n(5)}))
+	if got := decoded[decodesOnly](t, n(6), tenon.Safe); got.N != 6 {
+		t.Errorf("decoding by the method gave %+v", got)
+	}
+	// A struct whose state is all unexported has no mapping of its kind to
+	// fall back on [GO-011].
+	mustPanicUsage(t, "holds its state in unexported fields", func() { gotenon.Encode(observer{}) })
+}
+
+// decodesOnly decodes itself, and encodes by the struct mapping.
+type decodesOnly struct {
+	N int `tenon:"n"`
+}
+
+func (d *decodesOnly) UnmarshalValue(v tenon.Value, _ tenon.Policy) error {
+	n, _ := v.AsInt64()
+	d.N = int(n)
+	return nil
 }
 
 // intKeyed marshals itself, where its kind, a map with int keys, maps to

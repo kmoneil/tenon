@@ -42,6 +42,16 @@
 
 ### Changed
 
+- gotenon honours `encoding.TextMarshaler` and `encoding.TextUnmarshaler`: a
+  type that marshals itself to text, and not by `MarshalValue`, encodes as
+  the `String` of its text, and one whose pointer unmarshals itself from text
+  decodes from a string, so `time.Time` and `netip.Addr` cross as their text
+  where they crossed as `{}` and came back as zero. `ValueMarshaler` and
+  `ValueUnmarshaler` come first, each direction maps on its own, and the big
+  numbers map as numbers still. A struct whose state is all in unexported
+  fields, and which marshals itself neither to a value nor to text, is a
+  usage error, where it encoded as an empty object and lost its state.
+
 - `gotenon.ValueUnmarshaler`'s method is `UnmarshalValue(v tenon.Value, p
   tenon.Policy) error`: it is told the policy the decoding was given, so what
   it converts it converts as the rest of the decoding does. Add the parameter

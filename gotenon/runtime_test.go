@@ -2,8 +2,11 @@ package gotenon_test
 
 import (
 	"errors"
+	"math/big"
+	"net/netip"
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/kmoneil/tenon"
 	"github.com/kmoneil/tenon/gotenon"
@@ -98,4 +101,90 @@ func TestConformance_GO040_UnmarshalersAreGivenThePolicy(t *testing.T) {
 			t.Errorf("unmarshalers within a struct decoded under %s were told %s, %s, %s and %s", p, w.One.policy, w.Many[0].policy, w.Plain.policy, w.Plains[0].policy)
 		}
 	}
+}
+
+// badText marshals itself to text that is not UTF-8.
+type badText struct{}
+
+func (badText) MarshalText() ([]byte, error) { return []byte{'a', 0xff}, nil }
+
+// bothWays marshals itself to a value and to text; the value comes first.
+type bothWays struct{}
+
+func (bothWays) MarshalValue() (tenon.Value, error) { return tenon.NumberFromInt(1), nil }
+func (bothWays) MarshalText() ([]byte, error)       { return []byte("text"), nil }
+
+// textOut marshals itself to text, and decodes by its struct mapping.
+type textOut struct {
+	N int `tenon:"n"`
+}
+
+func (t textOut) MarshalText() ([]byte, error) { return []byte("out"), nil }
+
+// event holds values that marshal themselves to text, and a pointer to one.
+type event struct {
+	At   time.Time  `tenon:"at"`
+	From netip.Addr `tenon:"from"`
+	Done *time.Time `tenon:"done,optional"`
+}
+
+// TestConformance_GO044_TextMarshalers holds a Go type that marshals itself
+// to text to encoding as the String of its text, and one whose pointer
+// unmarshals itself from text to decoding from a String, in each direction on
+// its own, after tenon's own marshalers and the types the mapping names; and
+// a struct whose state is all in unexported fields, which would otherwise
+// cross as an empty object, to being a usage error.
+func TestConformance_GO044_TextMarshalers(t *testing.T) {
+	conformance.Covers(t, "GO-044", "GO-010", "GO-011")
+	at := time.Date(2026, 9, 27, 12, 0, 0, 0, time.UTC)
+	from := netip.MustParseAddr("10.0.0.1")
+	x := event{At: at, From: from}
+	v := encoded(t, x)
+	want := obj(map[string]tenon.Value{"at": s("2026-09-27T12:00:00Z"), "from": s("10.0.0.1"), "done": tenon.NullVal(str)})
+	wantValue(t, "a struct of text marshalers", v, want)
+	if got, ok := gotenon.TypeFor(reflect.TypeFor[event]()); !ok || got != v.Type() {
+		t.Errorf("TypeFor(event) = %v, %t, want %v", got, ok, v.Type())
+	}
+	if back := decoded[event](t, v, safe); !back.At.Equal(at) || back.From != from || back.Done != nil {
+		t.Errorf("the event came back as %+v", back)
+	}
+
+	// Decoding converts to a string first, under the policy, and hands the
+	// method its text; what the method refuses fails where the part is.
+	wantDecodeFailures[time.Time](t, "a number, safely", n(1), safe, wantDiag{tenon.CodeConvertUnsafe, "."})
+	_, err := gotenon.Decode[event](obj(map[string]tenon.Value{"at": s("noon"), "from": s("10.0.0.1")}), safe)
+	var failed *tenon.Error
+	var parse *time.ParseError
+	if !errors.As(err, &failed) || failed.Diagnostics()[0].Code != tenon.CodeDecodeUnmarshalFailed ||
+		failed.Diagnostics()[0].Path.String() != ".at" || !errors.As(err, &parse) {
+		t.Errorf("decoding an unreadable time gave %v, want %s at .at with the time.ParseError as a cause", err, tenon.CodeDecodeUnmarshalFailed)
+	}
+	wantDecodeFailures[time.Time](t, "an unknown string", tenon.Unknown(str), safe, wantDiag{tenon.CodeDecodeNotKnown, "."})
+	wantDecodeFailures[time.Time](t, "a null", tenon.NullVal(str), safe, wantDiag{tenon.CodeDecodeNull, "."})
+
+	// Encoding fails where the method does, or its text is not UTF-8.
+	_, err = gotenon.Encode(time.Date(10000, 1, 1, 0, 0, 0, 0, time.UTC))
+	if !errors.As(err, &failed) || failed.Diagnostics()[0].Code != tenon.CodeEncodeMarshalFailed {
+		t.Errorf("encoding the year 10000 gave %v, want %s", err, tenon.CodeEncodeMarshalFailed)
+	}
+	wantEncodeFailure(t, "text that is not UTF-8", badText{}, wantDiag{tenon.CodeStringInvalidUTF8, "."})
+
+	// tenon's own marshalers come first, and each direction maps on its own.
+	wantValue(t, "a type marshaling itself both ways", encoded(t, bothWays{}), n(1))
+	wantValue(t, "a type marshaling itself to text", encoded(t, textOut{N: 2}), s("out"))
+	if got := decoded[textOut](t, obj(map[string]tenon.Value{"n": n(3)}), safe); got.N != 3 {
+		t.Errorf("decoding by the struct mapping gave %+v", got)
+	}
+	// The big numbers marshal themselves to text, and map as numbers all the
+	// same.
+	if got, _ := gotenon.TypeFor(reflect.TypeFor[big.Int]()); got != num {
+		t.Errorf("TypeFor(big.Int) = %v, want number", got)
+	}
+
+	// A struct whose state is all unexported is refused, both ways; one with
+	// no fields at all holds nothing to lose.
+	type opaque struct{ secret int }
+	mustPanicUsage(t, "holds its state in unexported fields", func() { gotenon.Encode(opaque{1}) })
+	mustPanicUsage(t, "holds its state in unexported fields", func() { gotenon.Decode[opaque](obj(nil), safe) })
+	wantValue(t, "an empty struct", encoded(t, struct{}{}), obj(nil))
 }

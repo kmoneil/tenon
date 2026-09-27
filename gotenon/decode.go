@@ -1,6 +1,7 @@
 package gotenon
 
 import (
+	goencoding "encoding"
 	"math/big"
 	"reflect"
 	"strconv"
@@ -28,8 +29,8 @@ import (
 // other than a field marked optional (tenon.CodeDecodeNull); a number the Go
 // number type cannot hold, or an integer type a fraction
 // (tenon.CodeDecodeOutOfRange); a list of another length than a Go array
-// (tenon.CodeDecodeLengthMismatch); and an UnmarshalValue method's failure
-// (tenon.CodeDecodeUnmarshalFailed, or its own diagnostics). An error value
+// (tenon.CodeDecodeLengthMismatch); and an UnmarshalValue or UnmarshalText
+// method's failure (tenon.CodeDecodeUnmarshalFailed, or its own diagnostics). An error value
 // gives its own diagnostics. To decode a marked value, unmark it with
 // tenon.UnmarkDeep first and keep the marks.
 //
@@ -443,6 +444,13 @@ func (d *decoder) build(m *goMapping, dst reflect.Value, v, given tenon.Value, p
 		dst.SetBool(v.AsBool())
 	case goString:
 		dst.SetString(v.AsString())
+	case goText:
+		// The text of the string it was converted to goes to UnmarshalText
+		// [GO-044].
+		u := dst.Addr().Interface().(goencoding.TextUnmarshaler)
+		if err := u.UnmarshalText([]byte(v.AsString())); err != nil {
+			d.fails.withError(p, tenon.CodeDecodeUnmarshalFailed, err)
+		}
 	case goInt, goUint, goBigInt:
 		d.integer(m, dst, v, p)
 	case goFloat:
