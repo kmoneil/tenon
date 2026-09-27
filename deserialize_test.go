@@ -549,6 +549,75 @@ func TestConformance_SE005_DecodingWorkIsBounded(t *testing.T) {
 // marks once for each level above it, the cube of d. The marks share one
 // identifier and are told apart by their payloads, which one mark decoder is
 // enough to read. Allocated bytes are the reading.
+// A container's deep marks and the marks its members carry of their own meet
+// in every member, and a member holds its own marks beside one layer of the
+// container's that every member shares, so k deep marks over k members each
+// carrying one of its own cost k, not k by k: decoding, encoding the result,
+// attaching the marks in memory, and taking them off again all grow with the
+// document. The four times larger case allocates about four times as much.
+func TestConformance_SE005_DeepMarksBesideMembersOwn(t *testing.T) {
+	conformance.Covers(t, "SE-005", "MK-008", "SE-031")
+	read := tenon.Decoders{Marks: map[string]tenon.MarkDecoder{
+		"level": func(p tenon.Value, _ bool) (tenon.Mark, []tenon.Diagnostic) {
+			return deepNote{"level", p.AsString()}, nil
+		},
+		"m": func(tenon.Value, bool) (tenon.Mark, []tenon.Diagnostic) { return markPlain, nil },
+	}}
+	allocations := func(f func()) uint64 {
+		var before, after runtime.MemStats
+		runtime.GC()
+		runtime.ReadMemStats(&before)
+		f()
+		runtime.ReadMemStats(&after)
+		return after.TotalAlloc - before.TotalAlloc
+	}
+	var steps [4][2]uint64 // attach, encode, decode, unmark, at k and 4k
+	for i, k := range []int{500, 2000} {
+		members := make([]tenon.Value, k)
+		for j := range members {
+			members[j] = tenon.WithMarks(n(int64(j)), markPlain)
+		}
+		deep := make([]tenon.Mark, k)
+		for j := range deep {
+			deep[j] = deepNote{"level", fmt.Sprintf("%d", j)}
+		}
+		list := tenon.ListVal(num, members...)
+		var v, back tenon.Value
+		var doc []byte
+		steps[0][i] = allocations(func() { v = tenon.WithMarks(list, deep...) })
+		steps[1][i] = allocations(func() {
+			var failure tenon.Value
+			var ok bool
+			if doc, failure, ok = tenon.Serialize(v); !ok {
+				t.Fatalf("Serialize failed: %v", failure)
+			}
+		})
+		steps[2][i] = allocations(func() {
+			var failure tenon.Value
+			var ok bool
+			if back, failure, ok = tenon.Deserialize(doc, read); !ok {
+				t.Fatalf("Deserialize failed: %v", failure)
+			}
+		})
+		if !tenon.Identical(back, v) {
+			t.Fatalf("%d members under %d deep marks came back other than they went", k, k)
+		}
+		if !tenon.HasMark(back.Elements()[k-1], deep[0]) || !tenon.HasMark(back.Elements()[k-1], markPlain) {
+			t.Fatalf("a member read back lacks a mark it carried")
+		}
+		steps[3][i] = allocations(func() {
+			if _, taken := tenon.UnmarkDeep(back); len(taken) != k+1 {
+				t.Fatalf("UnmarkDeep took %d marks, want %d", len(taken), k+1)
+			}
+		})
+	}
+	for i, name := range []string{"attaching", "encoding", "decoding", "unmarking"} {
+		if grew := float64(steps[i][1]) / float64(steps[i][0]); grew > 8 {
+			t.Errorf("%s four times as many allocated %.1f times as much (%d bytes, then %d)", name, grew, steps[i][0], steps[i][1])
+		}
+	}
+}
+
 func TestConformance_SE005_DeepMarksNestedLevelUponLevel(t *testing.T) {
 	conformance.Covers(t, "SE-005", "MK-008", "SE-031")
 	read := tenon.Decoders{Marks: map[string]tenon.MarkDecoder{

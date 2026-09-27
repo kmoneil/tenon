@@ -306,8 +306,30 @@ func (e *encoder) constraint(b []byte, c Constraint, at int) []byte {
 // per value: a container's members commonly share one set, the one the deep
 // marks were attached to them through.
 type impliedMarks struct {
-	deep map[Mark]bool       // the container's deep marks
-	own  map[*markSet][]Mark // what a value holding that set lists for itself
+	deep   map[Mark]bool       // the container's deep marks
+	own    map[*markSet][]Mark // what a value holding that set lists for itself
+	layers map[*markSet]bool   // whether the container implies every mark of an outer layer
+}
+
+// impliesLayer reports whether the container implies every mark of the outer
+// layer l and the layers beyond it, asked once per layer: the members of a
+// container share the layer of the deep marks they inherit from it.
+func (im *impliedMarks) impliesLayer(l *markSet) bool {
+	if implied, ok := im.layers[l]; ok {
+		return implied
+	}
+	implied := true
+	for _, m := range l.all() {
+		if !im.deep[m] {
+			implied = false
+			break
+		}
+	}
+	if im.layers == nil {
+		im.layers = map[*markSet]bool{}
+	}
+	im.layers[l] = implied
+	return implied
 }
 
 // listed returns the marks a value holding held lists for itself, which are
@@ -317,13 +339,20 @@ func (im *impliedMarks) listed(held *markSet) []Mark {
 	if own, ok := im.own[held]; ok {
 		return own
 	}
-	own := held.list
-	for i, m := range held.list {
+	// Where the container implies every mark the set's outer layers hold, as
+	// it does of the layer its members inherit from it, only the set's own
+	// layer lists anything.
+	list := held.list
+	if held.outer != nil && !im.impliesLayer(held.outer) {
+		list = held.all()
+	}
+	own := list
+	for i, m := range list {
 		if !im.deep[m] {
 			continue
 		}
-		own = slices.Clone(held.list[:i:i])
-		for _, m := range held.list[i+1:] {
+		own = slices.Clone(list[:i:i])
+		for _, m := range list[i+1:] {
 			if !im.deep[m] {
 				own = append(own, m)
 			}
@@ -363,7 +392,7 @@ func (e *encoder) implies(ms *markSet) *impliedMarks {
 		return im
 	}
 	var im *impliedMarks
-	for _, m := range ms.list {
+	for _, m := range ms.all() {
 		if !e.deep(m) {
 			continue
 		}
@@ -384,9 +413,13 @@ func (e *encoder) content(b []byte, v Value, at int, implied *impliedMarks) []by
 	if !e.enter(at) {
 		return b
 	}
-	own := v.n.markList()
-	if own != nil && implied != nil {
+	var own []Mark
+	switch {
+	case v.n.marks == nil:
+	case implied != nil:
 		own = implied.listed(v.n.marks)
+	default:
+		own = v.n.markList()
 	}
 	if len(own) == 0 {
 		return e.bare(b, v, at)
