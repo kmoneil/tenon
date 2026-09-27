@@ -898,10 +898,11 @@ func TestConformance_SE005_ObjectsCostWhatTheyHold(t *testing.T) {
 	}
 
 	// The content of an object is an array of its attributes, and a document
-	// saying otherwise fails where it says it, naming the type it is not.
+	// saying otherwise fails where it says it, naming the kind of type it is
+	// not and no attribute: a message quotes nothing the document holds.
 	short := document + "83 00 82 08 82 82 6161 02 82 6162 02 81 f6"
 	wantDecodeFailure(t, "an object content of one item too few", short, tenon.CodeSerializeMalformed)
-	want := `at byte 20: the content of object({"a": number, "b": number}) is an array of 1 items, not 2`
+	want := `at byte 20: the content of an object is an array of 1 items, not 2`
 	if _, failure, _ := tenon.Deserialize(fromHex(t, short), decoders); failure.Diagnostics()[0].Message != want {
 		t.Errorf("a short object content said %q, want %q", failure.Diagnostics()[0].Message, want)
 	}
@@ -1302,3 +1303,33 @@ func (holding) MarkID() string                     { return "p" }
 func (holding) Propagation() tenon.Propagation     { return tenon.Propagate }
 func (holding) Redacting() bool                    { return false }
 func (m holding) MarkPayload() (tenon.Value, bool) { return m.v, true }
+
+// TestConformance_SE050_DecodeMessagesQuoteNothing holds a decoding failure's
+// message to saying what is wrong and where, by byte offset, and quoting
+// nothing the document holds: a document is refused before the marks that
+// follow its content are read, so it cannot know what a redacting mark would
+// withhold (MK-011). Each document below carries "hunter2" in what it gets
+// wrong: a map key twice, an attribute name twice, a prefix on a number, a
+// listing on a number, and a diagnostic code that is none.
+func TestConformance_SE050_DecodeMessagesQuoteNothing(t *testing.T) {
+	conformance.Covers(t, "SE-050", "MK-011")
+	const hunter2 = "67 68756e74657232"
+	for _, tt := range []struct{ name, hex string }{
+		{"a map key twice", document + "830082060282 82" + hunter2 + "01 82" + hunter2 + "02"},
+		{"an attribute name twice", document + "8300 8208 82 82" + hunter2 + "02 82" + hunter2 + "02 82 01 02"},
+		{"a prefix on a number", document + "830002da74656e01 a1 03" + hunter2},
+		{"a listing on a number", document + "830002da74656e01 a1 06 81" + hunter2},
+		{"a diagnostic code that is none", document + "8202 81 83 67 48756e74657232 616d 80"},
+	} {
+		_, failure, ok := tenon.Deserialize(fromHex(t, tt.hex), decoders)
+		if ok {
+			t.Errorf("%s decoded", tt.name)
+			continue
+		}
+		for _, d := range failure.Diagnostics() {
+			if strings.Contains(strings.ToLower(d.Message), "hunter2") || !strings.HasPrefix(d.Message, "at byte ") {
+				t.Errorf("%s: %s: %q quotes the document or says no offset", tt.name, d.Code, d.Message)
+			}
+		}
+	}
+}

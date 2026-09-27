@@ -7,6 +7,7 @@ import (
 	"math"
 	"math/big"
 	"slices"
+	"strings"
 
 	"github.com/kmoneil/tenon/internal/cbor"
 	"github.com/kmoneil/tenon/internal/decimal"
@@ -42,7 +43,11 @@ const maxDepth = 512
 // version, CodeSerializeTooLarge where it nests more deeply than 512 levels,
 // CodeSerializeUnknownCapsule and CodeSerializeUnknownMark for an identifier
 // that decoders supplies nothing for, and the diagnostics a decoder reports
-// where it refuses what it is given.
+// where it refuses what it is given. A diagnostic says what is wrong and the
+// byte offset where, and quotes nothing the document holds, since the marks
+// that follow a content, redacting ones among them, are not read yet when it
+// is refused; it names a capsule type's or a mark's identifier, which says
+// what decoder to supply.
 //
 // Deserialize never panics on its input, and never allocates for a length the
 // input declares before the input has shown it holds that much. The work it
@@ -92,8 +97,14 @@ func Deserialize(data []byte, decoders Decoders) (Value, Value, bool) {
 	again, failure, ok := Serialize(v)
 	switch {
 	case !ok:
+		var codes []string
+		for _, d := range failure.Diagnostics() {
+			if !slices.Contains(codes, string(d.Code)) {
+				codes = append(codes, string(d.Code))
+			}
+		}
 		return Value{}, errorValue(Diagnostic{Code: CodeSerializeNotCanonical,
-			Message: "the decoded value does not serialize again: " + failure.String()}), false
+			Message: "the decoded value does not serialize again, failing with " + strings.Join(codes, ", ")}), false
 	case !bytes.Equal(again, data):
 		return Value{}, errorValue(Diagnostic{Code: CodeSerializeNotCanonical,
 			Message: fmt.Sprintf("the input is not the encoding of the value it describes, which differs from byte %d", firstDifference(again, data))}), false
@@ -190,7 +201,12 @@ func (d *decoder) arrayOf(want int, t Type) *decodeError {
 		return d.cborError(err)
 	}
 	if n != want {
-		return d.malformed(at, "the content of %s is an array of %d items, not %d", t, n, want)
+		kind := strings.ToLower(t.t.kind.String())
+		article := "a"
+		if kind == "object" {
+			article = "an"
+		}
+		return d.malformed(at, "the content of %s %s is an array of %d items, not %d", article, kind, n, want)
 	}
 	return nil
 }
@@ -339,7 +355,7 @@ func (d *decoder) diagnostic() (Diagnostic, *decodeError) {
 		return Diagnostic{}, d.cborError(err)
 	}
 	if !validCode(Code(code)) {
-		return Diagnostic{}, d.malformed(at, "%s is not a diagnostic code", quotedASCII(code))
+		return Diagnostic{}, d.malformed(at, "a diagnostic code that is not an area and a name joined by a dot")
 	}
 	at = d.r.Offset()
 	message, err := d.r.ReadText()
@@ -491,7 +507,7 @@ func readName[V any](d *decoder, seen map[string]V) (string, *decodeError) {
 	}
 	s = uni.NFC(s)
 	if _, dup := seen[s]; dup {
-		return "", d.malformed(at, "the name %s appears twice", quoted(s))
+		return "", d.malformed(at, "an attribute name that appears twice")
 	}
 	return s, nil
 }
@@ -643,7 +659,7 @@ func (d *decoder) content(t Type) (Value, *decodeError) {
 				return Value{}, d.cborError(err)
 			}
 			if _, dup := entries[key]; dup {
-				return Value{}, d.malformed(kat, "the key %s appears twice", quoted(key))
+				return Value{}, d.malformed(kat, "a map key that appears twice")
 			}
 			v, derr := d.content(t.t.elem)
 			if derr != nil {
@@ -723,7 +739,7 @@ func (d *decoder) capsule(t Type, at int) (Value, *decodeError) {
 		return Value{}, err
 	}
 	if pt != enc.typ {
-		return Value{}, d.malformed(at, "capsule type %s is serialized as %s, not %s", quoted(t.t.capsule.name), enc.typ, pt)
+		return Value{}, d.malformed(at, "capsule type %s is serialized as another type than %s", quoted(t.t.capsule.name), enc.typ)
 	}
 	payload, err := d.content(pt)
 	if err != nil {
@@ -767,7 +783,7 @@ func (d *decoder) unknown(t Type, at int) (Value, *decodeError) {
 	}
 	for _, nw := range ns {
 		if !nw.appliesTo(t) {
-			return Value{}, d.malformed(at, "a range of %s recording %s", t, nw)
+			return Value{}, d.malformed(at, "a range recording a narrowing that does not apply to its type")
 		}
 	}
 	v := Narrow(Unknown(t), ns...)
@@ -821,7 +837,7 @@ func (d *decoder) narrowing(t Type, key uint64, at int) (Narrowing, *decodeError
 			return Narrowing{}, d.cborError(err)
 		}
 		if length > math.MaxInt64 {
-			return Narrowing{}, d.malformed(at, "a length of %d", length)
+			return Narrowing{}, d.malformed(at, "a length greater than any value can have")
 		}
 		if key == 4 {
 			return LengthMin(int64(length)), nil
@@ -829,7 +845,7 @@ func (d *decoder) narrowing(t Type, key uint64, at int) (Narrowing, *decodeError
 		return LengthMax(int64(length)), nil
 	case 6:
 		if t.t.kind != KindSet {
-			return Narrowing{}, d.malformed(at, "a range of %s recording members", t)
+			return Narrowing{}, d.malformed(at, "a range recording members, of a type that is not a set type")
 		}
 		n, err := d.r.ReadArray()
 		if err != nil {
