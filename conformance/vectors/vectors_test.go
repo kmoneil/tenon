@@ -301,6 +301,14 @@ var invalid = []invalidVector{
 	{"deep mark listed on a member", document + "8300820402da74656e028281da74656e02820181816164818161 64", "serialize.not_canonical"},
 	{"marks out of order", document + "830001da74656e0282f58283617003617681616d", "serialize.not_canonical"},
 	{"indefinite-length array", document + "83008204029f01ff", "serialize.not_canonical"},
+	// Input holding two faults fails with the first the reading meets: one
+	// the reading stops at, where it is written, and one found by comparing
+	// the input with the value's encoding only once it is read through.
+	{"an indefinite length, then a malformed value", document + "8300820402 9f f816 ff", "serialize.not_canonical"},
+	{"a malformed value, then an indefinite length", document + "8300820401 82 f816 9f ff", "serialize.malformed"},
+	{"members out of order, then a malformed value", document + "8300820502 83 01 20 f816", "serialize.malformed"},
+	{"members out of order, then an indefinite length", document + "8300820502 83 01 20 9f ff", "serialize.not_canonical"},
+	{"an integer in a longer form, then a malformed value", document + "8300820402 82 1801 f816", "serialize.malformed"},
 	{"two-byte simple value", document + "830001f816", "serialize.malformed"},
 	{"no document tag", "d9d9f78201830001f5", "serialize.malformed"},
 	{"byte after the document", document + "830001f500", "serialize.malformed"},

@@ -40,6 +40,13 @@
   it. `Encode` encodes such a part wherever it is reached, so a value built by
   sharing one part many times costs what it spells out; a program that builds
   what it encodes from input bounds that tree.
+- The specification says which code input holding more than one fault fails
+  with: the first a decoder meets, reading from the first byte, as
+  `Deserialize` does. The reading stops at a malformed value, a nesting too
+  deep, an unknown identifier and an indefinite length, among others, where
+  each is written, and finds the rest, as an integer in a longer form than it
+  needs, by comparing the input with the value's encoding once it is read
+  through. The vector corpus holds inputs with two faults, in both orders.
 
 ## 0.8.0 (2026-09-27)
 
