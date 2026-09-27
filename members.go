@@ -11,8 +11,9 @@ import "sync/atomic"
 //
 // A set whose members are not all known has a length that is a range rather
 // than a count: as few as the members that are provably distinct and as many as
-// all of them. Every other container has the length it has, whether or not its
-// members are known.
+// all of them, or as the values its element type holds, null among them, where
+// those are fewer, since a set holds each value once. Every other container
+// has the length it has, whether or not its members are known.
 //
 // A null operand gives an error value, since null has no members, and an error
 // operand carries forward.
@@ -34,6 +35,9 @@ func Length(v Value) Value { return lengthOp.apply(v) }
 // set's members is simply not one of them. It may also be null, which is a
 // member like any other. A null set gives an error value, since null holds
 // nothing, and an error operand carries forward.
+//
+// Contains panics where set is not of a set type, which is a mistake in the
+// calling program, as an operand of the wrong type is to every operation.
 func Contains(set, v Value) Value { return containsOp.apply(set, v) }
 
 // lengthOperand is what Length accepts: the kinds that have a length.

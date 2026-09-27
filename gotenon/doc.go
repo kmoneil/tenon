@@ -58,8 +58,10 @@
 // # Mistakes against failures
 //
 // A Go type that does not map to tenon is a mistake in the program, and Encode
-// and Decode panic on it: an interface, a channel, a function, a complex
-// number, a map without string keys, a type that holds itself, or a struct
-// whose tags are malformed. Data that does not fit a type that maps is a
-// failure in the data, and comes back as a *DiagnosticError.
+// and Decode panic on it: a channel, a function, a complex number, a map
+// without string keys, a type that holds itself, or a struct whose tags are
+// malformed. Decode panics as well on an interface, or a type holding one,
+// whatever the value, where Encode takes what the interface holds. Data that
+// does not fit a type that maps is a failure in the data, and comes back as a
+// *DiagnosticError.
 package gotenon

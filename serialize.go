@@ -46,10 +46,13 @@ const (
 // nesting more than 512 levels deep, which Deserialize would refuse to read
 // (CodeSerializeTooLarge).
 //
-// Serialize panics on the zero Value, and on a capsule encoding or a mark
-// payload that breaks its contract: one that is not a known, unmarked value of
-// the declared type other than a null, or two unequal marks on one value that
-// serialize alike.
+// Where it returns true, the error value is the zero Value, which is not a
+// value and must not be used; where it returns false, the bytes are nil.
+//
+// Serialize panics on the zero Value, on a mark whose identifier is not valid
+// UTF-8, and on a capsule encoding or a mark payload that breaks its
+// contract: one that is not a known, unmarked value of the declared type other
+// than a null, or two unequal marks on one value that serialize alike.
 func Serialize(v Value) ([]byte, Value, bool) {
 	v.data()
 	e := newEncoder()

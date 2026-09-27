@@ -267,6 +267,19 @@ var valid = []vector{
 		return tenon.ObjectVal(map[string]tenon.Value{"password": marked(r, s("hunter2"), secret{}, plain), "user": s("ann")})
 	}},
 	{"capsule/value", func(*rand.Rand) tenon.Value { return tenon.CapsuleVal(degreesType, &degrees{21}) }},
+	// The deepest a document nests: the item, 510 list types and a number
+	// are 512 levels, and a mark on the value adds none.
+	{"nesting/512 levels", func(*rand.Rand) tenon.Value { return tenon.NullVal(lists(510)) }},
+	{"nesting/marked at 512 levels", func(r *rand.Rand) tenon.Value { return marked(r, tenon.NullVal(lists(510)), plain) }},
+}
+
+// lists returns k list types around Number.
+func lists(k int) tenon.Type {
+	t := num
+	for range k {
+		t = tenon.List(t)
+	}
+	return t
 }
 
 // invalidVector is input that encodes no value.
@@ -302,6 +315,13 @@ var invalid = []invalidVector{
 	{"error with no diagnostics", document + "820280", "serialize.malformed"},
 	{"another format version", "da74656e008202830001f5", "serialize.unsupported_version"},
 	{"deep nesting", document + "8300" + strings.Repeat("8204", 600) + "02f6", "serialize.too_large"},
+	// One level past the deepest, 513: the item, 511 list types and a number;
+	// the same marked, which adds no level; and a mark whose payload's type
+	// reaches it, that type sitting two levels below the item, under the
+	// content the mark is on.
+	{"513 levels", document + "8300" + strings.Repeat("8204", 511) + "02f6", "serialize.too_large"},
+	{"marked at 513 levels", document + "8300" + strings.Repeat("8204", 511) + "02da74656e0282f68181616d", "serialize.too_large"},
+	{"mark payload at 513 levels", document + "830002da74656e02820181836170" + strings.Repeat("8204", 510) + "0280", "serialize.too_large"},
 	{"unknown capsule", document + "83008209637 82f79f6", "serialize.unknown_capsule"},
 	{"unknown mark", document + "830001da74656e0282f58181617a", "serialize.unknown_mark"},
 }

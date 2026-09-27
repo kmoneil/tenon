@@ -226,6 +226,12 @@ func TestConformance_GO012_ValuesOfManyTypes(t *testing.T) {
 		{"a nil slice of values", encoded(t, nilValues), tenon.NullVal(tenon.Tuple())},
 		{"a nil pointer to a type of no type", encoded(t, nilHolder), tenon.NullVal(tenon.Object(map[string]tenon.Type{"name": str}))},
 		{"a nil pointer to a slice of values", encoded(t, &nilValues), tenon.NullVal(tenon.Tuple())},
+		// Empty but not nil, of members whose types need not agree: the empty
+		// tuple and the empty object, where a slice or map of one type is an
+		// empty list or map.
+		{"an empty slice of values", encoded(t, []tenon.Value{}), tenon.TupleVal()},
+		{"an empty map of values", encoded(t, map[string]tenon.Value{}), obj(nil)},
+		{"an empty map of numbers", encoded(t, map[string]int{}), tenon.MapVal(num, nil)},
 	} {
 		wantValue(t, tt.name, tt.got, tt.want)
 	}
