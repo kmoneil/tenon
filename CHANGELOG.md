@@ -14,6 +14,26 @@
   no settled number of members and no settled order, which is why a slice of
   numbers already refused it; `set(number)[1, u, u]`, of one to three members,
   decoded as three, and into `[2]tenon.Value` failed with a length mismatch.
+- Converting a container whose members sit under its deep marks does work in
+  proportion to the members, not to the members times the marks: each
+  converted member shares the layer of marks its siblings share, where it was
+  given every mark anew. 2,000 marked numbers under 2,000 deep marks took
+  1.6 s and 2.7 GB to convert to a set, and take 3 ms and 3.6 MB; 4,000
+  failing members under as many deep marks took 3.6 s and 5.9 GB, and take
+  5 ms and 8 MB. A container that converts to a pending value gathers its
+  members' marks the same way.
+- Failures deep in a value are located once. A container's error value keeps
+  its failing members and builds each diagnostic's path when the diagnostics
+  are first read, the steps above them shared, where every level extended
+  every path beneath it: 2,000 failing members 200 levels down took 1.9 s and
+  6.5 GB to convert, and take 1.3 ms and 2.8 MB, their diagnostics listed.
+  The diagnostics, their order and the duplicates dropped are as they were.
+- A message that quotes a value writes no more of it than it shows, where it
+  wrote the whole display form to keep its first 32 bytes: a narrowing
+  contradicted by a list of 1,000 nulls of an object type of 1,000 attributes,
+  which spells the type out 1,000 times, allocated 90 MB for its message, and
+  now allocates 408 bytes at any size. Lists of types in messages are cut the
+  same way.
 
 ### Changed
 

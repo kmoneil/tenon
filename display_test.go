@@ -1,6 +1,8 @@
 package tenon_test
 
 import (
+	"fmt"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -303,5 +305,47 @@ func TestConformance_DI017_OrderWithinADisplayForm(t *testing.T) {
 			`unknown(set(number), length >= 2, length <= 4, members {1, 2, unknown(number, >= 5)})`},
 	} {
 		wantDisplay(t, tt.name, tt.v, tt.want)
+	}
+}
+
+// TestConformance_DI003_AMessageWritesNoMoreThanItShows holds a message that
+// quotes a value to the cost of what it shows, its first bytes, however large
+// the value's display form: a list of k nulls of an object type of k
+// attributes spells the type out k times, and a narrowing it contradicts
+// allocates as much at 4,000 as at 1,000, where writing the whole display to
+// keep 32 bytes of it allocated 90 MB at 1,000. The message shows what
+// shortening the whole display form shows.
+func TestConformance_DI003_AMessageWritesNoMoreThanItShows(t *testing.T) {
+	conformance.Covers(t, "DI-003", "MK-011")
+	var sizes [2]uint64
+	for i, k := range []int{1000, 4000} {
+		attrs := make(map[string]tenon.Type, k)
+		for j := range k {
+			attrs[fmt.Sprintf("a%d", j)] = tenon.NumberType()
+		}
+		object := tenon.Object(attrs)
+		nulls := make([]tenon.Value, k)
+		for j := range nulls {
+			nulls[j] = tenon.NullVal(object)
+		}
+		v := tenon.ListVal(object, nulls...)
+		var r tenon.Value
+		var before, after runtime.MemStats
+		runtime.GC()
+		runtime.ReadMemStats(&before)
+		r = tenon.Narrow(v, tenon.LengthMax(1))
+		runtime.ReadMemStats(&after)
+		sizes[i] = after.TotalAlloc - before.TotalAlloc
+		if i > 0 {
+			continue
+		}
+		display := v.String()
+		want := "the value " + display[:32] + "... does not satisfy length <= 1"
+		if !r.IsError() || r.Diagnostics()[0].Message != want {
+			t.Errorf("the narrowing gave %.120s, want the message %q", r, want)
+		}
+	}
+	if grew := float64(sizes[1]) / float64(sizes[0]); grew > 2 {
+		t.Errorf("four times the display form allocated %.1f times as much for the message (%d bytes, then %d)", grew, sizes[0], sizes[1])
 	}
 }

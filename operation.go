@@ -22,7 +22,7 @@ func propagate(operands ...Value) (Value, bool) {
 		if v.data().state != stateError {
 			continue
 		}
-		for _, d := range v.n.data.([]Diagnostic) {
+		for _, d := range v.n.diagnostics() {
 			if !seen.holds(diags, d) {
 				diags = append(diags, d)
 			}

@@ -14,6 +14,9 @@ type converter struct {
 	// being converted. What a value holds is part of what those marks
 	// withhold, so a message about it shows a placeholder instead.
 	withheld []Mark
+	// carried is what the conversion keeps to carry members' marks, shared
+	// by every converter of one conversion.
+	carried *carrying
 }
 
 // within returns the converter for the members of n.
@@ -47,7 +50,7 @@ func (x converter) keyText(n *node, key string) string {
 // an error operand already, and puts the operand's Propagate marks on the
 // result, so the result carries no marks of the operand's own.
 func convertTop(v Value, cv conversion) Value {
-	return converter{policy: cv.policy}.value(v, cv.target)
+	return converter{policy: cv.policy, carried: &carrying{}}.value(v, cv.target)
 }
 
 // value converts v, in whatever state, to c. The result carries none of v's
@@ -59,7 +62,7 @@ func (x converter) value(v Value, c Constraint) Value {
 		return x.pending(v, c)
 	case stateNull, stateUnknown:
 		if fits(c, n.typ) {
-			u, _ := Unmark(v)
+			u := withoutMarks(v)
 			return u
 		}
 		k := keysUnknown
@@ -86,9 +89,107 @@ func (x converter) value(v Value, c Constraint) Value {
 // conversion in its own right, so the result carries the member's Propagate
 // marks, as an error result does.
 func (x converter) member(m Value, c Constraint) Value {
-	r := x.value(m, c)
-	if ms := propagateMarks(m.n); ms != nil {
-		r = WithMarks(r, ms...)
+	return x.carry(x.value(m, c), m.n)
+}
+
+// carrying carries the marks of a conversion's members to what they convert
+// to (CV-033) in proportion to the members, not to the marks each holds. A
+// member under a container's k deep marks holds them as a layer its siblings
+// share (attachment), and giving each converted member its k marks anew,
+// then attaching the deep ones within it again, cost k by k: a list of 2,000
+// members under 2,000 deep marks allocated 1.6 GB to convert. So what a
+// member carries becomes its Propagate part, which shares the member's
+// layers, and the deep marks within it are attached by one attachment per
+// layer, which stops at every value holding that layer already, as every
+// value converted from within the member does.
+type carrying struct {
+	parts       map[*markSet]*markSet    // the Propagate part of each set met
+	attachments map[*markSet]*attachment // the attachment of each layer met
+}
+
+// part returns the Propagate marks of s as a set sharing the layers of s's
+// own part, or nil where there are none. The part of a set holding only
+// Propagate marks is the set itself.
+func (c *carrying) part(s *markSet) *markSet {
+	if s == nil {
+		return nil
+	}
+	if p, ok := c.parts[s]; ok {
+		return p
+	}
+	outer := c.part(s.outer)
+	list := s.list
+	if i := slices.IndexFunc(list, isolates); i >= 0 {
+		list = slices.Clone(list[:i])
+		for _, m := range s.list[i+1:] {
+			if !isolates(m) {
+				list = append(list, m)
+			}
+		}
+	}
+	p := s
+	switch {
+	case len(list) == 0:
+		p = outer
+	case len(list) != len(s.list) || outer != s.outer:
+		p = &markSet{list: list, outer: outer, layer: s.layer}
+	}
+	if c.parts == nil {
+		c.parts = map[*markSet]*markSet{}
+	}
+	c.parts[s] = p
+	return p
+}
+
+// isolates reports whether m is a mark that no operation carries.
+func isolates(m Mark) bool { return m.Propagation() != Propagate }
+
+// attachment returns the attachment of layer, the same for every member it
+// is asked for, so that what one member's attaching learns serves the rest.
+func (c *carrying) attachment(layer *markSet) *attachment {
+	a, ok := c.attachments[layer]
+	if !ok {
+		a = &attachment{layer: layer}
+		if c.attachments == nil {
+			c.attachments = map[*markSet]*attachment{}
+		}
+		c.attachments[layer] = a
+	}
+	return a
+}
+
+// carry returns r, what a member or a fitted value converted to, carrying
+// the Propagate marks that from carries: what WithMarks(r,
+// propagateMarks(from)...) returns. r carries no marks of its own where the
+// conversion made it, and then it takes from's Propagate part, sharing its
+// layers, and the deep marks among them are attached within it by the
+// layer's attachment. The deep marks from holds are those of its layers,
+// where its own list holds none: a layer holds deep marks alone, and from
+// holds its own list before its outer layers. Otherwise, and where r carries
+// marks, as an error value can, r is given the marks one by one.
+func (x converter) carry(r Value, from *node) Value {
+	s := from.marks
+	if s == nil {
+		return r
+	}
+	if r.n.marks == nil && (s.layer || !slices.ContainsFunc(s.list, isDeep)) {
+		p := x.carried.part(s)
+		if p == nil {
+			return r
+		}
+		nn := *r.n
+		nn.marks = p
+		deep := p
+		if !s.layer {
+			deep = x.carried.part(s.outer)
+		}
+		if deep != nil {
+			x.carried.attachment(deep).within(&nn)
+		}
+		return Value{&nn}
+	}
+	if ms := propagateMarks(from); ms != nil {
+		return WithMarks(r, ms...)
 	}
 	return r
 }
@@ -200,7 +301,7 @@ func (x converter) pending(v Value, c Constraint) Value {
 	if c.c.kind == ConstraintAny {
 		// Whatever type the value takes satisfies Any, so its own constraint
 		// says more than Any would.
-		u, _ := Unmark(v)
+		u := withoutMarks(v)
 		return u
 	}
 	return pendingValue(c, n.null)
@@ -214,7 +315,7 @@ func (x converter) pending(v Value, c Constraint) Value {
 func (x converter) known(v Value, c Constraint) Value {
 	n := v.n
 	if fits(c, n.typ) {
-		u, _ := Unmark(v)
+		u := withoutMarks(v)
 		return u
 	}
 	if n.typ.t.kind != KindCapsule && isStructural(c) {
@@ -485,16 +586,19 @@ func (x converter) collection(v Value, c Constraint) Value {
 }
 
 // setOf returns the set of these members, which give their marks, at every
-// depth, to the set, since a set's members carry none.
+// depth, to the set, since a set's members carry none. The members are
+// unmarked by one taking, as UnmarkDeep unmarks one value: members under a
+// container's deep marks share the layer that holds them, which is taken
+// once rather than once for each member, so a list of k members under k deep
+// marks costs k and not k by k.
 func setOf(elem Type, members []Value) Value {
-	var marks []Mark
+	var t taking
 	unmarked := make([]Value, len(members))
 	for i, m := range members {
-		var taken []Mark
-		unmarked[i], taken = UnmarkDeep(m)
-		marks = append(marks, taken...)
+		unmarked[i] = Value{m.n.unmarkDeep(&t)}
 	}
-	return WithMarks(SetVal(elem, unmarked...), marks...)
+	sortMarks(t.marks)
+	return WithMarks(SetVal(elem, unmarked...), t.marks...)
 }
 
 // tuple converts a known tuple, list or set to a TupleOf constraint.
@@ -666,10 +770,7 @@ func (x converter) fit(m Value, e Type) Value {
 	default:
 		r = x.fitKnown(m, e)
 	}
-	if ms := propagateMarks(n); ms != nil {
-		r = WithMarks(r, ms...)
-	}
-	return r
+	return x.carry(r, n)
 }
 
 // fitKnown is fit for a known value.
@@ -746,20 +847,19 @@ func pendingContainer(c Constraint, n *node) Value {
 }
 
 // heldMarks returns the Propagate marks that the values within n carry, at any
-// depth, each once, in the order met.
+// depth, each once, in the order met. They are gathered as UnmarkDeep gathers
+// marks: a layer of deep marks that members share is read once, and a mark is
+// looked up in a set once there are many, so k members under k deep marks,
+// or k members each carrying a mark of its own, cost k and not k by k.
 func heldMarks(n *node) []Mark {
-	var ms []Mark
+	t := taking{keep: func(m Mark) bool { return m.Propagation() == Propagate }}
 	var walk func(n *node)
 	walk = func(n *node) {
 		if !n.markedWithin {
 			return
 		}
 		visit := func(m *node) {
-			for _, mark := range propagateMarks(m) {
-				if !slices.Contains(ms, mark) {
-					ms = append(ms, mark)
-				}
-			}
+			t.add(m.marks)
 			walk(m)
 		}
 		switch data := n.data.(type) {
@@ -774,7 +874,7 @@ func heldMarks(n *node) []Mark {
 		}
 	}
 	walk(n)
-	return ms
+	return t.marks
 }
 
 // holdsRedacting reports whether a value within n, at any depth, carries a

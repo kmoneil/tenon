@@ -54,8 +54,8 @@ func Serialize(v Value) ([]byte, Value, bool) {
 	v.data()
 	e := newEncoder()
 	body := e.item(nil, v)
-	if failure, failed := e.errs.value(); failed {
-		return nil, failure, false
+	if len(e.diags) > 0 {
+		return nil, errorValue(e.diags...), false
 	}
 	doc := cbor.AppendTag(make([]byte, 0, len(body)+8), tagDocument)
 	doc = cbor.AppendArray(doc, 2)
@@ -65,13 +65,15 @@ func Serialize(v Value) ([]byte, Value, bool) {
 
 // encoder encodes one value, collecting what it cannot encode.
 type encoder struct {
-	errs containerErrors
+	// diags holds the diagnostics recorded, each once, located by the path
+	// the trail builds, which shares what one member's failures have above.
+	diags []Diagnostic
 	// ids holds the capsule identifiers met so far, and the type using each.
 	ids map[string]Type
 	// implied holds what each mark set met on a container implies on the
 	// values it holds, or nil where it implies nothing.
 	implied map[*markSet]*impliedMarks
-	// failures counts the calls to fail. It is not len(errs.diags), which
+	// failures counts the calls to fail. It is not len(diags), which
 	// records one diagnostic however many times an identical one arrives, and
 	// payloads that fail alike fail with the same message at the same path.
 	failures int
@@ -131,7 +133,7 @@ func (e *encoder) fail(at int, code Code, message string) {
 		e.recorded = map[string]struct{}{}
 	}
 	e.recorded[key] = struct{}{}
-	e.errs.diags = append(e.errs.diags, d)
+	e.diags = append(e.diags, d)
 }
 
 // item appends the item of v.
@@ -154,7 +156,7 @@ func (e *encoder) item(b []byte, v Value) []byte {
 		inner = e.constraint(inner, n.data.(Constraint), 0)
 		inner = cbor.AppendUint(inner, uint64(nullnessCode(n.null)))
 	} else {
-		diags := n.data.([]Diagnostic)
+		diags := n.diagnostics()
 		inner = cbor.AppendArray(inner, 2)
 		inner = cbor.AppendUint(inner, itemError)
 		inner = cbor.AppendArray(inner, len(diags))

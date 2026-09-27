@@ -306,25 +306,25 @@ func pendingElements(settled, least []Type, c Constraint, p Policy, withhold boo
 	return typeOutcome{pending: true}
 }
 
-// typeList renders types for a message, each once, in order.
+// typeList renders types for a message, each once, in order, writing no more
+// of them than the message keeps.
 func typeList(types []Type) string {
-	var seen []Type
-	text := ""
-	for _, t := range types {
-		dup := false
-		for _, s := range seen {
-			dup = dup || s == t
+	return shortText(func(w *textWriter) {
+		seen := map[Type]bool{}
+		for _, t := range types {
+			if w.full() {
+				return
+			}
+			if seen[t] {
+				continue
+			}
+			if len(seen) > 0 {
+				w.WriteString(", ")
+			}
+			seen[t] = true
+			t.write(w)
 		}
-		if dup {
-			continue
-		}
-		if len(seen) > 0 {
-			text += ", "
-		}
-		seen = append(seen, t)
-		text += t.String()
-	}
-	return shortened(text, func(s string) string { return s })
+	})
 }
 
 // tupleTypeConvert converts t to a TupleOf constraint.

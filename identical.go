@@ -27,7 +27,7 @@ func Identical(a, b Value) bool {
 	}
 	switch na.state {
 	case stateError:
-		x, y := na.data.([]Diagnostic), nb.data.([]Diagnostic)
+		x, y := na.diagnostics(), nb.diagnostics()
 		return slices.EqualFunc(x, y, Diagnostic.Equal)
 	case statePending:
 		// A pending value is its constraint and what it says about null.

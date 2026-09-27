@@ -347,12 +347,12 @@ func (t Type) String() string {
 	if t.t == nil {
 		return "<zero Type>"
 	}
-	var b strings.Builder
+	var b textWriter
 	t.write(&b)
 	return b.String()
 }
 
-func (t Type) write(b *strings.Builder) {
+func (t Type) write(b *textWriter) {
 	d := t.t
 	switch d.kind {
 	case KindBool, KindNumber, KindString:
@@ -365,6 +365,9 @@ func (t Type) write(b *strings.Builder) {
 	case KindObject:
 		b.WriteString("object({")
 		for i, a := range d.attrs {
+			if b.full() {
+				return
+			}
 			if i > 0 {
 				b.WriteString(", ")
 			}
@@ -376,6 +379,9 @@ func (t Type) write(b *strings.Builder) {
 	case KindTuple:
 		b.WriteString("tuple([")
 		for i, e := range d.elems {
+			if b.full() {
+				return
+			}
 			if i > 0 {
 				b.WriteString(", ")
 			}

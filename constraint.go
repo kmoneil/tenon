@@ -423,12 +423,12 @@ func (c Constraint) String() string {
 	if c.c == nil {
 		return "<zero Constraint>"
 	}
-	var b strings.Builder
+	var b textWriter
 	c.write(&b)
 	return b.String()
 }
 
-func (c Constraint) write(b *strings.Builder) {
+func (c Constraint) write(b *textWriter) {
 	d := c.c
 	switch d.kind {
 	case ConstraintAny:
@@ -451,6 +451,9 @@ func (c Constraint) write(b *strings.Builder) {
 	case ConstraintObjectWith:
 		b.WriteString("object_with({")
 		for i, f := range d.fields {
+			if b.full() {
+				return
+			}
 			if i > 0 {
 				b.WriteString(", ")
 			}
@@ -473,6 +476,9 @@ func (c Constraint) write(b *strings.Builder) {
 			b.WriteString("one_of([")
 		}
 		for i, m := range d.members {
+			if b.full() {
+				return
+			}
 			if i > 0 {
 				b.WriteString(", ")
 			}
