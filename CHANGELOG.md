@@ -1,5 +1,28 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- `gotenon.Encode` fails where a `tenon.Value` it encodes, or the value a
+  `MarshalValue` method returns, is an error value, with that value's own
+  diagnostics located within the part, where it returned the error value with
+  a nil error: `Encode(S{V: tenon.Div(one, zero)})` succeeded.
+- `gotenon.Decode` fails with `CodeDecodeNotKnown`, at the set, where a set
+  holding members that are not known is decoded into a slice or array of
+  `tenon.Value`, or of a type that decodes by an unmarshaler. Such a set has
+  no settled number of members and no settled order, which is why a slice of
+  numbers already refused it; `set(number)[1, u, u]`, of one to three members,
+  decoded as three, and into `[2]tenon.Value` failed with a length mismatch.
+
+### Changed
+
+- `gotenon.Decode` panics on a type that is an interface or holds one, as its
+  documentation says, before it looks at the value. It panicked only once a
+  known value reached the interface, so a null, an empty collection or an
+  absent optional field let such a type through until the data changed. A
+  type that decodes by an unmarshaler may still hold an interface.
+
 ## 0.7.0 (2026-09-27)
 
 An audit of the whole library ahead of 1.0 found a few things that should not

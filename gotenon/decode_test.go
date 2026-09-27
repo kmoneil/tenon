@@ -233,6 +233,47 @@ func TestConformance_GO013_DecodingValuesOfManyTypes(t *testing.T) {
 	}
 }
 
+// TestConformance_GO012_SetsOfMembersNotKnown holds a slice or array of
+// members that take any value to what a slice of numbers already does with a
+// set holding members that are not known: such a set has neither a settled
+// number of members nor a settled order, so it fills no Go slice or array,
+// at the set, whatever the members would decode into.
+func TestConformance_GO012_SetsOfMembersNotKnown(t *testing.T) {
+	conformance.Covers(t, "GO-012", "GO-041")
+	u := tenon.Unknown(num)
+	for _, v := range []tenon.Value{
+		tenon.SetVal(num, n(1), u, u),                        // one to three members, as the unknowns turn out
+		tenon.SetVal(num, u),                                 // one member, still not known
+		tenon.SetVal(tenon.List(num), tenon.ListVal(num, u)), // a member holding what is not known
+	} {
+		what := v.String()
+		wantDecodeFailures[[]tenon.Value](t, what+" into a slice of values", v, safe, wantDiag{tenon.CodeDecodeNotKnown, "."})
+		// Not a length mismatch, whatever the array's length: there is no
+		// length to compare.
+		wantDecodeFailures[[1]tenon.Value](t, what+" into an array of one", v, safe, wantDiag{tenon.CodeDecodeNotKnown, "."})
+		wantDecodeFailures[[3]tenon.Value](t, what+" into an array of three", v, safe, wantDiag{tenon.CodeDecodeNotKnown, "."})
+		wantDecodeFailures[[]observer](t, what+" into a slice of unmarshalers", v, uns, wantDiag{tenon.CodeDecodeNotKnown, "."})
+		wantDecodeFailures[[]*observer](t, what+" into a slice of pointers to them", v, uns, wantDiag{tenon.CodeDecodeNotKnown, "."})
+		// Within a container, at the set, and not at all where a tenon.Value
+		// takes it as it is.
+		wantDecodeFailures[[][]tenon.Value](t, what+" within a tuple", tenon.TupleVal(tenon.TupleVal(), v), safe,
+			wantDiag{tenon.CodeDecodeNotKnown, ".[1]"})
+		wantDecodeFailures[struct {
+			S []tenon.Value `tenon:"s"`
+		}](t, what+" in a field", obj(map[string]tenon.Value{"s": v}), safe, wantDiag{tenon.CodeDecodeNotKnown, ".s"})
+		if got := decoded[[]tenon.Value](t, tenon.TupleVal(n(1), v), safe); len(got) != 2 || !tenon.Identical(got[1], v) {
+			t.Errorf("a tuple holding %s decoded into %v", what, got)
+		}
+	}
+	// A slice of numbers refuses the set as its conversion leaves it, there.
+	wantDecodeFailures[[]int](t, "a set of numbers not known into a slice of numbers", tenon.SetVal(num, n(1), u), safe,
+		wantDiag{tenon.CodeDecodeNotKnown, "."})
+	// A set whose members are known decodes in iteration order.
+	if got := decoded[[]tenon.Value](t, tenon.SetVal(num, n(2), n(1)), safe); len(got) != 2 || !tenon.Identical(got[0], n(1)) || !tenon.Identical(got[1], n(2)) {
+		t.Errorf("a known set decoded into %v", got)
+	}
+}
+
 // genValue fills v, of a type holding what round trips, with random content.
 func genValue(r *rand.Rand, v reflect.Value, depth int) {
 	switch v.Type() {

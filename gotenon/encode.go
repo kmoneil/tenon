@@ -185,7 +185,10 @@ func (f *failures) withError(p tenon.Path, code tenon.Code, err error) {
 // (tenon.CodeEncodeUntypedNil), a string that is not valid
 // UTF-8 (tenon.CodeStringInvalidUTF8), a map of values whose types need not
 // agree whose keys are empty or collide once normalized, and a MarshalValue
-// method's failure (tenon.CodeEncodeMarshalFailed, or its own diagnostics).
+// method's failure (tenon.CodeEncodeMarshalFailed, or its own diagnostics). A
+// tenon.Value is given as it is, unknown or marked, but Encode never gives an
+// error value: one that a tenon.Value holds, or that a MarshalValue method
+// returns, fails with its own diagnostics, located within the part.
 //
 // Encode panics where T does not map to tenon: a channel, a
 // function, a complex number, a pointer to tenon.Value, a map without string
@@ -249,7 +252,9 @@ func (e *encoder) encode(m *goMapping, rv reflect.Value, p tenon.Path) (tenon.Va
 		if v == (tenon.Value{}) {
 			usagePanic("Encode: the tenon.Value at %q is the zero Value, which is not a value", p.String())
 		}
-		return v, true
+		// A tenon.Value is given as it is, unknown or marked, but an error
+		// value is a failure, and encoding never gives one [GO-043].
+		return e.fromData(v, p)
 	case goInterface:
 		// What an interface holds encodes by its own type [GO-015]. A nil
 		// one holds nothing, and no type follows from nothing.
@@ -313,8 +318,9 @@ func (e *encoder) encode(m *goMapping, rv reflect.Value, p tenon.Path) (tenon.Va
 	return tenon.Value{}, false
 }
 
-// fromData returns v, or records its diagnostics where it is an error value
-// that data made.
+// fromData returns v, or records its diagnostics, located within the part at
+// p, where it is an error value: one that data made, or that a tenon.Value or
+// a marshaler supplied.
 func (e *encoder) fromData(v tenon.Value, p tenon.Path) (tenon.Value, bool) {
 	if v.IsError() {
 		e.fails.within(p, v.Diagnostics())
@@ -342,7 +348,9 @@ func (e *encoder) marshal(m *goMapping, rv reflect.Value, p tenon.Path) (tenon.V
 	if v == (tenon.Value{}) {
 		usagePanic("the MarshalValue method of %s returned the zero Value, which is not a value", m.rt)
 	}
-	return v, true
+	// An error value it returns fails the encoding as a returned error does,
+	// with the error value's own diagnostics [GO-040, GO-043].
+	return e.fromData(v, p)
 }
 
 // nullType returns the type whose null a nil of the Go type that m maps
