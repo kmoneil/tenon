@@ -31,12 +31,18 @@ of them is a vulnerability:
   text arrives from outside, as a JSON document's numbers do.
 
 Any input that makes tenon do work out of proportion to its length, through
-`Deserialize`, `String`, `NumberFromText` or `gotenon.Encode`, is a
-vulnerability, and so is any input that makes it panic. The length of a Go
-value given to `gotenon.Encode` is the tree it describes: a slice, map or
-pointer reached from two places counts at each, as `encoding/json` counts it,
-so a value built by sharing one part many times is as long as what it
-spells out.
+`Deserialize`, `String`, `NumberFromText`, `gotenon.Encode`, `Convert`, `Diff`
+or `Unify`, is a vulnerability, and so is any input that makes it panic. Two
+of them have a bound of their own. `Convert`'s work is in proportion to its
+input and to its result, which the conversion defines: objects of distinct
+attributes converted to one collection each gain the others' attributes, so
+the result can be the square of the input, as `Convert`'s documentation says.
+`Unify` refuses with `CodeUnifyTooLarge` a unification whose pairs would weigh
+more than a fixed multiple of what it is given, and otherwise works in
+proportion to that. The length of a Go value given to `gotenon.Encode` is the
+tree it describes: a slice, map or pointer reached from two places counts at
+each, as `encoding/json` counts it, so a value built by sharing one part many
+times is as long as what it spells out.
 
 ## Supported versions
 

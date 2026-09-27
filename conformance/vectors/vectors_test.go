@@ -322,6 +322,11 @@ var invalid = []invalidVector{
 	{"number outside the window", document + "830002c4821a000f424001", "serialize.malformed"},
 	{"error with no diagnostics", document + "820280", "serialize.malformed"},
 	{"another format version", "da74656e008202830001f5", "serialize.unsupported_version"},
+	// The envelope's first element is the version, read first, so a later
+	// version is refused as one whatever else its envelope holds.
+	{"another format version of another shape", "da74656e00830200f6", "serialize.unsupported_version"},
+	{"an envelope with no version", "da74656e0080", "serialize.malformed"},
+	{"version 1 of another shape", "da74656e00830183000 1f5f6", "serialize.malformed"},
 	{"deep nesting", document + "8300" + strings.Repeat("8204", 600) + "02f6", "serialize.too_large"},
 	// One level past the deepest, 513: the item, 511 list types and a number;
 	// the same marked, which adds no level; and a mark whose payload's type

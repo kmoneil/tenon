@@ -42,6 +42,15 @@
 
 ### Changed
 
+- A document's envelope is an array whose first element is the format
+  version, which `Deserialize` reads before anything else, so a document of a
+  later version is refused as `CodeSerializeUnsupportedVersion` whatever its
+  envelope holds, where one of another length was called malformed. Version
+  1 documents are unchanged, byte for byte.
+- `SECURITY.md` counts `Convert`, `Diff` and `Unify` among the entry points
+  where work out of proportion to the input is a vulnerability, with the
+  bounds `Convert` and `Unify` keep.
+
 - A deep mark displays once, on the value it was attached to, and not again on
   each value within it, which carries it too: `String` gives
   `marked(list(number)[1, 2], "d")` where it gave

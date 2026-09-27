@@ -232,17 +232,28 @@ func (d *decoder) document() (Value, *decodeError) {
 	if err != nil || tag != tagDocument {
 		return Value{}, d.malformed(at, "the input does not begin with the document tag")
 	}
-	if err := d.array(2, "a document"); err != nil {
-		return Value{}, err
-	}
+	// The envelope is an array whose first element is the version (SE-004),
+	// read before anything else, so that a later version of another shape is
+	// refused as a version this decoder does not read, not as malformed.
 	at = d.r.Offset()
+	n, err := d.r.ReadArray()
+	if err != nil {
+		return Value{}, d.cborError(err)
+	}
+	if n == 0 {
+		return Value{}, d.malformed(at, "a document with no format version")
+	}
+	vat := d.r.Offset()
 	version, err := d.r.ReadUint()
 	if err != nil {
 		return Value{}, d.cborError(err)
 	}
 	if version != formatVersion {
-		return Value{}, &decodeError{code: CodeSerializeUnsupportedVersion, offset: at,
+		return Value{}, &decodeError{code: CodeSerializeUnsupportedVersion, offset: vat,
 			message: fmt.Sprintf("the document is of format version %d, and this decoder reads version %d", version, formatVersion)}
+	}
+	if n != 2 {
+		return Value{}, d.malformed(at, "a document of version %d is an array of 2 items, not %d", formatVersion, n)
 	}
 	v, derr := d.item()
 	if derr != nil {
