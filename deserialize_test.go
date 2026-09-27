@@ -363,7 +363,7 @@ func TestConformance_SE043_DecodersAreSupplied(t *testing.T) {
 	wantDecodeFailure(t, "an unknown mark", document+"83 00 01 da74656e02 82 f5 81 81 617a", tenon.CodeSerializeUnknownMark)
 	// A decoder that refuses gives its own diagnostics.
 	wantDecodeFailure(t, "a note without text", document+"83 00 01 da74656e02 82 f5 81 81 6170", "app.bad_note")
-	refusing := tenon.Capsule("refusing", tenon.CapsuleOps[celsius]{Encoding: &tenon.CapsuleEncoding[celsius]{
+	refusing := tenon.Capsule("refusing", tenon.CapsuleOps[celsius]{Equals: celsiusEquals, Hash: celsiusHash, Encoding: &tenon.CapsuleEncoding[celsius]{
 		ID: "t/refusing", Type: num,
 		Encode: func(v *celsius) tenon.Value { return n(v.degrees) },
 		Decode: func(tenon.Value) (*celsius, []tenon.Diagnostic) {

@@ -176,11 +176,17 @@ func compareTypes(a, b Type) int {
 // declares no equality has none to ask, and every pointer is a class of its
 // own.
 //
-// The numbers are held until the process ends. A capsule type whose values are
-// sorted often, or held in sets, should declare Compare and avoid this.
+// A value of a type with no equality is numbered by a weak pointer, and the
+// number is dropped once the value is collected: nothing can compare it after
+// that, so its order cannot be asked again, and numbering it keeps nothing
+// alive. A type with equality numbers only values whose hashes collide, and a
+// type with an encoding, which declares equality, orders even those by their
+// encodings and numbers nothing. What stays for the rest of the run is one
+// value of each colliding class of a type with equality and no encoding.
 var capsuleOrder struct {
 	mu sync.Mutex
-	// byPointer numbers the values of types that declare no equality.
+	// byPointer numbers the values of types that declare no equality, by weak
+	// pointer.
 	byPointer map[any]uint64
 	// byClass numbers the equality classes of types that do, one list per type
 	// and declared hash.
@@ -224,7 +230,22 @@ func (d *capsuleData) order(a, b any) int {
 			return c
 		}
 	}
+	// Unequal values encode apart, which the encoding promises, so their
+	// encodings order them without numbering either: the same in every run.
+	if d.encoding != nil {
+		if c := compareCanonical(d.encoding.encode(a).n, d.encoding.encode(b).n); c != 0 {
+			return c
+		}
+	}
 	return cmp.Compare(d.number(a), d.number(b))
+}
+
+// forgetCapsule drops the number of a collected capsule value, key being the
+// weak pointer it was numbered by.
+func forgetCapsule(key any) {
+	capsuleOrder.mu.Lock()
+	delete(capsuleOrder.byPointer, key)
+	capsuleOrder.mu.Unlock()
 }
 
 // number returns the number this run has given the equality class that v
@@ -238,17 +259,21 @@ func (d *capsuleData) order(a, b any) int {
 // numbers.
 func (d *capsuleData) number(v any) uint64 {
 	if d.equals == nil {
-		// Equality is the pointer, so every pointer is a class of its own.
+		// Equality is the pointer, so every pointer is a class of its own,
+		// numbered by a weak pointer that keeps it nothing, until it is
+		// collected.
+		key := d.weakKey(v)
 		capsuleOrder.mu.Lock()
 		defer capsuleOrder.mu.Unlock()
-		if n, ok := capsuleOrder.byPointer[v]; ok {
+		if n, ok := capsuleOrder.byPointer[key]; ok {
 			return n
 		}
 		if capsuleOrder.byPointer == nil {
 			capsuleOrder.byPointer = map[any]uint64{}
 		}
 		capsuleOrder.next++
-		capsuleOrder.byPointer[v] = capsuleOrder.next
+		capsuleOrder.byPointer[key] = capsuleOrder.next
+		d.forgetWhenCollected(v, key)
 		return capsuleOrder.next
 	}
 	// A type declaring equality declares a hash too, which Capsule requires,

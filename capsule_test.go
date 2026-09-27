@@ -58,6 +58,15 @@ func TestConformance_TY041_CapsuleEqualityNeedsHash(t *testing.T) {
 	mustPanicUsage(t, "declares Equals but not Hash", func() {
 		tenon.Capsule("point", tenon.CapsuleOps[point]{Equals: equals, Compare: compare, Display: display})
 	})
+	// An encoding needs an equality: a value read back is a new pointer,
+	// which only a declared equality finds equal to the one written.
+	mustPanicUsage(t, `capsule type "point" declares an encoding but not Equals`, func() {
+		tenon.Capsule("point", tenon.CapsuleOps[point]{Hash: hash, Encoding: &tenon.CapsuleEncoding[point]{
+			ID: "t/point", Type: tenon.NumberType(),
+			Encode: func(p *point) tenon.Value { return tenon.NumberFromInt(int64(p.x)) },
+			Decode: func(tenon.Value) (*point, []tenon.Diagnostic) { return &point{}, nil },
+		}})
+	})
 
 	// Any other choice of operations is accepted.
 	for _, ops := range []tenon.CapsuleOps[point]{

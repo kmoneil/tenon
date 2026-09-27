@@ -3,7 +3,10 @@ package tenon
 import (
 	"cmp"
 	"fmt"
+	"runtime"
 	"testing"
+	"time"
+	"weak"
 
 	"github.com/kmoneil/tenon/internal/conformance"
 )
@@ -50,5 +53,74 @@ func TestConformance_TY042_CapsuleIdentityEquality(t *testing.T) {
 	}
 	if d.equal(p, twin) {
 		t.Error("distinct pointers to equal values are equal, though the type declares no Equals")
+	}
+}
+
+// The canonical order of capsule values keeps none of them alive. A type with
+// no equality numbers its values by weak pointer, forgotten once each is
+// collected; a type with an encoding orders values whose hashes collide by
+// their encodings, and numbers nothing.
+func TestCapsuleOrderRetainsNothing(t *testing.T) {
+	// Large enough that the allocator does not batch them, which could keep
+	// one alive beside another.
+	type blob struct{ _ [256]byte }
+	opaque := Capsule("blob", CapsuleOps[blob]{})
+	const n = 200
+	collected := make([]weak.Pointer[blob], 0, 2*n)
+	func() {
+		for range n {
+			a, b := &blob{}, &blob{}
+			collected = append(collected, weak.Make(a), weak.Make(b))
+			if s := SetVal(opaque, CapsuleVal(opaque, a), CapsuleVal(opaque, b)); s.n.state != stateKnown {
+				t.Fatalf("a set of two capsule values is %v", s)
+			}
+		}
+	}()
+	gone := 0
+	for range 50 {
+		runtime.GC()
+		gone = 0
+		for _, w := range collected {
+			if w.Value() == nil {
+				gone++
+			}
+		}
+		if gone == len(collected) {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if gone < len(collected)*9/10 {
+		t.Errorf("%d of %d capsule values ordered into sets were collected", gone, len(collected))
+	}
+
+	// Values that collide in their declared hash, of a type with an
+	// encoding: ordered by the encoding, the same in every run, and not
+	// numbered.
+	colliding := Capsule("colliding_encoded", CapsuleOps[capsulePoint]{
+		Equals: func(a, b *capsulePoint) bool { return *a == *b },
+		Hash:   func(*capsulePoint) uint64 { return 7 },
+		Encoding: &CapsuleEncoding[capsulePoint]{
+			ID: "t/colliding", Type: NumberType(),
+			Encode: func(p *capsulePoint) Value { return NumberFromInt(int64(p.x)) },
+			Decode: func(v Value) (*capsulePoint, []Diagnostic) { x, _ := v.AsInt64(); return &capsulePoint{x: int(x)}, nil },
+		},
+	})
+	for _, order := range [][2]int{{2, 1}, {1, 2}} {
+		s := SetVal(colliding, CapsuleVal(colliding, &capsulePoint{x: order[0]}), CapsuleVal(colliding, &capsulePoint{x: order[1]}))
+		if first := CapsuleValue[capsulePoint](s.Elements()[0]); first.x != 1 {
+			t.Errorf("given %v, the set orders %d first, want the smaller encoding, 1", order, first.x)
+		}
+	}
+	capsuleOrder.mu.Lock()
+	numbered := 0
+	for key := range capsuleOrder.byClass {
+		if key.d == colliding.t.capsule {
+			numbered += len(capsuleOrder.byClass[key])
+		}
+	}
+	capsuleOrder.mu.Unlock()
+	if numbered != 0 {
+		t.Errorf("%d values of a type with an encoding were numbered", numbered)
 	}
 }
