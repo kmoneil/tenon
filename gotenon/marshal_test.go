@@ -266,3 +266,64 @@ func TestConformance_GO040_MarshalingOneWay(t *testing.T) {
 	// And the other way about.
 	wantValue(t, "encoding an observer by its mapping", encoded(t, observer{}), obj(nil))
 }
+
+// intKeyed marshals itself, where its kind, a map with int keys, maps to
+// nothing, so it encodes and nothing decodes into it.
+type intKeyed map[int]string
+
+func (k intKeyed) MarshalValue() (tenon.Value, error) { return tenon.NumberFromInt(int64(len(k))), nil }
+
+// tree marshals itself, where its kind holds itself, as a tree does.
+type tree struct {
+	Value int     `tenon:"value"`
+	Kids  []*tree `tenon:"kids"`
+}
+
+func (t tree) MarshalValue() (tenon.Value, error) {
+	n := int64(1)
+	for _, k := range t.Kids {
+		v, _ := k.MarshalValue()
+		m, _ := v.AsInt64()
+		n += m
+	}
+	return tenon.NumberFromInt(n), nil
+}
+
+// callback unmarshals itself, where its kind, a function, maps to nothing, so
+// it decodes and nothing encodes from it.
+type callback func() int
+
+func (c *callback) UnmarshalValue(v tenon.Value) error {
+	n, _ := v.AsInt64()
+	*c = func() int { return int(n) }
+	return nil
+}
+
+// TestConformance_GO040_EachDirectionMapsOnItsOwn holds a type implementing
+// one marshaler interface to being mapped by its kind only in the other
+// direction, and only when a value goes that way: a map with int keys and a
+// tree holding itself that marshal themselves encode, and decoding into
+// either is the usage error; a function type that unmarshals itself decodes,
+// and encoding from it is. A nil pointer to a type that encodes itself still
+// encodes as the null decoding reads back as nil.
+func TestConformance_GO040_EachDirectionMapsOnItsOwn(t *testing.T) {
+	conformance.Covers(t, "GO-040", "GO-011", "GO-013")
+	wantValue(t, "a map with int keys that marshals itself", encoded(t, intKeyed{1: "a", 2: "b"}), n(2))
+	mustPanicUsage(t, "keys of kind int", func() { gotenon.Decode[intKeyed](n(2), tenon.Safe) })
+	leaf := &tree{Value: 2}
+	wantValue(t, "a tree that marshals itself", encoded(t, tree{Value: 1, Kids: []*tree{leaf, leaf}}), n(3))
+	mustPanicUsage(t, "holds itself", func() { gotenon.Decode[tree](n(3), tenon.Safe) })
+	if got := decoded[callback](t, n(7), tenon.Safe); got() != 7 {
+		t.Errorf("a function that unmarshals itself decoded to one giving %d", got())
+	}
+	mustPanicUsage(t, "of kind func", func() { gotenon.Encode(callback(func() int { return 0 })) })
+
+	var nothing *encodesOnly
+	null := encoded(t, nothing)
+	wantValue(t, "a nil pointer to a struct that marshals itself", null, tenon.NullVal(tenon.Object(map[string]tenon.Type{"n": num})))
+	if back := decoded[*encodesOnly](t, null, tenon.Safe); back != nil {
+		t.Errorf("the null of a nil pointer decoded back as %+v", back)
+	}
+	var none *intKeyed
+	wantValue(t, "a nil pointer to a map with int keys that marshals itself", encoded(t, none), tenon.NullVal(tenon.Object(nil)))
+}

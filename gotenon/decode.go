@@ -64,7 +64,7 @@ func Decode[T any](v tenon.Value, p tenon.Policy) (T, error) {
 	if p != tenon.Safe && p != tenon.Unsafe {
 		usagePanic("Decode called with %s, which is neither Safe nor Unsafe", p)
 	}
-	m := mappingOf(reflect.TypeFor[T]())
+	m := mappingOf(reflect.TypeFor[T](), decoding)
 	// The type is refused whatever the value, before any of it is looked
 	// at: a null or an empty collection reaches no interface, and must not
 	// let a type through that the next value would fail [GO-011].
