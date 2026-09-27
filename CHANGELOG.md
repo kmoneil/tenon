@@ -47,6 +47,13 @@
   each is written, and finds the rest, as an integer in a longer form than it
   needs, by comparing the input with the value's encoding once it is read
   through. The vector corpus holds inputs with two faults, in both orders.
+- The specification defines the least length of a set holding unknown members
+  as tenon counts it: the members taken in iteration order, each counted where
+  it is provably distinct from every member counted before it, and it fixes
+  that order for the members that are not known as the order of their
+  encodings, where it was left to implementations. So every implementation
+  gives one length, and one contradiction, for one set. `Length` and
+  `Elements` say so.
 
 ## 0.8.0 (2026-09-27)
 

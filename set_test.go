@@ -1020,3 +1020,34 @@ func TestSetsOverFewValuesConcurrent(t *testing.T) {
 		t.Errorf("the set holds %d members, want 3", results[0].Len())
 	}
 }
+
+// TestConformance_EQ042_TheLeastLengthIsCountedInIterationOrder holds the
+// least length of a set holding unknown members to the count EQ-042 defines:
+// the members taken in iteration order, known ones first and the rest in the
+// order of their encodings (EQ-044), each counted where it is provably
+// distinct from every member counted before it. Of three numbers on [0, 25],
+// [1, 10] and [20, 30], the last two are provably distinct, but [0, 25]
+// comes first and overlaps both, so the count is one, whatever order the set
+// was built in, where the most members distinct from all the others is two.
+func TestConformance_EQ042_TheLeastLengthIsCountedInIterationOrder(t *testing.T) {
+	conformance.Covers(t, "EQ-042", "EQ-044")
+	num := tenon.NumberType()
+	between := func(lo, hi int64) tenon.Value {
+		return tenon.Narrow(tenon.Unknown(num), tenon.NotNull(), tenon.NumberMin(tenon.NumberFromInt(lo), true), tenon.NumberMax(tenon.NumberFromInt(hi), true))
+	}
+	wide, low, high := between(0, 25), between(1, 10), between(20, 30)
+	want := tenon.Narrow(tenon.Unknown(num), tenon.NotNull(), tenon.NumberMin(tenon.NumberFromInt(1), true), tenon.NumberMax(tenon.NumberFromInt(3), true))
+	for _, order := range [][]tenon.Value{{wide, low, high}, {high, low, wide}, {low, wide, high}} {
+		s := tenon.SetVal(num, order...)
+		if got := tenon.Length(s); !tenon.Identical(got, want) {
+			t.Errorf("the length of %v is %v, want %v", s, got, want)
+		}
+		if first := s.Elements()[0]; !tenon.Identical(first, wide) {
+			t.Errorf("%v iterates %v first, want %v, whose encoding comes first", s, first, wide)
+		}
+	}
+	// Without the member that overlaps both, the two are counted apart.
+	if got := tenon.Length(tenon.SetVal(num, low, high)); !tenon.Identical(got, tenon.NumberFromInt(2)) {
+		t.Errorf("the length of two provably distinct members is %v, want 2", got)
+	}
+}

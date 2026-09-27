@@ -780,7 +780,9 @@ func (v Value) Index(i int) Value {
 }
 
 // Elements returns the elements of a list, set or tuple in order, in a new
-// slice. It panics for other values.
+// slice: a set's in the order it iterates, its known members first, in the
+// canonical order, and then the rest, in the order of their encodings. It
+// panics for other values.
 //
 // A set's members carry no marks where the set holds them, so a deep mark on
 // the set is attached to each member as Elements returns it, and a member
