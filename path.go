@@ -27,7 +27,11 @@ func (k StepKind) String() string {
 }
 
 // Step is one step of a path: an attribute of an object, or an index into a
-// list, tuple, map or set.
+// list, tuple, map or set. Steps cannot be compared with ==, since an index
+// holds a [Value]; [Step.Equal] compares them.
+//
+// The zero Step is not a step: every method except String, IsZero and Equal
+// panics when called on it.
 type Step struct {
 	kind StepKind
 	name string // the attribute name, normalized
@@ -85,6 +89,18 @@ func (s Step) write(b *textWriter) {
 	}
 }
 
+// IsZero reports whether s is the zero Step, which is not a step.
+func (s Step) IsZero() bool { return s.kind == 0 }
+
+// Equal reports whether s and t are the same step: attribute steps of one
+// name, or index steps of one key. The zero Step is equal only to itself.
+func (s Step) Equal(t Step) bool {
+	if s.kind == 0 || t.kind == 0 {
+		return s.kind == t.kind
+	}
+	return s.equal(t)
+}
+
 // equal reports whether s and t are the same step.
 func (s Step) equal(t Step) bool {
 	if s.kind != t.kind {
@@ -129,7 +145,12 @@ func isIdentifier(name string) bool {
 // Paths are immutable. Extending a path returns a new path and leaves the
 // original as it was, so a path stays valid for as long as its holder keeps
 // it, however the walk that produced it goes on.
+//
+// Paths cannot be compared with ==, which would compare how two paths are
+// held rather than their steps, and cannot be map keys. [Path.Equal] compares
+// them.
 type Path struct {
+	_    [0]func() // not comparable: == would compare pointers, not steps
 	last *pathNode
 }
 
@@ -172,8 +193,12 @@ func (p Path) extend(s Step) Path {
 	if p.last != nil {
 		depth = p.last.depth + 1
 	}
-	return Path{&pathNode{parent: p.last, step: s, depth: depth}}
+	return Path{last: &pathNode{parent: p.last, step: s, depth: depth}}
 }
+
+// IsZero reports whether p is the zero Path, the empty path, as Len() == 0
+// does.
+func (p Path) IsZero() bool { return p.last == nil }
 
 // Len returns the number of steps in p.
 func (p Path) Len() int {

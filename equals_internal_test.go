@@ -18,7 +18,7 @@ import (
 func TestConformance_EQ002_EqualsReadsNothingWithinWhatItShares(t *testing.T) {
 	conformance.Covers(t, "EQ-002")
 	numbers := List(NumberType())
-	unreadable := Value{&node{state: stateKnown, typ: numbers, data: "not a list"}}
+	unreadable := Value{n: &node{state: stateKnown, typ: numbers, data: "not a list"}}
 	part := ListVal(numbers, unreadable)
 	prior := ObjectVal(map[string]Value{"part": part, "version": NumberFromInt(1)})
 	planned := ObjectVal(map[string]Value{"part": part, "version": NumberFromText("1.0")})

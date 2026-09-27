@@ -139,6 +139,13 @@
 // and [CanonicalCompare] puts values in a total order that does not depend on
 // how they were built.
 //
+// A [Value], a [Constraint] and a [Path] cannot be compared with == or used as
+// a map key, since == would compare how each is held rather than what it
+// says. Each has an Equal method instead, [Value.Equal] being [Identical], in
+// the form github.com/google/go-cmp calls, and an IsZero method. A map from
+// values keys them by [Hash], telling colliding values apart with
+// [Identical], or by the bytes [Serialize] gives.
+//
 // # Serialization, JSON and diffs
 //
 // [Serialize] encodes a value as a CBOR document, unknown values, ranges,

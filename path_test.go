@@ -24,7 +24,7 @@ func TestConformance_VA020_PathSteps(t *testing.T) {
 	if kinds := []tenon.StepKind{steps[0].Kind(), steps[1].Kind(), steps[2].Kind()}; !slices.Equal(kinds, []tenon.StepKind{tenon.StepAttribute, tenon.StepIndex, tenon.StepIndex}) {
 		t.Errorf("step kinds are %v", kinds)
 	}
-	if steps[0].Name() != "name" || steps[2].Key() != key {
+	if steps[0].Name() != "name" || !steps[2].Key().Equal(key) {
 		t.Errorf("steps do not carry what they were built from: %v", p)
 	}
 	if got, want := p.String(), `.name[2]["k"]`; got != want {

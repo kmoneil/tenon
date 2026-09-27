@@ -407,7 +407,7 @@ func readTree(v Value, read func(holder, member Value) Value) {
 func lazyMark(v Value, m Mark) Value {
 	nn := *v.n
 	nn.marks = &markSet{list: []Mark{m}}
-	return Value{&nn}
+	return Value{n: &nn}
 }
 
 // lazyRead is what reading a member costs a lazy design at best: a copy of the
@@ -420,7 +420,7 @@ func lazyRead(holder, member Value) Value {
 	}
 	nn := *member.n
 	nn.marks = holder.n.marks
-	return Value{&nn}
+	return Value{n: &nn}
 }
 
 // BenchmarkUnmarkedValues is the memory profile of building values that are

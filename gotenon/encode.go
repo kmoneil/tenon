@@ -139,7 +139,7 @@ func join(p, q tenon.Path) tenon.Path {
 func (f *failures) withError(p tenon.Path, code tenon.Code, err error) {
 	var de *DiagnosticError
 	if errors.As(err, &de) {
-		if de.Value == (tenon.Value{}) || !de.Value.IsError() {
+		if de.Value.IsZero() || !de.Value.IsError() {
 			// Rendering such an error panics inside Error, so the broken
 			// contract is named here, as the zero Value from MarshalValue is.
 			usagePanic("the method returned a *DiagnosticError whose Value is not an error value, which breaks its contract")
@@ -255,7 +255,7 @@ func (e *encoder) encode(m *goMapping, rv reflect.Value, p tenon.Path) (tenon.Va
 	switch m.kind {
 	case goValue:
 		v := rv.Interface().(tenon.Value)
-		if v == (tenon.Value{}) {
+		if v.IsZero() {
 			usagePanic("Encode: the tenon.Value at %q is the zero Value, which is not a value", p.String())
 		}
 		// A tenon.Value is given as it is, unknown or marked, but an error
@@ -351,7 +351,7 @@ func (e *encoder) marshal(m *goMapping, rv reflect.Value, p tenon.Path) (tenon.V
 		e.fails.withError(p, tenon.CodeEncodeMarshalFailed, err)
 		return tenon.Value{}, false
 	}
-	if v == (tenon.Value{}) {
+	if v.IsZero() {
 		usagePanic("the MarshalValue method of %s returned the zero Value, which is not a value", m.rt)
 	}
 	// An error value it returns fails the encoding as a returned error does,
@@ -670,7 +670,7 @@ func (e *encoder) structure(m *goMapping, rv reflect.Value, p tenon.Path) (tenon
 	ok := true
 	for _, f := range m.fields {
 		fv := rv.Field(f.index)
-		if f.m.kind == goValue && fv.Interface().(tenon.Value) == (tenon.Value{}) {
+		if f.m.kind == goValue && fv.Interface().(tenon.Value).IsZero() {
 			if f.optional {
 				continue
 			}

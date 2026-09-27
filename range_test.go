@@ -161,7 +161,7 @@ func TestConformance_UN003_NarrowingIsMonotone(t *testing.T) {
 	// A known value is a range of one, so narrowing it either keeps it whole
 	// or contradicts it.
 	text := tenon.String("abc")
-	if got := tenon.Narrow(text, tenon.StringPrefix("ab"), tenon.NotNull(), tenon.LengthMax(3)); got != text {
+	if got := tenon.Narrow(text, tenon.StringPrefix("ab"), tenon.NotNull(), tenon.LengthMax(3)); !tenon.SameNode(got, text) {
 		t.Errorf("narrowing a known value it satisfies produced %v, want the value itself", got)
 	}
 }
@@ -682,13 +682,13 @@ func TestNarrowingSaysNothingAboutNull(t *testing.T) {
 	// so null satisfies it: an optional attribute with a constraint on it
 	// stays optional.
 	null := tenon.NullVal(str)
-	if got := tenon.Narrow(null, tenon.StringPrefix("ab"), tenon.LengthMin(2)); got != null {
+	if got := tenon.Narrow(null, tenon.StringPrefix("ab"), tenon.LengthMin(2)); !tenon.SameNode(got, null) {
 		t.Errorf("narrowing the null value produced %v, want the value itself", got)
 	}
 	// The same holds of a range that has been narrowed to null, and the
 	// narrowing leaves no trace, so the range of null has one spelling.
 	onlyNull := tenon.Narrow(tenon.Unknown(num), tenon.Null())
-	if got := tenon.Narrow(onlyNull, tenon.NumberMin(five, true)); got != onlyNull {
+	if got := tenon.Narrow(onlyNull, tenon.NumberMin(five, true)); !tenon.SameNode(got, onlyNull) {
 		t.Errorf("narrowing a null range by a bound produced %v, want the range itself", got)
 	}
 	// A range that holds null keeps it until NotNull takes it away.
@@ -751,7 +751,7 @@ func TestNarrowingLengthIsGraphemeClusters(t *testing.T) {
 	// "e" followed by a combining acute accent is one grapheme cluster, and a
 	// string's length is its count of clusters, not of scalars or bytes.
 	text := tenon.String("e\U00000301")
-	if got := tenon.Narrow(text, tenon.LengthMax(1)); got != text {
+	if got := tenon.Narrow(text, tenon.LengthMax(1)); !tenon.SameNode(got, text) {
 		t.Errorf("narrowing a one-cluster string to length <= 1 produced %v, want the value itself", got)
 	}
 	if got := tenon.Narrow(text, tenon.LengthMin(2)); !got.IsError() {
@@ -1179,7 +1179,7 @@ func TestConformance_UN002_MembersNarrowing(t *testing.T) {
 	if !tenon.Identical(a, b) {
 		t.Errorf("%v and %v record one listing two ways, but are not identical", a, b)
 	}
-	if got := tenon.Narrow(a, tenon.Members(one, two)); got != a {
+	if got := tenon.Narrow(a, tenon.Members(one, two)); !tenon.SameNode(got, a) {
 		t.Errorf("listing recorded members again produced %v, want the range unchanged", got)
 	}
 	if got, want := tenon.Narrow(tenon.Unknown(set), tenon.Members(tenon.NullVal(num), one)).String(),
@@ -1294,14 +1294,14 @@ func TestConformance_UN002_MembersNarrowing(t *testing.T) {
 	// one it provably cannot contradicts it, and the null set satisfies any
 	// listing vacuously, since a narrowing says nothing about null.
 	s12 := tenon.SetVal(num, one, two)
-	if got := tenon.Narrow(s12, tenon.Members(one), tenon.Members(tenon.Unknown(num))); got != s12 {
+	if got := tenon.Narrow(s12, tenon.Members(one), tenon.Members(tenon.Unknown(num))); !tenon.SameNode(got, s12) {
 		t.Errorf("narrowing a known set it could satisfy produced %v, want the set itself", got)
 	}
 	if got := tenon.Narrow(s12, tenon.Members(three)); !got.IsError() {
 		t.Errorf("narrowing a known set by a member it provably lacks produced %v, want an error value", got)
 	}
 	nullSet := tenon.NullVal(set)
-	if got := tenon.Narrow(nullSet, tenon.Members(one)); got != nullSet {
+	if got := tenon.Narrow(nullSet, tenon.Members(one)); !tenon.SameNode(got, nullSet) {
 		t.Errorf("narrowing the null set produced %v, want the value itself", got)
 	}
 

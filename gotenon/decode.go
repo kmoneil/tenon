@@ -58,7 +58,7 @@ import (
 // tenon.Value is the Go type that holds any value, so decode into that.
 func Decode[T any](v tenon.Value, p tenon.Policy) (T, error) {
 	var out T
-	if v == (tenon.Value{}) {
+	if v.IsZero() {
 		usagePanic("Decode called with the zero Value, which is not a value")
 	}
 	if p != tenon.Safe && p != tenon.Unsafe {

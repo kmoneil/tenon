@@ -13,7 +13,9 @@ import (
 //
 // A mark is any comparable value implementing this interface. Marks are told
 // apart by Go equality, so a mark is usually a small struct or a pointer,
-// and attaching one that is not comparable is a usage panic. The identifier
+// and attaching one that is not comparable is a usage panic. A struct holding
+// a [Value], a [Constraint] or a [Path] is not comparable, so a mark keeps
+// what it says as Go data and builds its payload from that. The identifier
 // names the mark where its value cannot appear, such as a redaction
 // placeholder or a serialized form.
 //
@@ -166,7 +168,7 @@ func withoutMarks(v Value) Value {
 	}
 	nn := v.n.clone()
 	nn.marks = nil
-	return Value{&nn}
+	return Value{n: &nn}
 }
 
 // contains reports whether s holds m, looking in each layer in turn.
@@ -220,7 +222,7 @@ func WithMarks(v Value, marks ...Mark) Value {
 	if deep := deepMarks(marks); deep != nil {
 		newAttachment(deep, nil).within(&nn)
 	}
-	return Value{&nn}
+	return Value{n: &nn}
 }
 
 // comparableMark reports whether Go equality can compare m at all, and
@@ -471,7 +473,7 @@ func (a *attachment) within(n *node) {
 				if members == nil {
 					members = slices.Clone(data)
 				}
-				members[i] = Value{r}
+				members[i] = Value{n: r}
 			}
 		}
 		if members != nil {
@@ -484,7 +486,7 @@ func (a *attachment) within(n *node) {
 				if entries == nil {
 					entries = slices.Clone(data)
 				}
-				entries[i].val = Value{r}
+				entries[i].val = Value{n: r}
 			}
 		}
 		if entries != nil {
@@ -570,7 +572,7 @@ func withOwnMarks(v Value, marks []Mark) Value {
 	}
 	nn := v.n.clone()
 	nn.marks = &markSet{list: merged}
-	return Value{&nn}
+	return Value{n: &nn}
 }
 
 // settleDeep gives n, and every value within it but a set's members, the deep
@@ -621,7 +623,7 @@ func settleDeep(n *node, a *attachment) *node {
 				if members == nil {
 					members = slices.Clone(data)
 				}
-				members[i] = Value{r}
+				members[i] = Value{n: r}
 			}
 		}
 		if members != nil {
@@ -638,7 +640,7 @@ func settleDeep(n *node, a *attachment) *node {
 				if entries == nil {
 					entries = slices.Clone(data)
 				}
-				entries[i].val = Value{r}
+				entries[i].val = Value{n: r}
 			}
 		}
 		if entries != nil {
@@ -660,7 +662,7 @@ func (n *node) retrievedMembers() []Value {
 	if deep := deepMarks(n.markList()); deep != nil {
 		a := newAttachment(deep, nil)
 		for i, m := range members {
-			members[i] = Value{a.attach(m.n)}
+			members[i] = Value{n: a.attach(m.n)}
 		}
 	}
 	return members
@@ -687,7 +689,7 @@ func Unmark(v Value) (Value, []Mark) {
 	}
 	nn := n.clone()
 	nn.marks = nil
-	return Value{&nn}, slices.Clone(n.marks.all())
+	return Value{n: &nn}, slices.Clone(n.marks.all())
 }
 
 // UnmarkDeep returns v without a mark anywhere in it: without its own marks,
@@ -707,7 +709,7 @@ func UnmarkDeep(v Value) (Value, []Mark) {
 	var t taking
 	u := n.unmarkDeep(&t)
 	sortMarks(t.marks)
-	return Value{u}, t.marks
+	return Value{n: u}, t.marks
 }
 
 // taking gathers the marks UnmarkDeep takes, each once, looked up through a
@@ -758,13 +760,13 @@ func (n *node) unmarkDeep(t *taking) *node {
 		case []Value:
 			members := make([]Value, len(data))
 			for i, m := range data {
-				members[i] = Value{m.n.unmarkDeep(t)}
+				members[i] = Value{n: m.n.unmarkDeep(t)}
 			}
 			nn.data = members
 		case []mapEntry:
 			entries := make([]mapEntry, len(data))
 			for i, e := range data {
-				entries[i] = mapEntry{key: e.key, val: Value{e.val.n.unmarkDeep(t)}}
+				entries[i] = mapEntry{key: e.key, val: Value{n: e.val.n.unmarkDeep(t)}}
 			}
 			nn.data = entries
 		}

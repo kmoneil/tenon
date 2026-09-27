@@ -42,6 +42,18 @@
 
 ### Changed
 
+- `Value`, `Constraint` and `Path` cannot be compared with `==` or used as
+  map keys, and neither can `Step`, `Diagnostic` and `Change`, which hold
+  them. `==` compared how two were held rather than what they said, so
+  `String("a")` built twice was two map keys. Compare values with
+  `Value.Equal`, which is `Identical`, and steps with `Step.Equal`, each in
+  the form go-cmp's `cmp.Equal` calls; test for the zero value with `IsZero`,
+  which `Value`, `Type`, `Constraint`, `Path` and `Step` now have, where a
+  program wrote `v == tenon.Value{}`. `Type.Equal` and `Constraint.Equal` no
+  longer panic on a zero value, which is equal only to itself. `Type` is
+  still comparable. A mark's type must be comparable, so a mark cannot hold a
+  `Value`: it keeps what it says as Go data and builds its payload from that.
+
 - An operation that its known operands alone make fail fails now: `Div` and
   `Mod` by a known zero give `CodeNumberDivideByZero` and
   `CodeNumberModuloByZero` where the dividend is unknown or pending, where

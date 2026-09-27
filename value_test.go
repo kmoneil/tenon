@@ -95,12 +95,12 @@ func TestConformance_BO001_BoolDomain(t *testing.T) {
 	if tr.Type() != tenon.BoolType() || fa.Type() != tenon.BoolType() {
 		t.Error("Bool values do not have type Bool")
 	}
-	if !tr.AsBool() || fa.AsBool() || tr == fa {
+	if !tr.AsBool() || fa.AsBool() || tr.Equal(fa) {
 		t.Error("true and false are not two distinct Bool values")
 	}
 	// Every Bool value is one of the two.
 	for _, b := range []bool{true, false} {
-		if v := tenon.Bool(b); v != tr && v != fa {
+		if v := tenon.Bool(b); !v.Equal(tr) && !v.Equal(fa) {
 			t.Errorf("Bool(%t) is neither true nor false", b)
 		}
 	}
@@ -430,7 +430,7 @@ func TestConformance_UN024_PendingNullness(t *testing.T) {
 	}
 	mustPanicUsage(t, "does not apply to a pending value", func() { tenon.Narrow(p, tenon.LengthMax(1)) })
 	// A narrowing that says nothing new leaves the value as it was.
-	if again := tenon.Narrow(null, tenon.Null()); again != null {
+	if again := tenon.Narrow(null, tenon.Null()); !tenon.SameNode(again, null) {
 		t.Errorf("narrowing a pending null to null again produced a new value")
 	}
 }

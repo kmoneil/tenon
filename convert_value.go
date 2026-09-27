@@ -73,7 +73,7 @@ func (x converter) value(v Value, c Constraint) Value {
 			diags = append(diags, Diagnostic{Code: d.Code, Message: message})
 		}
 	}
-	return Value{&node{state: stateError, data: diags, marks: r.n.marks}}
+	return Value{n: &node{state: stateError, data: diags, marks: r.n.marks}}
 }
 
 // valueOf is value for a value whose failures need not be moved.
@@ -208,7 +208,7 @@ func (x converter) carry(r Value, from *node) Value {
 		if deep != nil {
 			x.carried.attachment(deep).within(&nn)
 		}
-		return Value{&nn}
+		return Value{n: &nn}
 	}
 	if ms := propagateMarks(from); ms != nil {
 		return WithMarks(r, ms...)
@@ -682,7 +682,7 @@ func setOf(elem Type, members []Value) Value {
 	var t taking
 	unmarked := make([]Value, len(members))
 	for i, m := range members {
-		unmarked[i] = Value{m.n.unmarkDeep(&t)}
+		unmarked[i] = Value{n: m.n.unmarkDeep(&t)}
 	}
 	sortMarks(t.marks)
 	return WithMarks(SetVal(elem, unmarked...), t.marks...)

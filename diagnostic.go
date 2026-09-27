@@ -16,8 +16,8 @@ type Diagnostic struct {
 }
 
 // Equal reports whether d and e are the same diagnostic: the same code, the
-// same message, and the same path. Diagnostics are compared this way rather
-// than with ==, because a path holds a pointer.
+// same message, and the same path. A Diagnostic cannot be compared with ==,
+// since a [Path] cannot.
 func (d Diagnostic) Equal(e Diagnostic) bool {
 	return d.Code == e.Code && d.Message == e.Message && d.Path.Equal(e.Path)
 }

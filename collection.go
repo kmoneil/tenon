@@ -67,7 +67,7 @@ func (c *containerErrors) value() (Value, bool) {
 	if len(c.parts) == 0 {
 		return Value{}, false
 	}
-	return WithMarks(Value{&node{state: stateError, data: &hoisted{parts: c.parts}}}, c.marks.marks...), true
+	return WithMarks(Value{n: &node{state: stateError, data: &hoisted{parts: c.parts}}}, c.marks.marks...), true
 }
 
 // hoisted is what an error value that a container's error members made holds
@@ -167,7 +167,7 @@ func (f *flattening) add(d Diagnostic, at *pathNode) {
 		f.seen = map[diagnosticAt]bool{}
 	}
 	f.seen[key] = true
-	d.Path = Path{at}
+	d.Path = Path{last: at}
 	f.out = append(f.out, d)
 }
 
@@ -184,7 +184,7 @@ func (f *flattening) node(at *pathNode, s Step) *pathNode {
 	if n, ok := f.nodes[key]; ok {
 		return n
 	}
-	n := Path{at}.extend(s).last
+	n := Path{last: at}.extend(s).last
 	if f.nodes == nil {
 		f.nodes = map[pathNodeKey]*pathNode{}
 	}
@@ -263,7 +263,7 @@ func sequenceValue(t Type, fn string, elems []Value) Value {
 	if t.t.kind == KindSet {
 		members = withNothingLeftToBe(t, orderMembers(distinctMembers(members)))
 	}
-	return Value{&node{state: stateKnown, partial: anyPartial(members), markedWithin: anyMarked(members), typ: t, data: members}}
+	return Value{n: &node{state: stateKnown, partial: anyPartial(members), markedWithin: anyMarked(members), typ: t, data: members}}
 }
 
 // unmarkForSet is what a panic message tells a caller who gave a set a marked
@@ -288,7 +288,7 @@ func TupleVal(elems ...Value) Value {
 	if v, ok := errs.value(); ok {
 		return v
 	}
-	return Value{&node{state: stateKnown, partial: anyPartial(elems), markedWithin: anyMarked(elems), typ: Tuple(types...), data: slices.Clone(elems)}}
+	return Value{n: &node{state: stateKnown, partial: anyPartial(elems), markedWithin: anyMarked(elems), typ: Tuple(types...), data: slices.Clone(elems)}}
 }
 
 // ObjectVal returns the object with the given attributes, whose type is the
@@ -316,7 +316,7 @@ func ObjectVal(attrs map[string]Value) Value {
 	if v, ok := errs.value(); ok {
 		return v
 	}
-	return Value{&node{state: stateKnown, partial: anyPartial(vals), markedWithin: anyMarked(vals), typ: Object(types), data: vals}}
+	return Value{n: &node{state: stateKnown, partial: anyPartial(vals), markedWithin: anyMarked(vals), typ: Object(types), data: vals}}
 }
 
 // objectOf returns the object value of type t holding vals, one per attribute
@@ -331,7 +331,7 @@ func objectOf(t Type, vals []Value) Value {
 			internalPanic("objectOf: attribute %q of %s is an error value", t.t.attrs[i].name, t)
 		}
 	}
-	return Value{&node{state: stateKnown, partial: anyPartial(vals), markedWithin: anyMarked(vals), typ: t, data: vals}}
+	return Value{n: &node{state: stateKnown, partial: anyPartial(vals), markedWithin: anyMarked(vals), typ: t, data: vals}}
 }
 
 // distinctMembers returns the members of a set: members that equality reports
@@ -427,7 +427,7 @@ func notKnownOrder() func(a, b *node) int {
 				e = newEncoder()
 			}
 			before := e.failures
-			enc = encoding{e.content(nil, Value{n}, 0, nil), e.failures > before}
+			enc = encoding{e.content(nil, Value{n: n}, 0, nil), e.failures > before}
 			encoded[n] = enc
 		}
 		return enc
@@ -677,7 +677,7 @@ func MapVal(elem Type, entries map[string]Value) Value {
 		partial = partial || !e.val.n.isKnown()
 		marked = marked || e.val.n.isMarked()
 	}
-	return Value{&node{state: stateKnown, partial: partial, markedWithin: marked, typ: t, data: out}}
+	return Value{n: &node{state: stateKnown, partial: partial, markedWithin: marked, typ: t, data: out}}
 }
 
 // memberName names a member of a container, for a panic message or as a step
