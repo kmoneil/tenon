@@ -71,9 +71,20 @@ func identicalContent(a, b *node) bool {
 }
 
 // sameMarks reports whether two values carry the same marks, which is what
-// their mark sets holding the same marks amounts to.
+// their mark sets holding the same marks amounts to. Two sets that share
+// their outer layers, as the members of one container do, hold the same
+// marks where their own layers do, which asks nothing of the shared ones.
 func sameMarks(a, b *node) bool {
-	return sameMarkSet(a.markList(), b.markList())
+	x, y := a.marks, b.marks
+	switch {
+	case x == y:
+		return true
+	case x == nil || y == nil:
+		return false
+	case x.outer == y.outer && sameMarkSet(x.list, y.list):
+		return true
+	}
+	return sameMarkSet(x.all(), y.all())
 }
 
 // equal reports whether two constraints are the same constraint. Constraints

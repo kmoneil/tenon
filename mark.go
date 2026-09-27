@@ -3,6 +3,7 @@ package tenon
 import (
 	"slices"
 	"strings"
+	"sync/atomic"
 )
 
 // Mark is caller-defined metadata attached to a value: a sensitivity label,
@@ -80,21 +81,66 @@ const (
 	Isolate
 )
 
-// markSet is the immutable set of marks on a value, held sorted by
-// identifier, attachment order breaking ties. It is nil on an unmarked
-// value, which therefore pays a nil pointer and nothing else for the marks
-// it does not have. Nothing changes a mark set once it is made, so values
-// that carry the same marks may share one.
+// markSet is the immutable set of marks on a value. It is nil on an unmarked
+// value, which therefore pays a nil pointer and nothing else for the marks it
+// does not have. Nothing changes a mark set once it is made, so values that
+// carry the same marks may share one.
+//
+// A set is held in layers. list is the set's own layer, sorted by identifier,
+// attachment order breaking ties. outer is the layer of marks the value
+// inherits, the deep marks of the values above it, which every value
+// inheriting them shares rather than each holding a copy: a list whose
+// members carry marks of their own beside k deep marks would otherwise hold k
+// marks per member. The marks a value carries are its own layer's, then its
+// outer layers', each once (all). An outer layer is itself a mark set, and
+// layer says a set is one, which values share and which keeps its merged list
+// once asked for it.
 type markSet struct {
-	list []Mark
+	list  []Mark
+	outer *markSet
+	layer bool
+	full  atomic.Pointer[[]Mark]
 }
 
-// markList returns the marks on n, nil when there are none.
+// all returns every mark s holds, each once, sorted by identifier: among marks
+// that share one, those of its own layer first, then each outer layer's in
+// turn. The result is read, never written to: it may be the set's own list.
+// Only a layer keeps the list it merges, since values share a layer, where a
+// value's own set is asked for its marks rarely and keeping each would hold
+// again what the layers save.
+func (s *markSet) all() []Mark {
+	if s.outer == nil {
+		return s.list
+	}
+	if s.layer {
+		if p := s.full.Load(); p != nil {
+			return *p
+		}
+	}
+	merged, _ := mergeDistinct(s.list, s.outer.all())
+	if s.layer {
+		s.full.Store(&merged)
+	}
+	return merged
+}
+
+// contains reports whether s holds m, looking in each layer in turn.
+func (s *markSet) contains(m Mark) bool {
+	for ; s != nil; s = s.outer {
+		if _, found := placeMark(s.list, m); found {
+			return true
+		}
+	}
+	return false
+}
+
+// markList returns the marks on n, nil when there are none. The result is
+// read, never written to.
 func (n *node) markList() []Mark {
 	if n.marks == nil {
 		return nil
 	}
-	return n.marks.list
+	return n.marks.all()
 }
 
 // WithMarks returns v carrying the given marks beside those it already
@@ -127,7 +173,7 @@ func WithMarks(v Value, marks ...Mark) Value {
 	nn := *n
 	nn.marks = &markSet{list: merged}
 	if deep := deepMarks(marks); deep != nil {
-		(&attachment{deep: deep}).within(&nn)
+		newAttachment(deep, nil).within(&nn)
 	}
 	return Value{&nn}
 }
@@ -344,14 +390,20 @@ func deepMarks(marks []Mark) []Mark {
 // decoder is reading does not keep it until it is settled, so settleDeep
 // walks that value itself and takes from an attachment only the mark sets.
 //
-// Values that held the same marks before the attachment hold the same marks
-// after it, so they share one mark set rather than each holding a copy. Most
-// of the values within a value being marked held no marks, and all of those
-// share one.
+// The marks attached are one layer, which every value given them shares as
+// its outer layer, after any it had: a value that held no marks holds the
+// layer itself, and one that held some holds its own layer before it. Values
+// that held the same set before the attachment hold the same set after it.
 type attachment struct {
-	deep     []Mark                // the marks to attach, each once, sorted
-	unmarked *markSet              // what a value that held no marks holds after
-	sets     map[*markSet]*markSet // what a value that held some holds after
+	layer  *markSet              // the marks to attach, and the layers out from them
+	sets   map[*markSet]*markSet // what a value that held a set holds after
+	chains map[*markSet]*markSet // what an outer layer becomes with layer beyond it
+}
+
+// newAttachment returns an attachment of the deep marks deep, sorted and
+// distinct, with outer, the layers of a value further out, beyond them.
+func newAttachment(deep []Mark, outer *markSet) *attachment {
+	return &attachment{layer: &markSet{list: deep, outer: outer, layer: true}}
 }
 
 // within attaches the deep marks to every value n holds, at any depth, other
@@ -410,27 +462,49 @@ func (a *attachment) attach(n *node) *node {
 }
 
 // merged returns the mark set that a value holding held holds once the deep
-// marks are attached to it, and whether that adds any.
+// marks are attached to it, and whether that is another set. The value keeps
+// its own layer and gains the attached one beyond its outer layers, sharing
+// both with every value that held what it held; whether that adds a mark is
+// not asked, which would look for every attached mark in every set given
+// them, and a mark held twice is held once (all).
 func (a *attachment) merged(held *markSet) (*markSet, bool) {
 	if held == nil {
-		if a.unmarked == nil {
-			a.unmarked = &markSet{list: a.deep}
-		}
-		return a.unmarked, true
+		return a.layer, true
 	}
 	if set, ok := a.sets[held]; ok {
 		return set, set != held
 	}
-	list, grew := mergeDistinct(held.list, a.deep)
 	set := held
-	if grew {
-		set = &markSet{list: list}
+	if outer := a.beyond(held.outer); outer != held.outer {
+		set = &markSet{list: held.list, outer: outer, layer: held.layer}
 	}
 	if a.sets == nil {
 		a.sets = map[*markSet]*markSet{}
 	}
 	a.sets[held] = set
-	return set, grew
+	return set, set != held
+}
+
+// beyond returns the layers outer with the attached layer beyond them, which
+// is outer itself where the attached layer is among them already.
+func (a *attachment) beyond(outer *markSet) *markSet {
+	if outer == nil {
+		return a.layer
+	}
+	for l := outer; l != nil; l = l.outer {
+		if l == a.layer {
+			return outer
+		}
+	}
+	if c, ok := a.chains[outer]; ok {
+		return c
+	}
+	c := &markSet{list: outer.list, outer: a.beyond(outer.outer), layer: true}
+	if a.chains == nil {
+		a.chains = map[*markSet]*markSet{}
+	}
+	a.chains[outer] = c
+	return c
 }
 
 // withOwnMarks returns v carrying marks on itself alone, as WithMarks does but
@@ -470,27 +544,23 @@ func withOwnMarks(v Value, marks []Mark) Value {
 // nothing of those values.
 func settleDeep(n *node, a *attachment) *node {
 	own := n.markList()
-	out, holds := n, own
+	out := n
 	if a != nil {
 		if marks, grew := a.merged(n.marks); grew {
 			nn := *n
 			nn.marks = marks
-			out, holds = &nn, marks.list
+			out = &nn
 		}
 	}
 	// What the values within n are given: n's own deep marks, then those n
-	// was given. Where every mark of n's own is deep, that is the list n now
-	// holds, which they share rather than each level making it twice.
+	// was given, one layer that they all share.
 	below := a
-	switch deep := deepMarks(own); {
-	case deep == nil:
-	case len(deep) == len(own):
-		below = &attachment{deep: holds}
-	case a == nil:
-		below = &attachment{deep: deep}
-	default:
-		list, _ := mergeDistinct(deep, a.deep)
-		below = &attachment{deep: list}
+	if deep := deepMarks(own); deep != nil {
+		var outer *markSet
+		if a != nil {
+			outer = a.layer
+		}
+		below = newAttachment(deep, outer)
 	}
 	if n.state != stateKnown || n.typ.t.kind == KindSet || below == nil && !n.markedWithin {
 		// A set keeps its deep marks, and Elements gives them to a member as
@@ -543,7 +613,7 @@ func settleDeep(n *node, a *attachment) *node {
 func (n *node) retrievedMembers() []Value {
 	members := slices.Clone(n.data.([]Value))
 	if deep := deepMarks(n.markList()); deep != nil {
-		a := attachment{deep: deep}
+		a := newAttachment(deep, nil)
 		for i, m := range members {
 			members[i] = Value{a.attach(m.n)}
 		}
@@ -572,7 +642,7 @@ func Unmark(v Value) (Value, []Mark) {
 	}
 	nn := *n
 	nn.marks = nil
-	return Value{&nn}, slices.Clone(n.marks.list)
+	return Value{&nn}, slices.Clone(n.marks.all())
 }
 
 // UnmarkDeep returns v without a mark anywhere in it: without its own marks,
@@ -589,24 +659,50 @@ func UnmarkDeep(v Value) (Value, []Mark) {
 	if !n.isMarked() {
 		return v, nil
 	}
-	var taken []Mark
-	u := n.unmarkDeep(&taken)
-	sortMarks(taken)
-	return Value{u}, taken
+	var t taking
+	u := n.unmarkDeep(&t)
+	sortMarks(t.marks)
+	return Value{u}, t.marks
+}
+
+// taking gathers the marks UnmarkDeep takes, each once, looked up through a
+// markLookup, and each shared layer once however many values share it: a
+// document whose members carry marks of their own beside k deep marks gives
+// every member the same layer of k.
+type taking struct {
+	marks  []Mark
+	seen   markLookup
+	layers map[*markSet]bool
+}
+
+// add takes the marks of s, layer by layer, stopping at a layer taken already,
+// whose outer layers were taken with it.
+func (t *taking) add(s *markSet) {
+	for ; s != nil; s = s.outer {
+		if s.layer {
+			if t.layers[s] {
+				return
+			}
+			if t.layers == nil {
+				t.layers = map[*markSet]bool{}
+			}
+			t.layers[s] = true
+		}
+		for _, m := range s.list {
+			if !t.seen.holds(t.marks, m) {
+				t.marks = append(t.marks, m)
+			}
+		}
+	}
 }
 
 // unmarkDeep returns n with no mark at any depth, adding each mark it takes to
-// taken unless one equal to it is there already. Whatever holds no mark is
-// shared rather than copied.
-func (n *node) unmarkDeep(taken *[]Mark) *node {
+// t. Whatever holds no mark is shared rather than copied.
+func (n *node) unmarkDeep(t *taking) *node {
 	if !n.isMarked() {
 		return n
 	}
-	for _, m := range n.markList() {
-		if !slices.Contains(*taken, m) {
-			*taken = append(*taken, m)
-		}
-	}
+	t.add(n.marks)
 	nn := *n
 	nn.marks = nil
 	if n.markedWithin {
@@ -615,13 +711,13 @@ func (n *node) unmarkDeep(taken *[]Mark) *node {
 		case []Value:
 			members := make([]Value, len(data))
 			for i, m := range data {
-				members[i] = Value{m.n.unmarkDeep(taken)}
+				members[i] = Value{m.n.unmarkDeep(t)}
 			}
 			nn.data = members
 		case []mapEntry:
 			entries := make([]mapEntry, len(data))
 			for i, e := range data {
-				entries[i] = mapEntry{key: e.key, val: Value{e.val.n.unmarkDeep(taken)}}
+				entries[i] = mapEntry{key: e.key, val: Value{e.val.n.unmarkDeep(t)}}
 			}
 			nn.data = entries
 		}
@@ -682,7 +778,7 @@ func (n *node) markedMember() (Step, *node) {
 
 // HasMark reports whether v carries the mark.
 func HasMark(v Value, m Mark) bool {
-	return slices.Contains(v.data().markList(), m)
+	return v.data().marks.contains(m)
 }
 
 // propagated returns the marks that the result of the operation over these
@@ -704,8 +800,26 @@ func (o *op) propagated(args []Value) []Mark {
 // are few and through a set once there are many: a value can carry thousands,
 // and scanning for each would cost the square of them.
 type propagating struct {
-	marks []Mark
-	seen  markLookup
+	marks  []Mark
+	seen   markLookup
+	layers map[*markSet]bool // the shared layers gathered already
+}
+
+// addSet gathers the Propagate marks of s, layer by layer, and each shared
+// layer once however many of the values consumed share it.
+func (g *propagating) addSet(s *markSet) {
+	for ; s != nil; s = s.outer {
+		if s.layer {
+			if g.layers[s] {
+				return
+			}
+			if g.layers == nil {
+				g.layers = map[*markSet]bool{}
+			}
+			g.layers[s] = true
+		}
+		g.add(s.list)
+	}
 }
 
 // add gathers the Propagate marks among ms not gathered already. It makes
@@ -723,7 +837,7 @@ func (g *propagating) add(ms []Mark) {
 // gather gathers the marks of n, and where within says that what is consumed
 // reads the values within n, theirs as well, at any depth.
 func (g *propagating) gather(n *node, within bool) {
-	g.add(n.markList())
+	g.addSet(n.marks)
 	if !within || !n.markedWithin {
 		return
 	}
@@ -747,5 +861,5 @@ func carryMarks(v, r Value) Value {
 	if v.n.marks == nil || r.n == v.n {
 		return r
 	}
-	return WithMarks(r, v.n.marks.list...)
+	return WithMarks(r, v.n.marks.all()...)
 }

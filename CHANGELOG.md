@@ -4,6 +4,16 @@
 
 ### Fixed
 
+- Decoding does work in proportion to the document where a container's deep
+  marks meet members that carry marks of their own. Each such member held a
+  merged copy of every deep mark beside its own, so a document of k members
+  under k deep marks, which `Serialize` writes and `Deserialize` accepts, cost
+  k by k: 85 KB of it allocated 256 MB and took 354 ms, which SECURITY.md
+  promises cannot happen. Members now hold their own marks beside one shared
+  list of the deep marks they inherit, and the same document decodes in 4 ms
+  and 6 MB; attaching deep marks with `WithMarks`, encoding such a value and
+  `UnmarkDeep` grow with it likewise. What a value carries, and how it
+  displays, encodes and compares, are unchanged.
 - `StringPrefix` records the same prefix whichever Go toolchain builds tenon.
   It found the part of its text that text following it cannot change by
   `golang.org/x/text`'s normalization boundary, whose Unicode data follows the
