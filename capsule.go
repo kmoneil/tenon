@@ -11,15 +11,15 @@ import (
 // encapsulate pointers of type *E. A nil function is an operation that the
 // type does not declare.
 type CapsuleOps[E any] struct {
-	// Equals reports whether two encapsulated values are equal. Without it, two
+	// Equal reports whether two encapsulated values are equal. Without it, two
 	// values are equal only when they encapsulate the same pointer. A capsule
-	// type that declares Equals must also declare Hash. It must be an
+	// type that declares Equal must also declare Hash. It must be an
 	// equivalence relation: every value equal to itself, a equal to b exactly
 	// when b is equal to a, and two values equal to a third equal to each
 	// other. tenon may take a value to be equal to itself without asking.
-	Equals func(a, b *E) bool
+	Equal func(a, b *E) bool
 
-	// Hash returns a hash of an encapsulated value. Values that Equals reports
+	// Hash returns a hash of an encapsulated value. Values that Equal reports
 	// equal must have equal hashes.
 	Hash func(v *E) uint64
 
@@ -49,7 +49,7 @@ type CapsuleOps[E any] struct {
 	// Encoding declares how the type's values are serialized. A value that
 	// holds a capsule value, or names a capsule type, of a type that declares
 	// no encoding cannot be serialized. A type that declares an encoding must
-	// declare Equals, and so Hash: a value read back is a new pointer, equal
+	// declare Equal, and so Hash: a value read back is a new pointer, equal
 	// to the one written only by the declared equality.
 	Encoding *CapsuleEncoding[E]
 }
@@ -113,19 +113,29 @@ type capsuleEncoding struct {
 	decode func(v Value) (any, []Diagnostic)
 }
 
-// Capsule returns a new capsule type, whose values carry pointers of type *E
-// through tenon opaquely. Every call returns a distinct type, equal to no other
-// type whatever its name and operations. The name describes the type in
+// CapsuleType is a capsule type whose values encapsulate pointers of type *E:
+// the handle that NewCapsule returns, through which a program builds the
+// type's values and reads them back, the pointer type checked where the
+// program is compiled. Type gives the capsule type itself, for use wherever a
+// type is.
+type CapsuleType[E any] struct {
+	t Type
+}
+
+// NewCapsule returns a new capsule type, whose values carry pointers of type
+// *E through tenon opaquely. Every call returns a distinct type, equal to no
+// other type whatever its name and operations. The name describes the type in
 // messages.
 //
-// Capsule panics if ops declares Equals but not Hash, or declares an encoding
-// with no identifier, an identifier that is not valid UTF-8, the zero Type,
-// without both Encode and Decode, or without Equals: a value read back from
-// its encoding is a new pointer, which only a declared equality can find equal
-// to the value written, as a round trip and a set's one encoding need.
-func Capsule[E any](name string, ops CapsuleOps[E]) Type {
-	if ops.Equals != nil && ops.Hash == nil {
-		usagePanic("capsule type %q declares Equals but not Hash", name)
+// NewCapsule panics if ops declares Equal but not Hash, or declares an
+// encoding with no identifier, an identifier that is not valid UTF-8, the
+// zero Type, without both Encode and Decode, or without Equal: a value read
+// back from its encoding is a new pointer, which only a declared equality can
+// find equal to the value written, as a round trip and a set's one encoding
+// need.
+func NewCapsule[E any](name string, ops CapsuleOps[E]) *CapsuleType[E] {
+	if ops.Equal != nil && ops.Hash == nil {
+		usagePanic("capsule type %q declares Equal but not Hash", name)
 	}
 	d := &capsuleData{name: name}
 	d.accepts = func(v any) bool {
@@ -134,7 +144,7 @@ func Capsule[E any](name string, ops CapsuleOps[E]) Type {
 	}
 	d.weakKey = func(v any) any { return weak.Make(v.(*E)) }
 	d.forgetWhenCollected = func(v, key any) { runtime.AddCleanup(v.(*E), forgetCapsule, key) }
-	if f := ops.Equals; f != nil {
+	if f := ops.Equal; f != nil {
 		d.equals = func(a, b any) bool { return f(a.(*E), b.(*E)) }
 	}
 	if f := ops.Hash; f != nil {
@@ -159,8 +169,8 @@ func Capsule[E any](name string, ops CapsuleOps[E]) Type {
 			usagePanic("capsule type %q declares an encoding with the zero Type", name)
 		case enc.Encode == nil || enc.Decode == nil:
 			usagePanic("capsule type %q declares an encoding without both Encode and Decode", name)
-		case ops.Equals == nil:
-			usagePanic("capsule type %q declares an encoding but not Equals; a value read back is a new pointer, equal to the one written only by a declared equality", name)
+		case ops.Equal == nil:
+			usagePanic("capsule type %q declares an encoding but not Equal; a value read back is a new pointer, equal to the one written only by a declared equality", name)
 		}
 		encode, decode := enc.Encode, enc.Decode
 		d.encoding = &capsuleEncoding{
@@ -195,7 +205,42 @@ func Capsule[E any](name string, ops CapsuleOps[E]) Type {
 	d.convertFrom = ops.ConvertFrom
 	t := &typeData{id: newTypeID(), kind: KindCapsule, capsule: d}
 	t.shape = shapeOf(t)
-	return Type{t}
+	return &CapsuleType[E]{t: Type{t: t}}
+}
+
+// Type returns the capsule type, for use wherever a type is: in a collection
+// type, a constraint, a conversion or the Decoders given to Deserialize.
+func (c *CapsuleType[E]) Type() Type { return c.made("Type") }
+
+// Value returns the value of the capsule type that encapsulates p. It panics
+// if p is nil.
+func (c *CapsuleType[E]) Value(p *E) Value {
+	t := c.made("Value")
+	if p == nil {
+		usagePanic("Value called with a nil pointer for capsule type %s", t)
+	}
+	return Value{n: &node{state: stateKnown, typ: t, data: p}}
+}
+
+// Of returns the pointer that v encapsulates, and true, where v is a known
+// value of the capsule type, marked or not; and nil and false where v is
+// anything else: a null or an unknown of the type, a value of another type, a
+// pending value or an error value. It panics on the zero Value.
+func (c *CapsuleType[E]) Of(v Value) (*E, bool) {
+	t := c.made("Of")
+	if n := v.data(); n.state == stateKnown && n.typ == t {
+		return n.data.(*E), true
+	}
+	return nil, false
+}
+
+// made returns the capsule type c handles, panicking where c is not a handle
+// NewCapsule made.
+func (c *CapsuleType[E]) made(method string) Type {
+	if c == nil || c.t.t == nil {
+		usagePanic("%s called on a CapsuleType that NewCapsule did not make", method)
+	}
+	return c.t
 }
 
 // equal reports whether two values encapsulated by the capsule type are equal:

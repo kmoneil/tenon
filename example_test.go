@@ -3,6 +3,8 @@ package tenon_test
 import (
 	"errors"
 	"fmt"
+	"hash/maphash"
+	"net/netip"
 
 	"github.com/kmoneil/tenon"
 )
@@ -299,4 +301,29 @@ func ExampleUnify() {
 	// Output:
 	// exactly(string) <nil>
 	// unify.no_common_constraint: exactly(number) and exactly(string) have no common constraint under the safe policy
+}
+
+// NewCapsule carries a Go type through tenon unchanged. The handle it returns
+// builds the type's values and reads them back, the Go type checked where the
+// program is compiled, and its Type stands wherever a type does.
+func ExampleNewCapsule() {
+	seed := maphash.MakeSeed()
+	addresses := tenon.NewCapsule("ip", tenon.CapsuleOps[netip.Addr]{
+		Equal:   func(a, b *netip.Addr) bool { return *a == *b },
+		Hash:    func(a *netip.Addr) uint64 { return maphash.Comparable(seed, *a) },
+		Display: func(a *netip.Addr) string { return a.String() },
+	})
+	gateway := netip.MustParseAddr("10.0.0.1")
+	hosts := tenon.ListVal(addresses.Type(), addresses.Value(&gateway))
+	fmt.Println(hosts)
+
+	if first, ok := addresses.Of(hosts.Index(0)); ok {
+		fmt.Println(first.Is4(), *first == gateway)
+	}
+	_, ok := addresses.Of(tenon.String("10.0.0.1"))
+	fmt.Println(ok)
+	// Output:
+	// list(capsule("ip"))[capsule("ip", "10.0.0.1")]
+	// true true
+	// false
 }

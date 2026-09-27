@@ -124,28 +124,28 @@ func TestConformance_TY042_CapsuleEquality(t *testing.T) {
 	conformance.Covers(t, "TY-042")
 	// Without a declared equality, two capsule values are equal when they
 	// encapsulate the same pointer and not when they merely look alike.
-	opaque := tenon.Capsule("opaque", tenon.CapsuleOps[point]{})
+	opaque := tenon.NewCapsule("opaque", tenon.CapsuleOps[point]{})
 	p := &point{1, 2}
-	if got := tenon.Equals(tenon.CapsuleVal(opaque, p), tenon.CapsuleVal(opaque, p)).String(); got != "true" {
+	if got := tenon.Equals(opaque.Value(p), opaque.Value(p)).String(); got != "true" {
 		t.Errorf("one pointer is not equal to itself: %s", got)
 	}
-	if got := tenon.Equals(tenon.CapsuleVal(opaque, p), tenon.CapsuleVal(opaque, &point{1, 2})).String(); got != "false" {
+	if got := tenon.Equals(opaque.Value(p), opaque.Value(&point{1, 2})).String(); got != "false" {
 		t.Errorf("two pointers that look alike are equal: %s", got)
 	}
 	// With one, it decides.
-	compared := tenon.Capsule("compared", tenon.CapsuleOps[point]{
-		Equals: func(a, b *point) bool { return a.x == b.x && a.y == b.y },
-		Hash:   func(v *point) uint64 { return uint64(v.x)<<32 | uint64(v.y) },
+	compared := tenon.NewCapsule("compared", tenon.CapsuleOps[point]{
+		Equal: func(a, b *point) bool { return a.x == b.x && a.y == b.y },
+		Hash:  func(v *point) uint64 { return uint64(v.x)<<32 | uint64(v.y) },
 	})
-	if got := tenon.Equals(tenon.CapsuleVal(compared, p), tenon.CapsuleVal(compared, &point{1, 2})).String(); got != "true" {
+	if got := tenon.Equals(compared.Value(p), compared.Value(&point{1, 2})).String(); got != "true" {
 		t.Errorf("a declared equality was not used: %s", got)
 	}
-	if got := tenon.Equals(tenon.CapsuleVal(compared, p), tenon.CapsuleVal(compared, &point{3, 4})).String(); got != "false" {
+	if got := tenon.Equals(compared.Value(p), compared.Value(&point{3, 4})).String(); got != "false" {
 		t.Errorf("a declared equality found two different points equal: %s", got)
 	}
 	// Every capsule type is its own type, so values of two of them are never
 	// equal whatever they encapsulate.
-	if got := tenon.Equals(tenon.CapsuleVal(opaque, p), tenon.CapsuleVal(compared, p)).String(); got != "false" {
+	if got := tenon.Equals(opaque.Value(p), compared.Value(p)).String(); got != "false" {
 		t.Errorf("values of two capsule types are equal: %s", got)
 	}
 }
@@ -818,16 +818,16 @@ func TestConformance_EQ003_EqualsDecidesOnlyWhatCannotChange(t *testing.T) {
 func TestConformance_EQ002_AKnownValueEqualsItselfAtOnce(t *testing.T) {
 	conformance.Covers(t, "EQ-002", "TY-041")
 	asked := 0
-	counted := tenon.Capsule("counted", tenon.CapsuleOps[int]{
-		Equals: func(a, b *int) bool { asked++; return *a == *b },
-		Hash:   func(v *int) uint64 { return uint64(*v) },
+	counted := tenon.NewCapsule("counted", tenon.CapsuleOps[int]{
+		Equal: func(a, b *int) bool { asked++; return *a == *b },
+		Hash:  func(v *int) uint64 { return uint64(*v) },
 	})
 	const size = 1000
 	built := func() []tenon.Value {
 		members := make([]tenon.Value, size)
 		for i := range members {
 			v := i
-			members[i] = tenon.CapsuleVal(counted, &v)
+			members[i] = counted.Value(&v)
 		}
 		return members
 	}
@@ -837,9 +837,9 @@ func TestConformance_EQ002_AKnownValueEqualsItselfAtOnce(t *testing.T) {
 		entries[fmt.Sprintf("a%04d", i)] = m
 	}
 	parts := map[string]tenon.Value{
-		"list":   tenon.ListVal(counted, members...),
-		"set":    tenon.SetVal(counted, members...),
-		"map":    tenon.MapVal(counted, entries),
+		"list":   tenon.ListVal(counted.Type(), members...),
+		"set":    tenon.SetVal(counted.Type(), members...),
+		"map":    tenon.MapVal(counted.Type(), entries),
 		"tuple":  tenon.TupleVal(members...),
 		"object": tenon.ObjectVal(entries),
 	}
@@ -875,7 +875,7 @@ func TestConformance_EQ002_AKnownValueEqualsItselfAtOnce(t *testing.T) {
 	// The count is real: the same members built apart are other values, and
 	// are compared one by one.
 	asked = 0
-	if got := tenon.Equals(parts["list"], tenon.ListVal(counted, built()...)).String(); got != "true" || asked < size {
+	if got := tenon.Equals(parts["list"], tenon.ListVal(counted.Type(), built()...)).String(); got != "true" || asked < size {
 		t.Errorf("a list and its members built apart: Equals gave %s after asking %d times, want true after %d", got, asked, size)
 	}
 }

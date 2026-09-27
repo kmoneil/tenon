@@ -26,7 +26,7 @@ func sampleTypes() []tenon.Type {
 		tenon.Object(map[string]tenon.Type{"name": str, "tags": tenon.List(str)}),
 		tenon.Object(map[string]tenon.Type{"name": str, "extra": boolean}),
 		tenon.Object(map[string]tenon.Type{"tags": tenon.List(str)}),
-		sampleCapsule, tenon.List(sampleCapsule),
+		sampleCapsule.Type(), tenon.List(sampleCapsule.Type()),
 	}
 }
 
@@ -308,7 +308,7 @@ func TestZeroConstraint(t *testing.T) {
 // for may have no other example.
 func TestConformance_UN023_SharedTypeDecidesEveryConstraint(t *testing.T) {
 	conformance.Covers(t, "UN-023", "EQ-005")
-	capsule := tenon.Capsule("cap", tenon.CapsuleOps[celsius]{})
+	capsule := tenon.NewCapsule("cap", tenon.CapsuleOps[celsius]{}).Type()
 	open := []tenon.Type{
 		boo, num, str, capsule, tenon.List(num), tenon.Set(str), tenon.Map(str), tenon.Tuple(), tenon.Tuple(num, str),
 		tenon.Object(nil), tenon.Object(map[string]tenon.Type{"a": num}),

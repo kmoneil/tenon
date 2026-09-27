@@ -57,7 +57,7 @@ func TestConformance_DI010_EveryValueHasADisplayForm(t *testing.T) {
 		{"an empty tuple", tenon.TupleVal(), `[]`},
 		{"an object", tenon.ObjectVal(map[string]tenon.Value{"name": tenon.String("x"), "list": tenon.ListVal(num)}), `{"list": list(number)[], "name": "x"}`},
 		{"an empty object", tenon.ObjectVal(nil), `{}`},
-		{"a capsule value", tenon.CapsuleVal(tenon.Capsule("spot", tenon.CapsuleOps[spot]{}), &spot{1, 2}), `capsule("spot")`},
+		{"a capsule value", tenon.NewCapsule("spot", tenon.CapsuleOps[spot]{}).Value(&spot{1, 2}), `capsule("spot")`},
 		{"a marked value", tenon.WithMarks(one, stamp{id: "m"}), `marked(1, "m")`},
 		{"a redacted value", tenon.WithMarks(one, stamp{id: "s", redact: true}), `redacted("s")`},
 	} {
@@ -117,11 +117,11 @@ func TestConformance_DI011_DisplayTellsValuesApart(t *testing.T) {
 	// The exceptions: a redacting mark withholds what differs, and marks and
 	// capsules are shown by what they declare.
 	secret := stamp{id: "s", redact: true}
-	opaque := tenon.Capsule("spot", tenon.CapsuleOps[spot]{})
+	opaque := tenon.NewCapsule("spot", tenon.CapsuleOps[spot]{})
 	for _, pair := range [][2]tenon.Value{
 		{tenon.WithMarks(one, secret), tenon.WithMarks(tenon.String("x"), secret)},
 		{tenon.WithMarks(one, stamp{id: "m"}), tenon.WithMarks(one, stamp{id: "m", policy: tenon.Isolate})},
-		{tenon.CapsuleVal(opaque, &spot{1, 2}), tenon.CapsuleVal(opaque, &spot{1, 2})},
+		{opaque.Value(&spot{1, 2}), opaque.Value(&spot{1, 2})},
 	} {
 		if tenon.Identical(pair[0], pair[1]) || pair[0].String() != pair[1].String() {
 			t.Errorf("%v and %v: expected an exception to injectivity", pair[0], pair[1])
@@ -156,7 +156,7 @@ func TestConformance_DI012_QuotedText(t *testing.T) {
 	zw := "a\U0000200Bb"
 	quoted := `"a` + esc("200B") + `b"`
 	num := tenon.NumberType()
-	capsule := tenon.Capsule(zw, tenon.CapsuleOps[spot]{Display: func(*spot) string { return zw }})
+	capsule := tenon.NewCapsule(zw, tenon.CapsuleOps[spot]{Display: func(*spot) string { return zw }})
 	for _, tt := range []struct {
 		name string
 		got  interface{ String() string }
@@ -165,7 +165,7 @@ func TestConformance_DI012_QuotedText(t *testing.T) {
 		{"a map key", tenon.MapVal(num, map[string]tenon.Value{zw: tenon.NumberFromInt(1)}), `map(number){` + quoted + `: 1}`},
 		{"an attribute name", tenon.Object(map[string]tenon.Type{zw: num}), `object({` + quoted + `: number})`},
 		{"a mark identifier", tenon.WithMarks(tenon.Bool(true), stamp{id: zw}), `marked(true, ` + quoted + `)`},
-		{"a capsule", tenon.CapsuleVal(capsule, &spot{}), `capsule(` + quoted + `, ` + quoted + `)`},
+		{"a capsule", capsule.Value(&spot{}), `capsule(` + quoted + `, ` + quoted + `)`},
 		{"a message", tenon.ErrorVal(tenon.Diagnostic{Code: "app.failed", Message: zw}), `error(app.failed: ` + quoted + `)`},
 	} {
 		wantDisplay(t, tt.name, tt.got, tt.want)
@@ -215,7 +215,7 @@ func TestConformance_DI014_TypeAndConstraintDisplay(t *testing.T) {
 		{"the empty tuple", tenon.Tuple(), `tuple([])`},
 		{"an object", tenon.Object(map[string]tenon.Type{"b": num, "a b": str, "B": boo}), `object({"B": bool, "a b": string, "b": number})`},
 		{"the empty object", tenon.Object(nil), `object({})`},
-		{"a capsule type", tenon.Capsule("spot", tenon.CapsuleOps[spot]{}), `capsule("spot")`},
+		{"a capsule type", tenon.NewCapsule("spot", tenon.CapsuleOps[spot]{}).Type(), `capsule("spot")`},
 		{"any", tenon.Any(), `any`},
 		{"exactly", tenon.Exactly(num), `exactly(number)`},
 		{"collections", tenon.MapOf(tenon.SetOf(tenon.ListOf(tenon.Any()))), `map_of(set_of(list_of(any)))`},
@@ -279,14 +279,14 @@ func TestConformance_DI015_MarksAndRedaction(t *testing.T) {
 
 func TestConformance_DI016_CapsuleDisplay(t *testing.T) {
 	conformance.Covers(t, "DI-016")
-	plain := tenon.Capsule("spot", tenon.CapsuleOps[spot]{})
-	shown := tenon.Capsule("shown spot", tenon.CapsuleOps[spot]{
+	plain := tenon.NewCapsule("spot", tenon.CapsuleOps[spot]{})
+	shown := tenon.NewCapsule("shown spot", tenon.CapsuleOps[spot]{
 		Display: func(p *spot) string { return strings.Repeat("*", p.x) + "\n" + strings.Repeat("*", p.y) },
 	})
-	wantDisplay(t, "a capsule declaring no display form", tenon.CapsuleVal(plain, &spot{1, 2}), `capsule("spot")`)
-	wantDisplay(t, "a capsule declaring one", tenon.CapsuleVal(shown, &spot{1, 2}), `capsule("shown spot", "*\n**")`)
-	wantDisplay(t, "a capsule within a list", tenon.ListVal(shown, tenon.CapsuleVal(shown, &spot{0, 1})), `list(capsule("shown spot"))[capsule("shown spot", "\n*")]`)
-	wantDisplay(t, "a null capsule", tenon.NullVal(shown), `null(capsule("shown spot"))`)
+	wantDisplay(t, "a capsule declaring no display form", plain.Value(&spot{1, 2}), `capsule("spot")`)
+	wantDisplay(t, "a capsule declaring one", shown.Value(&spot{1, 2}), `capsule("shown spot", "*\n**")`)
+	wantDisplay(t, "a capsule within a list", tenon.ListVal(shown.Type(), shown.Value(&spot{0, 1})), `list(capsule("shown spot"))[capsule("shown spot", "\n*")]`)
+	wantDisplay(t, "a null capsule", tenon.NullVal(shown.Type()), `null(capsule("shown spot"))`)
 }
 
 func TestConformance_DI017_OrderWithinADisplayForm(t *testing.T) {

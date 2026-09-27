@@ -237,8 +237,8 @@ type celsius struct{ degrees int64 }
 
 func TestConformance_CV011_CapsuleConversions(t *testing.T) {
 	conformance.Covers(t, "CV-011")
-	var temp tenon.Type
-	temp = tenon.Capsule("celsius", tenon.CapsuleOps[celsius]{
+	var temp *tenon.CapsuleType[celsius]
+	temp = tenon.NewCapsule("celsius", tenon.CapsuleOps[celsius]{
 		// A temperature converts safely to a number, and unsafely to a
 		// string; nothing else is declared.
 		ConvertTo: func(to tenon.Type) (func(*celsius) tenon.Value, bool) {
@@ -260,63 +260,65 @@ func TestConformance_CV011_CapsuleConversions(t *testing.T) {
 				if !ok {
 					return tenon.ErrorVal(tenon.Diagnostic{Code: "app.fractional", Message: "not whole"})
 				}
-				return tenon.CapsuleVal(temp, &celsius{i})
+				return temp.Value(&celsius{i})
 			}, false
 		},
 	})
-	warm := tenon.CapsuleVal(temp, &celsius{21})
+	warm := temp.Value(&celsius{21})
 
 	wantValue(t, "Convert(21C, number, safe)", tenon.Convert(warm, is(num), safe), n(21))
 	wantValue(t, "Convert(21C, string, unsafe)", tenon.Convert(warm, is(str), uns), s("21C"))
 	wantErrors(t, "Convert(21C, string, safe)", tenon.Convert(warm, is(str), safe), wantDiag{tenon.CodeConvertUnsafe, "."})
 	wantErrors(t, "Convert(21C, bool)", tenon.Convert(warm, is(boo), uns), wantDiag{tenon.CodeConvertNoConversion, "."})
 
-	back := tenon.Convert(n(7), is(temp), uns)
-	if back.IsError() || back.Type() != temp || tenon.CapsuleValue[celsius](back).degrees != 7 {
+	back := tenon.Convert(n(7), is(temp.Type()), uns)
+	if c, ok := temp.Of(back); !ok || c.degrees != 7 {
 		t.Errorf("Convert(7, celsius) = %v", back)
 	}
-	wantErrors(t, "Convert(7, celsius, safe)", tenon.Convert(n(7), is(temp), safe), wantDiag{tenon.CodeConvertUnsafe, "."})
-	wantErrors(t, "Convert(7.5, celsius)", tenon.Convert(tenon.NumberFromText("7.5"), is(temp), uns), wantDiag{"app.fractional", "."})
+	wantErrors(t, "Convert(7, celsius, safe)", tenon.Convert(n(7), is(temp.Type()), safe), wantDiag{tenon.CodeConvertUnsafe, "."})
+	wantErrors(t, "Convert(7.5, celsius)", tenon.Convert(tenon.NumberFromText("7.5"), is(temp.Type()), uns), wantDiag{"app.fractional", "."})
 
 	// Null and unknown values convert by what the type declares, without the
 	// declared function, which has no value to take.
-	wantValue(t, "Convert(null celsius, number)", tenon.Convert(tenon.NullVal(temp), is(num), safe), tenon.NullVal(num))
-	wantValue(t, "Convert(unknown celsius, number)", tenon.Convert(tenon.Unknown(temp), is(num), safe), tenon.Unknown(num))
+	wantValue(t, "Convert(null celsius, number)", tenon.Convert(tenon.NullVal(temp.Type()), is(num), safe), tenon.NullVal(num))
+	wantValue(t, "Convert(unknown celsius, number)", tenon.Convert(tenon.Unknown(temp.Type()), is(num), safe), tenon.Unknown(num))
 
 	// Between two capsule types, the source's conversion to the target comes
 	// before the target's conversion from the source.
-	var kelvin tenon.Type
+	var kelvin *tenon.CapsuleType[celsius]
 	fromSource := &celsius{1}
 	fromTarget := &celsius{2}
-	kelvin = tenon.Capsule("kelvin", tenon.CapsuleOps[celsius]{
+	kelvin = tenon.NewCapsule("kelvin", tenon.CapsuleOps[celsius]{
 		ConvertFrom: func(from tenon.Type) (func(tenon.Value) tenon.Value, bool) {
-			return func(tenon.Value) tenon.Value { return tenon.CapsuleVal(kelvin, fromTarget) }, true
+			return func(tenon.Value) tenon.Value { return kelvin.Value(fromTarget) }, true
 		},
 	})
-	other := tenon.Capsule("other", tenon.CapsuleOps[celsius]{
+	other := tenon.NewCapsule("other", tenon.CapsuleOps[celsius]{
 		ConvertTo: func(to tenon.Type) (func(*celsius) tenon.Value, bool) {
-			if to != kelvin {
+			if to != kelvin.Type() {
 				return nil, false
 			}
-			return func(*celsius) tenon.Value { return tenon.CapsuleVal(kelvin, fromSource) }, true
+			return func(*celsius) tenon.Value { return kelvin.Value(fromSource) }, true
 		},
 	})
-	if r := tenon.Convert(tenon.CapsuleVal(other, &celsius{0}), is(kelvin), safe); tenon.CapsuleValue[celsius](r) != fromSource {
+	r := tenon.Convert(other.Value(&celsius{0}), is(kelvin.Type()), safe)
+	if p, _ := kelvin.Of(r); p != fromSource {
 		t.Errorf("the source's declared conversion was not the one applied: %v", r)
 	}
-	if r := tenon.Convert(warm, is(kelvin), safe); tenon.CapsuleValue[celsius](r) != fromTarget {
+	r = tenon.Convert(warm, is(kelvin.Type()), safe)
+	if p, _ := kelvin.Of(r); p != fromTarget {
 		t.Errorf("the target's declared conversion was not applied: %v", r)
 	}
 
 	// A declared conversion that returns something other than a value of the
 	// type it declared is a defect in the capsule type.
-	liar := tenon.Capsule("liar", tenon.CapsuleOps[celsius]{
+	liar := tenon.NewCapsule("liar", tenon.CapsuleOps[celsius]{
 		ConvertTo: func(tenon.Type) (func(*celsius) tenon.Value, bool) {
 			return func(*celsius) tenon.Value { return tenon.Unknown(num) }, true
 		},
 	})
 	mustPanicUsage(t, `capsule type "liar" declares from`, func() {
-		tenon.Convert(tenon.CapsuleVal(liar, &celsius{}), is(num), safe)
+		tenon.Convert(liar.Value(&celsius{}), is(num), safe)
 	})
 }
 
@@ -515,7 +517,7 @@ func TestConformance_CV026_OneTypeConstraintsAreExactly(t *testing.T) {
 	conformance.Covers(t, "CV-026")
 	// A capsule type converts to a constraint naming the one type it declares
 	// a conversion to, however that constraint is written.
-	words := tenon.Capsule("words", tenon.CapsuleOps[celsius]{
+	words := tenon.NewCapsule("words", tenon.CapsuleOps[celsius]{
 		ConvertTo: func(to tenon.Type) (func(*celsius) tenon.Value, bool) {
 			if to != tenon.List(str) {
 				return nil, false
@@ -523,7 +525,7 @@ func TestConformance_CV026_OneTypeConstraintsAreExactly(t *testing.T) {
 			return func(*celsius) tenon.Value { return tenon.ListVal(str, s("hello")) }, true
 		},
 	})
-	hello := tenon.CapsuleVal(words, &celsius{})
+	hello := words.Value(&celsius{})
 	for _, c := range []tenon.Constraint{is(tenon.List(str)), tenon.ListOf(is(str)), tenon.OneOf(tenon.ListOf(is(str)))} {
 		wantValue(t, "Convert(words, "+c.String()+")", tenon.Convert(hello, c, safe), tenon.ListVal(str, s("hello")))
 	}
@@ -763,7 +765,7 @@ func TestConformance_CV044_TypesUnify(t *testing.T) {
 		{n(1), tenon.ListVal(num)},
 		{tenon.ListVal(num), tenon.MapVal(num, nil)},
 		{objA, obj(map[string]tenon.Value{"a": s("x")})},
-		{tenon.CapsuleVal(tenon.Capsule("a", tenon.CapsuleOps[celsius]{}), &celsius{}), tenon.CapsuleVal(tenon.Capsule("a", tenon.CapsuleOps[celsius]{}), &celsius{})},
+		{tenon.NewCapsule("a", tenon.CapsuleOps[celsius]{}).Value(&celsius{}), tenon.NewCapsule("a", tenon.CapsuleOps[celsius]{}).Value(&celsius{})},
 	} {
 		wantErrors(t, "no common type", tenon.Convert(tenon.TupleVal(elems...), list, safe), wantDiag{tenon.CodeConvertNoCommonType, "."})
 	}
@@ -893,7 +895,7 @@ func TestConformance_CV050_DiagnosticsPerMember(t *testing.T) {
 	// A conversion that fails as a whole has one diagnostic, at the empty path.
 	wantErrors(t, "whole", tenon.Convert(n(1), tenon.ListOf(tenon.Any()), uns), wantDiag{tenon.CodeConvertNoConversion, "."})
 	// Exact duplicates are removed.
-	twice := tenon.Capsule("twice", tenon.CapsuleOps[celsius]{
+	twice := tenon.NewCapsule("twice", tenon.CapsuleOps[celsius]{
 		ConvertTo: func(tenon.Type) (func(*celsius) tenon.Value, bool) {
 			return func(*celsius) tenon.Value {
 				d := tenon.Diagnostic{Code: "app.twice", Message: "said twice"}
@@ -901,7 +903,7 @@ func TestConformance_CV050_DiagnosticsPerMember(t *testing.T) {
 			}, true
 		},
 	})
-	wantErrors(t, "duplicates", tenon.Convert(tenon.ListVal(twice, tenon.CapsuleVal(twice, &celsius{})), tenon.ListOf(is(num)), safe),
+	wantErrors(t, "duplicates", tenon.Convert(tenon.ListVal(twice.Type(), twice.Value(&celsius{})), tenon.ListOf(is(num)), safe),
 		wantDiag{"app.twice", ".[0]"})
 }
 
@@ -936,7 +938,7 @@ func TestConformance_CV001_EveryResultSatisfiesItsTarget(t *testing.T) {
 	targets := []tenon.Constraint{
 		anyC, is(boo), is(num), is(str), is(tenon.List(str)), is(tenon.Set(num)), is(tenon.Map(num)),
 		is(tenon.Tuple()), is(tenon.Tuple(str)), is(tenon.Object(nil)), is(tenon.Object(map[string]tenon.Type{"a": str})),
-		is(values.Opaque),
+		is(values.Opaque.Type()),
 		tenon.ListOf(anyC), tenon.ListOf(is(str)), tenon.SetOf(anyC), tenon.SetOf(is(num)), tenon.MapOf(anyC), tenon.MapOf(is(str)),
 		tenon.TupleOf(), tenon.TupleOf(anyC), tenon.TupleOf(anyC, anyC),
 		tenon.ObjectWith(nil, false), tenon.ObjectWith(nil, true),
@@ -1028,8 +1030,8 @@ func TestConformance_CV033_ResultsThatHoldNoMembersCarryTheirMarks(t *testing.T)
 		wantValue(t, tt.name, tenon.Convert(tt.v, tt.c, uns), tenon.WithMarks(tenon.Narrow(tenon.Pending(tt.c), tenon.NotNull()), prop))
 	}
 
-	var capT tenon.Type
-	capT = tenon.Capsule("sum", tenon.CapsuleOps[celsius]{
+	var capT *tenon.CapsuleType[celsius]
+	capT = tenon.NewCapsule("sum", tenon.CapsuleOps[celsius]{
 		ConvertFrom: func(from tenon.Type) (func(tenon.Value) tenon.Value, bool) {
 			if from != tenon.List(num) {
 				return nil, false
@@ -1040,17 +1042,17 @@ func TestConformance_CV033_ResultsThatHoldNoMembersCarryTheirMarks(t *testing.T)
 					i, _ := e.AsInt64()
 					total += i
 				}
-				return tenon.CapsuleVal(capT, &celsius{total})
+				return capT.Value(&celsius{total})
 			}, true
 		},
 	})
-	made := tenon.Convert(tenon.ListVal(num, tenon.WithMarks(n(1), prop), n(2)), is(capT), safe)
-	if made.IsError() || tenon.CapsuleValue[celsius](made).degrees != 3 || !tenon.HasMark(made, prop) {
+	made := tenon.Convert(tenon.ListVal(num, tenon.WithMarks(n(1), prop), n(2)), is(capT.Type()), safe)
+	if c, ok := capT.Of(made); !ok || c.degrees != 3 || !tenon.HasMark(made, prop) {
 		t.Errorf("a capsule made from a list holding a marked member = %v, want 3 carrying the mark", made)
 	}
 	// A list holding an unknown is not given to the declared function.
-	wantValue(t, "capsule from a list holding an unknown", tenon.Convert(tenon.ListVal(num, n(1), tenon.Unknown(num)), is(capT), safe),
-		tenon.Narrow(tenon.Unknown(capT), tenon.NotNull()))
+	wantValue(t, "capsule from a list holding an unknown", tenon.Convert(tenon.ListVal(num, n(1), tenon.Unknown(num)), is(capT.Type()), safe),
+		tenon.Narrow(tenon.Unknown(capT.Type()), tenon.NotNull()))
 
 	got := tenon.Convert(tenon.TupleVal(tenon.TupleVal(tenon.WithMarks(n(1), iso, prop)), tenon.TupleVal(s("a"))), tenon.ListOf(tenon.Any()), uns)
 	wantValue(t, "refitted member", got, tenon.ListVal(tenon.Tuple(str),
@@ -1153,7 +1155,7 @@ func TestConformance_CV026_OneTypeWrittenAnyWay(t *testing.T) {
 // policy, diagnostics and all.
 func TestConformance_CV026_EverySpellingConvertsAlike(t *testing.T) {
 	conformance.Covers(t, "CV-026")
-	capsule := tenon.Capsule("cap", tenon.CapsuleOps[celsius]{})
+	capsule := tenon.NewCapsule("cap", tenon.CapsuleOps[celsius]{})
 	ab := tenon.Object(map[string]tenon.Type{"a": num, "b": num})
 	objAB := obj(map[string]tenon.Value{"a": n(1), "b": n(2)})
 	pool := append(values.All(),
@@ -1168,13 +1170,13 @@ func TestConformance_CV026_EverySpellingConvertsAlike(t *testing.T) {
 		tenon.SetVal(num, n(1), n(2)),
 		tenon.TupleVal(n(1), s("x")),
 		tenon.TupleVal(s("1"), s("x")),
-		tenon.CapsuleVal(capsule, &celsius{}),
-		tenon.Unknown(capsule),
+		capsule.Value(&celsius{}),
+		tenon.Unknown(capsule.Type()),
 	)
 	r := rand.New(rand.NewSource(20260919))
 	sole, failed := 0, 0
 	for range conformance.Iterations(t, 400) {
-		c := randomConstraint(r, 3, capsule)
+		c := randomConstraint(r, 3, capsule.Type())
 		one, ok := tenon.SoleType(c)
 		if !ok || c.Kind() == tenon.ConstraintExactly {
 			continue
@@ -1533,7 +1535,7 @@ func FuzzConvert(f *testing.F) {
 	var constraints [][]byte
 	cr := rand.New(rand.NewSource(20260924))
 	for range 8 {
-		if b, ok := constraintBytes(randomConstraint(cr, 3, degrees)); ok {
+		if b, ok := constraintBytes(randomConstraint(cr, 3, degrees.Type())); ok {
 			constraints = append(constraints, b)
 		}
 	}

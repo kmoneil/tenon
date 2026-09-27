@@ -14,13 +14,13 @@ type point struct{ x, y int }
 
 // Opaque is a capsule type that declares nothing, so its values are equal only
 // when they encapsulate one pointer.
-var Opaque = tenon.Capsule("opaque", tenon.CapsuleOps[point]{})
+var Opaque = tenon.NewCapsule("opaque", tenon.CapsuleOps[point]{})
 
 // Compared is a capsule type that declares equality, so its values are equal
 // when they encapsulate points that are equal.
-var Compared = tenon.Capsule("compared", tenon.CapsuleOps[point]{
-	Equals: func(a, b *point) bool { return *a == *b },
-	Hash:   func(v *point) uint64 { return uint64(v.x)<<32 | uint64(v.y) },
+var Compared = tenon.NewCapsule("compared", tenon.CapsuleOps[point]{
+	Equal: func(a, b *point) bool { return *a == *b },
+	Hash:  func(v *point) uint64 { return uint64(v.x)<<32 | uint64(v.y) },
 })
 
 // Colliding is a capsule type that declares equality and a hash that is the
@@ -28,9 +28,9 @@ var Compared = tenon.Capsule("compared", tenon.CapsuleOps[point]{
 // its values are equal exactly when they encapsulate equal points, and nothing
 // it declares tells two unequal ones apart, so the canonical order falls back
 // to numbering them.
-var Colliding = tenon.Capsule("colliding", tenon.CapsuleOps[point]{
-	Equals: func(a, b *point) bool { return *a == *b },
-	Hash:   func(*point) uint64 { return 7 },
+var Colliding = tenon.NewCapsule("colliding", tenon.CapsuleOps[point]{
+	Equal: func(a, b *point) bool { return *a == *b },
+	Hash:  func(*point) uint64 { return 7 },
 })
 
 var shared = &point{1, 2}
@@ -134,13 +134,13 @@ func All() []tenon.Value {
 		s("ab"),
 		s("e\U00000301"),
 		s("\U000000e9"),
-		tenon.CapsuleVal(Opaque, shared),
-		tenon.CapsuleVal(Opaque, &point{1, 2}),
-		tenon.CapsuleVal(Compared, shared),
-		tenon.CapsuleVal(Compared, &point{1, 2}),
-		tenon.CapsuleVal(Colliding, shared),
-		tenon.CapsuleVal(Colliding, &point{1, 2}),
-		tenon.CapsuleVal(Colliding, &point{3, 4}),
+		Opaque.Value(shared),
+		Opaque.Value(&point{1, 2}),
+		Compared.Value(shared),
+		Compared.Value(&point{1, 2}),
+		Colliding.Value(shared),
+		Colliding.Value(&point{1, 2}),
+		Colliding.Value(&point{3, 4}),
 
 		// Collections, including ones holding a member that is not known.
 		tenon.ListVal(str),

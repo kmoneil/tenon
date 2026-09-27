@@ -15,7 +15,7 @@ import (
 func TestConformance_VA001_ThreeStates(t *testing.T) {
 	conformance.Covers(t, "VA-001")
 	type thing struct{}
-	holder := tenon.Capsule("holder", tenon.CapsuleOps[thing]{})
+	holder := tenon.NewCapsule("holder", tenon.CapsuleOps[thing]{})
 	for _, tt := range []struct {
 		v     tenon.Value
 		state string
@@ -24,7 +24,7 @@ func TestConformance_VA001_ThreeStates(t *testing.T) {
 		{tenon.NumberFromInt(7), "resolved"},
 		{tenon.NumberFromText("-1.5e3"), "resolved"},
 		{tenon.String("text"), "resolved"},
-		{tenon.CapsuleVal(holder, &thing{}), "resolved"},
+		{holder.Value(&thing{}), "resolved"},
 		{tenon.NullVal(tenon.StringType()), "resolved"},
 		{tenon.Unknown(tenon.StringType()), "resolved"},
 		{tenon.String("\xff"), "error"},
@@ -180,20 +180,38 @@ func TestNumberValues(t *testing.T) {
 	}
 }
 
+// TestCapsuleValues holds a capsule type's handle to building the type's
+// values and reading back what they encapsulate: Of answers for a known value
+// of the type, marked or not, and for nothing else.
 func TestCapsuleValues(t *testing.T) {
 	type point struct{ x, y int }
-	type other struct{}
-	pointType := tenon.Capsule("point", tenon.CapsuleOps[point]{})
+	pointType := tenon.NewCapsule("point", tenon.CapsuleOps[point]{})
 	p := &point{1, 2}
-	v := tenon.CapsuleVal(pointType, p)
-	if v.Type() != pointType || tenon.CapsuleValue[point](v) != p || v.String() != `capsule("point")` {
-		t.Errorf("CapsuleVal(%v, %p) = %v", pointType, p, v)
+	v := pointType.Value(p)
+	if got, ok := pointType.Of(v); v.Type() != pointType.Type() || !ok || got != p || v.String() != `capsule("point")` {
+		t.Errorf("pointType.Value(%p) = %v, which Of reads as %p, %t", p, v, got, ok)
 	}
-	mustPanicUsage(t, "does not encapsulate", func() { tenon.CapsuleVal(pointType, &other{}) })
-	mustPanicUsage(t, "nil pointer", func() { tenon.CapsuleVal(pointType, (*point)(nil)) })
-	mustPanicUsage(t, "does not encapsulate", func() { tenon.CapsuleValue[other](v) })
-	mustPanicUsage(t, "not a value of kind Capsule", func() { tenon.CapsuleValue[point](tenon.Bool(true)) })
-	mustPanicUsage(t, "whose kind is String, not Capsule", func() { tenon.CapsuleVal(tenon.StringType(), p) })
+	if got, ok := pointType.Of(tenon.WithMarks(v, stamp{id: "m"})); !ok || got != p {
+		t.Errorf("Of a marked value = %p, %t, want %p", got, ok, p)
+	}
+	twin := tenon.NewCapsule("point", tenon.CapsuleOps[point]{})
+	for _, w := range []tenon.Value{
+		tenon.Bool(true),
+		tenon.NullVal(pointType.Type()),
+		tenon.Unknown(pointType.Type()),
+		twin.Value(p),
+		tenon.Pending(tenon.Any()),
+		tenon.ErrorVal(tenon.Diagnostic{Code: "app.failed", Message: "it failed"}),
+	} {
+		if got, ok := pointType.Of(w); ok || got != nil {
+			t.Errorf("Of(%v) = %p, %t, want nil and false", w, got, ok)
+		}
+	}
+	mustPanicUsage(t, "nil pointer", func() { pointType.Value(nil) })
+	mustPanicUsage(t, "use of the zero Value", func() { pointType.Of(tenon.Value{}) })
+	var none *tenon.CapsuleType[point]
+	mustPanicUsage(t, "NewCapsule did not make", func() { none.Type() })
+	mustPanicUsage(t, "NewCapsule did not make", func() { new(tenon.CapsuleType[point]).Value(p) })
 }
 
 func TestPendingValues(t *testing.T) {
@@ -351,7 +369,7 @@ func TestConformance_UN021_PendingAnyIsTheLeastInformative(t *testing.T) {
 		tenon.Map(tenon.BoolType()),
 		tenon.Tuple(),
 		tenon.Object(nil),
-		tenon.Capsule("thing", tenon.CapsuleOps[thing]{}),
+		tenon.NewCapsule("thing", tenon.CapsuleOps[thing]{}).Type(),
 	} {
 		if got := tenon.Resolve(p, ty); got.Type() != ty {
 			t.Errorf("resolving the least-informative value to %v gave %v", ty, got)

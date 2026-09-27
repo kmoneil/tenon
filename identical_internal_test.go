@@ -16,16 +16,16 @@ import (
 // holds its members in one order, which this holds it to as well.
 func TestSameMultisetIsTheCount(t *testing.T) {
 	r := rand.New(rand.NewSource(1618))
-	ranked := Capsule("ranked", CapsuleOps[int]{
-		Equals:  func(a, b *int) bool { return *a == *b },
+	ranked := NewCapsule("ranked", CapsuleOps[int]{
+		Equal:   func(a, b *int) bool { return *a == *b },
 		Hash:    func(v *int) uint64 { return uint64(*v) },
 		Compare: func(a, b *int) int { return *a - *b },
 	})
 	num := Type{numberType}
-	elem := Tuple(ranked, num)
+	elem := Tuple(ranked.Type(), num)
 	var pool []Value
 	for k := range 4 {
-		rank := func() Value { v := k; return CapsuleVal(ranked, &v) }
+		rank := func() Value { v := k; return ranked.Value(&v) }
 		pool = append(pool,
 			TupleVal(rank(), NumberFromInt(int64(k))),
 			TupleVal(rank(), Unknown(num)),

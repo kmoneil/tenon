@@ -34,9 +34,9 @@ func (m *moment) UnmarshalValue(v tenon.Value) error {
 }
 
 // timeType encapsulates a time, and serializes it as text.
-var timeType = tenon.Capsule("time", tenon.CapsuleOps[time.Time]{
-	Equals: func(a, b *time.Time) bool { return a.Equal(*b) },
-	Hash:   func(v *time.Time) uint64 { return uint64(v.UnixNano()) },
+var timeType = tenon.NewCapsule("time", tenon.CapsuleOps[time.Time]{
+	Equal: func(a, b *time.Time) bool { return a.Equal(*b) },
+	Hash:  func(v *time.Time) uint64 { return uint64(v.UnixNano()) },
 	Encoding: &tenon.CapsuleEncoding[time.Time]{
 		ID:     "tenon.test/time",
 		Type:   tenon.StringType(),
@@ -56,14 +56,15 @@ type instant struct{ t time.Time }
 
 func (i *instant) MarshalValue() (tenon.Value, error) {
 	t := i.t
-	return tenon.CapsuleVal(timeType, &t), nil
+	return timeType.Value(&t), nil
 }
 
 func (i *instant) UnmarshalValue(v tenon.Value) error {
-	if !v.IsKnown() || v.Type() != timeType {
+	t, ok := timeType.Of(v)
+	if !ok {
 		return errors.New("an instant is a time capsule")
 	}
-	i.t = *tenon.CapsuleValue[time.Time](v)
+	i.t = *t
 	return nil
 }
 
@@ -89,8 +90,8 @@ func TestConformance_GO040_MarshalersRoundTrip(t *testing.T) {
 	if got := v.Attribute("start"); !tenon.Identical(got, s(t1.Format(time.RFC3339Nano))) {
 		t.Errorf("a moment encoded as %v", got)
 	}
-	if got := v.Attribute("at"); got.Type() != timeType || !tenon.CapsuleValue[time.Time](got).Equal(t2) {
-		t.Errorf("an instant encoded as %v", got)
+	if at, ok := timeType.Of(v.Attribute("at")); !ok || !at.Equal(t2) {
+		t.Errorf("an instant encoded as %v", v.Attribute("at"))
 	}
 	if got := v.Attribute("marks").Type(); got.Kind() != tenon.KindTuple {
 		t.Errorf("a slice of moments encoded as a %v", got)
@@ -106,7 +107,7 @@ func TestConformance_GO040_MarshalersRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Serialize failed: %v", err)
 	}
-	restored, err := tenon.Deserialize(b, tenon.Decoders{Capsules: []tenon.Type{timeType}})
+	restored, err := tenon.Deserialize(b, tenon.Decoders{Capsules: []tenon.Type{timeType.Type()}})
 	if err != nil {
 		t.Fatalf("Deserialize failed: %v", err)
 	}

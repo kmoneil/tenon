@@ -25,7 +25,7 @@ var (
 
 // decoders reads everything the round-trip generator writes.
 var decoders = tenon.Decoders{
-	Capsules: []tenon.Type{degrees},
+	Capsules: []tenon.Type{degrees.Type()},
 	Marks: map[string]tenon.MarkDecoder{
 		"m": func(tenon.Value, bool) (tenon.Mark, []tenon.Diagnostic) { return markPlain, nil },
 		"d": func(tenon.Value, bool) (tenon.Mark, []tenon.Diagnostic) { return markDeep, nil },
@@ -45,7 +45,7 @@ type generator struct{ r *rand.Rand }
 
 func (g generator) typ(depth int) tenon.Type {
 	if depth == 0 || g.r.Intn(3) == 0 {
-		return []tenon.Type{boo, num, str, degrees}[g.r.Intn(4)]
+		return []tenon.Type{boo, num, str, degrees.Type()}[g.r.Intn(4)]
 	}
 	switch g.r.Intn(5) {
 	case 0:
@@ -141,7 +141,7 @@ func (g generator) known(t tenon.Type, depth int) tenon.Value {
 	case tenon.KindString:
 		return s([]string{"", "a", "e\U00000301", "\U000000e9", "hello, world", "\x00\U0001F600"}[g.r.Intn(6)])
 	case tenon.KindCapsule:
-		return tenon.CapsuleVal(degrees, &celsius{int64(g.r.Intn(5))})
+		return degrees.Value(&celsius{int64(g.r.Intn(5))})
 	case tenon.KindList, tenon.KindSet:
 		members := make([]tenon.Value, g.r.Intn(4))
 		for i := range members {
@@ -179,7 +179,7 @@ func (g generator) top() tenon.Value {
 	var v tenon.Value
 	switch g.r.Intn(12) {
 	case 0:
-		v = tenon.Pending(randomConstraint(g.r, 2, degrees))
+		v = tenon.Pending(randomConstraint(g.r, 2, degrees.Type()))
 		v = tenon.Narrow(v, []tenon.Narrowing{tenon.NotNull(), tenon.Null(), tenon.NotNull()}[g.r.Intn(3)])
 	case 1:
 		p := tenon.Path{}.Attribute("a").Index(g.number()).Index(s("k"))
@@ -305,9 +305,9 @@ func TestConformance_SE051_TheCodesOfSerialization(t *testing.T) {
 	wantDecodeFailure(t, "serialize.too_large", document+"83 00 "+strings.Repeat("82 04 ", 600)+"02 f6", tenon.CodeSerializeTooLarge)
 	wantDecodeFailure(t, "serialize.unknown_capsule", document+"83 00 82 09 63 782f79 f6", tenon.CodeSerializeUnknownCapsule)
 	wantDecodeFailure(t, "serialize.unknown_mark", document+"83 00 01 da74656e02 82 f5 81 81 617a", tenon.CodeSerializeUnknownMark)
-	opaque := tenon.Capsule("opaque", tenon.CapsuleOps[int]{})
+	opaque := tenon.NewCapsule("opaque", tenon.CapsuleOps[int]{})
 	held := 1
-	wantSerializeFailure(t, "serialize.unencodable_capsule", tenon.CapsuleVal(opaque, &held),
+	wantSerializeFailure(t, "serialize.unencodable_capsule", opaque.Value(&held),
 		wantDiag{tenon.CodeSerializeUnencodableCapsule, "."})
 	wantSerializeFailure(t, "serialize.unencodable_mark", tenon.WithMarks(tenon.NumberFromInt(1), stamp{id: "x"}),
 		wantDiag{tenon.CodeSerializeUnencodableMark, "."})
@@ -370,19 +370,19 @@ func TestConformance_SE043_DecodersAreSupplied(t *testing.T) {
 	wantDecodeFailure(t, "an unknown mark", document+"83 00 01 da74656e02 82 f5 81 81 617a", tenon.CodeSerializeUnknownMark)
 	// A decoder that refuses gives its own diagnostics.
 	wantDecodeFailure(t, "a note without text", document+"83 00 01 da74656e02 82 f5 81 81 6170", "app.bad_note")
-	refusing := tenon.Capsule("refusing", tenon.CapsuleOps[celsius]{Equals: celsiusEquals, Hash: celsiusHash, Encoding: &tenon.CapsuleEncoding[celsius]{
+	refusing := tenon.NewCapsule("refusing", tenon.CapsuleOps[celsius]{Equal: celsiusEqual, Hash: celsiusHash, Encoding: &tenon.CapsuleEncoding[celsius]{
 		ID: "t/refusing", Type: num,
 		Encode: func(v *celsius) tenon.Value { return n(v.degrees) },
 		Decode: func(tenon.Value) (*celsius, []tenon.Diagnostic) {
 			return nil, []tenon.Diagnostic{{Code: "app.refused", Message: "no"}}
 		},
 	}})
-	b, _, _ := trySerialize(tenon.CapsuleVal(refusing, &celsius{1}))
-	if _, failure, ok := tryDeserialize(b, tenon.Decoders{Capsules: []tenon.Type{refusing}}); ok || failure.Diagnostics()[0].Code != "app.refused" {
+	b, _, _ := trySerialize(refusing.Value(&celsius{1}))
+	if _, failure, ok := tryDeserialize(b, tenon.Decoders{Capsules: []tenon.Type{refusing.Type()}}); ok || failure.Diagnostics()[0].Code != "app.refused" {
 		t.Errorf("a refusing capsule decoder gave %v", failure)
 	}
 	// What the caller supplies must itself be sound.
-	opaque := tenon.Capsule("opaque", tenon.CapsuleOps[celsius]{})
+	opaque := tenon.NewCapsule("opaque", tenon.CapsuleOps[celsius]{}).Type()
 	mustPanicUsage(t, "declares no encoding", func() { tryDeserialize(nil, tenon.Decoders{Capsules: []tenon.Type{opaque}}) })
 	mustPanicUsage(t, "returned the mark", func() {
 		tryDeserialize(fromHex(t, document+"83 00 01 da74656e02 82 f5 81 81 616d"), tenon.Decoders{Marks: map[string]tenon.MarkDecoder{
@@ -395,9 +395,9 @@ func TestConformance_SE043_DecodersAreSupplied(t *testing.T) {
 // two of its values are compared, which only two known values of it ever are.
 var (
 	countingCompared int
-	counting         = tenon.Capsule("counting", tenon.CapsuleOps[int64]{
-		Equals: func(a, b *int64) bool { countingCompared++; return *a == *b },
-		Hash:   func(v *int64) uint64 { return uint64(*v) },
+	counting         = tenon.NewCapsule("counting", tenon.CapsuleOps[int64]{
+		Equal: func(a, b *int64) bool { countingCompared++; return *a == *b },
+		Hash:  func(v *int64) uint64 { return uint64(*v) },
 		Encoding: &tenon.CapsuleEncoding[int64]{
 			ID:     "t/counting",
 			Type:   tenon.NumberType(),
@@ -461,13 +461,13 @@ func TestConformance_SE005_DecodingWorkIsBounded(t *testing.T) {
 	// A set of 2,000 members that are not known, each a tuple holding a
 	// counting value and an unknown number: no two are compared.
 	num := tenon.NumberType()
-	elem := tenon.Tuple(counting, num)
+	elem := tenon.Tuple(counting.Type(), num)
 	members := make([]tenon.Value, 2000)
 	for i := range members {
 		v := int64(i)
-		members[i] = tenon.TupleVal(tenon.CapsuleVal(counting, &v), tenon.Unknown(num))
+		members[i] = tenon.TupleVal(counting.Value(&v), tenon.Unknown(num))
 	}
-	withCounting := tenon.Decoders{Capsules: []tenon.Type{counting}}
+	withCounting := tenon.Decoders{Capsules: []tenon.Type{counting.Type()}}
 	countingCompared = 0
 	set := tenon.SetVal(elem, members...)
 	b, failure, ok := trySerialize(set)
@@ -572,9 +572,9 @@ func TestConformance_SE005_DecodingWorkIsBounded(t *testing.T) {
 func TestConformance_SE005_NestedSetsCostWhatTheyHold(t *testing.T) {
 	conformance.Covers(t, "SE-005", "EQ-030")
 	hashed := 0
-	counted := tenon.Capsule("counted", tenon.CapsuleOps[int64]{
-		Equals: func(a, b *int64) bool { return *a == *b },
-		Hash:   func(v *int64) uint64 { hashed++; return uint64(*v) },
+	counted := tenon.NewCapsule("counted", tenon.CapsuleOps[int64]{
+		Equal: func(a, b *int64) bool { return *a == *b },
+		Hash:  func(v *int64) uint64 { hashed++; return uint64(*v) },
 		Encoding: &tenon.CapsuleEncoding[int64]{
 			ID:     "tenon.test/counted",
 			Type:   tenon.NumberType(),
@@ -589,7 +589,7 @@ func TestConformance_SE005_NestedSetsCostWhatTheyHold(t *testing.T) {
 	members := make([]tenon.Value, size)
 	for i := range members {
 		x := int64(i)
-		members[i] = tenon.CapsuleVal(counted, &x)
+		members[i] = counted.Value(&x)
 	}
 	nest := func(v tenon.Value, levels int) tenon.Value {
 		for range levels {
@@ -598,7 +598,7 @@ func TestConformance_SE005_NestedSetsCostWhatTheyHold(t *testing.T) {
 		return v
 	}
 	hashed = 0
-	v := nest(tenon.ListVal(counted, members...), depth)
+	v := nest(tenon.ListVal(counted.Type(), members...), depth)
 	if hashed > 2*size {
 		t.Errorf("building %d sets around %d values hashed them %d times", depth, size, hashed)
 	}
@@ -607,7 +607,7 @@ func TestConformance_SE005_NestedSetsCostWhatTheyHold(t *testing.T) {
 		t.Fatalf("Serialize failed: %v", failure)
 	}
 	hashed = 0
-	back, failure, ok := tryDeserialize(doc, tenon.Decoders{Capsules: []tenon.Type{counted}})
+	back, failure, ok := tryDeserialize(doc, tenon.Decoders{Capsules: []tenon.Type{counted.Type()}})
 	if !ok || !tenon.Identical(back, v) {
 		t.Fatalf("the nested sets came back as %.80s (%v)", back, failure)
 	}

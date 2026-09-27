@@ -94,10 +94,10 @@ func TestConformance_DI035_MembersThatReadAlikeMirror(t *testing.T) {
 	// A capsule type with no operations: nothing orders its values but the
 	// run's own bookkeeping, which EQ-045 leaves to the implementation, and
 	// the mirror holds through it.
-	blank := tenon.Capsule("blank", tenon.CapsuleOps[celsius]{})
-	blankTuple := tenon.Tuple(blank, num)
-	m1 := tenon.TupleVal(tenon.CapsuleVal(blank, &celsius{1}), tenon.Unknown(num))
-	m2 := tenon.TupleVal(tenon.CapsuleVal(blank, &celsius{2}), tenon.Unknown(num))
+	blank := tenon.NewCapsule("blank", tenon.CapsuleOps[celsius]{})
+	blankTuple := tenon.Tuple(blank.Type(), num)
+	m1 := tenon.TupleVal(blank.Value(&celsius{1}), tenon.Unknown(num))
+	m2 := tenon.TupleVal(blank.Value(&celsius{2}), tenon.Unknown(num))
 	if m1.String() != m2.String() {
 		t.Fatalf("the members read %s and %s, not alike", m1, m2)
 	}
@@ -106,9 +106,9 @@ func TestConformance_DI035_MembersThatReadAlikeMirror(t *testing.T) {
 	// A capsule type that encodes but does not display: the members read
 	// alike and their encodings differ, so the one with the lesser encoding
 	// leads from either side, in any run.
-	coded := tenon.Capsule("coded", tenon.CapsuleOps[celsius]{
-		Equals: func(a, b *celsius) bool { return *a == *b },
-		Hash:   func(v *celsius) uint64 { return uint64(v.degrees) },
+	coded := tenon.NewCapsule("coded", tenon.CapsuleOps[celsius]{
+		Equal: func(a, b *celsius) bool { return *a == *b },
+		Hash:  func(v *celsius) uint64 { return uint64(v.degrees) },
 		Encoding: &tenon.CapsuleEncoding[celsius]{
 			ID:     "t/coded",
 			Type:   num,
@@ -116,9 +116,9 @@ func TestConformance_DI035_MembersThatReadAlikeMirror(t *testing.T) {
 			Decode: func(v tenon.Value) (*celsius, []tenon.Diagnostic) { i, _ := v.AsInt64(); return &celsius{i}, nil },
 		},
 	})
-	codedTuple := tenon.Tuple(coded, num)
-	lesser := tenon.TupleVal(tenon.CapsuleVal(coded, &celsius{1}), tenon.Unknown(num))
-	greater := tenon.TupleVal(tenon.CapsuleVal(coded, &celsius{2}), tenon.Unknown(num))
+	codedTuple := tenon.Tuple(coded.Type(), num)
+	lesser := tenon.TupleVal(coded.Value(&celsius{1}), tenon.Unknown(num))
+	greater := tenon.TupleVal(coded.Value(&celsius{2}), tenon.Unknown(num))
 	if lesser.String() != greater.String() {
 		t.Fatalf("the members read %s and %s, not alike", lesser, greater)
 	}
