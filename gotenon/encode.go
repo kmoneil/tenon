@@ -190,6 +190,12 @@ func (f *failures) withError(p tenon.Path, code tenon.Code, err error) {
 // error value: one that a tenon.Value holds, or that a MarshalValue method
 // returns, fails with its own diagnostics, located within the part.
 //
+// A slice, map or pointer that x holds in two places encodes in each, as
+// encoding/json encodes it, so Encode's work is in proportion to the tree x
+// describes, not to the memory x occupies: a value built by sharing one part
+// many times costs what it spells out. Bound what a program encodes by that
+// tree, where it builds x from input.
+//
 // Encode panics where T does not map to tenon: a channel, a
 // function, a complex number, a pointer to tenon.Value, a map without string
 // keys, or a type that holds itself, whether T is that type or holds it in an

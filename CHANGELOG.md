@@ -32,6 +32,15 @@
   document gives. A capsule type's or a mark's identifier is still named,
   since it says which decoder to supply.
 
+### Changed
+
+- `SECURITY.md` and `gotenon.Encode` say what an input's length is where a Go
+  value shares its parts: the tree the value describes, a slice, map or
+  pointer reached from two places counted at each, as `encoding/json` counts
+  it. `Encode` encodes such a part wherever it is reached, so a value built by
+  sharing one part many times costs what it spells out; a program that builds
+  what it encodes from input bounds that tree.
+
 ## 0.8.0 (2026-09-27)
 
 This release carries the rest of what the pre-1.0 audit found that needed no
