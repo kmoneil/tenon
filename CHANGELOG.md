@@ -24,6 +24,13 @@
   adding 0 to it gave 42 unmarked, and a set it was deep on converted to a
   list of its members in clear. Each now carries the mark. An `Isolate` mark
   that does not redact stays where it is put, as before.
+- `Deserialize`'s failure messages quote nothing the document holds: they say
+  what is wrong and the byte offset where. A document is refused before the
+  marks that follow its content are read, so a message quoting it could show
+  what a redacting mark would withhold: a map key or attribute name that
+  appears twice, a range's narrowing, a diagnostic code, or the type a
+  document gives. A capsule type's or a mark's identifier is still named,
+  since it says which decoder to supply.
 
 ## 0.8.0 (2026-09-27)
 
