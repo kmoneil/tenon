@@ -271,13 +271,10 @@ func (r *rangeData) holds(n *node) bool {
 		}
 	}
 	// A set in the range holds every recorded member, so a set that provably
-	// does not hold one of them is outside it.
-	for _, m := range r.members {
-		if found, settled := membership(n, m); settled && !found {
-			return false
-		}
-	}
-	return true
+	// does not hold one of them is outside it. The set is indexed once for
+	// all of them, where asking it of each in turn read all its members for
+	// every one.
+	return !lacksSome(n, r.members)
 }
 
 // excludesPartial reports whether r rules out the container n, which holds a

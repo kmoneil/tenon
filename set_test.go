@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"runtime"
 	"slices"
+	"strconv"
 	"sync"
 	"testing"
 
@@ -461,6 +462,75 @@ func TestConformance_EQ030_MembersAreToldApartByTheirHashes(t *testing.T) {
 		// Comparing every pair would be eighty thousand of them.
 		if compared > 4*size {
 			t.Errorf("%s: %d comparisons over %d members, want at most %d", tt.name, compared, size, 4*size)
+		}
+	}
+}
+
+// TestConformance_UN002_ListingsAndSetsCostTheirMembers holds the work of
+// comparing listings and sets holding members that are not known to the
+// members, not to the pairs they make. A capsule type counts every call its
+// values make on it, comparing, hashing, ordering and displaying, which is
+// what telling members apart costs: at 1,000 members each shape makes under
+// 20 calls a member, where looking for each member among all the others made
+// hundreds (half a million calls in all for most shapes): two listings held
+// by ranges, compared and diffed; a set of known members beside an unknown
+// one compared with a known set, and narrowed; a known set narrowed by a
+// listing of its members, and compared with a range listing them; a range
+// narrowed by one listing of one member at a time; and two sets of lists
+// that each hold an unknown value, diffed with no member in common.
+func TestConformance_UN002_ListingsAndSetsCostTheirMembers(t *testing.T) {
+	conformance.Covers(t, "UN-002", "EQ-003", "EQ-010", "EQ-043", "UN-004", "DI-035")
+	calls := 0
+	counted := tenon.Capsule("counted", tenon.CapsuleOps[int]{
+		Equals:  func(a, b *int) bool { calls++; return *a == *b },
+		Hash:    func(v *int) uint64 { calls++; return uint64(*v) },
+		Compare: func(a, b *int) int { calls++; return *a - *b },
+		Display: func(v *int) string { calls++; return strconv.Itoa(*v) },
+	})
+	const size = 1000
+	values := make([]tenon.Value, 2*size)
+	for i := range values {
+		v := i
+		values[i] = tenon.CapsuleVal(counted, &v)
+	}
+	some, unknown := values[:size], tenon.Unknown(counted)
+	partial := tenon.SetVal(counted, append(slices.Clone(some), unknown)...)
+	known, knownSome := tenon.SetVal(counted, values[:size+1]...), tenon.SetVal(counted, some...)
+	listing := func() tenon.Value { return tenon.Narrow(tenon.Unknown(tenon.Set(counted)), tenon.Members(some...)) }
+	x, y := listing(), listing()
+	lists := func(of []tenon.Value) tenon.Value {
+		ms := make([]tenon.Value, len(of))
+		for i, v := range of {
+			ms[i] = tenon.ListVal(counted, v, unknown)
+		}
+		return tenon.SetVal(tenon.List(counted), ms...)
+	}
+	before, after := lists(values[:size]), lists(values[size:])
+	ones := make([]tenon.Narrowing, size)
+	for i := range ones {
+		ones[i] = tenon.Members(some[i])
+	}
+	for _, tt := range []struct {
+		name string
+		call func() bool
+	}{
+		{"two listings compared", func() bool { return tenon.Identical(x, y) }},
+		{"two listings diffed", func() bool { return len(tenon.Diff(x, y)) == 0 }},
+		{"a set beside an unknown compared with a known set", func() bool { return !tenon.Equals(partial, known).IsKnown() }},
+		{"a set beside an unknown narrowed", func() bool { return tenon.Identical(tenon.Narrow(partial, tenon.NotNull()), partial) }},
+		{"a known set narrowed by its members", func() bool { return tenon.Identical(tenon.Narrow(knownSome, tenon.Members(some...)), knownSome) }},
+		{"a known set compared with a range listing it", func() bool { return !tenon.Equals(knownSome, x).IsKnown() }},
+		{"a listing of one member at a time", func() bool {
+			return tenon.Identical(tenon.Narrow(tenon.Unknown(tenon.Set(counted)), ones...), x)
+		}},
+		{"sets of members not known diffed", func() bool { return len(tenon.Diff(before, after)) == 2*size }},
+	} {
+		calls = 0
+		if !tt.call() {
+			t.Errorf("%s: the answer is not the one expected", tt.name)
+		}
+		if calls > 20*size {
+			t.Errorf("%s: %d calls over %d members, want at most %d", tt.name, calls, size, 20*size)
 		}
 	}
 }

@@ -1,5 +1,7 @@
 package tenon
 
+import "slices"
+
 // A set holds one value per member, so a set holding members that are not
 // known can be a given set of values only if its members can take those
 // values, each its own. That is a matching between the values and the members,
@@ -13,33 +15,64 @@ package tenon
 // to be a member of k, since a member of u outside k would make the two sets
 // differ, and every member of k must be one that some member of u can be, each
 // its own, since one member is one value.
+//
+// A known member of u can be one value of k only, the one it equals, so those
+// are paired by hash first and only the members that are not known are
+// matched with the values left, where pairing every value with every member
+// compared each known member with every value: 8,000 took 380 ms. Pairing a
+// known member with the value it equals loses no matching: one that gave the
+// value another member instead can swap the two, freeing that member, and the
+// known member could be no other value.
 func couldEqual(k, u *node) bool {
 	values, held := k.data.([]Value), u.data.([]Value)
 	if len(held) < len(values) {
 		return false
 	}
-	edges, covered := valueEdges(values, held)
-	for _, some := range covered {
-		if !some {
+	byHash := make(map[uint64][]int, len(values))
+	for i, v := range values {
+		h := hashNode(v.n)
+		byHash[h] = append(byHash[h], i)
+	}
+	paired := make([]bool, len(values))
+	known := knownMembers(held)
+	for _, m := range held[:known] {
+		found := false
+		for _, i := range byHash[hashNode(m.n)] {
+			if eq, _ := equality(values[i].n, m.n); eq {
+				paired[i], found = true, true
+				break
+			}
+		}
+		if !found {
 			return false
 		}
 	}
-	return saturates(edges, len(held))
-}
-
-// membersCanTake reports whether a set holding these members can hold each of
-// these values, one member apiece. A value that a member already is needs no
-// member of its own; every other needs one that could turn out to be it, and
-// no two of them the same member, since one member is one value. held are the
-// members that are known, which a set holds first, and rest the members that
-// are not.
-func membersCanTake(values, held, rest []Value) bool {
-	var needed []Value
-	for _, v := range values {
-		if !sameAsSome(held, v) {
-			needed = append(needed, v)
+	var left []Value
+	for i, v := range values {
+		if !paired[i] {
+			left = append(left, v)
 		}
 	}
+	rest := held[known:]
+	edges, covered := valueEdges(left, rest)
+	for i, some := range covered {
+		// A member that could be none of the values left must still be able
+		// to be one of those paired, as two members of u may turn out one.
+		if !some && !slices.ContainsFunc(values, func(v Value) bool {
+			eq, settled := equality(v.n, rest[i].n)
+			return !settled || eq
+		}) {
+			return false
+		}
+	}
+	return saturates(edges, len(rest))
+}
+
+// membersCanTake reports whether a set can hold each of these values, one
+// member apiece, where none of them is a member it holds already: each needs
+// one of rest, the set's members that are not known, that could turn out to
+// be it, and no two of them the same member, since one member is one value.
+func membersCanTake(needed, rest []Value) bool {
 	if len(needed) == 0 {
 		return true
 	}
