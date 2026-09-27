@@ -445,19 +445,19 @@ func TestConformance_SE001_Vectors(t *testing.T) {
 		}
 		names[vec.name] = true
 		v := vec.build(rand.New(rand.NewSource(0)))
-		b, failure, ok := tenon.Serialize(v)
-		if !ok {
-			t.Fatalf("%s: %v does not serialize: %v", vec.name, v, failure)
+		b, err := tenon.Serialize(v)
+		if err != nil {
+			t.Fatalf("%s: %v does not serialize: %v", vec.name, v, err)
 		}
 		// However the value is built, it has these bytes.
 		for seed := int64(1); seed <= 16; seed++ {
 			other := vec.build(rand.New(rand.NewSource(seed)))
-			if ob, _, _ := tenon.Serialize(other); !bytes.Equal(ob, b) {
+			if ob, _ := tenon.Serialize(other); !bytes.Equal(ob, b) {
 				t.Errorf("%s: built another way, %v encodes as %x, not %x", vec.name, other, ob, b)
 			}
 		}
-		if got, failure, ok := tenon.Deserialize(b, decoders); !ok || !tenon.Identical(got, v) {
-			t.Errorf("%s: %x decodes to %v, %v", vec.name, b, got, failure)
+		if got, err := tenon.Deserialize(b, decoders); err != nil || !tenon.Identical(got, v) {
+			t.Errorf("%s: %x decodes to %v, %v", vec.name, b, got, err)
 		}
 		f.Valid = append(f.Valid, validOut{Name: vec.name, Value: v.String(), Hex: hex.EncodeToString(b)})
 	}
@@ -466,9 +466,9 @@ func TestConformance_SE001_Vectors(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: %v", vec.name, err)
 		}
-		_, failure, ok := tenon.Deserialize(data, decoders)
-		if ok || failure.Diagnostics()[0].Code != tenon.Code(vec.code) {
-			t.Errorf("%s: %x decodes with %v, want code %s", vec.name, data, failure, vec.code)
+		_, err = tenon.Deserialize(data, decoders)
+		if te, ok := err.(*tenon.Error); !ok || te.Diagnostics()[0].Code != tenon.Code(vec.code) {
+			t.Errorf("%s: %x decodes with %v, want code %s", vec.name, data, err, vec.code)
 		}
 		f.Invalid = append(f.Invalid, invalidOut{Name: vec.name, Hex: hex.EncodeToString(data), Code: vec.code})
 	}

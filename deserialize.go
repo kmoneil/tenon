@@ -36,8 +36,8 @@ type MarkDecoder func(payload Value, hasPayload bool) (Mark, []Diagnostic)
 const maxDepth = 512
 
 // Deserialize returns the value that data, a document written by Serialize,
-// encodes, and true. Otherwise it returns an error value and false:
-// CodeSerializeMalformed where data is not a document or describes no value,
+// encodes. Otherwise it returns the zero Value and a [*Error] whose error
+// value says why: CodeSerializeMalformed where data is not a document or describes no value,
 // CodeSerializeNotCanonical where it describes a value but is not that value's
 // encoding, CodeSerializeUnsupportedVersion for a document of another format
 // version, CodeSerializeTooLarge where it nests more deeply than 512 levels,
@@ -62,10 +62,6 @@ const maxDepth = 512
 // 512 levels, each item, type, constraint or content counting one, is the only
 // thing refused for its size.
 //
-// Where it returns true, the error value is the zero Value, and where it
-// returns false, the value is: the zero Value is not a value and must not be
-// used.
-//
 // Deserialize panics if decoders names a type that is not a capsule type, a
 // capsule type that declares no encoding, or two that declare one identifier,
 // and if it holds a nil mark decoder. It panics on a decoder that breaks its
@@ -74,7 +70,16 @@ const maxDepth = 512
 // type declares no encoding, or diagnostics that ErrorVal refuses, and a
 // capsule type's Decode returning neither a pointer nor a diagnostic, or a
 // pointer the type does not encapsulate.
-func Deserialize(data []byte, decoders Decoders) (Value, Value, bool) {
+func Deserialize(data []byte, decoders Decoders) (Value, error) {
+	v, failure, ok := deserialize(data, decoders)
+	if !ok {
+		return Value{}, asError(failure)
+	}
+	return v, nil
+}
+
+// deserialize is Deserialize, giving the error value it fails with and false.
+func deserialize(data []byte, decoders Decoders) (Value, Value, bool) {
 	d := &decoder{r: cbor.NewReader(data), capsules: map[string]Type{}, marks: decoders.Marks}
 	for id, decode := range decoders.Marks {
 		if decode == nil {
@@ -98,7 +103,7 @@ func Deserialize(data []byte, decoders Decoders) (Value, Value, bool) {
 	case err != nil:
 		return Value{}, errorValue(err.diagnostic()), false
 	}
-	again, failure, ok := Serialize(v)
+	again, failure, ok := serialize(v)
 	switch {
 	case !ok:
 		var codes []string

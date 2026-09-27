@@ -98,6 +98,12 @@
 // constants, from [CodeBoolInvalidSyntax] to [CodeUnifyTooLarge], so a
 // caller switches on them rather than matching text.
 //
+// [Serialize], [Deserialize], [ProjectJSON] and [Unify], which a program
+// calls at its edges rather than within a computation over values, fail with
+// a Go error instead, as does package gotenon: an [*Error], which holds the
+// error value and the Go errors that caused it, and which errors.As finds
+// through whatever wraps it.
+//
 // Passing a value of the wrong type to an operation is not a diagnostic but a
 // panic: it is a mistake in the program, not in the data.
 //

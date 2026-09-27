@@ -795,13 +795,13 @@ func TestDecodedDeepMarksAreHeldAsAttached(t *testing.T) {
 	}
 	for range conformance.Iterations(t, 200) {
 		v := build(1 + r.Intn(5))
-		b, failure, ok := Serialize(v)
-		if !ok {
-			t.Fatalf("Serialize(%v) failed: %v", v, failure)
+		b, err := Serialize(v)
+		if err != nil {
+			t.Fatalf("Serialize(%v) failed: %v", v, err)
 		}
-		got, failure, ok := Deserialize(b, read)
-		if !ok {
-			t.Fatalf("Deserialize(Serialize(%v)) failed: %v", v, failure)
+		got, err := Deserialize(b, read)
+		if err != nil {
+			t.Fatalf("Deserialize(Serialize(%v)) failed: %v", v, err)
 		}
 		if !sameThroughout(got.n, v.n) || !Identical(got, v) {
 			t.Fatalf("%v came back as %v, holding its marks otherwise", v, got)

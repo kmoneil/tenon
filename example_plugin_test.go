@@ -1,6 +1,7 @@
 package tenon_test
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/kmoneil/tenon"
@@ -28,9 +29,9 @@ func Example_pluginProtocol() {
 		"address": tenon.Narrow(tenon.Unknown(tenon.StringType()), tenon.NotNull(), tenon.StringPrefix("10.")),
 		"token":   tenon.WithMarks(tenon.String("hunter2"), sensitive{}),
 	})
-	wire, failure, ok := tenon.Serialize(resource)
-	if !ok {
-		fmt.Println(failure)
+	wire, err := tenon.Serialize(resource)
+	if err != nil {
+		fmt.Println(err)
 		return
 	}
 	fmt.Println(len(wire), "bytes on the wire")
@@ -39,9 +40,9 @@ func Example_pluginProtocol() {
 	decoders := tenon.Decoders{Marks: map[string]tenon.MarkDecoder{
 		"acme/sensitive": func(tenon.Value, bool) (tenon.Mark, []tenon.Diagnostic) { return sensitive{}, nil },
 	}}
-	received, failure, ok := tenon.Deserialize(wire, decoders)
-	if !ok {
-		fmt.Println(failure)
+	received, err := tenon.Deserialize(wire, decoders)
+	if err != nil {
+		fmt.Println(err)
 		return
 	}
 	fmt.Println(received)
@@ -49,17 +50,21 @@ func Example_pluginProtocol() {
 
 	// One value has one encoding, so a cache or a comparison can work on the
 	// bytes without unpacking them.
-	again, _, _ := tenon.Serialize(received)
+	again, _ := tenon.Serialize(received)
 	fmt.Println("same bytes:", string(again) == string(wire))
 
 	// A receiver that does not know a mark is told so, rather than being
 	// handed a value whose secret has quietly stopped being one.
-	_, failure, ok = tenon.Deserialize(wire, tenon.Decoders{})
-	fmt.Println(ok, failure.Diagnostics()[0].Code)
+	// The error is a *tenon.Error, whose diagnostics say why.
+	_, err = tenon.Deserialize(wire, tenon.Decoders{})
+	var refused *tenon.Error
+	if errors.As(err, &refused) {
+		fmt.Println("refused:", refused.Diagnostics()[0].Code)
+	}
 	// Output:
 	// 88 bytes on the wire
 	// {"address": unknown(string, not null, prefix "10.", length >= 3), "name": "web", "token": redacted("acme/sensitive")}
 	// same value: true
 	// same bytes: true
-	// false serialize.unknown_mark
+	// refused: serialize.unknown_mark
 }

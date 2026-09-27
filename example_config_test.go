@@ -49,8 +49,8 @@ func Example_configLanguage() {
 	// unifies what each branch says and converts both to it, so the answer
 	// has a type whichever branch is taken.
 	yes, no := tenon.NumberFromInt(8080), tenon.String("auto")
-	common, _, ok := tenon.Unify(tenon.Unsafe, tenon.Exactly(yes.Type()), tenon.Exactly(no.Type()))
-	fmt.Println(common, ok)
+	common, err := tenon.Unify(tenon.Unsafe, tenon.Exactly(yes.Type()), tenon.Exactly(no.Type()))
+	fmt.Println(common, err == nil)
 	fmt.Println(tenon.Convert(yes, common, tenon.Unsafe), tenon.Convert(no, common, tenon.Unsafe))
 
 	// What the file says is checked against what the schema asks for, and

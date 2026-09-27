@@ -7,7 +7,7 @@ import (
 	"github.com/kmoneil/tenon/internal/decimal"
 )
 
-// ProjectJSON returns v rendered as JSON text, and true. The projection is
+// ProjectJSON returns v rendered as JSON text. The projection is
 // one-way and lossy: types do not survive it, and neither do marks, the
 // difference between a list, a set and a tuple, or that between a map and an
 // object. No function reads the JSON back into a value.
@@ -23,19 +23,26 @@ import (
 // has no whitespace between tokens, so one value always projects to the same
 // bytes.
 //
-// Where v cannot be projected, ProjectJSON returns an error value and false,
-// with a diagnostic for each part of v that cannot be, located by its path: a
+// Where v cannot be projected, ProjectJSON returns nil and a [*Error] whose
+// error value has a diagnostic for each part of v that cannot be, located by
+// its path: a
 // value that is unknown or pending (CodeSerializeNotKnown), a value carrying a
 // redacting mark, whose contents are then not looked at
 // (CodeSerializeRedacted), and a capsule value whose type declares no display
-// form (CodeSerializeUnencodableCapsule). An error value gives itself. To
-// project what a redacting mark withholds, unmark the value first.
-//
-// Where it returns true, the error value is the zero Value, which is not a
-// value and must not be used; where it returns false, the bytes are nil.
+// form (CodeSerializeUnencodableCapsule). An error value fails with itself.
+// To project what a redacting mark withholds, unmark the value first.
 //
 // ProjectJSON panics on the zero Value.
-func ProjectJSON(v Value) ([]byte, Value, bool) {
+func ProjectJSON(v Value) ([]byte, error) {
+	b, failure, ok := projectJSON(v)
+	if !ok {
+		return nil, asError(failure)
+	}
+	return b, nil
+}
+
+// projectJSON is ProjectJSON, giving the error value it fails with and false.
+func projectJSON(v Value) ([]byte, Value, bool) {
 	if v.data().state == stateError {
 		return nil, v, false
 	}

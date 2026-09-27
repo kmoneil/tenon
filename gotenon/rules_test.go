@@ -160,20 +160,22 @@ func TestConformance_GO050_TheCodesOfTheBoundary(t *testing.T) {
 	wantEncodeFailure(t, "encode.untyped_nil", []any{nil}, wantDiag{tenon.CodeEncodeUntypedNil, ".[0]"})
 }
 
-// brokenMarshaler returns a *DiagnosticError holding no error value, which
-// breaks the marshaler contract: rendering it would panic inside Error.
-type brokenMarshaler struct{}
+// emptyError is a *tenon.Error holding no error value, which says nothing
+// but its text.
+var emptyError = &tenon.Error{}
 
-func (brokenMarshaler) MarshalValue() (tenon.Value, error) {
-	return tenon.Value{}, &gotenon.DiagnosticError{}
-}
+// emptyMarshaler returns emptyError.
+type emptyMarshaler struct{}
+
+func (emptyMarshaler) MarshalValue() (tenon.Value, error) { return tenon.Value{}, emptyError }
 
 // TestConformance_DI003_BoundaryMessagesAndContracts holds the boundary's
 // failure text to being readable and its contracts to panicking as usage
 // errors: the widest in-window number decoded into an int64 reports a
 // message cut to a character boundary, not the million digits it holds, and
-// a marshaler returning a *DiagnosticError holding no error value is named
-// a broken contract rather than panicking inside Error.
+// a marshaler returning a *tenon.Error holding no error value fails as one
+// returning any other error does, with its text, rather than with no
+// diagnostic at all.
 func TestConformance_DI003_BoundaryMessagesAndContracts(t *testing.T) {
 	conformance.Covers(t, "DI-003", "GO-003", "ER-001")
 	widest := tenon.Sub(tenon.NumberFromText("1e999999"), tenon.NumberFromInt(1))
@@ -181,9 +183,9 @@ func TestConformance_DI003_BoundaryMessagesAndContracts(t *testing.T) {
 		t.Fatalf("building the widest number: %v", widest)
 	}
 	_, err := gotenon.Decode[int64](widest, uns)
-	var de *gotenon.DiagnosticError
+	var de *tenon.Error
 	if !errors.As(err, &de) {
-		t.Fatalf("decoding the widest number gave %v, want a *DiagnosticError", err)
+		t.Fatalf("decoding the widest number gave %v, want a *tenon.Error", err)
 	}
 	d := de.Diagnostics()
 	if len(d) != 1 || d[0].Code != tenon.CodeDecodeOutOfRange {
@@ -192,5 +194,11 @@ func TestConformance_DI003_BoundaryMessagesAndContracts(t *testing.T) {
 	if n := len(d[0].Message); n > 200 {
 		t.Errorf("the message is %d bytes, more than the 200 it may be", n)
 	}
-	mustPanicUsage(t, "breaks its contract", func() { gotenon.Encode(brokenMarshaler{}) })
+	_, err = gotenon.Encode(emptyMarshaler{})
+	if got := err.(*tenon.Error).Diagnostics(); len(got) != 1 || got[0].Code != tenon.CodeEncodeMarshalFailed || got[0].Message != emptyError.Error() {
+		t.Errorf("encoding a marshaler returning an empty *tenon.Error gave %v", got)
+	}
+	if !errors.Is(err, emptyError) {
+		t.Errorf("the empty *tenon.Error is not a cause of %v", err)
+	}
 }

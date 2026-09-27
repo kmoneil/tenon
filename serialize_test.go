@@ -32,7 +32,7 @@ func fromHex(t *testing.T, s string) []byte {
 // in hex.
 func wantEncoding(t *testing.T, what string, v tenon.Value, item string) {
 	t.Helper()
-	got, failure, ok := tenon.Serialize(v)
+	got, failure, ok := trySerialize(v)
 	if !ok {
 		t.Errorf("%s: Serialize(%v) failed: %v", what, v, failure)
 		return
@@ -46,7 +46,7 @@ func wantEncoding(t *testing.T, what string, v tenon.Value, item string) {
 // diagnostics.
 func wantSerializeFailure(t *testing.T, what string, v tenon.Value, want ...wantDiag) {
 	t.Helper()
-	_, failure, ok := tenon.Serialize(v)
+	_, failure, ok := trySerialize(v)
 	if ok {
 		t.Errorf("%s: Serialize(%v) succeeded", what, v)
 		return
@@ -92,14 +92,14 @@ var degrees = tenon.Capsule("degrees", tenon.CapsuleOps[celsius]{
 
 func TestConformance_SE004_Documents(t *testing.T) {
 	conformance.Covers(t, "SE-004", "SE-010")
-	got, _, _ := tenon.Serialize(tenon.Bool(true))
+	got, _, _ := trySerialize(tenon.Bool(true))
 	if want := fromHex(t, "da74656e00 82 01 83 00 01 f5"); !bytes.Equal(got, want) {
 		t.Errorf("Serialize(true) = %x, want %x", got, want)
 	}
 	if !bytes.HasPrefix(got, []byte{0xda, 't', 'e', 'n'}) {
 		t.Errorf("a document begins %x, not the tag spelling ten", got[:4])
 	}
-	mustPanicUsage(t, "use of the zero Value", func() { tenon.Serialize(tenon.Value{}) })
+	mustPanicUsage(t, "use of the zero Value", func() { trySerialize(tenon.Value{}) })
 }
 
 func TestConformance_SE030_ContentByType(t *testing.T) {
@@ -176,12 +176,12 @@ func TestConformance_SE032_NumbersAreWrittenAndReadWithoutBigIntegers(t *testing
 				members[i] = tt.number(i)
 			}
 			list := tenon.ListVal(num, members...)
-			data, failure, ok := tenon.Serialize(list)
+			data, failure, ok := trySerialize(list)
 			if !ok {
 				t.Fatalf("%s: %v", tt.name, failure)
 			}
-			written[k] = testing.AllocsPerRun(50, func() { tenon.Serialize(list) })
-			read[k] = testing.AllocsPerRun(50, func() { tenon.Deserialize(data, tenon.Decoders{}) })
+			written[k] = testing.AllocsPerRun(50, func() { trySerialize(list) })
+			read[k] = testing.AllocsPerRun(50, func() { tryDeserialize(data, tenon.Decoders{}) })
 		}
 		// The output grows by doubling, which is a hundredth of an
 		// allocation a number here, or two.
@@ -313,12 +313,12 @@ func TestConformance_SE031_DeepMarksAreDecidedOncePerMarkSet(t *testing.T) {
 		}
 		v := tenon.WithMarks(tenon.ListVal(num, held...), marks...)
 		asked = 0
-		b, failure, ok := tenon.Serialize(v)
+		b, failure, ok := trySerialize(v)
 		if !ok {
 			t.Fatalf("Serialize(a list of %d members under %d deep marks) failed: %v", members, len(marks), failure)
 		}
 		count := asked
-		if got, _, ok := tenon.Deserialize(b, read); !ok || !tenon.Identical(got, v) {
+		if got, _, ok := tryDeserialize(b, read); !ok || !tenon.Identical(got, v) {
 			t.Errorf("a list of %d members under %d deep marks came back as %v", members, len(marks), got)
 		}
 		return count
@@ -341,12 +341,12 @@ func TestConformance_SE031_DeepMarksAreDecidedOncePerMarkSet(t *testing.T) {
 		deepRead.Marks[m.id] = func(tenon.Value, bool) (tenon.Mark, []tenon.Diagnostic) { return m, nil }
 		nested = tenon.WithMarks(tenon.ListVal(nested.Type(), nested), m)
 	}
-	nestedDoc, why, fine := tenon.Serialize(nested)
+	nestedDoc, why, fine := trySerialize(nested)
 	if !fine {
 		t.Fatalf("Serialize(a value nested %d levels, each marked) failed: %v", levels, why)
 	}
 	asked = 0
-	if got, why, fine := tenon.Deserialize(nestedDoc, deepRead); !fine || !tenon.Identical(got, nested) {
+	if got, why, fine := tryDeserialize(nestedDoc, deepRead); !fine || !tenon.Identical(got, nested) {
 		t.Fatalf("a value nested %d levels came back as %v, %v", levels, got, why)
 	}
 	// Once for every set that holds a mark is the square of the levels: 7,260
@@ -364,7 +364,7 @@ func TestConformance_SE031_DeepMarksAreDecidedOncePerMarkSet(t *testing.T) {
 	var before, after runtime.MemStats
 	runtime.GC()
 	runtime.ReadMemStats(&before)
-	if _, _, fine := tenon.Deserialize(nestedDoc, deepRead); !fine {
+	if _, _, fine := tryDeserialize(nestedDoc, deepRead); !fine {
 		t.Fatalf("the nested document did not decode a second time")
 	}
 	runtime.ReadMemStats(&after)
@@ -382,11 +382,11 @@ func TestConformance_SE031_DeepMarksAreDecidedOncePerMarkSet(t *testing.T) {
 		tenon.WithMarks(tenon.ListVal(num, held), marks[0]),
 		tenon.WithMarks(tenon.ListVal(num, held), marks[1]),
 	)
-	b, failure, ok := tenon.Serialize(pair)
+	b, failure, ok := trySerialize(pair)
 	if !ok {
 		t.Fatalf("Serialize(%v) failed: %v", pair, failure)
 	}
-	if got, _, ok := tenon.Deserialize(b, read); !ok || !tenon.Identical(got, pair) {
+	if got, _, ok := tryDeserialize(b, read); !ok || !tenon.Identical(got, pair) {
 		t.Errorf("two lists whose deep marks differ, both holding one value, came back as %v", got)
 	}
 }
@@ -395,8 +395,8 @@ func TestConformance_SE040_Capsules(t *testing.T) {
 	conformance.Covers(t, "SE-040", "SE-042", "SE-050")
 	wantEncoding(t, "a capsule type in a constraint", tenon.Pending(is(degrees)), "83 01 82 01 82 09 63 742f63 00")
 	// Values the type reports equal encode alike.
-	a, _, _ := tenon.Serialize(tenon.CapsuleVal(degrees, &celsius{5}))
-	b, _, _ := tenon.Serialize(tenon.CapsuleVal(degrees, &celsius{5}))
+	a, _, _ := trySerialize(tenon.CapsuleVal(degrees, &celsius{5}))
+	b, _, _ := trySerialize(tenon.CapsuleVal(degrees, &celsius{5}))
 	if !bytes.Equal(a, b) {
 		t.Errorf("equal capsule values encode as %x and %x", a, b)
 	}
@@ -426,7 +426,7 @@ func TestConformance_SE040_Capsules(t *testing.T) {
 		Decode: func(tenon.Value) (*celsius, []tenon.Diagnostic) { return nil, nil },
 	}})
 	mustPanicUsage(t, `capsule type "liar" serialized a value as "not a number"`, func() {
-		tenon.Serialize(tenon.CapsuleVal(liar, &celsius{}))
+		trySerialize(tenon.CapsuleVal(liar, &celsius{}))
 	})
 	// A null is no encoding of a capsule value, which a decoder could not tell
 	// from a value it never gets.
@@ -435,7 +435,7 @@ func TestConformance_SE040_Capsules(t *testing.T) {
 		Encode: func(*celsius) tenon.Value { return tenon.NullVal(num) },
 		Decode: func(tenon.Value) (*celsius, []tenon.Diagnostic) { return nil, nil },
 	}})
-	mustPanicUsage(t, "other than null", func() { tenon.Serialize(tenon.CapsuleVal(nothing, &celsius{})) })
+	mustPanicUsage(t, "other than null", func() { trySerialize(tenon.CapsuleVal(nothing, &celsius{})) })
 	wantDecodeFailure(t, "a capsule value serialized as a null", document+"83 00 82 09 63 742f63 82 02 f6", tenon.CodeSerializeMalformed)
 }
 
@@ -449,11 +449,11 @@ func TestConformance_MK009_AMarkTypeMayDeclareAnEncoding(t *testing.T) {
 		tenon.WithMarks(n(1), stamp{id: "undeclared"}),
 		wantDiag{tenon.CodeSerializeUnencodableMark, "."})
 	v := tenon.WithMarks(n(1), note{id: "p", text: "kept"})
-	b, failure, ok := tenon.Serialize(v)
+	b, failure, ok := trySerialize(v)
 	if !ok {
 		t.Fatalf("Serialize(%v) failed: %v", v, failure)
 	}
-	if got, _, ok := tenon.Deserialize(b, decoders); !ok || !tenon.Identical(got, v) {
+	if got, _, ok := tryDeserialize(b, decoders); !ok || !tenon.Identical(got, v) {
 		t.Errorf("the declared mark came back as %v", got)
 	}
 }
@@ -473,7 +473,7 @@ func TestConformance_SE010_ItemsEncodeByState(t *testing.T) {
 		{"an error value", tenon.ErrorVal(tenon.Diagnostic{Code: "app.x", Message: "m"}), "82 02 81 83 65 6170702e78 61 6d 80"},
 	} {
 		wantEncoding(t, tt.name, tt.v, tt.item)
-		if got, _, ok := tenon.Deserialize(fromHex(t, document+tt.item), decoders); !ok || !tenon.Identical(got, tt.v) {
+		if got, _, ok := tryDeserialize(fromHex(t, document+tt.item), decoders); !ok || !tenon.Identical(got, tt.v) {
 			t.Errorf("%s came back as %v", tt.name, got)
 		}
 	}
@@ -510,8 +510,8 @@ func TestConformance_SE041_MarksEncodeWithAndWithoutAPayload(t *testing.T) {
 	two := tenon.WithMarks(n(1), note{id: "p", text: "x"})
 	wantEncoding(t, "a mark with a payload", two, "83 00 02 da74656e02 82 01 81 83 6170 03 6178")
 	for _, v := range []tenon.Value{one, two} {
-		b, _, _ := tenon.Serialize(v)
-		if got, _, ok := tenon.Deserialize(b, decoders); !ok || !tenon.Identical(got, v) {
+		b, _, _ := trySerialize(v)
+		if got, _, ok := tryDeserialize(b, decoders); !ok || !tenon.Identical(got, v) {
 			t.Errorf("%v came back as %v", v, got)
 		}
 	}
@@ -562,10 +562,10 @@ func TestConformance_SE042_UnencodableMarks(t *testing.T) {
 		wantDiag{tenon.CodeSerializeUnencodableCapsule, "."})
 	// A payload that does encode still holds the mark to SE-041.
 	mustPanicUsage(t, "serialize alike", func() {
-		tenon.Serialize(tenon.WithMarks(n(1), note{"p", "v"}, twinNote{"p", "v"}))
+		trySerialize(tenon.WithMarks(n(1), note{"p", "v"}, twinNote{"p", "v"}))
 	})
 	// A mark's payload is not a null, going out or coming in.
-	mustPanicUsage(t, "other than a null", func() { tenon.Serialize(tenon.WithMarks(n(1), nullNote{})) })
+	mustPanicUsage(t, "other than a null", func() { trySerialize(tenon.WithMarks(n(1), nullNote{})) })
 	wantDecodeFailure(t, "a mark serialized with a null", document+"83 00 01 da74656e02 82 f5 81 83 6170 03 f6", tenon.CodeSerializeMalformed)
 }
 
@@ -622,8 +622,8 @@ func TestConformance_SE050_AMemberCostsNoPathUnlessItFails(t *testing.T) {
 		var written, projected [2]float64
 		for k, size := range []int{100, 200} {
 			v := tt.build(size)
-			written[k] = testing.AllocsPerRun(50, func() { tenon.Serialize(v) })
-			projected[k] = testing.AllocsPerRun(50, func() { tenon.ProjectJSON(v) })
+			written[k] = testing.AllocsPerRun(50, func() { trySerialize(v) })
+			projected[k] = testing.AllocsPerRun(50, func() { tryProjectJSON(v) })
 		}
 		// The output grows by doubling, which is a hundredth of an
 		// allocation a member here, or two.
@@ -665,8 +665,8 @@ func TestConformance_SE050_FailuresUnderOneMemberShareItsPath(t *testing.T) {
 		// has recorded already.
 		most float64
 	}{
-		{"projecting", tenon.Unknown(num), func(v tenon.Value) { tenon.ProjectJSON(v) }, 6},
-		{"serializing", tenon.CapsuleVal(unencodable, &celsius{}), func(v tenon.Value) { tenon.Serialize(v) }, 13},
+		{"projecting", tenon.Unknown(num), func(v tenon.Value) { tryProjectJSON(v) }, 6},
+		{"serializing", tenon.CapsuleVal(unencodable, &celsius{}), func(v tenon.Value) { trySerialize(v) }, 13},
 	} {
 		var made [2]float64
 		for k, failures := range []int{100, 200} {
@@ -761,7 +761,7 @@ func TestConformance_SE001_OneValueOneEncoding(t *testing.T) {
 	var encodable []tenon.Value
 	var encodings [][]byte
 	for _, v := range values.All() {
-		if b, _, ok := tenon.Serialize(v); ok {
+		if b, _, ok := trySerialize(v); ok {
 			encodable = append(encodable, v)
 			encodings = append(encodings, b)
 		}
@@ -784,8 +784,8 @@ func TestConformance_SE001_OneValueOneEncoding(t *testing.T) {
 		{tenon.SetVal(str, s("b"), s("a"), s("b")), tenon.SetVal(str, s("a"), s("b"))},
 		{tenon.Narrow(tenon.Unknown(str), tenon.StringPrefix("ab"), tenon.LengthMin(1)), tenon.Narrow(tenon.Unknown(str), tenon.StringPrefix("ab"))},
 	} {
-		a, _, _ := tenon.Serialize(pair[0])
-		b, _, _ := tenon.Serialize(pair[1])
+		a, _, _ := trySerialize(pair[0])
+		b, _, _ := trySerialize(pair[1])
 		if !bytes.Equal(a, b) {
 			t.Errorf("%v and %v encode as %x and %x", pair[0], pair[1], a, b)
 		}
@@ -818,14 +818,14 @@ func BenchmarkDeepMarkEncoding(b *testing.B) {
 			members[i] = tenon.NumberFromInt(int64(i))
 		}
 		v := tenon.WithMarks(tenon.ListVal(tenon.NumberType(), members...), marks...)
-		encoded, failure, ok := tenon.Serialize(v)
+		encoded, failure, ok := trySerialize(v)
 		if !ok {
 			b.Fatalf("Serialize(a list under %d deep marks) failed: %v", d, failure)
 		}
 		b.Run(fmt.Sprintf("serialize/%d", d), func(b *testing.B) {
 			b.ReportAllocs()
 			for b.Loop() {
-				if _, _, ok := tenon.Serialize(v); !ok {
+				if _, _, ok := trySerialize(v); !ok {
 					b.Fatal("the value did not serialize")
 				}
 			}
@@ -833,7 +833,7 @@ func BenchmarkDeepMarkEncoding(b *testing.B) {
 		b.Run(fmt.Sprintf("deserialize/%d", d), func(b *testing.B) {
 			b.ReportAllocs()
 			for b.Loop() {
-				if _, _, ok := tenon.Deserialize(encoded, read); !ok {
+				if _, _, ok := tryDeserialize(encoded, read); !ok {
 					b.Fatal("the document did not decode")
 				}
 			}
@@ -855,7 +855,7 @@ func BenchmarkSerializeFailures(b *testing.B) {
 		b.Run(fmt.Sprintf("%d", size), func(b *testing.B) {
 			b.ReportAllocs()
 			for b.Loop() {
-				if _, _, ok := tenon.Serialize(v); ok {
+				if _, _, ok := trySerialize(v); ok {
 					b.Fatal("the list serialized")
 				}
 			}

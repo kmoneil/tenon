@@ -14,7 +14,7 @@ import (
 // unifyOK unifies cs under p, failing t if unification fails.
 func unifyOK(t *testing.T, p tenon.Policy, cs ...tenon.Constraint) tenon.Constraint {
 	t.Helper()
-	u, failure, ok := tenon.Unify(p, cs...)
+	u, failure, ok := tryUnify(p, cs...)
 	if !ok {
 		t.Fatalf("Unify(%s, %v) failed: %v", p, cs, failure)
 	}
@@ -24,7 +24,7 @@ func unifyOK(t *testing.T, p tenon.Policy, cs ...tenon.Constraint) tenon.Constra
 // wantUnified fails t unless cs unify under p to want.
 func wantUnified(t *testing.T, p tenon.Policy, want tenon.Constraint, cs ...tenon.Constraint) {
 	t.Helper()
-	u, failure, ok := tenon.Unify(p, cs...)
+	u, failure, ok := tryUnify(p, cs...)
 	switch {
 	case !ok:
 		t.Errorf("Unify(%s, %v) failed: %v, want %v", p, cs, failure, want)
@@ -36,7 +36,7 @@ func wantUnified(t *testing.T, p tenon.Policy, want tenon.Constraint, cs ...teno
 // wantNoUnification fails t unless cs fail to unify under p.
 func wantNoUnification(t *testing.T, p tenon.Policy, cs ...tenon.Constraint) {
 	t.Helper()
-	u, failure, ok := tenon.Unify(p, cs...)
+	u, failure, ok := tryUnify(p, cs...)
 	if ok {
 		t.Errorf("Unify(%s, %v) = %v, want a failure", p, cs, u)
 		return
@@ -84,12 +84,12 @@ func TestConformance_CV040_Unification(t *testing.T) {
 	}
 
 	// The failure is an error value naming what was unified.
-	_, failure, _ := tenon.Unify(safe, is(str), is(num))
+	_, failure, _ := tryUnify(safe, is(str), is(num))
 	if msg := failure.Diagnostics()[0].Message; !strings.Contains(msg, "exactly(number)") || !strings.Contains(msg, "exactly(string)") || !strings.Contains(msg, "safe") {
 		t.Errorf("the failure says %q", msg)
 	}
-	mustPanicUsage(t, "neither Safe nor Unsafe", func() { tenon.Unify(0, is(num)) })
-	mustPanicUsage(t, "use of the zero Constraint", func() { tenon.Unify(safe, is(num), tenon.Constraint{}) })
+	mustPanicUsage(t, "neither Safe nor Unsafe", func() { tryUnify(0, is(num)) })
+	mustPanicUsage(t, "use of the zero Constraint", func() { tryUnify(safe, is(num), tenon.Constraint{}) })
 }
 
 func TestConformance_CV042_UnificationRules(t *testing.T) {
@@ -340,7 +340,7 @@ func unify(t *testing.T, p tenon.Policy, cs ...tenon.Constraint) (u unification)
 			t.Fatalf("Unify(%s, %v) panicked: %v", p, cs, r)
 		}
 	}()
-	u.c, u.failure, u.ok = tenon.Unify(p, cs...)
+	u.c, u.failure, u.ok = tryUnify(p, cs...)
 	return u
 }
 
@@ -651,7 +651,7 @@ func TestConformance_CV044_UnificationAgreesWithTypeUnification(t *testing.T) {
 	for _, a := range values {
 		for _, b := range values {
 			for _, p := range []tenon.Policy{safe, uns} {
-				u, _, ok := tenon.Unify(p, is(a.Type()), is(b.Type()))
+				u, _, ok := tryUnify(p, is(a.Type()), is(b.Type()))
 				list := tenon.Convert(tenon.TupleVal(a, b), tenon.ListOf(tenon.Any()), p)
 				differentObjects := a.Type().Kind() == tenon.KindObject && b.Type().Kind() == tenon.KindObject && a.Type() != b.Type()
 				switch {
@@ -689,8 +689,8 @@ func TestConformance_CV044_NestedUnificationAgreesWithConversion(t *testing.T) {
 		}
 		va, vb := g.known(t1, 2), g.known(t2, 2)
 		for _, p := range []tenon.Policy{safe, uns} {
-			u, _, uok := tenon.Unify(p, is(t1), is(t2))
-			if flipped, _, ok := tenon.Unify(p, is(t2), is(t1)); ok != uok || (uok && !u.Equal(flipped)) {
+			u, _, uok := tryUnify(p, is(t1), is(t2))
+			if flipped, _, ok := tryUnify(p, is(t2), is(t1)); ok != uok || (uok && !u.Equal(flipped)) {
 				t.Fatalf("under %s, %v and %v unify differently by order: %v and %v", p, t1, t2, u, flipped)
 			}
 			list := tenon.Convert(tenon.TupleVal(va, vb), tenon.ListOf(tenon.Any()), p)
@@ -719,12 +719,12 @@ func TestConformance_CV044_NestedUnificationAgreesWithConversion(t *testing.T) {
 			if !ok {
 				continue
 			}
-			left, _, lok := tenon.Unify(p, u, is(t3))
-			u23, _, ok23 := tenon.Unify(p, is(t2), is(t3))
+			left, _, lok := tryUnify(p, u, is(t3))
+			u23, _, ok23 := tryUnify(p, is(t2), is(t3))
 			var right tenon.Constraint
 			rok := false
 			if ok23 {
-				right, _, rok = tenon.Unify(p, is(t1), u23)
+				right, _, rok = tryUnify(p, is(t1), u23)
 			}
 			if lok != rok || (lok && !left.Equal(right)) {
 				t.Fatalf("under %s, (%v, %v) then %v gives %v, but %v then (%v, %v) gives %v", p, t1, t2, t3, left, t1, t2, t3, right)

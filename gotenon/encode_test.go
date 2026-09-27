@@ -31,12 +31,12 @@ func encoded[T any](t *testing.T, x T) tenon.Value {
 func wantEncodeFailure[T any](t *testing.T, what string, x T, want ...wantDiag) {
 	t.Helper()
 	_, err := gotenon.Encode(x)
-	var de *gotenon.DiagnosticError
+	var de *tenon.Error
 	if !errors.As(err, &de) {
-		t.Errorf("%s: Encode gave %v, want a *DiagnosticError", what, err)
+		t.Errorf("%s: Encode gave %v, want a *tenon.Error", what, err)
 		return
 	}
-	wantErrors(t, what, de.Value, want...)
+	wantErrors(t, what, de.Value(), want...)
 }
 
 type address struct {
@@ -295,7 +295,7 @@ func TestConformance_GO030_NumbersEncodeExactly(t *testing.T) {
 		wantDiag{tenon.CodeStringInvalidUTF8, ".e"},
 		wantDiag{tenon.CodeNumberOutOfRange, ".f"})
 	_, err := gotenon.Encode(bad)
-	if msg := err.Error(); msg == "" || !errors.As(err, new(*gotenon.DiagnosticError)) {
+	if msg := err.Error(); msg == "" || !errors.As(err, new(*tenon.Error)) {
 		t.Errorf("the error reads %q", msg)
 	}
 	// A rational that does not terminate is inexact however large its
@@ -391,18 +391,18 @@ func TestConformance_GO015_InterfacesEncodeWhatTheyHold(t *testing.T) {
 
 	// A nil interface holds no value, and no type follows from nothing.
 	_, err := gotenon.Encode(map[string]any{"a": nil})
-	var failed *gotenon.DiagnosticError
+	var failed *tenon.Error
 	if !errors.As(err, &failed) {
 		t.Fatalf("a nil interface encoded: %v", err)
 	}
 	// The map encodes as an object [GO-012], so the failure is located at an
 	// attribute of one and not at a key of a map.
-	wantErrors(t, "a nil interface", failed.Value, wantDiag{tenon.CodeEncodeUntypedNil, ".a"})
+	wantErrors(t, "a nil interface", failed.Value(), wantDiag{tenon.CodeEncodeUntypedNil, ".a"})
 	_, err = gotenon.Encode([]any{1, nil})
 	if !errors.As(err, &failed) {
 		t.Fatalf("a nil interface in a slice encoded: %v", err)
 	}
-	wantErrors(t, "a nil interface in a slice", failed.Value, wantDiag{tenon.CodeEncodeUntypedNil, ".[1]"})
+	wantErrors(t, "a nil interface in a slice", failed.Value(), wantDiag{tenon.CodeEncodeUntypedNil, ".[1]"})
 	// What it holds must itself map, as any other Go value must [GO-011].
 	mustPanicUsage(t, "of kind chan", func() { gotenon.Encode(any(make(chan int))) })
 
@@ -477,11 +477,11 @@ func TestConformance_GO034_JSONNumbers(t *testing.T) {
 
 	// Text that spells no number is data that is wrong, not a panic.
 	_, err = gotenon.Encode(json.Number("http"))
-	var failed *gotenon.DiagnosticError
+	var failed *tenon.Error
 	if !errors.As(err, &failed) {
 		t.Fatalf(`json.Number("http") encoded: %v`, err)
 	}
-	wantErrors(t, "text that is no number", failed.Value, wantDiag{tenon.CodeNumberInvalidSyntax, "."})
+	wantErrors(t, "text that is no number", failed.Value(), wantDiag{tenon.CodeNumberInvalidSyntax, "."})
 
 	// Text longer than parsing reads is refused before it is read [NU-024],
 	// at the path of the number in the document.
@@ -489,7 +489,7 @@ func TestConformance_GO034_JSONNumbers(t *testing.T) {
 	if !errors.As(err, &failed) {
 		t.Fatalf("a json.Number of 10,001 digits encoded: %v", err)
 	}
-	wantErrors(t, "text longer than parsing reads", failed.Value, wantDiag{tenon.CodeNumberTooLong, ".n"})
+	wantErrors(t, "text longer than parsing reads", failed.Value(), wantDiag{tenon.CodeNumberTooLong, ".n"})
 }
 
 // TestConformance_GO030_NumbersOfManyDigits holds Go's big numbers to their
@@ -527,7 +527,7 @@ func (r repeats) MarshalValue() (tenon.Value, error) {
 		d := tenon.Diagnostic{Code: "app.repeated", Message: "d" + strconv.Itoa(i)}
 		diags = append(diags, d, d)
 	}
-	return tenon.Value{}, &gotenon.DiagnosticError{Value: tenon.ErrorVal(diags...)}
+	return tenon.Value{}, tenon.NewError(tenon.ErrorVal(diags...))
 }
 
 // TestConformance_GO003_FailuresAreRecordedOnce holds encoding to one
@@ -566,9 +566,9 @@ func TestConformance_GO003_FailuresAreRecordedOnce(t *testing.T) {
 	// seconds rather than the milliseconds it takes now.
 	const many = 40_000
 	_, err := gotenon.Encode(make([]any, many))
-	var de *gotenon.DiagnosticError
+	var de *tenon.Error
 	if !errors.As(err, &de) {
-		t.Fatalf("Encode of %d nils gave %v, want a *DiagnosticError", many, err)
+		t.Fatalf("Encode of %d nils gave %v, want a *tenon.Error", many, err)
 	}
 	d := de.Diagnostics()
 	if len(d) != many {

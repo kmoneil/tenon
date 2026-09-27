@@ -43,14 +43,14 @@ func FuzzString(f *testing.F) {
 			t.Fatalf("Length(%v) = %v", v, tenon.Length(v))
 		}
 		checkDisplayedCategories(t, v)
-		b, failure, ok := tenon.Serialize(v)
+		b, failure, ok := trySerialize(v)
 		if !ok {
 			t.Fatalf("Serialize(%v) failed: %v", v, failure)
 		}
-		if back, failure, ok := tenon.Deserialize(b, tenon.Decoders{}); !ok || !tenon.Identical(back, v) {
+		if back, failure, ok := tryDeserialize(b, tenon.Decoders{}); !ok || !tenon.Identical(back, v) {
 			t.Fatalf("%v serializes as %x, which deserializes as %v, %v", v, b, back, failure)
 		}
-		projected, failure, ok := tenon.ProjectJSON(v)
+		projected, failure, ok := tryProjectJSON(v)
 		if !ok {
 			t.Fatalf("ProjectJSON(%v) failed: %v", v, failure)
 		}

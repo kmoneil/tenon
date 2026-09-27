@@ -23,12 +23,12 @@ func TestCanonicalOutputs(t *testing.T) {
 	var display, encoded, projected strings.Builder
 	for _, v := range all {
 		display.WriteString(v.String() + "\n")
-		if b, failure, ok := tenon.Serialize(v); ok {
+		if b, failure, ok := trySerialize(v); ok {
 			fmt.Fprintf(&encoded, "%x\n", b)
 		} else {
 			encoded.WriteString(failure.String() + "\n")
 		}
-		if b, failure, ok := tenon.ProjectJSON(v); ok {
+		if b, failure, ok := tryProjectJSON(v); ok {
 			projected.WriteString(string(b) + "\n")
 		} else {
 			projected.WriteString(failure.String() + "\n")

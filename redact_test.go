@@ -267,7 +267,7 @@ func TestConformance_MK011_RedactionWithholdsStructure(t *testing.T) {
 	// Serialize locates what fails within a redacted value at the value.
 	holder := tenon.ObjectVal(map[string]tenon.Value{"vault": tenon.WithMarks(
 		tenon.MapVal(num, map[string]tenon.Value{"hunter2": tenon.WithMarks(tenon.NumberFromInt(1), stamp{id: "plain"})}), secret)})
-	_, failure, ok := tenon.Serialize(holder)
+	_, failure, ok := trySerialize(holder)
 	if ds := errorsOf(failure); ok || len(ds) != 1 || ds[0].Code != tenon.CodeSerializeUnencodableMark || ds[0].Path.String() != ".vault" {
 		t.Errorf("serializing a redacted map holding an unencodable mark gave %v", failure)
 	}

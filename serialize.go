@@ -32,13 +32,13 @@ const (
 	itemError    = 2
 )
 
-// Serialize returns the encoding of v, a CBOR document, and true. Every value
-// has exactly one encoding, whatever way it was built: two values serialize to
-// the same bytes exactly when they are Identical, so the bytes can be hashed,
+// Serialize returns the encoding of v, a CBOR document. Every value has
+// exactly one encoding, whatever way it was built: two values serialize to the
+// same bytes exactly when they are Identical, so the bytes can be hashed,
 // compared or used as a key in place of the value.
 //
-// Where v cannot be serialized, Serialize returns an error value and false.
-// The error value has a diagnostic for each part of v that cannot be, located
+// Where v cannot be serialized, Serialize returns nil and a [*Error] whose
+// error value has a diagnostic for each part of v that cannot be, located
 // by its path: a capsule value, or a type or constraint naming a capsule type,
 // whose capsule type declares no encoding or shares its identifier with
 // another (CodeSerializeUnencodableCapsule), a mark that does not implement
@@ -46,14 +46,20 @@ const (
 // nesting more than 512 levels deep, which Deserialize would refuse to read
 // (CodeSerializeTooLarge).
 //
-// Where it returns true, the error value is the zero Value, which is not a
-// value and must not be used; where it returns false, the bytes are nil.
-//
 // Serialize panics on the zero Value, on a mark whose identifier is not valid
 // UTF-8, and on a capsule encoding or a mark payload that breaks its
 // contract: one that is not a known, unmarked value of the declared type other
 // than a null, or two unequal marks on one value that serialize alike.
-func Serialize(v Value) ([]byte, Value, bool) {
+func Serialize(v Value) ([]byte, error) {
+	b, failure, ok := serialize(v)
+	if !ok {
+		return nil, asError(failure)
+	}
+	return b, nil
+}
+
+// serialize is Serialize, giving the error value it fails with and false.
+func serialize(v Value) ([]byte, Value, bool) {
 	v.data()
 	e := newEncoder()
 	body := e.item(nil, v)

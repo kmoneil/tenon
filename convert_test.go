@@ -1523,11 +1523,11 @@ func BenchmarkObjectUnions(b *testing.B) {
 // dereferenced a nil type, so that fix cannot be undone quietly.
 func FuzzConvert(f *testing.F) {
 	valueBytes := func(v tenon.Value) ([]byte, bool) {
-		b, _, ok := tenon.Serialize(v)
+		b, _, ok := trySerialize(v)
 		return b, ok
 	}
 	constraintBytes := func(c tenon.Constraint) ([]byte, bool) {
-		b, _, ok := tenon.Serialize(tenon.Pending(c))
+		b, _, ok := trySerialize(tenon.Pending(c))
 		return b, ok
 	}
 	var constraints [][]byte
@@ -1567,11 +1567,11 @@ func FuzzConvert(f *testing.F) {
 	last := len(seeds) - 1
 	f.Add(seeds[last], constraints[len(constraints)-1])
 	f.Fuzz(func(t *testing.T, vb, cb []byte) {
-		v, _, ok := tenon.Deserialize(vb, decoders)
+		v, _, ok := tryDeserialize(vb, decoders)
 		if !ok {
 			return
 		}
-		carrier, _, ok := tenon.Deserialize(cb, decoders)
+		carrier, _, ok := tryDeserialize(cb, decoders)
 		if !ok || !carrier.IsPending() {
 			return
 		}

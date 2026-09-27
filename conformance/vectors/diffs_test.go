@@ -159,11 +159,11 @@ func TestConformance_DI037_DiffCorpus(t *testing.T) {
 			if !ok || tenon.Identical(a, b) {
 				continue
 			}
-			bytesB, failure, ok := tenon.Serialize(b)
-			if !ok {
-				t.Fatalf("%s/%s: %v does not serialize: %v", vec.name, m.name, b, failure)
+			bytesB, err := tenon.Serialize(b)
+			if err != nil {
+				t.Fatalf("%s/%s: %v does not serialize: %v", vec.name, m.name, b, err)
 			}
-			if back, _, ok := tenon.Deserialize(bytesB, decoders); !ok || !tenon.Identical(back, b) {
+			if back, err := tenon.Deserialize(bytesB, decoders); err != nil || !tenon.Identical(back, b) {
 				t.Fatalf("%s/%s: %v does not come back from its encoding", vec.name, m.name, b)
 			}
 			f.Diffs = append(f.Diffs, diffOut{Name: vec.name + "/" + m.name, Vector: vec.name, Hex: hex.EncodeToString(bytesB), Diff: tenon.Diff(a, b).String()})

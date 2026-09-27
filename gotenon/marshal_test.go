@@ -2,6 +2,7 @@ package gotenon_test
 
 import (
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -22,7 +23,7 @@ func (m moment) MarshalValue() (tenon.Value, error) {
 
 func (m *moment) UnmarshalValue(v tenon.Value) error {
 	if !v.IsKnown() || v.IsError() || v.Type() != tenon.StringType() {
-		return &gotenon.DiagnosticError{Value: tenon.ErrorVal(tenon.Diagnostic{Code: "app.not_a_moment", Message: "a moment is a known string, not " + v.String()})}
+		return tenon.NewError(tenon.ErrorVal(tenon.Diagnostic{Code: "app.not_a_moment", Message: "a moment is a known string, not " + v.String()}))
 	}
 	t, err := time.Parse(time.RFC3339Nano, v.AsString())
 	if err != nil {
@@ -101,13 +102,13 @@ func TestConformance_GO040_MarshalersRoundTrip(t *testing.T) {
 	}
 
 	// The capsule's own encoding carries an instant through serialization.
-	b, failure, ok := tenon.Serialize(v)
-	if !ok {
-		t.Fatalf("Serialize failed: %v", failure)
+	b, err := tenon.Serialize(v)
+	if err != nil {
+		t.Fatalf("Serialize failed: %v", err)
 	}
-	restored, failure, ok := tenon.Deserialize(b, tenon.Decoders{Capsules: []tenon.Type{timeType}})
-	if !ok {
-		t.Fatalf("Deserialize failed: %v", failure)
+	restored, err := tenon.Deserialize(b, tenon.Decoders{Capsules: []tenon.Type{timeType}})
+	if err != nil {
+		t.Fatalf("Deserialize failed: %v", err)
 	}
 	if again := decoded[schedule](t, restored, tenon.Safe); !again.At.t.Equal(t2) || !again.Log[0].t.Equal(t1) {
 		t.Errorf("after serialization the schedule is %+v", again)
@@ -326,4 +327,47 @@ func TestConformance_GO040_EachDirectionMapsOnItsOwn(t *testing.T) {
 	}
 	var none *intKeyed
 	wantValue(t, "a nil pointer to a map with int keys that marshals itself", encoded(t, none), tenon.NullVal(tenon.Object(nil)))
+}
+
+// errFull is what fullDisk's methods fail with, wrapped.
+var errFull = errors.New("the disk is full")
+
+// fullDisk is a Go type whose methods fail with a Go error: encoding with
+// errFull wrapped in text, and decoding with errFull behind a *tenon.Error
+// holding diagnostics of its own.
+type fullDisk struct{}
+
+func (fullDisk) MarshalValue() (tenon.Value, error) {
+	return tenon.Value{}, fmt.Errorf("writing the log: %w", errFull)
+}
+
+func (*fullDisk) UnmarshalValue(tenon.Value) error {
+	return tenon.NewError(tenon.ErrorVal(tenon.Diagnostic{Code: "app.full", Message: "no room"}), errFull)
+}
+
+// TestConformance_GO040_FailuresKeepTheirCauses holds the error that Encode
+// and Decode fail with to keeping the errors the methods returned as its
+// causes, so errors.Is finds what a method failed with through it, while its
+// diagnostics say where: the text of a plain error, or the diagnostics of a
+// *tenon.Error, located where the Go value is.
+func TestConformance_GO040_FailuresKeepTheirCauses(t *testing.T) {
+	conformance.Covers(t, "GO-040", "GO-003")
+	_, err := gotenon.Encode([]fullDisk{{}, {}})
+	var failed *tenon.Error
+	if !errors.As(err, &failed) || !errors.Is(err, errFull) || len(failed.Unwrap()) != 2 {
+		t.Fatalf("encoding two failing values gave %v, want a *tenon.Error with a cause for each", err)
+	}
+	wantErrors(t, "encoding", failed.Value(),
+		wantDiag{tenon.CodeEncodeMarshalFailed, ".[0]"}, wantDiag{tenon.CodeEncodeMarshalFailed, ".[1]"})
+	if got := failed.Diagnostics()[0].Message; got != "writing the log: the disk is full" {
+		t.Errorf("the diagnostic's message is %q, want the error's text", got)
+	}
+
+	_, err = gotenon.Decode[struct {
+		Disk fullDisk `tenon:"disk"`
+	}](obj(map[string]tenon.Value{"disk": s("x")}), tenon.Safe)
+	if !errors.As(err, &failed) || !errors.Is(err, errFull) {
+		t.Fatalf("decoding into a failing value gave %v, want a *tenon.Error with errFull behind it", err)
+	}
+	wantErrors(t, "decoding", failed.Value(), wantDiag{"app.full", ".disk"})
 }

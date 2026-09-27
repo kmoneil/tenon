@@ -12,35 +12,6 @@ import (
 	"github.com/kmoneil/tenon"
 )
 
-// DiagnosticError is the error that Decode and Encode return where they fail:
-// an error value whose diagnostics say why, each located by its path.
-type DiagnosticError struct {
-	// Value is the error value.
-	Value tenon.Value
-}
-
-// Error renders the diagnostics, as in "decode.null: ... at .name".
-func (e *DiagnosticError) Error() string {
-	var b strings.Builder
-	for i, d := range e.Value.Diagnostics() {
-		if i > 0 {
-			b.WriteString("; ")
-		}
-		b.WriteString(string(d.Code))
-		b.WriteString(": ")
-		b.WriteString(d.Message)
-		if d.Path.Len() > 0 {
-			b.WriteString(" at ")
-			b.WriteString(d.Path.String())
-		}
-	}
-	return b.String()
-}
-
-// Diagnostics returns the diagnostics of the failure, in order, in a new
-// slice.
-func (e *DiagnosticError) Diagnostics() []tenon.Diagnostic { return e.Value.Diagnostics() }
-
 // manyFailures is the most diagnostics a failures compares one against. A Go
 // value fails in a handful of places, among which a scan is quickest and
 // allocates nothing; but every member of a slice or map can fail, and
@@ -51,10 +22,16 @@ const manyFailures = 16
 // failures collects diagnostics, each once: by comparing them while there are
 // few, and by a set of their keys once there are many.
 type failures struct {
-	list []tenon.Diagnostic
-	seen map[string]struct{}
-	n    int    // how many of the list's diagnostics the set holds
-	buf  []byte // the key of the diagnostic being looked up, kept to be reused
+	list   []tenon.Diagnostic
+	seen   map[string]struct{}
+	n      int     // how many of the list's diagnostics the set holds
+	buf    []byte  // the key of the diagnostic being looked up, kept to be reused
+	causes []error // the errors that marshalers and unmarshalers returned
+}
+
+// err returns the error that the failures collected make.
+func (f *failures) err() error {
+	return tenon.NewError(tenon.ErrorVal(f.list...), f.causes...)
 }
 
 func (f *failures) add(d tenon.Diagnostic) {
@@ -134,17 +111,14 @@ func join(p, q tenon.Path) tenon.Path {
 }
 
 // withError adds err, which a marshaler or unmarshaler returned, for the part
-// at p: the diagnostics of a *DiagnosticError located within the part, and
-// otherwise a diagnostic of code whose message is the error's text.
+// at p: the diagnostics of a *tenon.Error located within the part, and
+// otherwise a diagnostic of code whose message is the error's text. Either
+// way err is kept as a cause of the failure, for errors.Is and errors.As.
 func (f *failures) withError(p tenon.Path, code tenon.Code, err error) {
-	var de *DiagnosticError
-	if errors.As(err, &de) {
-		if de.Value.IsZero() || !de.Value.IsError() {
-			// Rendering such an error panics inside Error, so the broken
-			// contract is named here, as the zero Value from MarshalValue is.
-			usagePanic("the method returned a *DiagnosticError whose Value is not an error value, which breaks its contract")
-		}
-		f.within(p, de.Value.Diagnostics())
+	f.causes = append(f.causes, err)
+	var te *tenon.Error
+	if errors.As(err, &te) && !te.Value().IsZero() {
+		f.within(p, te.Diagnostics())
 		return
 	}
 	message := strings.ToValidUTF8(err.Error(), "\U0000FFFD")
@@ -177,7 +151,7 @@ func (f *failures) withError(p tenon.Path, code tenon.Code, err error) {
 // fields are not promoted.
 //
 // Numbers encode exactly: a float64 is the terminating decimal it holds, not a
-// rounded rendering of it. Encode fails with a *DiagnosticError where a part of
+// rounded rendering of it. Encode fails with a *tenon.Error where a part of
 // x cannot be encoded: a NaN or an infinity (tenon.CodeEncodeNotANumber), a big.Rat
 // that is not a terminating decimal (tenon.CodeEncodeInexact), a number outside the
 // range of numbers (tenon.CodeNumberOutOfRange), a json.Number whose text
@@ -207,7 +181,7 @@ func Encode[T any](x T) (tenon.Value, error) {
 	var e encoder
 	v, ok := e.encode(m, reflect.ValueOf(&x).Elem(), tenon.Path{})
 	if len(e.fails.list) > 0 || !ok {
-		return tenon.Value{}, &DiagnosticError{Value: tenon.ErrorVal(e.fails.list...)}
+		return tenon.Value{}, e.fails.err()
 	}
 	return v, nil
 }
