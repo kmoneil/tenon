@@ -269,9 +269,6 @@ func TestContainerValues(t *testing.T) {
 	mustPanicUsage(t, `the element of key "\xff" has type string, not number`, func() {
 		tenon.MapVal(num, map[string]tenon.Value{"\xff": a, "k": tenon.ErrorVal(tenon.Diagnostic{Code: "app.failed", Message: "m"})})
 	})
-	mustPanicUsage(t, "the same name after normalization", func() {
-		tenon.ObjectVal(map[string]tenon.Value{"caf\u00e9": a, "cafe\u0301": b})
-	})
 	mustPanicUsage(t, "zero Type", func() { tenon.ListVal(tenon.Type{}) })
 	mustPanicUsage(t, "Index(2) called on a value with 2 elements", func() { list.Index(2) })
 	mustPanicUsage(t, "not a list or tuple value", func() { m.Index(0) })

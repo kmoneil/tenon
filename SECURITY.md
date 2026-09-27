@@ -16,7 +16,12 @@ of them is a vulnerability:
 
 - Data that is wrong becomes an error value, never a panic. A panic is kept
   for a mistake in the calling program, such as passing a value of the wrong
-  type to an operation.
+  type to an operation. The names of an object's attributes are data where
+  they reach a value: `ObjectVal`, like `MapVal`, gives an error value for a
+  name that is empty, not UTF-8, or the same as another once normalized.
+  `Object`, `ObjectWith` and `Path.Attribute` take names the program writes
+  and panic on such a name; a program building them from names it did not
+  write checks the names with `CheckAttributeNames` first.
 - A value carrying a redacting mark never shows its contents, the keys of a
   map and the attribute names of an object among them, in a display form, a
   diagnostic's message or path, or a JSON projection, nor in anything derived

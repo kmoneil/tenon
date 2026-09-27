@@ -468,7 +468,7 @@ func TestConformance_CV023_ConvertingToObjects(t *testing.T) {
 	// No attribute can be named by the empty key, open or closed.
 	for _, c := range []tenon.Constraint{closed, open} {
 		wantErrors(t, "map, empty key", tenon.Convert(tenon.MapVal(str, map[string]tenon.Value{"name": s("a"), "": s("1")}), c, uns),
-			wantDiag{tenon.CodeConvertUnexpectedAttribute, `.[""]`})
+			wantDiag{tenon.CodeObjectEmptyName, `.[""]`})
 	}
 	wantErrors(t, "number", tenon.Convert(n(1), open, uns), wantDiag{tenon.CodeConvertNoConversion, "."})
 }

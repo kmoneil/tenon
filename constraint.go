@@ -126,7 +126,8 @@ func elementConstraint(kind ConstraintKind, elem Constraint) Constraint {
 //
 // Field names follow the rules for attribute names in Object. ObjectWith
 // panics in the same cases as Object, or if a field's constraint is the zero
-// Constraint. It does not retain the map.
+// Constraint; CheckAttributeNames checks names from data first. It does not
+// retain the map.
 func ObjectWith(fields map[string]Field, closed bool) Constraint {
 	entries := attributeEntries(fields, "object field")
 	list := make([]field, len(entries))

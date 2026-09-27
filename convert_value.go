@@ -792,7 +792,7 @@ func (x converter) object(v Value, c Constraint) Value {
 		m := h.vals[i]
 		switch {
 		case name == "":
-			errs.add(h.steps[i], errorValue(Diagnostic{Code: CodeConvertUnexpectedAttribute,
+			errs.add(h.steps[i], errorValue(Diagnostic{Code: CodeObjectEmptyName,
 				Message: "the map key " + x.keyText(n, name) + " cannot be an attribute name"}))
 		case len(fields) == 0 || fields[0].name != name:
 			if d.closed {

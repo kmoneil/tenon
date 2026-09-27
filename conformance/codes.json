@@ -72,6 +72,12 @@
       "code": "number.too_long"
     },
     {
+      "code": "object.duplicate_name"
+    },
+    {
+      "code": "object.empty_name"
+    },
+    {
       "code": "operation.null_operand"
     },
     {
