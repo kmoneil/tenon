@@ -42,6 +42,22 @@
 
 ### Changed
 
+- `ObjectVal` gives an error value for attribute names that cannot be ones,
+  as `MapVal` does for keys, where it panicked: names come from data as often
+  as from the program, and `SECURITY.md` promises that data never panics. An
+  empty name fails with the new `CodeObjectEmptyName`, a name that is not
+  well-formed UTF-8 with `CodeStringInvalidUTF8`, and names that are one once
+  normalized with the new `CodeObjectDuplicateName`, in the order a map's keys
+  report theirs. The new `CheckAttributeNames` reports the same of names
+  alone, so a program can check names from data before building an `Object`
+  type, an `ObjectWith` constraint or a `Path.Attribute` step, which still
+  panic on such a name. An empty map key that no attribute can be named fails
+  with `CodeObjectEmptyName` as well where a conversion to an object or
+  `gotenon.Encode` of a map meets it, where it failed with
+  `CodeConvertUnexpectedAttribute`, and keys of a map that `gotenon.Encode`
+  makes an object of fail with `CodeObjectDuplicateName` where they failed
+  with `CodeMapDuplicateKey`: one fault, one code, wherever it is met.
+
 - A capsule type is made by `NewCapsule`, which returns a typed handle, a
   `*CapsuleType[E]`: `Type` gives the capsule type, `Value` builds a value
   from a `*E`, and `Of` reads back the `*E` a value encapsulates, with false

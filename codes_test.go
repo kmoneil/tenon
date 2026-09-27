@@ -47,6 +47,8 @@ var specCodes = []string{
 	"number.modulo_by_zero",
 	"number.out_of_range",
 	"number.too_long",
+	"object.duplicate_name",
+	"object.empty_name",
 	"operation.null_operand",
 	"operation.wrong_type",
 	"range.contradiction",

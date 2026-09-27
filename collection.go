@@ -292,29 +292,58 @@ func TupleVal(elems ...Value) Value {
 }
 
 // ObjectVal returns the object with the given attributes, whose type is the
-// object type of the attributes' types. Attribute names follow the rules of
-// Object. ObjectVal does not retain the map.
+// object type of the attributes' types. Attribute names are normalized to
+// Unicode Normalization Form C, as Object normalizes them. ObjectVal does not
+// retain the map.
 //
-// If an attribute is an error value the result is an error value carrying the
-// diagnostics of every such attribute, each located by its name, and the
-// Propagate marks of those attributes. ObjectVal panics if a name is empty or
-// not valid UTF-8, if two names are the same name, or if an attribute is
-// neither an error value nor a resolved value.
+// The names come from data as often as from the program, so a name that
+// cannot be an attribute name is a failure in the data (TY-018). The result is
+// an error value if a name is empty or not well-formed UTF-8, if names are the
+// same name after normalization, or if an attribute is an error value, with a
+// diagnostic for each problem, in the order of the names, normalized where
+// they are well-formed: code CodeObjectEmptyName or CodeStringInvalidUTF8 for
+// each such name, and the diagnostics of each error attribute, located by its
+// name where the name can be one, then code CodeObjectDuplicateName for each
+// name that attributes share, whatever their values are. The error value
+// carries the Propagate marks of the error attributes. CheckAttributeNames
+// reports the same of names alone. ObjectVal panics if an attribute is neither
+// an error value nor a resolved value.
 func ObjectVal(attrs map[string]Value) Value {
-	entries := attributeEntries(attrs, "object attribute")
-	var errs containerErrors
-	types := make(map[string]Type, len(entries))
-	vals := make([]Value, len(entries))
-	for i, e := range entries {
-		if isError(e.value) {
-			errs.add(attributeStep(e.name), e.value)
-			continue
+	given := make([]namedEntry[Value], 0, len(attrs))
+	for name, v := range attrs {
+		given = append(given, namedEntry[Value]{original: name, value: v})
+	}
+	entries, shared := checkNames(given)
+	for _, e := range entries {
+		if !isError(e.value) {
+			memberType("ObjectVal", attributeNamed(e.original), e.value)
 		}
-		types[e.name] = memberType("ObjectVal", attributeNamed(e.original), e.value)
-		vals[i] = e.value
+	}
+	var errs containerErrors
+	for _, e := range entries {
+		switch {
+		case e.fault != "":
+			errs.addDiagnostic(nameFault(e.fault, e.original))
+			// No path step can name what is not an attribute name, so an
+			// error attribute under it keeps the paths it came with.
+			if isError(e.value) {
+				errs.addUnlocated(e.value)
+			}
+		case isError(e.value):
+			errs.add(attributeStep(e.key), e.value)
+		}
+	}
+	for _, group := range shared {
+		errs.addDiagnostic(sharedName(group))
 	}
 	if v, ok := errs.value(); ok {
 		return v
+	}
+	types := make(map[string]Type, len(entries))
+	vals := make([]Value, len(entries))
+	for i, e := range entries {
+		types[e.key] = e.value.n.typ
+		vals[i] = e.value
 	}
 	return Value{n: &node{state: stateKnown, partial: anyPartial(vals), markedWithin: anyMarked(vals), typ: Object(types), data: vals}}
 }

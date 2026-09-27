@@ -603,7 +603,14 @@ func (e *encoder) mapping(m *goMapping, rv reflect.Value, p tenon.Path) (tenon.V
 		}
 		canonical := sv.AsString()
 		if other, dup := normalized[canonical]; dup {
-			e.fail(p, tenon.CodeMapDuplicateKey, "the map keys "+shortText(strconv.QuoteToASCII(other))+" and "+shortText(strconv.QuoteToASCII(key))+" are the same key after normalization")
+			spellings := shortText(strconv.QuoteToASCII(other)) + " and " + shortText(strconv.QuoteToASCII(key))
+			if m.typed() {
+				e.fail(p, tenon.CodeMapDuplicateKey, "the map keys "+spellings+" are the same key after normalization")
+			} else {
+				// A map whose members' types need not agree encodes as an
+				// object, whose attribute names these are [GO-012, TY-018].
+				e.fail(p, tenon.CodeObjectDuplicateName, "the map keys "+spellings+" are the same attribute name after normalization")
+			}
 			ok = false
 			continue
 		}
@@ -617,7 +624,7 @@ func (e *encoder) mapping(m *goMapping, rv reflect.Value, p tenon.Path) (tenon.V
 		at := p.Index(tenon.String(canonical))
 		if !m.typed() {
 			if canonical == "" {
-				e.fail(at, tenon.CodeConvertUnexpectedAttribute, `the map key "" cannot be an attribute name`)
+				e.fail(at, tenon.CodeObjectEmptyName, `the map key "" cannot be an attribute name`)
 				ok = false
 				continue
 			}

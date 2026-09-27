@@ -142,7 +142,9 @@ func collection(kind Kind, elem Type) Type {
 // the map.
 //
 // Object panics if a name is empty or not valid UTF-8, if two names in the map
-// are the same name, or if an attribute type is the zero Type.
+// are the same name, or if an attribute type is the zero Type. A program
+// building a type from names it did not write checks them with
+// CheckAttributeNames first; ObjectVal reports such names as data errors.
 func Object(attrs map[string]Type) Type {
 	entries := attributeEntries(attrs, "object attribute")
 	list := make([]attribute, len(entries))
