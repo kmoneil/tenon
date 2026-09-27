@@ -1192,9 +1192,10 @@ func TestConformance_UN002_MembersNarrowing(t *testing.T) {
 		t.Errorf("%v excludes null, but only NotNull excludes null", a)
 	}
 
-	// Membership through the narrowing: known true for a recorded member once
-	// null is excluded, unknown for anything else, and unknown for everything
-	// while the set could still be null, which would make the answer an error.
+	// Membership through the narrowing: known true for a recorded member,
+	// unknown for anything else. A set that could still be null is answered
+	// from its other values, since null would make the answer an error rather
+	// than another answer (UN-010).
 	nn := tenon.Narrow(a, tenon.NotNull())
 	if got := tenon.Contains(nn, one).String(); got != "true" {
 		t.Errorf("Contains of a recorded member is %s, want true", got)
@@ -1202,8 +1203,8 @@ func TestConformance_UN002_MembersNarrowing(t *testing.T) {
 	if got := tenon.Contains(nn, three); got.IsKnown() {
 		t.Errorf("Contains of an unlisted value is %v, want an unknown Bool", got)
 	}
-	if got := tenon.Contains(a, one); got.IsKnown() {
-		t.Errorf("Contains on a possibly-null set is %v, want an unknown Bool", got)
+	if got := tenon.Contains(a, one).String(); got != "true" {
+		t.Errorf("Contains of a recorded member of a possibly-null set is %s, want true", got)
 	}
 
 	// The length of the set answers from the recorded members.

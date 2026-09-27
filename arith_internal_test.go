@@ -31,7 +31,17 @@ func TestOperationBoundsAreSound(t *testing.T) {
 				if a.IsKnown() && b.IsKnown() {
 					continue // one pair of points, and an error for it
 				}
-				t.Fatalf("case %d: %s(%v, %v) = %v, where an operand is a range", i, o.name, a, b, bounded)
+				// Over a range, an error is an answer only where every pair
+				// of points gives it (UN-011), as a zero divisor does.
+				for _, x := range as {
+					for _, y := range bs {
+						if exact := o.op(numberValue(x), numberValue(y)); !Identical(exact, bounded) {
+							t.Fatalf("case %d: %s(%v, %v) = %v, but %s(%s, %s) = %v",
+								i, o.name, a, b, bounded, o.name, x, y, exact)
+						}
+					}
+				}
+				continue
 			}
 			for _, x := range as {
 				for _, y := range bs {

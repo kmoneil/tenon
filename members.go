@@ -28,9 +28,9 @@ func Length(v Value) Value { return lengthOp.apply(v) }
 // members cannot be null.
 //
 // An unknown set answers from its range: a member recorded there by the
-// Members narrowing settles containment as a held member would, once the
-// range excludes null, because were the set to turn out null the answer
-// would be an error rather than true.
+// Members narrowing settles containment as a held member would, even while
+// the set could still turn out null, since null would make the answer an
+// error rather than another answer (UN-010).
 //
 // The value looked for may be of any type: a value of another type than the
 // set's members is simply not one of them. It may also be null, which is a
@@ -191,13 +191,12 @@ var containsOp = register(&op{
 			}
 		case stateUnknown:
 			// A member recorded in the set's range settles membership as a
-			// held member would, once null is excluded: a set that could
-			// still turn out null could still have an error for an answer.
-			if rd := set.data.(*rangeData); rd.null == nullNo {
-				for _, m := range rd.members {
-					if eq, settled := equality(m.n, args[1].n); settled && eq {
-						return Bool(true), true
-					}
+			// held member would. A set that could still turn out null is
+			// answered from its other values, where null would be an error
+			// rather than another answer (UN-010).
+			for _, m := range set.data.(*rangeData).members {
+				if eq, settled := equality(m.n, args[1].n); settled && eq {
+					return Bool(true), true
 				}
 			}
 		}

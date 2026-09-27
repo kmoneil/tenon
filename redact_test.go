@@ -20,10 +20,13 @@ func TestConformance_MK011_DiagnosticsWithholdRedactedContents(t *testing.T) {
 	notNull := tenon.Narrow(tenon.Unknown(num), tenon.NotNull())
 
 	// A division by zero over a secret numerator says nothing of the
-	// numerator, and the error value carries the secret's mark.
-	div := tenon.Div(tenon.WithMarks(fortyTwo, secret), tenon.NumberFromInt(0))
-	if !div.IsError() || strings.Contains(div.String(), "42") || !tenon.HasMark(div, secret) {
-		t.Errorf("dividing a secret by zero gave %v", div)
+	// numerator, and the error value carries the secret's mark, whether the
+	// numerator is known or not known yet (UN-011).
+	for _, numerator := range []tenon.Value{fortyTwo, tenon.Narrow(tenon.Unknown(num), tenon.NumberMin(fortyTwo, true))} {
+		div := tenon.Div(tenon.WithMarks(numerator, secret), tenon.NumberFromInt(0))
+		if !div.IsError() || strings.Contains(div.String(), "42") || !tenon.HasMark(div, secret) {
+			t.Errorf("dividing a secret by zero gave %v", div)
+		}
 	}
 
 	// Where a message would render a value carrying a redacting mark, it shows
