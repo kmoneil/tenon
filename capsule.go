@@ -2,7 +2,9 @@ package tenon
 
 import (
 	"hash/maphash"
+	"runtime"
 	"unicode/utf8"
+	"weak"
 )
 
 // CapsuleOps declares the optional operations of a capsule type whose values
@@ -46,7 +48,9 @@ type CapsuleOps[E any] struct {
 
 	// Encoding declares how the type's values are serialized. A value that
 	// holds a capsule value, or names a capsule type, of a type that declares
-	// no encoding cannot be serialized.
+	// no encoding cannot be serialized. A type that declares an encoding must
+	// declare Equals, and so Hash: a value read back is a new pointer, equal
+	// to the one written only by the declared equality.
 	Encoding *CapsuleEncoding[E]
 }
 
@@ -91,6 +95,13 @@ type capsuleData struct {
 	convertFrom func(t Type) (func(v Value) Value, bool)
 	// encoding is what an Encoding declares, or nil.
 	encoding *capsuleEncoding
+	// weakKey returns a weak pointer to an encapsulated value, comparable
+	// and equal exactly where the pointers are, which keeps nothing alive;
+	// forgetWhenCollected runs forget with key once the value is collected.
+	// The canonical order numbers the values of a type with no equality by
+	// these, so that numbering one does not keep it (capsuleOrder).
+	weakKey             func(v any) any
+	forgetWhenCollected func(v, key any)
 }
 
 // capsuleEncoding is a declared encoding with its conversions adapted to
@@ -109,7 +120,9 @@ type capsuleEncoding struct {
 //
 // Capsule panics if ops declares Equals but not Hash, or declares an encoding
 // with no identifier, an identifier that is not valid UTF-8, the zero Type,
-// or without both Encode and Decode.
+// without both Encode and Decode, or without Equals: a value read back from
+// its encoding is a new pointer, which only a declared equality can find equal
+// to the value written, as a round trip and a set's one encoding need.
 func Capsule[E any](name string, ops CapsuleOps[E]) Type {
 	if ops.Equals != nil && ops.Hash == nil {
 		usagePanic("capsule type %q declares Equals but not Hash", name)
@@ -119,6 +132,8 @@ func Capsule[E any](name string, ops CapsuleOps[E]) Type {
 		_, ok := v.(*E)
 		return ok
 	}
+	d.weakKey = func(v any) any { return weak.Make(v.(*E)) }
+	d.forgetWhenCollected = func(v, key any) { runtime.AddCleanup(v.(*E), forgetCapsule, key) }
 	if f := ops.Equals; f != nil {
 		d.equals = func(a, b any) bool { return f(a.(*E), b.(*E)) }
 	}
@@ -144,6 +159,8 @@ func Capsule[E any](name string, ops CapsuleOps[E]) Type {
 			usagePanic("capsule type %q declares an encoding with the zero Type", name)
 		case enc.Encode == nil || enc.Decode == nil:
 			usagePanic("capsule type %q declares an encoding without both Encode and Decode", name)
+		case ops.Equals == nil:
+			usagePanic("capsule type %q declares an encoding but not Equals; a value read back is a new pointer, equal to the one written only by a declared equality", name)
 		}
 		encode, decode := enc.Encode, enc.Decode
 		d.encoding = &capsuleEncoding{

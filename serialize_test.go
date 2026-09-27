@@ -408,7 +408,7 @@ func TestConformance_SE040_Capsules(t *testing.T) {
 		wantDiag{tenon.CodeSerializeUnencodableCapsule, ".[1]"})
 	wantSerializeFailure(t, "a pending value naming one", tenon.Pending(tenon.ListOf(is(opaque))),
 		wantDiag{tenon.CodeSerializeUnencodableCapsule, "."})
-	twin := tenon.Capsule("degrees", tenon.CapsuleOps[celsius]{Encoding: &tenon.CapsuleEncoding[celsius]{
+	twin := tenon.Capsule("degrees", tenon.CapsuleOps[celsius]{Equals: celsiusEquals, Hash: celsiusHash, Encoding: &tenon.CapsuleEncoding[celsius]{
 		ID: "t/c", Type: num,
 		Encode: func(v *celsius) tenon.Value { return n(v.degrees) },
 		Decode: func(tenon.Value) (*celsius, []tenon.Diagnostic) { return &celsius{}, nil },
@@ -420,7 +420,7 @@ func TestConformance_SE040_Capsules(t *testing.T) {
 	mustPanicUsage(t, "declares an encoding with no identifier", func() {
 		tenon.Capsule("x", tenon.CapsuleOps[celsius]{Encoding: &tenon.CapsuleEncoding[celsius]{Type: num}})
 	})
-	liar := tenon.Capsule("liar", tenon.CapsuleOps[celsius]{Encoding: &tenon.CapsuleEncoding[celsius]{
+	liar := tenon.Capsule("liar", tenon.CapsuleOps[celsius]{Equals: celsiusEquals, Hash: celsiusHash, Encoding: &tenon.CapsuleEncoding[celsius]{
 		ID: "t/liar", Type: num,
 		Encode: func(*celsius) tenon.Value { return s("not a number") },
 		Decode: func(tenon.Value) (*celsius, []tenon.Diagnostic) { return nil, nil },
@@ -430,7 +430,7 @@ func TestConformance_SE040_Capsules(t *testing.T) {
 	})
 	// A null is no encoding of a capsule value, which a decoder could not tell
 	// from a value it never gets.
-	nothing := tenon.Capsule("nothing", tenon.CapsuleOps[celsius]{Encoding: &tenon.CapsuleEncoding[celsius]{
+	nothing := tenon.Capsule("nothing", tenon.CapsuleOps[celsius]{Equals: celsiusEquals, Hash: celsiusHash, Encoding: &tenon.CapsuleEncoding[celsius]{
 		ID: "t/nothing", Type: num,
 		Encode: func(*celsius) tenon.Value { return tenon.NullVal(num) },
 		Decode: func(tenon.Value) (*celsius, []tenon.Diagnostic) { return nil, nil },
@@ -696,7 +696,7 @@ func TestConformance_SE050_FailuresAreLocatedAtEveryKindOfMember(t *testing.T) {
 	conformance.Covers(t, "SE-050", "SE-042", "SE-061")
 	c := func(d int64) tenon.Value { return tenon.CapsuleVal(unencodable, &celsius{d}) }
 	const capsule, mark = tenon.CodeSerializeUnencodableCapsule, tenon.CodeSerializeUnencodableMark
-	wrapper := tenon.Capsule("wrapper", tenon.CapsuleOps[celsius]{Encoding: &tenon.CapsuleEncoding[celsius]{
+	wrapper := tenon.Capsule("wrapper", tenon.CapsuleOps[celsius]{Equals: celsiusEquals, Hash: celsiusHash, Encoding: &tenon.CapsuleEncoding[celsius]{
 		ID: "t/wrapper", Type: tenon.List(unencodable),
 		Encode: func(v *celsius) tenon.Value { return tenon.ListVal(unencodable, tenon.CapsuleVal(unencodable, v)) },
 		Decode: func(tenon.Value) (*celsius, []tenon.Diagnostic) { return nil, nil },
@@ -880,3 +880,8 @@ func TestConformance_SE050_FailuresFollowTheEncoding(t *testing.T) {
 		wantDiag{tenon.CodeSerializeUnencodableMark, ".[0]"},
 		wantDiag{tenon.CodeSerializeUnencodableMark, "."})
 }
+
+// celsiusEquals and celsiusHash are the equality and hash a capsule type of
+// celsius values declares beside an encoding, which Capsule requires.
+func celsiusEquals(a, b *celsius) bool { return *a == *b }
+func celsiusHash(v *celsius) uint64    { return uint64(v.degrees) }

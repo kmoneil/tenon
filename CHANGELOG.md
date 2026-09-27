@@ -16,6 +16,13 @@
   same everywhere, sound for any run, and keeping more text in a few places
   where the old boundary was needlessly cautious, such as a macron (U+00AF)
   that nothing composes with.
+- Ordering capsule values no longer keeps them alive. Where a capsule type
+  declares no `Compare`, the canonical order numbered its values for the rest
+  of the process, so a long-running program that put capsule values into
+  sets, or decoded documents holding them, kept every one it had ever
+  ordered. Values of a type with no equality are now numbered by weak pointer
+  and forgotten once collected, and a type with an encoding orders values
+  whose hashes collide by their encodings, numbering none.
 - `Serialize` refuses a value nesting more than 512 levels deep, with
   `CodeSerializeTooLarge` at the first part past the bound, where it wrote a
   document that `Deserialize` then refused as too large: data written that
@@ -29,6 +36,12 @@
 
 ### Changed
 
+- `Capsule` panics where `CapsuleOps` declares an `Encoding` without `Equals`
+  (and so `Hash`). Such a type's values were equal only by pointer, so a value
+  read back from its encoding was never identical to the one written, and a
+  set of two equal capsule values encoded two identical members, which the
+  one-encoding rule forbids. Declare the equality the encoding already
+  implies.
 - A slice, array or map whose elements decode by an unmarshaler, directly or
   through a pointer, decodes as a slice or map of `tenon.Value` does: from a
   list, set or tuple, or a map or object, each member by its own conversion.
