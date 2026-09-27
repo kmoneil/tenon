@@ -47,7 +47,11 @@ const maxDepth = 512
 // byte offset where, and quotes nothing the document holds, since the marks
 // that follow a content, redacting ones among them, are not read yet when it
 // is refused; it names a capsule type's or a mark's identifier, which says
-// what decoder to supply.
+// what decoder to supply. Where data holds more than one fault, Deserialize
+// gives the first it meets, reading from the first byte: it stops at a fault
+// where it is written, and finds the rest, an integer in a longer form than
+// it needs among them, by comparing data, once read through, with the
+// encoding of the value it describes.
 //
 // Deserialize never panics on its input, and never allocates for a length the
 // input declares before the input has shown it holds that much. The work it
