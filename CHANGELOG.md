@@ -34,6 +34,18 @@
   which spells the type out 1,000 times, allocated 90 MB for its message, and
   now allocates 408 bytes at any size. Lists of types in messages are cut the
   same way.
+- Sets holding members that are not known, and ranges that list the members
+  a set must hold, are compared, narrowed and diffed in proportion to their
+  members, where each member was looked for among all the others: at 8,000
+  members, comparing two ranges listing them took 350 ms and now takes
+  0.05 ms; a set of known members beside an unknown one compared with a known
+  set, 380 ms and now 0.75 ms; such a set narrowed by `NotNull`, a known set
+  narrowed by a listing of its members, and a known set compared with a range
+  listing it, about 190 ms each and now about 1 ms. A range narrowed by 4,000
+  listings of one member each re-sorted its listing each time, 203 ms and
+  68 MB, and now merges each in, 0.8 ms and 0.14 MB. Diffing two sets whose
+  members are not known pairs identical members in one pass and writes each
+  changed member's display form once.
 
 ### Changed
 

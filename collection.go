@@ -381,8 +381,15 @@ func distinctMembers(members []Value) []Value {
 // value whose type declares no encoding, since what stands in for it is the
 // same; compareAlike orders those by the capsule values.
 func orderMembers(members []Value) []Value {
+	slices.SortStableFunc(members, memberOrder())
+	return members
+}
+
+// memberOrder returns the comparison orderMembers sorts by, each member that
+// is not known encoded once however often it is compared.
+func memberOrder() func(a, b Value) int {
 	alike := notKnownOrder()
-	slices.SortStableFunc(members, func(a, b Value) int {
+	return func(a, b Value) int {
 		known, other := a.n.isKnown(), b.n.isKnown()
 		switch {
 		case known && other:
@@ -393,8 +400,7 @@ func orderMembers(members []Value) []Value {
 			return 1
 		}
 		return alike(a.n, b.n)
-	})
-	return members
+	}
 }
 
 // notKnownOrder returns a comparison ordering members that are not known as

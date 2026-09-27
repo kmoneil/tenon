@@ -2,6 +2,7 @@ package tenon
 
 import (
 	"slices"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -210,8 +211,41 @@ type rangeData struct {
 func (r *rangeData) equal(s *rangeData) bool {
 	return r.null == s.null && r.lo.equal(s.lo) && r.hi.equal(s.hi) &&
 		r.pfx == s.pfx && r.lenLo == s.lenLo && r.lenHi == s.lenHi &&
-		len(r.members) == len(s.members) &&
-		sameMembersFunc(r.members, s.members, Identical)
+		sameListing(r.members, s.members)
+}
+
+// sameListing reports whether two listings a range records hold the same
+// values. A listing is held in the order a set iterates its members, which
+// follows from the members, so two that hold the same values hold them in
+// the same order and are compared in step, where looking for each value
+// among all the other's cost the square of them: 8,000 took 350 ms. Only
+// values that tie in that order, which values told apart by nothing but a
+// capsule value its type does not order can, may sit either way round, so
+// the rest of a run of those, from where the two first differ, is compared
+// as a set.
+func sameListing(x, y []Value) bool {
+	if len(x) != len(y) {
+		return false
+	}
+	var order func(a, b Value) int
+	for i := 0; i < len(x); {
+		if Identical(x[i], y[i]) {
+			i++
+			continue
+		}
+		if order == nil {
+			order = memberOrder()
+		}
+		j := i + 1
+		for j < len(x) && order(x[i], x[j]) == 0 {
+			j++
+		}
+		if !sameMembersFunc(x[i:j], y[i:j], Identical) {
+			return false
+		}
+		i = j
+	}
+	return true
 }
 
 // write writes the facts r records, each after a comma, in the order of DI-017.
@@ -504,12 +538,7 @@ func (nw Narrowing) holdsFor(n *node) bool {
 		// The value is a range of one, so a listed value that could still
 		// turn out to be a member leaves it standing; only one that provably
 		// is not a member contradicts it.
-		for _, m := range nw.members {
-			if found, settled := membership(n, m); settled && !found {
-				return false
-			}
-		}
-		return true
+		return !lacksSome(n, nw.members)
 	}
 	return false
 }
@@ -627,6 +656,11 @@ func narrowValue(v Value, ns []Narrowing) Value {
 	}
 	old := n.data.(*rangeData)
 	r := *old
+	if slices.ContainsFunc(ns, func(nw Narrowing) bool { return nw.kind == narrowMembers }) {
+		// A listing is merged into the record in place (addMembers), so the
+		// range narrowed holds a copy of the value's own.
+		r.members = slices.Clone(old.members)
+	}
 	ceiling := setCeiling(n.typ)
 	// A fact already in force is what the value says about itself, or what a
 	// narrowing given before this one said, so a message withholds it when
@@ -813,23 +847,29 @@ func narrowPartialSet(v Value, ns []Narrowing) Value {
 	// listing names, and, where its least length is as many members as the
 	// element type has values, every one of those. Each of them that the set
 	// does not hold already needs a member of its own to be.
-	known := 0
-	for known < len(members) && members[known].n.isKnown() {
-		known++
-	}
-	knowns, rest := members[:known], members[known:]
+	index := indexMembers(members)
+	knowns, rest := index.known, index.rest
 	full := ceiling.set && least() == ceiling.n && ceiling.n <= maxDomainSet
-	want := slices.Clone(knowns)
+	// The set holds its known members already, so only the values beside
+	// them need members of their own: each is looked up among the known
+	// members by its hash, rather than compared with every one of them.
+	want, extra := slices.Clone(knowns), []Value(nil)
 	if full {
 		want = memberValues(n.typ.t.elem)
-	} else {
-		for _, l := range listed.members {
-			if l.n.isKnown() && !sameAsSome(knowns, l) {
-				want = append(want, l)
+		for _, v := range want {
+			if !index.holdsKnown(v) {
+				extra = append(extra, v)
 			}
 		}
+	} else {
+		for _, l := range listed.members {
+			if l.n.isKnown() && !index.holdsKnown(l) {
+				extra = append(extra, l)
+			}
+		}
+		want = append(want, extra...)
 	}
-	if !membersCanTake(want, knowns, rest) {
+	if !membersCanTake(extra, rest) {
 		// Only a listing asks for a value the set does not hold, unless every
 		// value of the element type is asked for, which a length does.
 		reason := membersText(listed.members)
@@ -1063,34 +1103,94 @@ func (r *rangeData) applyToValues(nw Narrowing, ceiling lengthBound) (string, bo
 // rest are held in the order a set iterates them, and the least length rises
 // to what the listing implies (listingLeast). A value whose requirement the
 // others imply is kept (UN-002), as the type's doc says.
+//
+// The listing is r's own, which it changes in place: a range narrowed on a
+// value's behalf holds a copy of the value's (narrowValue). The values are
+// ordered among themselves and merged into it, each placed by a binary search
+// and the listing moved along once, rather than the whole listing ordered
+// again: a range narrowed by 4,000 listings of one value each re-sorted the
+// listing 4,000 times, 203 ms and 68 MB.
 func (r *rangeData) addMembers(vs []Value) {
 	if len(vs) == 0 {
 		return
 	}
-	// Values that are one member are neighbours once the members are in the
-	// order a set holds them: equal known values tie there (EQ-045), and two
-	// that are identical read alike, which is the only way a value that is not
-	// known is one member with another. So the listing is ordered first and
-	// the first of each run kept, rather than every value being compared with
-	// every value recorded.
-	merged := slices.Clone(r.members)
+	var fresh []Value
 	for _, v := range vs {
 		if !vacuousMember(v) {
-			merged = append(merged, v)
+			fresh = append(fresh, v)
 		}
 	}
-	ordered := orderMembers(merged)
-	kept := ordered[:0]
-	for _, v := range ordered {
-		if last := len(kept) - 1; last >= 0 && oneMember(kept[last], v) {
-			continue
-		}
-		kept = append(kept, v)
+	if len(fresh) > 0 {
+		order := memberOrder()
+		r.members = mergeListing(r.members, orderedListing(fresh, order), order)
 	}
-	r.members = kept
+	// Any listing promises a member, the vacuous ones among it too.
 	if lo := int64(listingLeast(r.members)); lo > r.lenLo {
 		r.lenLo = lo
 	}
+}
+
+// orderedListing puts fresh, values listed together, in the order a set holds
+// them, which order gives, and keeps the first of each run of values that are
+// one member.
+func orderedListing(fresh []Value, order func(a, b Value) int) []Value {
+	// Values that are one member are neighbours once the values are in the
+	// order a set holds them: equal known values tie there (EQ-045), and two
+	// that are identical read alike, which is the only way a value that is not
+	// known is one member with another. So the values are ordered first and
+	// the first of each run kept, rather than every value being compared with
+	// every value recorded.
+	slices.SortStableFunc(fresh, order)
+	kept := fresh[:1]
+	for _, v := range fresh[1:] {
+		if !oneMember(kept[len(kept)-1], v) {
+			kept = append(kept, v)
+		}
+	}
+	return kept
+}
+
+// mergeListing merges fresh, ordered and holding no two values that are one
+// member, into held, ordered likewise, and returns the result, which may
+// share held's array. A value that is one member with a held value it ties
+// with is dropped; the rest go after the held values they tie with, as a
+// stable sort of the two after one another places them. Each fresh value is
+// placed by a binary search among the held values from where the one before
+// it went, and the held values are moved along from the back, each once.
+func mergeListing(held, fresh []Value, order func(a, b Value) int) []Value {
+	if len(held) == 0 {
+		return fresh
+	}
+	var added []Value
+	var at []int // where each added value goes among the held values
+	from := 0
+	for _, v := range fresh {
+		i, _ := slices.BinarySearchFunc(held[from:], v, order)
+		i += from
+		from = i
+		for ; i < len(held) && order(held[i], v) == 0; i++ {
+			if oneMember(held[i], v) {
+				break
+			}
+		}
+		if i < len(held) && order(held[i], v) == 0 {
+			continue // one member with held[i]
+		}
+		added, at = append(added, v), append(at, i)
+	}
+	if len(added) == 0 {
+		return held
+	}
+	n := len(held)
+	held = slices.Grow(held, len(added))[:n+len(added)]
+	end, src := len(held), n
+	for k := len(added) - 1; k >= 0; k-- {
+		moved := src - at[k]
+		copy(held[end-moved:end], held[at[k]:src])
+		end, src = end-moved-1, at[k]
+		held[end] = added[k]
+	}
+	return held
 }
 
 // listingLeast returns the least length a listing recorded as members implies
@@ -1100,12 +1200,9 @@ func (r *rangeData) addMembers(vs []Value) {
 // that is not known could still turn out to be one the record holds already,
 // and finding which of them are provably distinct would compare every pair.
 func listingLeast(members []Value) int {
-	known := 0
-	for _, m := range members {
-		if m.n.isKnown() {
-			known++
-		}
-	}
+	// The record holds its known values first, so they are counted by where
+	// the first value that is not known sits.
+	known := sort.Search(len(members), func(i int) bool { return !members[i].n.isKnown() })
 	return max(known, 1)
 }
 

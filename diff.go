@@ -272,58 +272,96 @@ func (d *differ) members(x, y []Value, p Path) {
 			j++
 		}
 	}
-	// The rest may repeat, and pair with identical members one for one.
-	rest := y[ky:]
-	paired := make([]bool, len(rest))
+	// The rest are in the order a set holds them, which follows from the
+	// members, so identical ones tie there, and they pair one for one in a
+	// merge: within a run of members that tie, each pairs with an identical
+	// one not yet paired, where each looked through all the other's for one,
+	// the square of them (16,000 took 1.4 s).
+	alike := notKnownOrder()
+	rx, ry := x[kx:], y[ky:]
 	var removed, added []Value
-	for _, m := range x[kx:] {
-		found := false
-		for k, o := range rest {
-			if !paired[k] && Identical(m, o) {
-				paired[k], found = true, true
-				break
-			}
-		}
-		if !found {
-			removed = append(removed, m)
-		}
-	}
-	for k, m := range rest {
-		if !paired[k] {
-			added = append(added, m)
-		}
-	}
-	// Removals and additions interleave by display form. A removal and an
-	// addition that read alike are ordered by the members themselves, as a
-	// set holding the members of both sets orders members that encode alike
-	// (DI-035, EQ-044): the key follows from the member and not from the
-	// side it came from, so Diff(b, a) mirrors Diff(a, b), where putting the
-	// removal first put a different member first each way. A removal still
-	// leads where even that comparison ties, which only members told apart
-	// by what EQ-045 leaves unordered reach.
-	var alike func(a, b *node) int
-	for len(removed) > 0 || len(added) > 0 {
+	for i, j := 0, 0; i < len(rx) || j < len(ry); {
 		c := 0
 		switch {
-		case len(added) == 0:
+		case j == len(ry):
 			c = -1
-		case len(removed) == 0:
+		case i == len(rx):
 			c = 1
 		default:
-			c = strings.Compare(removed[0].String(), added[0].String())
-			if c == 0 {
-				if alike == nil {
-					alike = notKnownOrder()
+			c = alike(rx[i].n, ry[j].n)
+		}
+		if c < 0 {
+			removed = append(removed, rx[i])
+			i++
+			continue
+		}
+		if c > 0 {
+			added = append(added, ry[j])
+			j++
+			continue
+		}
+		ei, ej := i+1, j+1
+		for ei < len(rx) && alike(rx[i].n, rx[ei].n) == 0 {
+			ei++
+		}
+		for ej < len(ry) && alike(ry[j].n, ry[ej].n) == 0 {
+			ej++
+		}
+		paired := make([]bool, ej-j)
+		for _, m := range rx[i:ei] {
+			found := false
+			for k, o := range ry[j:ej] {
+				if !paired[k] && Identical(m, o) {
+					paired[k], found = true, true
+					break
 				}
-				c = alike(removed[0].n, added[0].n)
+			}
+			if !found {
+				removed = append(removed, m)
+			}
+		}
+		for k, o := range ry[j:ej] {
+			if !paired[k] {
+				added = append(added, o)
+			}
+		}
+		i, j = ei, ej
+	}
+	// Removals and additions interleave by display form, each written once
+	// however long it waits its turn. A removal and an addition that read
+	// alike are ordered by the members themselves, as a set holding the
+	// members of both sets orders members that encode alike (DI-035,
+	// EQ-044): the key follows from the member and not from the side it came
+	// from, so Diff(b, a) mirrors Diff(a, b), where putting the removal first
+	// put a different member first each way. A removal still leads where
+	// even that comparison ties, which only members told apart by what
+	// EQ-045 leaves unordered reach.
+	texts := func(ms []Value) []string {
+		out := make([]string, len(ms))
+		for i, m := range ms {
+			out[i] = m.String()
+		}
+		return out
+	}
+	removedText, addedText := texts(removed), texts(added)
+	for i, j := 0, 0; i < len(removed) || j < len(added); {
+		c := 0
+		switch {
+		case j == len(added):
+			c = -1
+		case i == len(removed):
+			c = 1
+		default:
+			if c = strings.Compare(removedText[i], addedText[j]); c == 0 {
+				c = alike(removed[i].n, added[j].n)
 			}
 		}
 		if c <= 0 {
-			d.add(Change{Kind: ChangeMemberRemoved, Path: p, Old: removed[0]})
-			removed = removed[1:]
+			d.add(Change{Kind: ChangeMemberRemoved, Path: p, Old: removed[i]})
+			i++
 		} else {
-			d.add(Change{Kind: ChangeMemberAdded, Path: p, New: added[0]})
-			added = added[1:]
+			d.add(Change{Kind: ChangeMemberAdded, Path: p, New: added[j]})
+			j++
 		}
 	}
 }
