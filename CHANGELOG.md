@@ -42,6 +42,18 @@
 
 ### Changed
 
+- A capsule type is made by `NewCapsule`, which returns a typed handle, a
+  `*CapsuleType[E]`: `Type` gives the capsule type, `Value` builds a value
+  from a `*E`, and `Of` reads back the `*E` a value encapsulates, with false
+  for anything but a known value of the type. The pointer type is checked
+  where the program is compiled, where `CapsuleVal` and `CapsuleValue`
+  asserted it where it ran and panicked. `Capsule`, `CapsuleVal` and
+  `CapsuleValue` are removed, and `CapsuleOps.Equals` is `CapsuleOps.Equal`,
+  the name the rest of the API uses. Write `h := tenon.NewCapsule(name, ops)`
+  and `h.Type()` where a program wrote `t := tenon.Capsule(name, ops)`,
+  `h.Value(p)` for `tenon.CapsuleVal(t, p)`, and `p, ok := h.Of(v)` for
+  `tenon.CapsuleValue[E](v)`.
+
 - `Serialize`, `Deserialize`, `ProjectJSON` and `Unify` return a result and
   an `error`, where they returned the result, an error value and a bool of
   which only some could be used; gotenon's `Encode` and `Decode` fail with

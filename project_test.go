@@ -40,7 +40,7 @@ func wantProjectionFailure(t *testing.T, what string, v tenon.Value, want ...wan
 
 func TestConformance_SE062_Projection(t *testing.T) {
 	conformance.Covers(t, "SE-062", "SE-060")
-	degreesShown := tenon.Capsule("shown", tenon.CapsuleOps[celsius]{
+	degreesShown := tenon.NewCapsule("shown", tenon.CapsuleOps[celsius]{
 		Display: func(v *celsius) string { return tenon.NumberFromInt(v.degrees).String() + " degrees" },
 	})
 	for _, tt := range []struct {
@@ -62,7 +62,7 @@ func TestConformance_SE062_Projection(t *testing.T) {
 		{"a tuple", tenon.TupleVal(tenon.Bool(false), s("x"), tenon.NullVal(num)), `[false,"x",null]`},
 		{"a map, in key order", tenon.MapVal(num, map[string]tenon.Value{"b": n(2), "": n(0), "a": n(1)}), `{"":0,"a":1,"b":2}`},
 		{"an object, in name order", obj(map[string]tenon.Value{"z": tenon.ListVal(str), "a": obj(nil)}), `{"a":{},"z":[]}`},
-		{"a capsule value", tenon.CapsuleVal(degreesShown, &celsius{21}), `"21 degrees"`},
+		{"a capsule value", degreesShown.Value(&celsius{21}), `"21 degrees"`},
 		// Marks that do not redact are left out.
 		{"a marked value", tenon.WithMarks(tenon.ListVal(num, tenon.WithMarks(n(1), stamp{id: "m"})), stamp{id: "n"}), `[1]`},
 	} {
@@ -100,10 +100,10 @@ func TestConformance_SE063_ProjectedStrings(t *testing.T) {
 func TestConformance_SE060_DisplayTextProjectsAsText(t *testing.T) {
 	conformance.Covers(t, "SE-060", "SE-062", "SE-063")
 	shows := func(text string) tenon.Value {
-		typ := tenon.Capsule("shows", tenon.CapsuleOps[celsius]{
+		typ := tenon.NewCapsule("shows", tenon.CapsuleOps[celsius]{
 			Display: func(*celsius) string { return text },
 		})
-		return tenon.CapsuleVal(typ, &celsius{})
+		return typ.Value(&celsius{})
 	}
 	wantProjection(t, "an ill-formed byte", shows("x\xffy"), "\"x\U0000FFFDy\"")
 	// One U+FFFD for each ill-formed byte, as ranging over a Go string gives
@@ -136,8 +136,8 @@ func TestConformance_SE061_WhatDoesNotProject(t *testing.T) {
 	unmarked, _ := tenon.UnmarkDeep(tenon.WithMarks(s("hunter2"), secret))
 	wantProjection(t, "unmarked", unmarked, `"hunter2"`)
 
-	opaque := tenon.Capsule("opaque", tenon.CapsuleOps[celsius]{})
-	wantProjectionFailure(t, "a capsule with no display form", tenon.ListVal(opaque, tenon.CapsuleVal(opaque, &celsius{})),
+	opaque := tenon.NewCapsule("opaque", tenon.CapsuleOps[celsius]{})
+	wantProjectionFailure(t, "a capsule with no display form", tenon.ListVal(opaque.Type(), opaque.Value(&celsius{})),
 		wantDiag{tenon.CodeSerializeUnencodableCapsule, ".[0]"})
 	failed := tenon.ErrorVal(tenon.Diagnostic{Code: "app.failed", Message: "it failed"})
 	if _, got, ok := tryProjectJSON(failed); ok || !tenon.Identical(got, failed) {

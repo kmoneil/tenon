@@ -268,9 +268,9 @@ func TestConformance_EQ042_TheCountIsAskedOncePerValue(t *testing.T) {
 	conformance.Covers(t, "EQ-042", "EQ-010")
 	num := tenon.NumberType()
 	asked := 0
-	counted := tenon.Capsule("counted", tenon.CapsuleOps[int]{
-		Equals: func(a, b *int) bool { asked++; return *a == *b },
-		Hash:   func(v *int) uint64 { return uint64(*v) },
+	counted := tenon.NewCapsule("counted", tenon.CapsuleOps[int]{
+		Equal: func(a, b *int) bool { asked++; return *a == *b },
+		Hash:  func(v *int) uint64 { return uint64(*v) },
 		Encoding: &tenon.CapsuleEncoding[int]{
 			ID:     "t/counted",
 			Type:   num,
@@ -283,11 +283,11 @@ func TestConformance_EQ042_TheCountIsAskedOncePerValue(t *testing.T) {
 		},
 	})
 	const size = 400
-	tup := tenon.Tuple(counted, num)
+	tup := tenon.Tuple(counted.Type(), num)
 	members := make([]tenon.Value, size)
 	for i := range members {
 		v := i
-		members[i] = tenon.TupleVal(tenon.CapsuleVal(counted, &v), tenon.Unknown(num))
+		members[i] = tenon.TupleVal(counted.Value(&v), tenon.Unknown(num))
 	}
 	set := tenon.SetVal(tup, members...)
 
@@ -434,8 +434,8 @@ func TestConformance_EQ042_TheLengthOfASetHoldingUnknowns(t *testing.T) {
 func TestConformance_EQ030_MembersAreToldApartByTheirHashes(t *testing.T) {
 	conformance.Covers(t, "EQ-030", "EQ-042", "UN-002")
 	compared := 0
-	counted := tenon.Capsule("counted", tenon.CapsuleOps[int]{
-		Equals:  func(a, b *int) bool { compared++; return *a == *b },
+	counted := tenon.NewCapsule("counted", tenon.CapsuleOps[int]{
+		Equal:   func(a, b *int) bool { compared++; return *a == *b },
 		Hash:    func(v *int) uint64 { return uint64(*v) },
 		Compare: func(a, b *int) int { return *a - *b },
 	})
@@ -443,15 +443,15 @@ func TestConformance_EQ030_MembersAreToldApartByTheirHashes(t *testing.T) {
 	members := make([]tenon.Value, size)
 	for i := range members {
 		v := i
-		members[i] = tenon.CapsuleVal(counted, &v)
+		members[i] = counted.Value(&v)
 	}
-	held := tenon.SetVal(counted, append(slices.Clone(members), tenon.Unknown(counted))...)
+	held := tenon.SetVal(counted.Type(), append(slices.Clone(members), tenon.Unknown(counted.Type()))...)
 	for _, tt := range []struct {
 		name string
 		call func() tenon.Value
 	}{
 		{"a range listing them all", func() tenon.Value {
-			return tenon.Narrow(tenon.Unknown(tenon.Set(counted)), tenon.Members(members...))
+			return tenon.Narrow(tenon.Unknown(tenon.Set(counted.Type())), tenon.Members(members...))
 		}},
 		{"the length of a set of them beside an unknown", func() tenon.Value { return tenon.Length(held) }},
 	} {
@@ -481,8 +481,8 @@ func TestConformance_EQ030_MembersAreToldApartByTheirHashes(t *testing.T) {
 func TestConformance_UN002_ListingsAndSetsCostTheirMembers(t *testing.T) {
 	conformance.Covers(t, "UN-002", "EQ-003", "EQ-010", "EQ-043", "UN-004", "DI-035")
 	calls := 0
-	counted := tenon.Capsule("counted", tenon.CapsuleOps[int]{
-		Equals:  func(a, b *int) bool { calls++; return *a == *b },
+	counted := tenon.NewCapsule("counted", tenon.CapsuleOps[int]{
+		Equal:   func(a, b *int) bool { calls++; return *a == *b },
 		Hash:    func(v *int) uint64 { calls++; return uint64(*v) },
 		Compare: func(a, b *int) int { calls++; return *a - *b },
 		Display: func(v *int) string { calls++; return strconv.Itoa(*v) },
@@ -491,19 +491,21 @@ func TestConformance_UN002_ListingsAndSetsCostTheirMembers(t *testing.T) {
 	values := make([]tenon.Value, 2*size)
 	for i := range values {
 		v := i
-		values[i] = tenon.CapsuleVal(counted, &v)
+		values[i] = counted.Value(&v)
 	}
-	some, unknown := values[:size], tenon.Unknown(counted)
-	partial := tenon.SetVal(counted, append(slices.Clone(some), unknown)...)
-	known, knownSome := tenon.SetVal(counted, values[:size+1]...), tenon.SetVal(counted, some...)
-	listing := func() tenon.Value { return tenon.Narrow(tenon.Unknown(tenon.Set(counted)), tenon.Members(some...)) }
+	some, unknown := values[:size], tenon.Unknown(counted.Type())
+	partial := tenon.SetVal(counted.Type(), append(slices.Clone(some), unknown)...)
+	known, knownSome := tenon.SetVal(counted.Type(), values[:size+1]...), tenon.SetVal(counted.Type(), some...)
+	listing := func() tenon.Value {
+		return tenon.Narrow(tenon.Unknown(tenon.Set(counted.Type())), tenon.Members(some...))
+	}
 	x, y := listing(), listing()
 	lists := func(of []tenon.Value) tenon.Value {
 		ms := make([]tenon.Value, len(of))
 		for i, v := range of {
-			ms[i] = tenon.ListVal(counted, v, unknown)
+			ms[i] = tenon.ListVal(counted.Type(), v, unknown)
 		}
-		return tenon.SetVal(tenon.List(counted), ms...)
+		return tenon.SetVal(tenon.List(counted.Type()), ms...)
 	}
 	before, after := lists(values[:size]), lists(values[size:])
 	ones := make([]tenon.Narrowing, size)
@@ -521,7 +523,7 @@ func TestConformance_UN002_ListingsAndSetsCostTheirMembers(t *testing.T) {
 		{"a known set narrowed by its members", func() bool { return tenon.Identical(tenon.Narrow(knownSome, tenon.Members(some...)), knownSome) }},
 		{"a known set compared with a range listing it", func() bool { return !tenon.Equals(knownSome, x).IsKnown() }},
 		{"a listing of one member at a time", func() bool {
-			return tenon.Identical(tenon.Narrow(tenon.Unknown(tenon.Set(counted)), ones...), x)
+			return tenon.Identical(tenon.Narrow(tenon.Unknown(tenon.Set(counted.Type())), ones...), x)
 		}},
 		{"sets of members not known diffed", func() bool { return len(tenon.Diff(before, after)) == 2*size }},
 	} {
@@ -679,13 +681,13 @@ func TestConformance_EQ044_SetIterationOrder(t *testing.T) {
 func TestConformance_EQ044_MembersToldApartOnlyByACapsule(t *testing.T) {
 	conformance.Covers(t, "EQ-044", "EQ-045")
 	num := tenon.NumberType()
-	ranked := tenon.Capsule("ranked", tenon.CapsuleOps[int]{
-		Equals:  func(a, b *int) bool { return *a == *b },
+	ranked := tenon.NewCapsule("ranked", tenon.CapsuleOps[int]{
+		Equal:   func(a, b *int) bool { return *a == *b },
 		Hash:    func(v *int) uint64 { return uint64(*v) },
 		Compare: func(a, b *int) int { return *a - *b },
 	})
 	member := func(i int) tenon.Value {
-		return tenon.TupleVal(tenon.CapsuleVal(ranked, &i), tenon.Unknown(num))
+		return tenon.TupleVal(ranked.Value(&i), tenon.Unknown(num))
 	}
 	given := []tenon.Value{member(3), member(1), member(2)}
 	for _, order := range [][]int{{0, 1, 2}, {2, 1, 0}, {1, 2, 0}} {
@@ -693,7 +695,7 @@ func TestConformance_EQ044_MembersToldApartOnlyByACapsule(t *testing.T) {
 		for i, at := range order {
 			members[i] = given[at]
 		}
-		elems := tenon.SetVal(tenon.Tuple(ranked, num), members...).Elements()
+		elems := tenon.SetVal(tenon.Tuple(ranked.Type(), num), members...).Elements()
 		for i, want := range []int{1, 2, 3} {
 			if !tenon.Identical(elems[i], member(want)) {
 				t.Errorf("built in order %v, member %d of the set is %v, want the one ranked %d", order, i, elems[i], want)
@@ -731,9 +733,9 @@ func TestConformance_EQ041_UnknownMembersAreComparedInTheirOrder(t *testing.T) {
 	conformance.Covers(t, "EQ-041", "EQ-044", "EQ-010")
 	const size = 400
 	num := tenon.NumberType()
-	elem := tenon.Tuple(counting, num)
+	elem := tenon.Tuple(counting.Type(), num)
 	member := func(i int64) tenon.Value {
-		return tenon.TupleVal(tenon.CapsuleVal(counting, &i), tenon.Unknown(num))
+		return tenon.TupleVal(counting.Value(&i), tenon.Unknown(num))
 	}
 	members := func(from int64) []tenon.Value {
 		out := make([]tenon.Value, size)
@@ -772,8 +774,8 @@ func TestConformance_EQ041_UnknownMembersAreComparedInTheirOrder(t *testing.T) {
 func TestConformance_EQ045_KnownMembersAreComparedInTheirOrder(t *testing.T) {
 	conformance.Covers(t, "EQ-044", "EQ-045", "EQ-003", "EQ-010", "SE-005")
 	const size = 400
-	set := tenon.Set(counting)
-	value := func(i int64) tenon.Value { return tenon.CapsuleVal(counting, &i) }
+	set := tenon.Set(counting.Type())
+	value := func(i int64) tenon.Value { return counting.Value(&i) }
 	members := func(from, count int64) []tenon.Value {
 		out := make([]tenon.Value, count)
 		for i := range out {
@@ -785,21 +787,21 @@ func TestConformance_EQ045_KnownMembersAreComparedInTheirOrder(t *testing.T) {
 	forwards := members(0, size)
 	backwards := slices.Clone(members(0, size))
 	slices.Reverse(backwards)
-	a, b := tenon.SetVal(counting, forwards...), tenon.SetVal(counting, backwards...)
-	c := tenon.SetVal(counting, append(members(0, size-1), value(size))...)
+	a, b := tenon.SetVal(counting.Type(), forwards...), tenon.SetVal(counting.Type(), backwards...)
+	c := tenon.SetVal(counting.Type(), append(members(0, size-1), value(size))...)
 
 	// Two sets whose members are partly known, listed in a range: the
 	// document is canonical, and deciding what it says compares the members
 	// of the two sets with each other.
 	partly := func(extra int64) tenon.Value {
-		return tenon.SetVal(counting, append(members(0, size-1), value(extra), tenon.Unknown(counting))...)
+		return tenon.SetVal(counting.Type(), append(members(0, size-1), value(extra), tenon.Unknown(counting.Type()))...)
 	}
 	listing := tenon.Narrow(tenon.Unknown(tenon.Set(set)), tenon.Members(partly(size), partly(size+1)))
 	// A set that must hold every member of a, beside one that holds them and
 	// a member that is not known: whether the second could be the first asks
 	// the second about each value the first lists.
 	holdingA := tenon.Narrow(tenon.Unknown(set), tenon.Members(forwards...))
-	partlyA := tenon.SetVal(counting, append(members(0, size), tenon.Unknown(counting))...)
+	partlyA := tenon.SetVal(counting.Type(), append(members(0, size), tenon.Unknown(counting.Type()))...)
 	listed, failure, ok := trySerialize(listing)
 	if !ok {
 		t.Fatalf("Serialize(a listing of two partly known sets) failed: %v", failure)
@@ -818,7 +820,7 @@ func TestConformance_EQ045_KnownMembersAreComparedInTheirOrder(t *testing.T) {
 	}
 	pair[at+1] = 0x05 // the outer list type becomes a set type
 
-	read := tenon.Decoders{Capsules: []tenon.Type{counting}}
+	read := tenon.Decoders{Capsules: []tenon.Type{counting.Type()}}
 	var decoded tenon.Value
 	for _, tt := range []struct {
 		name string

@@ -47,7 +47,7 @@ func TestConformance_TY010_TypeKinds(t *testing.T) {
 		{tenon.Map(str), tenon.KindMap, "Map"},
 		{tenon.Object(map[string]tenon.Type{"a": str}), tenon.KindObject, "Object"},
 		{tenon.Tuple(str), tenon.KindTuple, "Tuple"},
-		{sampleCapsule, tenon.KindCapsule, "Capsule"},
+		{sampleCapsule.Type(), tenon.KindCapsule, "Capsule"},
 	}
 	for _, tt := range tests {
 		if got := tt.typ.Kind(); got != tt.kind || got.String() != tt.name {
@@ -268,8 +268,10 @@ func TestZeroType(t *testing.T) {
 }
 
 // exportedFuncs returns the names of the package's exported functions whose
-// results include the named type, sorted. Methods are left out: they hand back
-// what a function made in the first place.
+// results include the named type, sorted. Methods are left out, since they
+// hand back what a function made in the first place, but for those of a
+// capsule type's handle, which make its values and hand out its type: they
+// are named as CapsuleType.Value is.
 func exportedFuncs(t *testing.T, result string) []string {
 	t.Helper()
 	var names []string
@@ -281,12 +283,26 @@ func exportedFuncs(t *testing.T, result string) []string {
 		}
 		for _, d := range file.Decls {
 			fn, ok := d.(*ast.FuncDecl)
-			if !ok || fn.Recv != nil || !fn.Name.IsExported() || fn.Type.Results == nil {
+			if !ok || !fn.Name.IsExported() || fn.Type.Results == nil {
 				continue
+			}
+			name := fn.Name.Name
+			if fn.Recv != nil {
+				recv := fn.Recv.List[0].Type
+				if star, ok := recv.(*ast.StarExpr); ok {
+					recv = star.X
+				}
+				if ix, ok := recv.(*ast.IndexExpr); ok {
+					recv = ix.X
+				}
+				if id, ok := recv.(*ast.Ident); !ok || id.Name != "CapsuleType" {
+					continue
+				}
+				name = "CapsuleType." + name
 			}
 			for _, r := range fn.Type.Results.List {
 				if id, ok := r.Type.(*ast.Ident); ok && id.Name == result {
-					names = append(names, fn.Name.Name)
+					names = append(names, name)
 					break
 				}
 			}
@@ -348,46 +364,46 @@ func concrete(t *testing.T, name string, ty tenon.Type) {
 func TestConformance_TY001_EveryValueHasOneConcreteType(t *testing.T) {
 	conformance.Covers(t, "TY-001")
 	type thing struct{}
-	held := tenon.Capsule("thing", tenon.CapsuleOps[thing]{})
+	held := tenon.NewCapsule("thing", tenon.CapsuleOps[thing]{})
 	str, num, bl := tenon.StringType(), tenon.NumberType(), tenon.BoolType()
 	one, tr := tenon.NumberFromInt(1), tenon.Bool(true)
 	typed := map[string]tenon.Value{
-		"Bool":             tr,
-		"NumberFromInt":    one,
-		"NumberFromBigInt": tenon.NumberFromBigInt(new(big.Int).Lsh(big.NewInt(1), 100)),
-		"NumberFromText":   tenon.NumberFromText("1.5"),
-		"String":           tenon.String("x"),
-		"CapsuleVal":       tenon.CapsuleVal(held, &thing{}),
-		"NullVal":          tenon.NullVal(str),
-		"Unknown":          tenon.Unknown(str),
-		"ListVal":          tenon.ListVal(str, tenon.String("a")),
-		"SetVal":           tenon.SetVal(str),
-		"MapVal":           tenon.MapVal(str, map[string]tenon.Value{"k": tenon.String("v")}),
-		"TupleVal":         tenon.TupleVal(one, tr),
-		"ObjectVal":        tenon.ObjectVal(map[string]tenon.Value{"a": one}),
-		"Narrow":           tenon.Narrow(tenon.Unknown(num), tenon.NotNull()),
-		"Resolve":          tenon.Resolve(tenon.Pending(tenon.Any()), str),
-		"And":              tenon.And(tr, tenon.Bool(false)),
-		"Equals":           tenon.Equals(one, one),
-		"LessThan":         tenon.LessThan(one, one),
-		"Length":           tenon.Length(tenon.ListVal(str, tenon.String("a"))),
-		"Contains":         tenon.Contains(tenon.SetVal(str), one),
-		"Or":               tenon.Or(tr, tenon.Bool(false)),
-		"Not":              tenon.Not(tr),
-		"IsNull":           tenon.IsNull(one),
-		"Add":              tenon.Add(one, one),
-		"Sub":              tenon.Sub(one, one),
-		"Mul":              tenon.Mul(one, one),
-		"Div":              tenon.Div(one, one),
-		"Mod":              tenon.Mod(one, one),
-		"Convert":          tenon.Convert(one, tenon.Exactly(str), tenon.Unsafe),
-		"WithMarks":        tenon.WithMarks(one, stamp{id: "m"}),
-		"Unmark":           unmarked(tenon.WithMarks(one, stamp{id: "m"})),
-		"UnmarkDeep":       unmarkedDeep(tenon.ListVal(num, tenon.WithMarks(one, stamp{id: "m"}))),
+		"Bool":              tr,
+		"NumberFromInt":     one,
+		"NumberFromBigInt":  tenon.NumberFromBigInt(new(big.Int).Lsh(big.NewInt(1), 100)),
+		"NumberFromText":    tenon.NumberFromText("1.5"),
+		"String":            tenon.String("x"),
+		"CapsuleType.Value": held.Value(&thing{}),
+		"NullVal":           tenon.NullVal(str),
+		"Unknown":           tenon.Unknown(str),
+		"ListVal":           tenon.ListVal(str, tenon.String("a")),
+		"SetVal":            tenon.SetVal(str),
+		"MapVal":            tenon.MapVal(str, map[string]tenon.Value{"k": tenon.String("v")}),
+		"TupleVal":          tenon.TupleVal(one, tr),
+		"ObjectVal":         tenon.ObjectVal(map[string]tenon.Value{"a": one}),
+		"Narrow":            tenon.Narrow(tenon.Unknown(num), tenon.NotNull()),
+		"Resolve":           tenon.Resolve(tenon.Pending(tenon.Any()), str),
+		"And":               tenon.And(tr, tenon.Bool(false)),
+		"Equals":            tenon.Equals(one, one),
+		"LessThan":          tenon.LessThan(one, one),
+		"Length":            tenon.Length(tenon.ListVal(str, tenon.String("a"))),
+		"Contains":          tenon.Contains(tenon.SetVal(str), one),
+		"Or":                tenon.Or(tr, tenon.Bool(false)),
+		"Not":               tenon.Not(tr),
+		"IsNull":            tenon.IsNull(one),
+		"Add":               tenon.Add(one, one),
+		"Sub":               tenon.Sub(one, one),
+		"Mul":               tenon.Mul(one, one),
+		"Div":               tenon.Div(one, one),
+		"Mod":               tenon.Mod(one, one),
+		"Convert":           tenon.Convert(one, tenon.Exactly(str), tenon.Unsafe),
+		"WithMarks":         tenon.WithMarks(one, stamp{id: "m"}),
+		"Unmark":            unmarked(tenon.WithMarks(one, stamp{id: "m"})),
+		"UnmarkDeep":        unmarkedDeep(tenon.ListVal(num, tenon.WithMarks(one, stamp{id: "m"}))),
 	}
 	want := map[string]tenon.Type{
 		"Bool": bl, "NumberFromInt": num, "NumberFromBigInt": num, "NumberFromText": num, "String": str,
-		"CapsuleVal": held, "NullVal": str, "Unknown": str,
+		"CapsuleType.Value": held.Type(), "NullVal": str, "Unknown": str,
 		"ListVal": tenon.List(str), "SetVal": tenon.Set(str), "MapVal": tenon.Map(str),
 		"TupleVal": tenon.Tuple(num, bl), "ObjectVal": tenon.Object(map[string]tenon.Type{"a": num}),
 		"Narrow": num, "Resolve": str, "And": bl, "Or": bl, "Not": bl, "IsNull": bl,
@@ -449,7 +465,7 @@ func TestConformance_TY002_NoWildcardInATypeAtAnyDepth(t *testing.T) {
 	// The package makes types in nine ways, one for each kind, and each takes
 	// types and names. There is no tenth that takes a constraint or a
 	// placeholder, and adding one would have to start here.
-	want := []string{"BoolType", "Capsule", "List", "Map", "NumberType", "Object", "Set", "StringType", "Tuple"}
+	want := []string{"BoolType", "CapsuleType.Type", "List", "Map", "NumberType", "Object", "Set", "StringType", "Tuple"}
 	if got := exportedFuncs(t, "Type"); !slices.Equal(got, want) {
 		t.Errorf("the package makes types with\n%q\nwant\n%q", got, want)
 	}

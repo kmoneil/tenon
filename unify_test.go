@@ -139,8 +139,8 @@ func TestConformance_CV042_UnificationRules(t *testing.T) {
 	wantNoUnification(t, safe, fields(true, "a", tenon.Required(is(num))), fields(true, "a", tenon.Required(is(str))))
 
 	// 8. Everything else fails, capsule types that are not one type included.
-	one := tenon.Capsule("one", tenon.CapsuleOps[celsius]{})
-	other := tenon.Capsule("one", tenon.CapsuleOps[celsius]{})
+	one := tenon.NewCapsule("one", tenon.CapsuleOps[celsius]{}).Type()
+	other := tenon.NewCapsule("one", tenon.CapsuleOps[celsius]{}).Type()
 	wantUnified(t, uns, is(one), is(one), is(one))
 	for _, pair := range [][2]tenon.Constraint{
 		{is(one), is(other)},
@@ -406,7 +406,7 @@ func TestConformance_CV041_UnificationIsOrderIndependent(t *testing.T) {
 	}
 
 	r := rand.New(rand.NewSource(20260916))
-	capsule := tenon.Capsule("cap", tenon.CapsuleOps[celsius]{})
+	capsule := tenon.NewCapsule("cap", tenon.CapsuleOps[celsius]{}).Type()
 	succeeded, failed := 0, 0
 	for i := range conformance.Iterations(t, 1500) {
 		base := randomConstraint(r, 3, capsule)
@@ -683,7 +683,7 @@ func TestConformance_CV044_NestedUnificationAgreesWithConversion(t *testing.T) {
 	var unified, refused int
 	for draw := 0; draw < 40_000 && (unified < 500 || refused < 500); draw++ {
 		t1 := g.typ(3)
-		t2, ok := tenon.SoleType(related(r, constraintOfType(t1), degrees))
+		t2, ok := tenon.SoleType(related(r, constraintOfType(t1), degrees.Type()))
 		if !ok {
 			t2 = g.typ(3)
 		}
@@ -715,7 +715,7 @@ func TestConformance_CV044_NestedUnificationAgreesWithConversion(t *testing.T) {
 			}
 			// Grouping: a third type joins on either side and the results
 			// agree.
-			t3, ok := tenon.SoleType(related(r, constraintOfType(t1), degrees))
+			t3, ok := tenon.SoleType(related(r, constraintOfType(t1), degrees.Type()))
 			if !ok {
 				continue
 			}

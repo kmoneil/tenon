@@ -31,7 +31,7 @@ func TestConformance_EQ045_CanonicalOrder(t *testing.T) {
 		tenon.MapVal(str, map[string]tenon.Value{"k": s("a")}),
 		tenon.TupleVal(s("a")),
 		tenon.ObjectVal(map[string]tenon.Value{"a": s("a")}),
-		tenon.CapsuleVal(tenon.Capsule("held", tenon.CapsuleOps[point]{}), &point{1, 2}),
+		tenon.NewCapsule("held", tenon.CapsuleOps[point]{}).Value(&point{1, 2}),
 	}
 	for i := range ordered[:len(ordered)-1] {
 		if got := tenon.CanonicalCompare(ordered[i], ordered[i+1]); got >= 0 {
@@ -108,7 +108,7 @@ func TestConformance_EQ045_CanonicalOrder(t *testing.T) {
 // is one value iterates two ways.
 func TestConformance_EQ045_CapsuleFallbackOrdersByEqualityClass(t *testing.T) {
 	conformance.Covers(t, "EQ-045", "EQ-044", "DI-031", "SE-001")
-	cv := func(x, y int) tenon.Value { return tenon.CapsuleVal(colliding, &point{x, y}) }
+	cv := func(x, y int) tenon.Value { return colliding.Value(&point{x, y}) }
 	// p and q are one value; r is another. They are numbered in the order they
 	// are first compared, which is p, r, q.
 	p, q, r := cv(1, 1), cv(1, 1), cv(2, 2)
@@ -178,22 +178,22 @@ func TestConformance_EQ045_ThePublishedOrderings(t *testing.T) {
 	// Values of a type that declares a hash and no Compare order by the
 	// hash. The first comparison meets the larger hash first, so the
 	// numbering fallback alone would give the reverse of this answer.
-	hashed := tenon.Capsule("hashed_in_canonical_test", tenon.CapsuleOps[point]{
-		Equals: func(a, b *point) bool { return *a == *b },
-		Hash:   func(p *point) uint64 { return uint64(p.x) },
+	hashed := tenon.NewCapsule("hashed_in_canonical_test", tenon.CapsuleOps[point]{
+		Equal: func(a, b *point) bool { return *a == *b },
+		Hash:  func(p *point) uint64 { return uint64(p.x) },
 	})
-	big, small := tenon.CapsuleVal(hashed, &point{9, 0}), tenon.CapsuleVal(hashed, &point{1, 0})
+	big, small := hashed.Value(&point{9, 0}), hashed.Value(&point{1, 0})
 	if got := tenon.CanonicalCompare(big, small); got <= 0 {
 		t.Errorf("the larger declared hash sorts %d against the smaller, want after it", got)
 	}
 
 	// Where the hashes collide, the value the run compared first sorts
 	// first, for the rest of the run.
-	numbered := tenon.Capsule("numbered_in_canonical_test", tenon.CapsuleOps[point]{
-		Equals: func(a, b *point) bool { return *a == *b },
-		Hash:   func(*point) uint64 { return 7 },
+	numbered := tenon.NewCapsule("numbered_in_canonical_test", tenon.CapsuleOps[point]{
+		Equal: func(a, b *point) bool { return *a == *b },
+		Hash:  func(*point) uint64 { return 7 },
 	})
-	early, late := tenon.CapsuleVal(numbered, &point{1, 0}), tenon.CapsuleVal(numbered, &point{2, 0})
+	early, late := numbered.Value(&point{1, 0}), numbered.Value(&point{2, 0})
 	if got := tenon.CanonicalCompare(early, late); got >= 0 {
 		t.Errorf("the value compared first sorts %d against the later one, want before it", got)
 	}
@@ -204,16 +204,16 @@ func TestConformance_EQ045_ThePublishedOrderings(t *testing.T) {
 	// numbering by first comparison from one that merely stays consistent:
 	// reversing the comparison and its operands together answers fresh
 	// pairs as the original does, and parts from it only here.
-	third := tenon.CapsuleVal(numbered, &point{3, 0})
+	third := numbered.Value(&point{3, 0})
 	if got := tenon.CanonicalCompare(third, late); got <= 0 {
 		t.Errorf("a value first compared later sorts %d against an earlier one, want after it", got)
 	}
 
 	// Two capsule types of one name are told apart by which was made first.
-	older := tenon.Capsule("same_name_in_canonical_test", tenon.CapsuleOps[point]{})
-	newer := tenon.Capsule("same_name_in_canonical_test", tenon.CapsuleOps[point]{})
+	older := tenon.NewCapsule("same_name_in_canonical_test", tenon.CapsuleOps[point]{})
+	newer := tenon.NewCapsule("same_name_in_canonical_test", tenon.CapsuleOps[point]{})
 	shared := &point{1, 1}
-	if got := tenon.CanonicalCompare(tenon.CapsuleVal(older, shared), tenon.CapsuleVal(newer, shared)); got >= 0 {
+	if got := tenon.CanonicalCompare(older.Value(shared), newer.Value(shared)); got >= 0 {
 		t.Errorf("the type made first sorts %d against the one made after, want before it", got)
 	}
 
@@ -221,14 +221,14 @@ func TestConformance_EQ045_ThePublishedOrderings(t *testing.T) {
 	// which only values their type reports equal can be, keep the order the
 	// set was given them in. The type shows y, which its equality ignores,
 	// so the order is visible although the members count as one value.
-	shown := tenon.Capsule("shown_equal_in_canonical_test", tenon.CapsuleOps[point]{
-		Equals:  func(a, b *point) bool { return a.x == b.x },
+	shown := tenon.NewCapsule("shown_equal_in_canonical_test", tenon.CapsuleOps[point]{
+		Equal:   func(a, b *point) bool { return a.x == b.x },
 		Hash:    func(p *point) uint64 { return uint64(p.x) },
 		Display: func(p *point) string { return "p" + strconv.Itoa(p.x) + "." + strconv.Itoa(p.y) },
 	})
-	tup := tenon.Tuple(shown, num)
-	mu := tenon.TupleVal(tenon.CapsuleVal(shown, &point{1, 1}), tenon.Unknown(num))
-	mv := tenon.TupleVal(tenon.CapsuleVal(shown, &point{1, 2}), tenon.Unknown(num))
+	tup := tenon.Tuple(shown.Type(), num)
+	mu := tenon.TupleVal(shown.Value(&point{1, 1}), tenon.Unknown(num))
+	mv := tenon.TupleVal(shown.Value(&point{1, 2}), tenon.Unknown(num))
 	for _, tt := range []struct {
 		given []tenon.Value
 		want  string
@@ -247,9 +247,9 @@ func TestConformance_EQ045_ThePublishedOrderings(t *testing.T) {
 // which a hash is allowed to be, and no order. It is declared here as well as
 // in internal/conformance/values because that package's point type is unexported, so
 // values of values.Colliding cannot be built from outside it.
-var colliding = tenon.Capsule("colliding_in_canonical_test", tenon.CapsuleOps[point]{
-	Equals: func(a, b *point) bool { return *a == *b },
-	Hash:   func(*point) uint64 { return 7 },
+var colliding = tenon.NewCapsule("colliding_in_canonical_test", tenon.CapsuleOps[point]{
+	Equal: func(a, b *point) bool { return *a == *b },
+	Hash:  func(*point) uint64 { return 7 },
 })
 
 func TestConformance_EQ046_TheOrderIsTheHostsAndNotTheLanguages(t *testing.T) {

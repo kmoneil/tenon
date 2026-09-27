@@ -281,30 +281,6 @@ func shortened(s string, quote func(string) string) string {
 	return quote(s[:cut]) + "..."
 }
 
-// CapsuleVal returns the value of capsule type t that encapsulates p. It panics
-// if t is not a capsule type of *E, or if p is nil.
-func CapsuleVal[E any](t Type, p *E) Value {
-	d := t.mustKind(KindCapsule, "CapsuleVal")
-	if !d.capsule.accepts(p) {
-		usagePanic("CapsuleVal called with a pointer that capsule type %s does not encapsulate", t)
-	}
-	if p == nil {
-		usagePanic("CapsuleVal called with a nil pointer for capsule type %s", t)
-	}
-	return Value{n: &node{state: stateKnown, typ: t, data: p}}
-}
-
-// CapsuleValue returns the pointer that v encapsulates. It panics if v is not a
-// value of a capsule type of *E.
-func CapsuleValue[E any](v Value) *E {
-	n := v.known(KindCapsule, "CapsuleValue")
-	p, ok := n.data.(*E)
-	if !ok {
-		usagePanic("CapsuleValue called for a pointer type that capsule type %s does not encapsulate", n.typ)
-	}
-	return p
-}
-
 // Pending returns a pending value: a value whose type is not yet determined,
 // and will satisfy c. Whether it will be null is not determined either;
 // Narrow with Null or NotNull says so when the caller knows.

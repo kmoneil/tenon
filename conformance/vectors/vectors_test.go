@@ -17,9 +17,9 @@ import (
 // The capsule type and marks the vectors use, as vectors.json describes them.
 type degrees struct{ n int64 }
 
-var degreesType = tenon.Capsule("degrees", tenon.CapsuleOps[degrees]{
-	Equals: func(a, b *degrees) bool { return *a == *b },
-	Hash:   func(v *degrees) uint64 { return uint64(v.n) },
+var degreesType = tenon.NewCapsule("degrees", tenon.CapsuleOps[degrees]{
+	Equal: func(a, b *degrees) bool { return *a == *b },
+	Hash:  func(v *degrees) uint64 { return uint64(v.n) },
 	Encoding: &tenon.CapsuleEncoding[degrees]{
 		ID:     "t/c",
 		Type:   tenon.NumberType(),
@@ -68,7 +68,7 @@ var (
 )
 
 var decoders = tenon.Decoders{
-	Capsules: []tenon.Type{degreesType},
+	Capsules: []tenon.Type{degreesType.Type()},
 	Marks: map[string]tenon.MarkDecoder{
 		"m": func(tenon.Value, bool) (tenon.Mark, []tenon.Diagnostic) { return plain, nil },
 		"d": func(tenon.Value, bool) (tenon.Mark, []tenon.Diagnostic) { return deep, nil },
@@ -165,7 +165,7 @@ var valid = []vector{
 	{"null/number", func(*rand.Rand) tenon.Value { return tenon.NullVal(num) }},
 	{"null/string", func(*rand.Rand) tenon.Value { return tenon.NullVal(str) }},
 	{"null/list of numbers", func(*rand.Rand) tenon.Value { return tenon.NullVal(tenon.List(num)) }},
-	{"null/capsule", func(*rand.Rand) tenon.Value { return tenon.NullVal(degreesType) }},
+	{"null/capsule", func(*rand.Rand) tenon.Value { return tenon.NullVal(degreesType.Type()) }},
 	{"list/empty", func(*rand.Rand) tenon.Value { return tenon.ListVal(num) }},
 	{"list/numbers", func(*rand.Rand) tenon.Value { return tenon.ListVal(num, n(1), n(2), n(3)) }},
 	{"list/nested", func(*rand.Rand) tenon.Value {
@@ -179,10 +179,10 @@ var valid = []vector{
 		return tenon.SetVal(num, shuffled(r, n(1), tenon.Unknown(num), tenon.Unknown(num))...)
 	}},
 	{"set/capsules", func(r *rand.Rand) tenon.Value {
-		return tenon.SetVal(degreesType, shuffled(r,
-			tenon.CapsuleVal(degreesType, &degrees{30}),
-			tenon.CapsuleVal(degreesType, &degrees{-5}),
-			tenon.CapsuleVal(degreesType, &degrees{1}))...)
+		return tenon.SetVal(degreesType.Type(), shuffled(r,
+			degreesType.Value(&degrees{30}),
+			degreesType.Value(&degrees{-5}),
+			degreesType.Value(&degrees{1}))...)
 	}},
 	{"map/empty", func(*rand.Rand) tenon.Value { return tenon.MapVal(num, nil) }},
 	{"map/entries", func(*rand.Rand) tenon.Value {
@@ -216,11 +216,11 @@ var valid = []vector{
 			[]tenon.Narrowing{tenon.Members(n(2)), tenon.Members(n(1))})
 		return tenon.Narrow(tenon.Unknown(tenon.Set(num)), shuffled(r, append(members, tenon.LengthMax(5))...)...)
 	}},
-	{"unknown/capsule", func(*rand.Rand) tenon.Value { return tenon.Narrow(tenon.Unknown(degreesType), tenon.NotNull()) }},
+	{"unknown/capsule", func(*rand.Rand) tenon.Value { return tenon.Narrow(tenon.Unknown(degreesType.Type()), tenon.NotNull()) }},
 	{"pending/any", func(*rand.Rand) tenon.Value { return tenon.Pending(tenon.Any()) }},
 	{"pending/null", func(*rand.Rand) tenon.Value { return tenon.Narrow(tenon.Pending(tenon.Any()), tenon.Null()) }},
 	{"pending/not null", func(*rand.Rand) tenon.Value {
-		return tenon.Narrow(tenon.Pending(tenon.Exactly(degreesType)), tenon.NotNull())
+		return tenon.Narrow(tenon.Pending(tenon.Exactly(degreesType.Type())), tenon.NotNull())
 	}},
 	{"pending/collections", func(*rand.Rand) tenon.Value {
 		return tenon.Pending(tenon.TupleOf(tenon.ListOf(tenon.Any()), tenon.SetOf(tenon.Exactly(str)), tenon.MapOf(tenon.Exactly(boo))))
@@ -266,7 +266,7 @@ var valid = []vector{
 	{"marks/redacted", func(r *rand.Rand) tenon.Value {
 		return tenon.ObjectVal(map[string]tenon.Value{"password": marked(r, s("hunter2"), secret{}, plain), "user": s("ann")})
 	}},
-	{"capsule/value", func(*rand.Rand) tenon.Value { return tenon.CapsuleVal(degreesType, &degrees{21}) }},
+	{"capsule/value", func(*rand.Rand) tenon.Value { return degreesType.Value(&degrees{21}) }},
 	// The deepest a document nests: the item, 510 list types and a number
 	// are 512 levels, and a mark on the value adds none.
 	{"nesting/512 levels", func(*rand.Rand) tenon.Value { return tenon.NullVal(lists(510)) }},

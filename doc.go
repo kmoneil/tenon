@@ -30,9 +30,9 @@
 //
 //   - A resolved value has a [Type]. It is known, built by [Bool], [String],
 //     [NumberFromInt], [NumberFromText], [ListVal], [SetVal], [MapVal],
-//     [TupleVal], [ObjectVal] or [CapsuleVal]; or it is null, the absence of a
-//     value at a type, built by [NullVal]; or it is unknown, a value of a type
-//     whose content is not settled yet, built by [Unknown].
+//     [TupleVal], [ObjectVal] or [CapsuleType.Value]; or it is null, the
+//     absence of a value at a type, built by [NullVal]; or it is unknown, a
+//     value of a type whose content is not settled yet, built by [Unknown].
 //   - A pending value, built by [Pending], has no type yet, only a
 //     [Constraint] on what its type will be. [Resolve] settles it.
 //   - An error value, built by [ErrorVal], has no type and carries
@@ -50,8 +50,9 @@
 // # Types and constraints
 //
 // A [Type] is what a resolved value is: [BoolType], [NumberType],
-// [StringType], [List], [Set], [Map], [Tuple], [Object], and [Capsule] for a
-// Go type carried through unchanged. Types are interned, so two types are the
+// [StringType], [List], [Set], [Map], [Tuple], [Object], and the type of a
+// [CapsuleType] for a Go type carried through unchanged. Types are interned,
+// so two types are the
 // same type exactly when they are ==, and a type can be a map key.
 //
 // A [Constraint] is what a type must satisfy: [Any], [Exactly], [ListOf],
@@ -179,9 +180,12 @@
 // encodes by what each value holds, so a document becomes a value without a Go
 // type written for it.
 //
-// A Go type that tenon should carry through unchanged, rather than map, is a
-// [Capsule] type: it keeps its identity, and declares how it is compared,
-// hashed, displayed and encoded.
+// A Go type that tenon should carry through unchanged, rather than map, is
+// encapsulated by a capsule type, which [NewCapsule] makes: its values keep
+// their identity, and the type declares how they are compared, hashed,
+// displayed and encoded. The [CapsuleType] handle it returns builds the
+// type's values from pointers of the Go type and reads them back, checked
+// where the program is compiled.
 //
 // # Immutability and concurrent use
 //
