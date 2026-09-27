@@ -19,12 +19,12 @@ func TestConformance_VA005_ValuesImmutable(t *testing.T) {
 	list, set, tuple := tenon.ListVal(num, elems...), tenon.SetVal(num, elems...), tenon.TupleVal(elems...)
 	elems[0] = two
 	for _, v := range []tenon.Value{list, set, tuple} {
-		if got := v.Elements(); len(got) != 2 || got[0] != one {
+		if got := v.Elements(); len(got) != 2 || !got[0].Equal(one) {
 			t.Errorf("changing the slice passed to its constructor changed %v", v)
 		}
 		got := v.Elements()
 		got[1] = one
-		if v.Elements()[1] != two {
+		if !v.Elements()[1].Equal(two) {
 			t.Errorf("changing the slice from Elements changed %v", v)
 		}
 	}
@@ -32,7 +32,7 @@ func TestConformance_VA005_ValuesImmutable(t *testing.T) {
 	entries := map[string]tenon.Value{"a": one}
 	m := tenon.MapVal(num, entries)
 	entries["a"], entries["b"] = two, two
-	if e, ok := m.MapElement("a"); m.Len() != 1 || !ok || e != one {
+	if e, ok := m.MapElement("a"); m.Len() != 1 || !ok || !e.Equal(one) {
 		t.Errorf("changing the map passed to MapVal changed %v", m)
 	}
 	keys := m.MapKeys()
@@ -233,7 +233,7 @@ func TestContainerValues(t *testing.T) {
 	a, b, one := tenon.String("a"), tenon.String("b"), tenon.NumberFromInt(1)
 
 	list := tenon.ListVal(str, a, b)
-	if list.Type() != tenon.List(str) || list.Len() != 2 || list.Index(0) != a || list.Index(1) != b {
+	if list.Type() != tenon.List(str) || list.Len() != 2 || !list.Index(0).Equal(a) || !list.Index(1).Equal(b) {
 		t.Errorf("ListVal gave %v", list)
 	}
 	if empty := tenon.ListVal(num); empty.Type() != tenon.List(num) || empty.Len() != 0 || len(empty.Elements()) != 0 {
@@ -241,23 +241,23 @@ func TestContainerValues(t *testing.T) {
 	}
 	// A set holds its members in the order it iterates them in, which is not
 	// the order they were given in.
-	if set := tenon.SetVal(str, b, a); set.Type() != tenon.Set(str) || !slices.Equal(set.Elements(), []tenon.Value{a, b}) {
+	if set := tenon.SetVal(str, b, a); set.Type() != tenon.Set(str) || !slices.EqualFunc(set.Elements(), []tenon.Value{a, b}, tenon.Value.Equal) {
 		t.Errorf("SetVal gave %v", set)
 	}
 	tuple := tenon.TupleVal(a, one, tenon.Bool(true))
-	if tuple.Type() != tenon.Tuple(str, num, tenon.BoolType()) || tuple.Len() != 3 || tuple.Index(2) != tenon.Bool(true) {
+	if tuple.Type() != tenon.Tuple(str, num, tenon.BoolType()) || tuple.Len() != 3 || !tuple.Index(2).Equal(tenon.Bool(true)) {
 		t.Errorf("TupleVal gave %v", tuple)
 	}
 	m := tenon.MapVal(str, map[string]tenon.Value{"y": b, "x": a})
-	if e, ok := m.MapElement("y"); m.Type() != tenon.Map(str) || !slices.Equal(m.MapKeys(), []string{"x", "y"}) || !ok || e != b {
+	if e, ok := m.MapElement("y"); m.Type() != tenon.Map(str) || !slices.Equal(m.MapKeys(), []string{"x", "y"}) || !ok || !e.Equal(b) {
 		t.Errorf("MapVal gave %v", m)
 	}
 	obj := tenon.ObjectVal(map[string]tenon.Value{"name": a, "count": one, "caf\u00e9": b})
 	if obj.Type() != tenon.Object(map[string]tenon.Type{"name": str, "count": num, "caf\u00e9": str}) || obj.Len() != 3 ||
-		obj.Attribute("name") != a || obj.Attribute("count") != one || obj.Attribute("cafe\u0301") != b {
+		!obj.Attribute("name").Equal(a) || !obj.Attribute("count").Equal(one) || !obj.Attribute("cafe\u0301").Equal(b) {
 		t.Errorf("ObjectVal gave %v", obj)
 	}
-	if nested := tenon.ListVal(tenon.Tuple(str), tenon.TupleVal(a)); nested.Index(0).Index(0) != a {
+	if nested := tenon.ListVal(tenon.Tuple(str), tenon.TupleVal(a)); !nested.Index(0).Index(0).Equal(a) {
 		t.Errorf("a nested value gave %v", nested)
 	}
 
@@ -308,7 +308,7 @@ func TestContainersHoldMembersThatAreNotKnown(t *testing.T) {
 	str := tenon.StringType()
 	unknown, null := tenon.Unknown(str), tenon.NullVal(str)
 	l := tenon.ListVal(str, unknown, null, tenon.String("x"))
-	if l.Len() != 3 || l.Index(0) != unknown || l.Index(1) != null {
+	if l.Len() != 3 || !l.Index(0).Equal(unknown) || !l.Index(1).Equal(null) {
 		t.Errorf("a list did not keep the members it was given: %v", l)
 	}
 	if l.Type() != tenon.List(str) {
@@ -326,7 +326,7 @@ func TestContainersHoldMembersThatAreNotKnown(t *testing.T) {
 	if got, want := obj.Type(), tenon.Object(map[string]tenon.Type{"a": str}); got != want {
 		t.Errorf("an object with an unknown attribute has type %v, want %v", got, want)
 	}
-	if v, ok := tenon.MapVal(str, map[string]tenon.Value{"k": unknown}).MapElement("k"); !ok || v != unknown {
+	if v, ok := tenon.MapVal(str, map[string]tenon.Value{"k": unknown}).MapElement("k"); !ok || !v.Equal(unknown) {
 		t.Errorf("a map did not keep the unknown element it was given")
 	}
 	// The element type is still checked, and a member with no type at all is

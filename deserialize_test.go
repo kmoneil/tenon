@@ -431,7 +431,7 @@ func TestConformance_SE005_DecodingWorkIsBounded(t *testing.T) {
 	// two levels below the item, so 509 list types around a number reach 512
 	// and 510 reach 513.
 	payloads := tenon.Decoders{Marks: map[string]tenon.MarkDecoder{
-		"p": func(p tenon.Value, _ bool) (tenon.Mark, []tenon.Diagnostic) { return holding{p}, nil },
+		"p": func(p tenon.Value, _ bool) (tenon.Mark, []tenon.Diagnostic) { return holding{&p}, nil },
 	}}
 	payload := func(k int) string {
 		return document + "830002da74656e02820181836170" + strings.Repeat("82 04 ", k) + "02 80"
@@ -1296,13 +1296,14 @@ func TestConformance_SE003_OnlyValuesWithinTheBoundHaveAnEncoding(t *testing.T) 
 	}
 }
 
-// holding is a mark serialized with whatever value it holds.
-type holding struct{ v tenon.Value }
+// holding is a mark serialized with whatever value it holds. It holds the
+// value by pointer, since a struct holding a Value is not comparable.
+type holding struct{ v *tenon.Value }
 
 func (holding) MarkID() string                     { return "p" }
 func (holding) Propagation() tenon.Propagation     { return tenon.Propagate }
 func (holding) Redacting() bool                    { return false }
-func (m holding) MarkPayload() (tenon.Value, bool) { return m.v, true }
+func (m holding) MarkPayload() (tenon.Value, bool) { return *m.v, true }
 
 // TestConformance_SE050_DecodeMessagesQuoteNothing holds a decoding failure's
 // message to saying what is wrong and where, by byte offset, and quoting

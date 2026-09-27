@@ -702,7 +702,7 @@ func narrowValue(v Value, ns []Narrowing) Value {
 	if r.equal(old) {
 		return v
 	}
-	return Value{&node{state: stateUnknown, typ: n.typ, data: &r}}
+	return Value{n: &node{state: stateUnknown, typ: n.typ, data: &r}}
 }
 
 // narrowPartialSet narrows v, a set holding members that are not known. Such a
@@ -989,7 +989,7 @@ func narrowPending(v Value, n *node, ns []Narrowing) Value {
 	if null == n.null {
 		return v
 	}
-	return Value{&node{state: statePending, null: null, data: n.data}}
+	return Value{n: &node{state: statePending, null: null, data: n.data}}
 }
 
 // contradiction returns the error value for a narrowing that leaves no value

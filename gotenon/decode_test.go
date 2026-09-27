@@ -224,7 +224,7 @@ func TestConformance_GO013_DecodingValuesOfManyTypes(t *testing.T) {
 	holders := decoded[[]holder](t, tenon.TupleVal(
 		obj(map[string]tenon.Value{"name": s("a")}),
 		obj(map[string]tenon.Value{"name": s("b"), "extra": n(2)})), safe)
-	if len(holders) != 2 || holders[0].Extra != (tenon.Value{}) || !tenon.Identical(holders[1].Extra, n(2)) {
+	if len(holders) != 2 || !holders[0].Extra.IsZero() || !tenon.Identical(holders[1].Extra, n(2)) {
 		t.Errorf("holders decoded as %+v", holders)
 	}
 	wantDecodeFailures[[3]int](t, "a short array", tenon.ListVal(num, n(1)), safe, wantDiag{tenon.CodeDecodeLengthMismatch, "."})
@@ -378,11 +378,7 @@ type roundTrippedLeaf struct {
 func sameGo(a, b reflect.Value) bool {
 	switch a.Type() {
 	case reflect.TypeFor[tenon.Value]():
-		x, y := a.Interface().(tenon.Value), b.Interface().(tenon.Value)
-		if x == (tenon.Value{}) || y == (tenon.Value{}) {
-			return x == y
-		}
-		return tenon.Identical(x, y)
+		return a.Interface().(tenon.Value).Equal(b.Interface().(tenon.Value))
 	case reflect.TypeFor[big.Int]():
 		x, y := a.Interface().(big.Int), b.Interface().(big.Int)
 		return x.Cmp(&y) == 0

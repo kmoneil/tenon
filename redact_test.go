@@ -276,7 +276,7 @@ func TestConformance_MK011_RedactionWithholdsStructure(t *testing.T) {
 
 // errorsOf returns the diagnostics of v, or none where v is no error value.
 func errorsOf(v tenon.Value) []tenon.Diagnostic {
-	if v == (tenon.Value{}) || !v.IsError() {
+	if v.IsZero() || !v.IsError() {
 		return nil
 	}
 	return v.Diagnostics()

@@ -94,7 +94,7 @@ func TestConformance_GO022_OptionalFieldsCrossBothWays(t *testing.T) {
 		t.Errorf("the zero optional Value encoded among %v, want [p] alone", got)
 	}
 	got := decoded[withOpt](t, obj(map[string]tenon.Value{"p": tenon.NullVal(num)}), uns)
-	if got.P != 0 || got.V != (tenon.Value{}) {
+	if got.P != 0 || !got.V.IsZero() {
 		t.Errorf("a null and an absence decoded to %+v, want the zero fields", got)
 	}
 }

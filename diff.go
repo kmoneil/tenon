@@ -429,7 +429,7 @@ func restIdenticalAside(a, b *node, asideA, asideB []Mark) bool {
 	}
 	// Nothing within is left to set marks aside from: a set's members carry
 	// no marks where it holds them, and other values hold no values at all.
-	return Identical(withMarksOf(a, b), Value{b})
+	return Identical(withMarksOf(a, b), Value{n: b})
 }
 
 // identicalAside reports whether a and b are identical once the marks in
@@ -437,7 +437,7 @@ func restIdenticalAside(a, b *node, asideA, asideB []Mark) bool {
 // from b.
 func identicalAside(a, b *node, asideA, asideB []Mark) bool {
 	if asideA == nil && asideB == nil {
-		return Identical(Value{a}, Value{b})
+		return Identical(Value{n: a}, Value{n: b})
 	}
 	return sameMarkSet(marksAside(a.markList(), asideA), marksAside(b.markList(), asideB)) &&
 		restIdenticalAside(a, b, asideA, asideB)
@@ -447,11 +447,11 @@ func identicalAside(a, b *node, asideA, asideB []Mark) bool {
 // rest of a and b once their marks are known to agree.
 func withMarksOf(a, b *node) Value {
 	if a.marks == b.marks {
-		return Value{a}
+		return Value{n: a}
 	}
 	c := *a
 	c.marks = b.marks
-	return Value{&c}
+	return Value{n: &c}
 }
 
 // marksAside returns the marks of list other than those in aside, which are

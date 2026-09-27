@@ -54,8 +54,8 @@ func (k Kind) String() string {
 // type is distinct from every other type. Types are interned, so two types are
 // the same type exactly when they are ==, and a Type can be used as a map key.
 //
-// The zero Type is not a type: every method except String panics when called
-// on it.
+// The zero Type is not a type: every method except String, IsZero and Equal
+// panics when called on it.
 type Type struct {
 	t *typeData
 }
@@ -326,12 +326,14 @@ func (t Type) TupleElementTypes() []Type {
 }
 
 // Equal reports whether t and u are the same type: types of the same
-// structure are, and a capsule type is the same type only as itself. For types
-// other than the zero Type, Equal is t == u. It panics if t or u is the zero
-// Type, which is no type.
+// structure are, and a capsule type is the same type only as itself. Equal is
+// t == u, and the zero Type is equal only to itself.
 func (t Type) Equal(u Type) bool {
-	return t.data() == u.data()
+	return t.t == u.t
 }
+
+// IsZero reports whether t is the zero Type, which is not a type.
+func (t Type) IsZero() bool { return t.t == nil }
 
 // Equals reports whether t and u are the same type, as Equal does.
 //

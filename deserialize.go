@@ -313,7 +313,7 @@ func (d *decoder) item() (Value, *decodeError) {
 		}
 		// Each part was given the marks listed on it and no more; one pass
 		// gives every value the deep marks of the values above it.
-		return Value{settleDeep(v.n, nil)}, nil
+		return Value{n: settleDeep(v.n, nil)}, nil
 	case k == itemPending && n == 3:
 		c, err := d.constraint()
 		if err != nil {
@@ -774,7 +774,7 @@ func (d *decoder) capsule(t Type, at int) (Value, *decodeError) {
 	if !t.t.capsule.accepts(p) {
 		usagePanic("the Decode of capsule type %q returned a pointer the type does not encapsulate", t.t.capsule.name)
 	}
-	return Value{&node{state: stateKnown, typ: t, data: p}}, nil
+	return Value{n: &node{state: stateKnown, typ: t, data: p}}, nil
 }
 
 // unknown reads the range of an unknown value of type t.

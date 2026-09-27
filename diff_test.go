@@ -155,12 +155,9 @@ func TestConformance_DI030_ChangesAndWhatTheyCarry(t *testing.T) {
 	if len(got) != len(want) {
 		t.Fatalf("the diff has %d changes, want %d:\n%s", len(got), len(want), got)
 	}
-	same := func(x, y tenon.Value) bool {
-		return x == (tenon.Value{}) && y == (tenon.Value{}) || x != (tenon.Value{}) && y != (tenon.Value{}) && tenon.Identical(x, y)
-	}
 	for i, c := range got {
 		w := want[i]
-		if c.Kind != w.Kind || !c.Path.Equal(w.Path) || !same(c.Old, w.Old) || !same(c.New, w.New) ||
+		if c.Kind != w.Kind || !c.Path.Equal(w.Path) || !c.Old.Equal(w.Old) || !c.New.Equal(w.New) ||
 			!slices.Equal(c.OldMarks, w.OldMarks) || !slices.Equal(c.NewMarks, w.NewMarks) {
 			t.Errorf("change %d is %s (%s), want %s (%s)", i, c, c.Kind, w, w.Kind)
 		}

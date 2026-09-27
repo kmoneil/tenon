@@ -253,8 +253,14 @@ func TestZeroType(t *testing.T) {
 	var zero tenon.Type
 	str := tenon.StringType()
 	mustPanicUsage(t, "zero Type", func() { zero.Kind() })
-	mustPanicUsage(t, "zero Type", func() { zero.Equal(str) })
-	mustPanicUsage(t, "zero Type", func() { str.Equal(zero) })
+	// Equal and IsZero answer for the zero Type, which is equal only to
+	// itself.
+	if zero.Equal(str) || str.Equal(zero) || !zero.Equal(tenon.Type{}) {
+		t.Error("the zero Type is equal to a type, or not to itself")
+	}
+	if !zero.IsZero() || str.IsZero() {
+		t.Error("IsZero does not tell the zero Type from a type")
+	}
 	mustPanicUsage(t, "zero Type", func() { tenon.List(zero) })
 	mustPanicUsage(t, "zero Type", func() { tenon.Tuple(str, zero) })
 	mustPanicUsage(t, "zero Type", func() { tenon.Object(map[string]tenon.Type{"a": zero}) })

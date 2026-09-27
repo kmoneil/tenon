@@ -63,3 +63,7 @@ func AdmitsNone(c Constraint) bool { return admitsNone(c) }
 // value within it carry the partial and markedWithin flags a full walk
 // finds, and returns how many values it checked.
 func FlagsChecked(t *testing.T, v Value) int { return checkFlags(t, v) }
+
+// SameNode reports whether a and b hold one node: whether an operation handed
+// back the value it was given rather than a copy of it.
+func SameNode(a, b Value) bool { return a.n == b.n }

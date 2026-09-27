@@ -44,9 +44,14 @@ func (k ConstraintKind) String() string {
 // conversion, a parameter declaration or a schema does. Unlike a type, a
 // constraint may leave parts unspecified. Constraints are immutable.
 //
-// The zero Constraint is not a constraint: every method except String panics
-// when called on it.
+// Constraints cannot be compared with ==, which would compare how two
+// constraints are held rather than what they say, and cannot be map keys.
+// [Constraint.Equal] compares them.
+//
+// The zero Constraint is not a constraint: every method except String, IsZero
+// and Equal panics when called on it.
 type Constraint struct {
+	_ [0]func() // not comparable: == would compare pointers, not constraints
 	c *constraintData
 }
 
@@ -88,11 +93,11 @@ func Exactly(t Type) Constraint {
 	if t.t == nil {
 		usagePanic("Exactly of the zero Type")
 	}
-	return Constraint{&constraintData{kind: ConstraintExactly, typ: t}}
+	return Constraint{c: &constraintData{kind: ConstraintExactly, typ: t}}
 }
 
 // Any returns the constraint that every type satisfies.
-func Any() Constraint { return Constraint{anyConstraint} }
+func Any() Constraint { return Constraint{c: anyConstraint} }
 
 // ListOf returns the constraint satisfied by the list types whose element type
 // satisfies elem.
@@ -110,7 +115,7 @@ func elementConstraint(kind ConstraintKind, elem Constraint) Constraint {
 	if elem.c == nil {
 		usagePanic("the element constraint of %s is the zero Constraint", kind)
 	}
-	return Constraint{&constraintData{kind: kind, elem: elem}}
+	return Constraint{c: &constraintData{kind: kind, elem: elem}}
 }
 
 // ObjectWith returns the constraint satisfied by the object types whose
@@ -131,7 +136,7 @@ func ObjectWith(fields map[string]Field, closed bool) Constraint {
 		}
 		list[i] = field{e.name, e.value}
 	}
-	return Constraint{&constraintData{kind: ConstraintObjectWith, fields: list, closed: closed}}
+	return Constraint{c: &constraintData{kind: ConstraintObjectWith, fields: list, closed: closed}}
 }
 
 // TupleOf returns the constraint satisfied by the tuple types with one element
@@ -154,7 +159,7 @@ func membersConstraint(kind ConstraintKind, members []Constraint) Constraint {
 			usagePanic("member %d of %s is the zero Constraint", i, kind)
 		}
 	}
-	return Constraint{&constraintData{kind: kind, members: slices.Clone(members)}}
+	return Constraint{c: &constraintData{kind: kind, members: slices.Clone(members)}}
 }
 
 // Satisfies reports whether t satisfies c. It is defined for every constraint
@@ -368,12 +373,16 @@ func (c Constraint) mustKind(method string, kinds ...ConstraintKind) *constraint
 // Equal reports whether c and d are the same constraint: of one kind, built
 // from the same types, members and fields, in the same order where order
 // counts. Unify writes its results canonically, so two of them that constrain
-// alike are Equal. Equal panics if either is the zero Constraint.
+// alike are Equal. The zero Constraint is equal only to itself.
 func (c Constraint) Equal(d Constraint) bool {
-	c.data()
-	d.data()
+	if c.c == nil || d.c == nil {
+		return c.c == d.c
+	}
 	return c.equal(d)
 }
+
+// IsZero reports whether c is the zero Constraint, which is not a constraint.
+func (c Constraint) IsZero() bool { return c.c == nil }
 
 // Kind returns the kind of c.
 func (c Constraint) Kind() ConstraintKind { return c.data().kind }

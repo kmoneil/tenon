@@ -115,7 +115,7 @@ func typeConvertStructure(t Type, c Constraint, p Policy, k keys) typeOutcome {
 func structural(t Type) Constraint {
 	d := t.t
 	if c := d.structure.Load(); c != nil {
-		return Constraint{c}
+		return Constraint{c: c}
 	}
 	var c Constraint
 	switch d.kind {
@@ -141,7 +141,7 @@ func structural(t Type) Constraint {
 		internalPanic("structural called on %s", t)
 	}
 	d.structure.CompareAndSwap(nil, c.c)
-	return Constraint{d.structure.Load()}
+	return Constraint{c: d.structure.Load()}
 }
 
 // isStructural reports whether c is a constraint that structural builds: the

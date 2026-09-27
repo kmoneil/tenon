@@ -21,9 +21,14 @@ import (
 //
 // Values are immutable, and every operation returns a new value.
 //
-// The zero Value is not a value: every method except String panics when
-// called on it.
+// Values cannot be compared with ==, which would compare how two values are
+// held rather than what they say, and cannot be map keys. [Identical] and
+// [Value.Equal] compare them, and the bytes [Serialize] gives can key a map.
+//
+// The zero Value is not a value: every method except String, IsZero and Equal
+// panics when called on it.
 type Value struct {
+	_ [0]func() // not comparable: == would compare pointers, not values
 	n *node
 }
 
@@ -123,8 +128,8 @@ func (n *node) clone() node {
 }
 
 var (
-	trueValue  = Value{&node{state: stateKnown, typ: Type{boolType}, data: true}}
-	falseValue = Value{&node{state: stateKnown, typ: Type{boolType}, data: false}}
+	trueValue  = Value{n: &node{state: stateKnown, typ: Type{boolType}, data: true}}
+	falseValue = Value{n: &node{state: stateKnown, typ: Type{boolType}, data: false}}
 )
 
 // Bool returns the Bool value b.
@@ -197,7 +202,7 @@ func tooLong(n int) Diagnostic {
 }
 
 func numberValue(d decimal.Dec) Value {
-	return Value{&node{state: stateKnown, typ: Type{numberType}, data: d}}
+	return Value{n: &node{state: stateKnown, typ: Type{numberType}, data: d}}
 }
 
 // String returns the String value s, normalized to Unicode Normalization
@@ -238,7 +243,7 @@ func numberCode(err decimal.Error) Code {
 // stringValue returns the String value of s, which must be in its canonical
 // form already.
 func stringValue(s string) Value {
-	return Value{&node{state: stateKnown, typ: Type{stringType}, data: s}}
+	return Value{n: &node{state: stateKnown, typ: Type{stringType}, data: s}}
 }
 
 // invalidUTF8At returns the offset of the first byte of s that does not begin
@@ -286,7 +291,7 @@ func CapsuleVal[E any](t Type, p *E) Value {
 	if p == nil {
 		usagePanic("CapsuleVal called with a nil pointer for capsule type %s", t)
 	}
-	return Value{&node{state: stateKnown, typ: t, data: p}}
+	return Value{n: &node{state: stateKnown, typ: t, data: p}}
 }
 
 // CapsuleValue returns the pointer that v encapsulates. It panics if v is not a
@@ -305,7 +310,7 @@ func CapsuleValue[E any](v Value) *E {
 // Narrow with Null or NotNull says so when the caller knows.
 func Pending(c Constraint) Value {
 	c.data()
-	return Value{&node{state: statePending, data: c}}
+	return Value{n: &node{state: statePending, data: c}}
 }
 
 // Resolve returns the value that a pending value takes once its type turns out
@@ -345,7 +350,7 @@ func Resolve(v Value, t Type) Value {
 // any value of t, null included. Narrow returns values that say more.
 func Unknown(t Type) Value {
 	t.data()
-	return Value{&node{state: stateUnknown, typ: t, data: &rangeData{}}}
+	return Value{n: &node{state: stateUnknown, typ: t, data: &rangeData{}}}
 }
 
 // NullVal returns the null value of type t. Null is a member of the domain of
@@ -355,7 +360,7 @@ func Unknown(t Type) Value {
 // NullVal is the value; Null is the narrowing that produces it.
 func NullVal(t Type) Value {
 	t.data()
-	return Value{&node{state: stateNull, typ: t}}
+	return Value{n: &node{state: stateNull, typ: t}}
 }
 
 // errorValue returns an error value that carries diags, which must not be
@@ -364,7 +369,22 @@ func errorValue(diags ...Diagnostic) Value {
 	if len(diags) == 0 {
 		usagePanic("an error value needs at least one diagnostic")
 	}
-	return Value{&node{state: stateError, data: slices.Clone(diags)}}
+	return Value{n: &node{state: stateError, data: slices.Clone(diags)}}
+}
+
+// IsZero reports whether v is the zero Value, which is not a value.
+func (v Value) IsZero() bool { return v.n == nil }
+
+// Equal reports whether v and w are identical, as [Identical] reports: the
+// same value in every respect, marks included. Unlike Identical it does not
+// panic on the zero Value, which is equal only to itself. It is the method
+// that github.com/google/go-cmp's cmp.Equal calls, so a struct holding values
+// compares by what they say.
+func (v Value) Equal(w Value) bool {
+	if v.n == nil || w.n == nil {
+		return v.n == w.n
+	}
+	return Identical(v, w)
 }
 
 // data returns the description of v, panicking if v is the zero Value.

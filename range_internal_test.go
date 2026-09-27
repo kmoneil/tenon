@@ -77,10 +77,10 @@ func TestRangesAreCanonical(t *testing.T) {
 	// A narrowing that says nothing new returns the value itself rather than
 	// a copy of it.
 	v := Narrow(Unknown(str), LengthMax(3))
-	if got := Narrow(v, LengthMax(9)); got != v {
+	if got := Narrow(v, LengthMax(9)); got.n != v.n {
 		t.Error("a narrowing that says nothing new produced a new value")
 	}
-	if got := Narrow(v); got != v {
+	if got := Narrow(v); got.n != v.n {
 		t.Error("narrowing by nothing produced a new value")
 	}
 }

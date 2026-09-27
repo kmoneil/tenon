@@ -78,10 +78,10 @@ func TestConformance_MK001_MarksAreTypedMetadata(t *testing.T) {
 	}
 
 	// Unmarking an unmarked value and attaching nothing are both the value.
-	if u2, ms2 := tenon.Unmark(one); u2 != one || ms2 != nil {
+	if u2, ms2 := tenon.Unmark(one); !tenon.SameNode(u2, one) || ms2 != nil {
 		t.Errorf("Unmark of an unmarked value returned %v, %v, want the value and no marks", u2, ms2)
 	}
-	if got := tenon.WithMarks(m1); got != m1 {
+	if got := tenon.WithMarks(m1); !tenon.SameNode(got, m1) {
 		t.Errorf("attaching no marks returned %v, want the value itself", got)
 	}
 
@@ -555,7 +555,7 @@ func TestConformance_MK006_MarkedValuesHaveNoHashAndNoPlaceInASet(t *testing.T) 
 	if !tenon.HasMark(deep, m) || !tenon.HasMark(deep.Attribute("a").Index(1), iso) {
 		t.Error("UnmarkDeep changed the value it was given")
 	}
-	if got, ms := tenon.UnmarkDeep(plain); got != plain || ms != nil {
+	if got, ms := tenon.UnmarkDeep(plain); !tenon.SameNode(got, plain) || ms != nil {
 		t.Errorf("UnmarkDeep of a value marked nowhere returned %v, %v, want the value and no marks", got, ms)
 	}
 	// Unmark takes only the value's own marks, so what it leaves can still be
@@ -602,7 +602,7 @@ func TestConformance_MK006_MarkedValuesHaveNoHashAndNoPlaceInASet(t *testing.T) 
 		if _, again := tenon.UnmarkDeep(u); again != nil {
 			t.Errorf("UnmarkDeep of %v left %v, which is still marked with %v", v, u, again)
 		}
-		if ms == nil && u != v {
+		if ms == nil && !tenon.SameNode(u, v) {
 			t.Errorf("UnmarkDeep of %v, which is marked nowhere, returned %v", v, u)
 		}
 		if v.IsResolved() {
@@ -758,7 +758,7 @@ func TestConformance_MK008_DeepMarks(t *testing.T) {
 	if want := tenon.WithMarks(tenon.ListVal(num, one), deep); !tenon.Identical(got, want) {
 		t.Errorf("marking a list whose element carries the mark gave %v, want %v", got, want)
 	}
-	if tenon.WithMarks(marked, deep) != marked {
+	if !tenon.SameNode(tenon.WithMarks(marked, deep), marked) {
 		t.Error("attaching a deep mark again did not return the value itself")
 	}
 
@@ -790,7 +790,7 @@ func TestConformance_MK008_DeepMarks(t *testing.T) {
 	// known value.
 	for _, v := range values.All() {
 		dv := tenon.WithMarks(v, deep)
-		if !tenon.HasMark(dv, deep) || tenon.WithMarks(dv, deep) != dv {
+		if !tenon.HasMark(dv, deep) || !tenon.SameNode(tenon.WithMarks(dv, deep), dv) {
 			t.Errorf("%v took the deep mark as %v, and not once", v, dv)
 		}
 		got, _ := tenon.UnmarkDeep(dv)

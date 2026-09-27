@@ -175,7 +175,7 @@ func (u *objectUnion) constraint(un *unifier) Constraint {
 		fields = append(fields, field{name, Field{Constraint: f.c, Required: f.required && f.held == u.objects}})
 	}
 	slices.SortFunc(fields, func(a, b field) int { return strings.Compare(a.name, b.name) })
-	return un.memo.canonical(Constraint{&constraintData{kind: ConstraintObjectWith, fields: fields, closed: u.closed}})
+	return un.memo.canonical(Constraint{c: &constraintData{kind: ConstraintObjectWith, fields: fields, closed: u.closed}})
 }
 
 // unifyBound is the multiple of CV-045: the pairs a unification forms may
@@ -348,7 +348,7 @@ func (m *canonMemo) canonical(c Constraint) Constraint {
 // canonicalOf writes c canonically, asking m of its parts.
 func (m *canonMemo) canonicalOf(c Constraint) Constraint {
 	if m.admitsNone(c) {
-		return Constraint{&constraintData{kind: ConstraintOneOf}}
+		return Constraint{c: &constraintData{kind: ConstraintOneOf}}
 	}
 	if t, ok := m.soleType(c); ok {
 		return Exactly(t)
@@ -362,7 +362,7 @@ func (m *canonMemo) canonicalOf(c Constraint) Constraint {
 		for i, member := range d.members {
 			members[i] = m.canonical(member)
 		}
-		return Constraint{&constraintData{kind: ConstraintTupleOf, members: members}}
+		return Constraint{c: &constraintData{kind: ConstraintTupleOf, members: members}}
 	case ConstraintObjectWith:
 		var fields []field
 		for _, f := range d.fields {
@@ -371,7 +371,7 @@ func (m *canonMemo) canonicalOf(c Constraint) Constraint {
 			}
 			fields = append(fields, field{f.name, Field{Constraint: m.canonical(f.Constraint), Required: f.Required}})
 		}
-		return Constraint{&constraintData{kind: ConstraintObjectWith, fields: fields, closed: d.closed}}
+		return Constraint{c: &constraintData{kind: ConstraintObjectWith, fields: fields, closed: d.closed}}
 	case ConstraintOneOf:
 		return m.oneOf(d.members)
 	}
@@ -396,7 +396,7 @@ func (m *canonMemo) oneOf(members []Constraint) Constraint {
 	if len(flat) == 1 {
 		return flat[0]
 	}
-	return Constraint{&constraintData{kind: ConstraintOneOf, members: flat}}
+	return Constraint{c: &constraintData{kind: ConstraintOneOf, members: flat}}
 }
 
 // constraintOrder is the place of each kind of constraint in the canonical
@@ -589,7 +589,7 @@ func (un *unifier) tuples(x, y Constraint) (Constraint, bool) {
 			return Constraint{}, false
 		}
 	}
-	return Constraint{&constraintData{kind: ConstraintTupleOf, members: members}}, true
+	return Constraint{c: &constraintData{kind: ConstraintTupleOf, members: members}}, true
 }
 
 // objects unifies two ObjectWith constraints field by field, in name order: a
@@ -615,5 +615,5 @@ func (un *unifier) objects(x, y Constraint) (Constraint, bool) {
 			fx, fy = fx[1:], fy[1:]
 		}
 	}
-	return Constraint{&constraintData{kind: ConstraintObjectWith, fields: fields, closed: x.c.closed && y.c.closed}}, true
+	return Constraint{c: &constraintData{kind: ConstraintObjectWith, fields: fields, closed: x.c.closed && y.c.closed}}, true
 }
