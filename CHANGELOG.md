@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+### Added
+
+- `BENCHMARKS.md` says what tenon costs beside `encoding/json` and go-cty:
+  parsing a configuration document, converting it to a schema, encoding and
+  decoding it, comparing two copies, reading a nested value and diffing two
+  versions, at a kilobyte, 32 kilobytes and a megabyte, each figure the
+  median of ten runs. `make bench` measures them again, in the `bench`
+  module, which has its own `go.mod` so that go-cty never becomes a
+  dependency of tenon's, and writes the file and the README's Performance
+  summary.
+
 ### Removed
 
 - `Type.Equals`, deprecated since 0.6.0: use `Type.Equal`, which answers as

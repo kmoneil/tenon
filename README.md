@@ -151,6 +151,29 @@ into a value identical to the one that was sent.
 | **Go programs with types already** encode their structs and decode them back, keeping in a `tenon.Value` field whatever Go has no type for. | `gotenon` |
 | **Go programs without them** take data whose types they do not know, the `map[string]any` that `encoding/json` gives, by what each value holds, with the document's own numbers kept exactly. | `gotenon` |
 
+# Performance
+
+tenon does more for each value than a Go map does: it parses every number
+into an exact decimal, normalizes every string, and records what is known
+about each value. Beside go-cty, the value system it answers, it is faster at
+everything measured here, at every size, and uses less memory at all of it
+but converting to a schema, where the two are about even.
+[`BENCHMARKS.md`](BENCHMARKS.md) has every size, the memory each operation
+takes, and what each library does per value.
+
+<!-- benchmarks:begin -->
+For a configuration of 32 KB, measured on Apple M5 Max with go1.26.4:
+
+| | encoding/json | tenon | go-cty |
+| --- | --- | --- | --- |
+| Parse JSON into a value | 254 µs | 1.46 ms | 4.55 ms |
+| Convert to a schema | – | 627 µs | 1.92 ms |
+| Encode and decode | 454 µs | 424 µs | 3.33 ms |
+| Compare two copies | 472 µs | 17.7 µs | 8.00 ms |
+| Read a nested value | 15.2 ns | 56.7 ns | 93.5 ns |
+| Diff one change | – | 179 µs | – |
+<!-- benchmarks:end -->
+
 # Immutability and concurrent use
 
 Values, types, constraints, paths and diagnostics are immutable. Every
@@ -203,6 +226,7 @@ The other targets:
 
 | Target | What it does |
 | ------ | ------------ |
+| `make bench` | Runs the benchmarks of the `bench` module, which measure tenon beside `encoding/json` and go-cty, ten times, and writes `BENCHMARKS.md` and the Performance summary from the medians. Run it on a quiet machine before a release. |
 | `make check-slow` | `make check`, then every property test at twenty times its cases (`TENON_SLOW=20`), then `make determinism`. Run it before a release, and after changing how values are stored, ordered or encoded. |
 | `make determinism` | Runs the tests twice, in shuffled orders and on different numbers of processors, writing the canonical output they emit (encodings, display forms, diffs, conversions) to `.emit/`, and fails unless both runs wrote the same bytes. |
 | `make fuzz` | Runs each fuzz target (the number parser, string construction, decoding, and conversion) for `FUZZTIME`, 30 minutes by default; `make -j4 fuzz` runs them at once. An input that fails is saved under the package's `testdata/fuzz`, where it runs with the tests from then on. CI does this every night. |
