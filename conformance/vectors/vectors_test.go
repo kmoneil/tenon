@@ -271,6 +271,15 @@ var valid = []vector{
 	// are 512 levels, and a mark on the value adds none.
 	{"nesting/512 levels", func(*rand.Rand) tenon.Value { return tenon.Null(lists(510)) }},
 	{"nesting/marked at 512 levels", func(r *rand.Rand) tenon.Value { return marked(r, tenon.Null(lists(510)), plain) }},
+	// What a mark is on is at the mark's level: 510 tuples around a number,
+	// the outermost marked, reach 512 levels through their content, and a
+	// marked pending value of 510 list constraints around Any through its
+	// constraint. Tuples, since a tuple displays without its type, where each
+	// list in a nest would spell its own.
+	{"nesting/marked content at 512 levels", func(r *rand.Rand) tenon.Value { return marked(r, nested(510), plain) }},
+	{"nesting/marked pending at 512 levels", func(r *rand.Rand) tenon.Value {
+		return marked(r, tenon.Pending(listsOf(510)), plain)
+	}},
 }
 
 // lists returns k list types around Number.
@@ -280,6 +289,24 @@ func lists(k int) tenon.Type {
 		t = tenon.ListType(t)
 	}
 	return t
+}
+
+// nested returns k tuples around the number 1, each holding the next.
+func nested(k int) tenon.Value {
+	v := n(1)
+	for range k {
+		v = tenon.Tuple(v)
+	}
+	return v
+}
+
+// listsOf returns k list constraints around Any.
+func listsOf(k int) tenon.Constraint {
+	c := tenon.Any()
+	for range k {
+		c = tenon.ListOf(c)
+	}
+	return c
 }
 
 // invalidVector is input that encodes no value.

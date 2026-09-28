@@ -270,7 +270,7 @@ func (d *decoder) document() (Value, *decodeError) {
 	return v, nil
 }
 
-// item reads an item.
+// item reads an item, one level below what holds it.
 func (d *decoder) item() (Value, *decodeError) {
 	if err := d.enter(); err != nil {
 		return Value{}, err
@@ -284,8 +284,16 @@ func (d *decoder) item() (Value, *decodeError) {
 		if err := d.array(2, "a marked item"); err != nil {
 			return Value{}, err
 		}
+		// The item a marked item holds is at the marked item's level, since
+		// marks add none (SE-005), and is not tagged again.
 		inner := d.r.Offset()
-		v, err := d.item()
+		if h, err := d.r.PeekHead(); err == nil && h.Major == cbor.MajorTag {
+			if tag, _ := d.r.ReadTag(); tag != tagMarked {
+				return Value{}, d.malformed(inner, "tag %d where an item was expected", tag)
+			}
+			return Value{}, d.malformed(inner, "a marked item holds a resolved or marked value, whose marks go on its content")
+		}
+		v, err := d.bareItem()
 		if err != nil {
 			return Value{}, err
 		}
@@ -298,6 +306,11 @@ func (d *decoder) item() (Value, *decodeError) {
 		}
 		return WithMarks(v, marks...), nil
 	}
+	return d.bareItem()
+}
+
+// bareItem reads an item that is not marked, at the level being read.
+func (d *decoder) bareItem() (Value, *decodeError) {
 	n, err := d.r.ReadArray()
 	if err != nil {
 		return Value{}, d.cborError(err)
@@ -608,12 +621,48 @@ func (d *decoder) constraint() (Constraint, *decodeError) {
 	return Constraint{}, d.malformed(kat, "a constraint of kind %d with %d parts", k, n)
 }
 
-// content reads the content of a resolved value of type t.
+// content reads the content of a resolved value of type t, one level below
+// what holds it.
 func (d *decoder) content(t Type) (Value, *decodeError) {
 	if err := d.enter(); err != nil {
 		return Value{}, err
 	}
 	defer d.leave()
+	if h, err := d.r.PeekHead(); err != nil || h.Major != cbor.MajorTag || h.Arg != tagMarked {
+		return d.bareContent(t)
+	}
+	d.r.ReadTag() // the head is peeked, so reading it cannot fail
+	if err := d.array(2, "a marked value"); err != nil {
+		return Value{}, err
+	}
+	// The content a marked content holds is at the marked content's level,
+	// since marks add none (SE-005), and is not marked again: an encoding
+	// lists a value's marks once, on one tag.
+	inner := d.r.Offset()
+	if h, err := d.r.PeekHead(); err == nil && h.Major == cbor.MajorTag && h.Arg == tagMarked {
+		return Value{}, &decodeError{code: CodeSerializeNotCanonical, offset: inner,
+			message: "a marked value holds a marked value, whose marks go in one list"}
+	}
+	v, derr := d.bareContent(t)
+	if derr != nil {
+		return Value{}, derr
+	}
+	marks, derr := d.markList()
+	if derr != nil {
+		return Value{}, derr
+	}
+	// A deep mark reaches the values within v when the value read is
+	// settled, which merges each value's marks once, rather than here,
+	// which would merge them again at every level a nest has.
+	if !d.deferred && slices.ContainsFunc(marks, isDeep) {
+		d.deferred = true
+	}
+	return withOwnMarks(v, marks), nil
+}
+
+// bareContent reads the content of a resolved value of type t without its
+// marks, at the level being read.
+func (d *decoder) bareContent(t Type) (Value, *decodeError) {
 	at := d.r.Offset()
 	if d.r.ReadNull() {
 		return Null(t), nil
@@ -622,29 +671,9 @@ func (d *decoder) content(t Type) (Value, *decodeError) {
 	if err != nil {
 		return Value{}, d.cborError(err)
 	}
-	if h.Major == cbor.MajorTag && (h.Arg == tagUnknown || h.Arg == tagMarked) {
-		d.r.ReadTag()
-		if h.Arg == tagUnknown {
-			return d.unknown(t, at)
-		}
-		if err := d.array(2, "a marked value"); err != nil {
-			return Value{}, err
-		}
-		v, derr := d.content(t)
-		if derr != nil {
-			return Value{}, derr
-		}
-		marks, derr := d.markList()
-		if derr != nil {
-			return Value{}, derr
-		}
-		// A deep mark reaches the values within v when the value read is
-		// settled, which merges each value's marks once, rather than here,
-		// which would merge them again at every level a nest has.
-		if !d.deferred && slices.ContainsFunc(marks, isDeep) {
-			d.deferred = true
-		}
-		return withOwnMarks(v, marks), nil
+	if h.Major == cbor.MajorTag && h.Arg == tagUnknown {
+		d.r.ReadTag() // the head is peeked, so reading it cannot fail
+		return d.unknown(t, at)
 	}
 	switch t.t.kind {
 	case KindBool:
