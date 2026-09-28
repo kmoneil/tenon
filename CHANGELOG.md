@@ -54,6 +54,13 @@
   `Isolate` ones included, when the collection holding it widens its element
   type, as it did when nothing widened it: building it again at the wider
   type lost them.
+- A deep mark attached to a value stops at the values within that carry it
+  already, as it did in 0.6.0: unmarking a value and marking it again, or
+  putting a marked value's elements in another container and marking that,
+  copied every value within and gave each one more layer of marks every
+  time, which every read of their marks then walked. Unmarking a list of 100
+  lists of 100 numbers and marking it again made 10,313 allocations and
+  makes 8, and after 64 times a number held 65 layers of marks and holds 1.
 
 ### Added
 
