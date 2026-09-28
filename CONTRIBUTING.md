@@ -25,7 +25,21 @@ tenon needs Go 1.26 or later, and nothing else to build and test.
   checks that the tests' output is the same in every run. Run it when you
   change how values are stored, ordered or encoded.
 
-The README's Development section lists the rest.
+The other targets:
+
+| Target | What it does |
+| ------ | ------------ |
+| `make bench` | Runs the benchmarks of the `bench` module, which measure tenon beside `encoding/json` and go-cty, ten times, and writes `BENCHMARKS.md` and the Performance summary from the medians. Run it on a quiet machine before a release. |
+| `make check-slow` | `make check`, then every property test at twenty times its cases (`TENON_SLOW=20`), then `make determinism`. Run it before a release, and after changing how values are stored, ordered or encoded. |
+| `make determinism` | Runs the tests twice, in shuffled orders and on different numbers of processors, writing the canonical output they emit (encodings, display forms, diffs, conversions) to `.emit/`, and fails unless both runs wrote the same bytes. |
+| `make fuzz` | Runs each fuzz target (the number parser, string construction, decoding, and conversion) for `FUZZTIME`, 30 minutes by default; `make -j4 fuzz` runs them at once. An input that fails is saved under the package's `testdata/fuzz`, where it runs with the tests from then on. CI does this every night. |
+| `make release-fuzz` | Every fuzz target at once for five minutes: the fuzzing a release asks for, the depth coming from the nightly runs. |
+| `make release-notes VERSION=x.y.z` | Prints that version's section of `CHANGELOG.md`, which becomes the GitHub Release when its tag is pushed. |
+| `make growth` | Measures each benchmark at a size and at four times that size, and fails where the larger allocates more than five times what the smaller does: work growing faster than its input. CI does this every night. |
+| `make lint` | Runs staticcheck, at the version the Makefile names, over every package. CI requires it of every change. |
+| `make report` | Runs the tests, recording the rules they cover, and regenerates `CONFORMANCE.md`. |
+| `make rules`, `make codes` | Regenerate `conformance/rules.json` and the specification's appendix of diagnostic codes from the specification that `TENON_SPEC` names. |
+| `make vuln` | Runs govulncheck, at the version the Makefile names, and fails on a known vulnerability tenon's code can reach, in its dependencies or in the Go standard library it is built with. CI runs it on every change and every night. |
 
 ## How the code holds together
 

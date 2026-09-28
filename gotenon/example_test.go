@@ -134,3 +134,43 @@ func Example_json() {
 	// true
 	// encode.untyped_nil: a nil interface {} holds no value, and no type follows from it at .port
 }
+
+// Service is what a program expects a service's configuration to be.
+type Service struct {
+	Name     string   `tenon:"name"`
+	Port     int      `tenon:"port"`
+	Replicas int      `tenon:"replicas,optional"`
+	Tags     []string `tenon:"tags,optional"`
+}
+
+// A document a program reads, checked against the Go type it expects and
+// decoded into it, with every part that does not fit reported where it is.
+func Example_quickStart() {
+	// Read the document as encoding/json does, keeping its numbers as
+	// written rather than as the nearest float64.
+	decoder := json.NewDecoder(strings.NewReader(`{"name": "web", "port": 8080, "tags": ["edge"]}`))
+	decoder.UseNumber()
+	var document any
+	if err := decoder.Decode(&document); err != nil {
+		fmt.Println(err)
+		return
+	}
+
+	// Take it in as a value, whatever it holds, then decode the value into
+	// the Go type, converting it under the policy given.
+	value, err := gotenon.Encode(document)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	service, err := gotenon.Decode[Service](value, tenon.Safe)
+	fmt.Printf("%+v %v\n", service, err)
+
+	// A document that does not fit says where, for each part.
+	wrong, _ := gotenon.Encode(map[string]any{"name": "web", "port": "http", "colour": "blue"})
+	_, err = gotenon.Decode[Service](wrong, tenon.Safe)
+	fmt.Println(err)
+	// Output:
+	// {Name:web Port:8080 Replicas:0 Tags:[edge]} <nil>
+	// convert.unexpected_attribute: attribute "colour" is not one the constraint allows at .colour; convert.unsafe: string converts to exactly(number) only unsafely, and the policy is safe at .port
+}
