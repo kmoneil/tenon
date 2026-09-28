@@ -79,11 +79,7 @@ var lengthOp = register(&op{
 			}
 			// A set of an element type holding few values is no longer than
 			// the values it could hold, whether or not its range says so.
-			hi := setCeiling(n.typ)
-			if rd.lenHi.set && (!hi.set || rd.lenHi.n < hi.n) {
-				hi = rd.lenHi
-			}
-			if hi.set {
+			if hi := setCeiling(n.typ).tighter(rd.lenHi); hi.set {
 				ns = append(ns, NumberMax(NumberFromInt(hi.n), true))
 			}
 		}
@@ -103,9 +99,7 @@ func setLengthBounds(n *node) (low, high int) {
 	// Every element type has at least one value, so it bounds nothing until a
 	// set holds two members, and equality asks this of every set it compares.
 	if high > 1 {
-		if c := setCeiling(n.typ); c.set && c.n < int64(high) {
-			high = int(c.n)
-		}
+		high = int(lengthBound{n: int64(high), set: true}.tighter(setCeiling(n.typ)).n)
 	}
 	return cachedDistinct(n), high
 }

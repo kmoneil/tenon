@@ -179,6 +179,17 @@ type lengthBound struct {
 	set bool
 }
 
+// tighter returns the tighter of two bounds on a greatest length: the smaller
+// where both are set, and whichever is set otherwise. A set's greatest length
+// is the tightest of its members' count, the values its element type holds
+// (setCeiling) and a LengthMax.
+func (b lengthBound) tighter(o lengthBound) lengthBound {
+	if !b.set || o.set && o.n < b.n {
+		return o
+	}
+	return b
+}
+
 // rangeData is the immutable description of an unknown value's range: every
 // narrowing known to hold of it. The zero rangeData is the whole domain of a
 // type, null included.
@@ -751,14 +762,11 @@ func narrowPartialSet(v Value, ns []Narrowing) Value {
 		return atLeast.message()
 	}
 	most := func() int64 {
-		m := count
-		if ceiling.set && ceiling.n < m {
-			m = ceiling.n
+		m := lengthBound{n: count, set: true}.tighter(ceiling)
+		if atMost.kind != 0 {
+			m = m.tighter(lengthBound{n: atMost.n, set: true})
 		}
-		if atMost.kind != 0 && atMost.n < m {
-			m = atMost.n
-		}
-		return m
+		return m.n
 	}
 	// within reports least() <= most() without counting the members where
 	// the count could not decide it: it never exceeds their number.

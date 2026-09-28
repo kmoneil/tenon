@@ -499,19 +499,35 @@ func newAttachment(deep []Mark, outer *markSet) *attachment {
 // than the members of a set. n is a copy that nothing shares yet, and within
 // replaces its content when a member changes.
 func (a *attachment) within(n *node) {
-	if n.state != stateKnown {
+	if n.state != stateKnown || n.typ.t.kind == KindSet {
+		// A set's marks stay on the set, and Elements attaches them to each
+		// member it returns.
 		return
+	}
+	if data := a.replacedMembers(n, false); data != nil {
+		n.data, n.markedWithin = data, true
+	}
+}
+
+// replacedMembers returns the members of n, a known list, tuple, object or
+// map, each given a's marks, by attach or, settling a value read, by
+// settleDeep, and nil where every member stays as it was: the members are
+// copied only where one of them changes, so that a value whose members all
+// stay shares them. The two are told apart by a flag rather than handed in
+// as a function, which would make every member's call an indirect one:
+// attaching a deep mark to 9,331 values took about 8% longer so.
+func (a *attachment) replacedMembers(n *node, settling bool) any {
+	replace := func(m *node) *node {
+		if settling {
+			return settleDeep(m, a)
+		}
+		return a.attach(m)
 	}
 	switch data := n.data.(type) {
 	case []Value:
-		if n.typ.t.kind == KindSet {
-			// The marks stay on the set, and Elements attaches them to each
-			// member it returns.
-			return
-		}
 		var members []Value
 		for i, m := range data {
-			if r := a.attach(m.n); r != m.n {
+			if r := replace(m.n); r != m.n {
 				if members == nil {
 					members = slices.Clone(data)
 				}
@@ -519,12 +535,12 @@ func (a *attachment) within(n *node) {
 			}
 		}
 		if members != nil {
-			n.data, n.markedWithin = members, true
+			return members
 		}
 	case []mapEntry:
 		var entries []mapEntry
 		for i, e := range data {
-			if r := a.attach(e.val.n); r != e.val.n {
+			if r := replace(e.val.n); r != e.val.n {
 				if entries == nil {
 					entries = slices.Clone(data)
 				}
@@ -532,9 +548,10 @@ func (a *attachment) within(n *node) {
 			}
 		}
 		if entries != nil {
-			n.data, n.markedWithin = entries, true
+			return entries
 		}
 	}
+	return nil
 }
 
 // attach returns n carrying the deep marks, with everything within it
@@ -709,39 +726,11 @@ func settleDeep(n *node, a *attachment) *node {
 		// marked value can hold one that has deep marks of its own to give.
 		return out
 	}
-	switch data := n.data.(type) {
-	case []Value:
-		var members []Value
-		for i, m := range data {
-			if r := settleDeep(m.n, below); r != m.n {
-				if members == nil {
-					members = slices.Clone(data)
-				}
-				members[i] = Value{n: r}
-			}
+	if data := below.replacedMembers(n, true); data != nil {
+		if out == n {
+			out = n.clone()
 		}
-		if members != nil {
-			if out == n {
-				out = n.clone()
-			}
-			out.data, out.markedWithin = members, true
-		}
-	case []mapEntry:
-		var entries []mapEntry
-		for i, e := range data {
-			if r := settleDeep(e.val.n, below); r != e.val.n {
-				if entries == nil {
-					entries = slices.Clone(data)
-				}
-				entries[i].val = Value{n: r}
-			}
-		}
-		if entries != nil {
-			if out == n {
-				out = n.clone()
-			}
-			out.data, out.markedWithin = entries, true
-		}
+		out.data, out.markedWithin = data, true
 	}
 	return out
 }

@@ -122,7 +122,7 @@ type capsuleEncoding struct {
 // where the order meets it first.
 func (d *capsuleData) encoded(v any) Value {
 	payload := d.encoding.encode(v)
-	if payload.n == nil || !payload.n.isKnown() || payload.n.state == stateNull || payload.n.isMarked() || payload.n.typ != d.encoding.typ {
+	if !isPayload(payload) || payload.n.typ != d.encoding.typ {
 		usagePanic("capsule type %q serialized a value as %s, not a known, unmarked value of %s other than null",
 			d.name, payload, d.encoding.typ)
 	}

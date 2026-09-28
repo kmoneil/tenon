@@ -501,6 +501,13 @@ func (e *encoder) rng(b []byte, r *rangeData, at int) []byte {
 	return b
 }
 
+// isPayload reports whether v can be what a capsule value or a mark is
+// serialized with (SE-040, SE-041): a known, unmarked value other than a null.
+// The zero Value is none.
+func isPayload(v Value) bool {
+	return v.n != nil && v.n.isKnown() && v.n.state != stateNull && !v.n.isMarked()
+}
+
 // marks appends a list of marks, in the bytewise order of their encodings.
 //
 // A payload that does not encode has already been recorded as a failure, and
@@ -526,7 +533,7 @@ func (e *encoder) marks(b []byte, marks []Mark, at int) []byte {
 			enc = cbor.AppendArray(enc, 1)
 			enc = cbor.AppendText(enc, id)
 		} else {
-			if payload.n == nil || !payload.n.isKnown() || payload.n.state == stateNull || payload.n.isMarked() {
+			if !isPayload(payload) {
 				usagePanic("the mark %q serialized with %s, not a known, unmarked value other than a null", id, payload)
 			}
 			before := e.failures
