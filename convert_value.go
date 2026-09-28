@@ -11,43 +11,12 @@ import (
 // converter converts values under one policy.
 type converter struct {
 	policy Policy
-	// withheld holds the redacting marks of the values that hold the one
-	// being converted. What a value holds is part of what those marks
-	// withhold, so a message about it shows a placeholder instead.
-	withheld []Mark
 	// carried is what the conversion keeps to carry members' marks, shared
 	// by every converter of one conversion.
 	carried *carrying
 	// memo is what the conversion remembers of the constraints and values it
 	// meets, shared by every converter of one conversion.
 	memo *convertMemo
-}
-
-// within returns the converter for the members of n.
-func (x converter) within(n *node) converter {
-	if ms := n.redactingMarks(); ms != nil {
-		x.withheld, _ = mergeMarks(x.withheld, ms)
-	}
-	return x
-}
-
-// text renders v for a message, as valueText does, and as a placeholder where
-// a value holding v carries a redacting mark.
-func (x converter) text(v Value) string {
-	if x.withheld == nil {
-		return valueText(v)
-	}
-	ms, _ := mergeMarks(x.withheld, v.n.redactingMarks())
-	return redactedText(ms)
-}
-
-// keyText renders a map key of the map n for a message, as a placeholder
-// where the map, or a value holding it, carries a redacting mark.
-func (x converter) keyText(n *node, key string) string {
-	if ms, _ := mergeMarks(x.withheld, n.redactingMarks()); ms != nil {
-		return redactedText(ms)
-	}
-	return quoted(key)
 }
 
 // convertTop converts the operand of a conversion. The framework has settled
@@ -225,7 +194,9 @@ func (x converter) draft(v Value, c Constraint) draft {
 			diags = append(diags, Diagnostic{Code: dg.Code, Message: message})
 		}
 	}
-	return finished(Value{n: &node{state: stateError, data: diags, marks: r.n.marks}})
+	e := errorValue(diags...)
+	e.n.marks = r.n.marks
+	return finished(e)
 }
 
 // draftOf is draft for a value whose failures need not be moved.
@@ -691,7 +662,7 @@ func (x converter) primitive(v Value, s Type) Value {
 		case "false":
 			return Bool(false)
 		}
-		return errorValue(Diagnostic{Code: CodeBoolInvalidSyntax, Message: x.text(v) + ` is neither "true" nor "false"`})
+		return errorValue(Diagnostic{Code: CodeBoolInvalidSyntax, Message: valueText(v) + ` is neither "true" nor "false"`})
 	}
 	d, err := decimal.Parse(text)
 	if err == nil {
@@ -699,9 +670,9 @@ func (x converter) primitive(v Value, s Type) Value {
 	}
 	switch code := numberCode(err.(decimal.Error)); code {
 	case CodeNumberInvalidSyntax:
-		return errorValue(Diagnostic{Code: code, Message: x.text(v) + " is not a number"})
+		return errorValue(Diagnostic{Code: code, Message: valueText(v) + " is not a number"})
 	case CodeNumberOutOfRange:
-		return errorValue(Diagnostic{Code: code, Message: x.text(v) + " is outside the range of numbers"})
+		return errorValue(Diagnostic{Code: code, Message: valueText(v) + " is outside the range of numbers"})
 	case CodeNumberTooLong:
 		return errorValue(tooLong(len(text)))
 	}
@@ -833,14 +804,14 @@ func (x converter) collection(v Value, c Constraint) draft {
 		return finished(errorValue(noConversion(x.typeName(n), c).diagnostic()))
 	}
 	h := members(n)
-	drafts, e, failed, pending := x.within(n).draftMembers(h, func(int) Constraint { return d.elem })
+	drafts, e, failed, pending := x.draftMembers(h, func(int) Constraint { return d.elem })
 	switch {
 	case failed:
 		return finished(e)
 	case unsafe && x.policy == Safe:
 		return finished(errorValue(unsafeConversion(x.typeName(n), c).diagnostic()))
 	}
-	withhold := x.within(n).withheld != nil || x.typeWithheld(n)
+	withhold := x.typeWithheld(n)
 	types := make([]Type, 0, len(drafts)+2)
 	var least []Type
 	for i, md := range drafts {
@@ -983,17 +954,13 @@ func (x converter) tuple(v Value, c Constraint) draft {
 			return finished(x.partialSetTuple(v, c))
 		}
 		if got := len(n.data.([]Value)); got != want {
-			message := "a " + kindNoun(from) + " of " + count(got, "member")
-			if x.within(n).withheld != nil {
-				message = "the " + kindNoun(from)
-			}
 			return finished(errorValue(Diagnostic{Code: CodeConvertLengthMismatch,
-				Message: message + " does not convert to " + c.String() + ", which has " + count(want, "member")}))
+				Message: "a " + kindNoun(from) + " of " + count(got, "member") + " does not convert to " + c.String() + ", which has " + count(want, "member")}))
 		}
 	default:
 		return finished(errorValue(noConversion(x.typeName(n), c).diagnostic()))
 	}
-	drafts, e, failed, pending := x.within(n).draftMembers(members(n), func(i int) Constraint { return d.members[i] })
+	drafts, e, failed, pending := x.draftMembers(members(n), func(i int) Constraint { return d.members[i] })
 	switch {
 	case failed:
 		return finished(e)
@@ -1021,12 +988,8 @@ func (x converter) partialSetTuple(v Value, c Constraint) Value {
 	n, d := v.n, c.c
 	low, high := setLengthBounds(n)
 	if want := len(d.members); want < low || want > high {
-		message := "a set of " + strconv.Itoa(low) + " to " + count(high, "member")
-		if x.within(n).withheld != nil {
-			message = "the set"
-		}
 		return errorValue(Diagnostic{Code: CodeConvertLengthMismatch,
-			Message: message + " does not convert to " + c.String() + ", which has " + count(want, "member")})
+			Message: "a set of " + strconv.Itoa(low) + " to " + count(high, "member") + " does not convert to " + c.String() + ", which has " + count(want, "member")})
 	}
 	out := typeConvert(n.typ, c, x.policy, keysUnknown)
 	switch {
@@ -1062,7 +1025,6 @@ func (x converter) object(v Value, c Constraint) draft {
 		return finished(errorValue(noConversion(x.typeName(n), c).diagnostic()))
 	}
 	h := members(n)
-	inner := x.within(n)
 	var errs containerErrors
 	attrs := make(map[string]memberDraft, len(h.vals))
 	pending := false
@@ -1087,12 +1049,12 @@ func (x converter) object(v Value, c Constraint) draft {
 		switch {
 		case name == "":
 			errs.add(h.step(i), errorValue(Diagnostic{Code: CodeObjectEmptyName,
-				Message: "the map key " + x.keyText(n, name) + " cannot be an attribute name"}))
+				Message: "the map key " + quoted(name) + " cannot be an attribute name"}))
 		case len(fields) == 0 || fields[0].name != name:
 			if d.closed {
 				f := unexpectedAttribute(name)
 				if from == KindMap {
-					f.message = "key " + x.keyText(n, name) + " is not an attribute the constraint allows"
+					f.message = "key " + quoted(name) + " is not an attribute the constraint allows"
 				}
 				errs.add(h.step(i), errorValue(f.diagnostic()))
 				continue
@@ -1100,11 +1062,11 @@ func (x converter) object(v Value, c Constraint) draft {
 			// Carried across unchanged, marks and all.
 			attrs[name] = memberDraft{draft: finished(m)}
 		default:
-			md := memberDraft{draft: inner.draft(m, fields[0].Constraint), from: m.n}
+			md := memberDraft{draft: x.draft(m, fields[0].Constraint), from: m.n}
 			switch r := md.done; {
 			case r.n == nil:
 			case r.n.state == stateError:
-				errs.add(h.step(i), inner.carry(r, m.n))
+				errs.add(h.step(i), x.carry(r, m.n))
 			case r.n.state == statePending:
 				pending = true
 			}

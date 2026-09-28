@@ -172,14 +172,14 @@ func (x converter) fittingCollection(v Value, c Constraint) Value {
 		return errorValue(noConversion(x.typeName(n), c).diagnostic())
 	}
 	h := members(n)
-	converted, e, failed, pending := x.within(n).fittingMembers(h, func(int) Constraint { return d.elem })
+	converted, e, failed, pending := x.fittingMembers(h, func(int) Constraint { return d.elem })
 	switch {
 	case failed:
 		return e
 	case unsafe && x.policy == Safe:
 		return errorValue(unsafeConversion(x.typeName(n), c).diagnostic())
 	}
-	withhold := x.within(n).withheld != nil || x.typeWithheld(n)
+	withhold := x.typeWithheld(n)
 	types := make([]Type, 0, len(converted)+2)
 	var least []Type
 	for i, r := range converted {
@@ -263,17 +263,13 @@ func (x converter) fittingTuple(v Value, c Constraint) Value {
 			return x.partialSetTuple(v, c)
 		}
 		if got := len(n.data.([]Value)); got != want {
-			message := "a " + kindNoun(from) + " of " + count(got, "member")
-			if x.within(n).withheld != nil {
-				message = "the " + kindNoun(from)
-			}
 			return errorValue(Diagnostic{Code: CodeConvertLengthMismatch,
-				Message: message + " does not convert to " + c.String() + ", which has " + count(want, "member")})
+				Message: "a " + kindNoun(from) + " of " + count(got, "member") + " does not convert to " + c.String() + ", which has " + count(want, "member")})
 		}
 	default:
 		return errorValue(noConversion(x.typeName(n), c).diagnostic())
 	}
-	converted, e, failed, pending := x.within(n).fittingMembers(members(n), func(i int) Constraint { return d.members[i] })
+	converted, e, failed, pending := x.fittingMembers(members(n), func(i int) Constraint { return d.members[i] })
 	switch {
 	case failed:
 		return e
@@ -293,7 +289,6 @@ func (x converter) fittingObject(v Value, c Constraint) Value {
 		return errorValue(noConversion(x.typeName(n), c).diagnostic())
 	}
 	h := members(n)
-	inner := x.within(n)
 	var errs containerErrors
 	attrs := make(map[string]Value, len(h.vals))
 	pending := false
@@ -315,12 +310,12 @@ func (x converter) fittingObject(v Value, c Constraint) Value {
 		switch {
 		case name == "":
 			errs.add(h.step(i), errorValue(Diagnostic{Code: CodeObjectEmptyName,
-				Message: "the map key " + x.keyText(n, name) + " cannot be an attribute name"}))
+				Message: "the map key " + quoted(name) + " cannot be an attribute name"}))
 		case len(fields) == 0 || fields[0].name != name:
 			if d.closed {
 				f := unexpectedAttribute(name)
 				if from == KindMap {
-					f.message = "key " + x.keyText(n, name) + " is not an attribute the constraint allows"
+					f.message = "key " + quoted(name) + " is not an attribute the constraint allows"
 				}
 				errs.add(h.step(i), errorValue(f.diagnostic()))
 				continue
@@ -328,7 +323,7 @@ func (x converter) fittingObject(v Value, c Constraint) Value {
 			// Carried across unchanged, marks and all.
 			attrs[name] = m
 		default:
-			r := inner.fittingMember(m, fields[0].Constraint)
+			r := x.fittingMember(m, fields[0].Constraint)
 			switch r.n.state {
 			case stateError:
 				errs.add(h.step(i), r)

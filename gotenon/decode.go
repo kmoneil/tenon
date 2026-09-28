@@ -323,13 +323,16 @@ func byUnmarshaler(m *goMapping) bool {
 	return m.unmarshal
 }
 
-// unmarkedNull reports whether v is a null, or a pending value known to be
-// null, that carries no mark: what a pointer decodes as nil even where its
-// element decodes by an unmarshaler.
+// unmarkedNull reports whether v decodes as a null and carries no mark: what a
+// pointer decodes as nil even where its element decodes by an unmarshaler.
 func unmarkedNull(v tenon.Value) bool {
-	if _, marks := tenon.Unmark(v); len(marks) > 0 {
-		return false
-	}
+	_, marks := tenon.Unmark(v)
+	return len(marks) == 0 && decodesAsNull(v)
+}
+
+// decodesAsNull reports whether v decodes as a null (GO-042): it is a null, a
+// known value without content, or a pending value known to be null.
+func decodesAsNull(v tenon.Value) bool {
 	if v.IsPending() {
 		isNull := tenon.IsNull(v)
 		return isNull.IsKnown() && isNull.AsBool()
@@ -418,15 +421,8 @@ func (d *decoder) build(m *goMapping, dst reflect.Value, v, given tenon.Value, p
 			return
 		}
 	}
-	// A known value without content is a null, and a pending value known to
-	// be null decodes as one.
-	null := v.IsKnown() && !v.HasContent()
-	if v.IsPending() {
-		isNull := tenon.IsNull(v)
-		null = isNull.IsKnown() && isNull.AsBool()
-	}
 	switch {
-	case null:
+	case decodesAsNull(v):
 		if m.kind == goPointer || m.kind == goSlice || m.kind == goMap || optional {
 			dst.SetZero()
 			return

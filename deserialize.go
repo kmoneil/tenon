@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"maps"
 	"math"
 	"math/big"
 	"slices"
@@ -81,8 +82,10 @@ func Deserialize(data []byte, decoders Decoders) (Value, error) {
 // deserialize is Deserialize, giving the error value it fails with and false.
 func deserialize(data []byte, decoders Decoders) (Value, Value, bool) {
 	d := &decoder{r: cbor.NewReader(data), capsules: map[string]Type{}, marks: decoders.Marks}
-	for id, decode := range decoders.Marks {
-		if decode == nil {
+	// In the order of their identifiers, so that of two nil decoders the one
+	// named is the same every time, where a map's order would change it.
+	for _, id := range slices.Sorted(maps.Keys(decoders.Marks)) {
+		if decoders.Marks[id] == nil {
 			usagePanic("Deserialize: the decoder for the mark %q is nil", id)
 		}
 	}
@@ -278,6 +281,7 @@ func (d *decoder) item() (Value, *decodeError) {
 	defer d.leave()
 	at := d.r.Offset()
 	if h, err := d.r.PeekHead(); err == nil && h.Major == cbor.MajorTag {
+		// The head is peeked, so reading it cannot fail.
 		if tag, _ := d.r.ReadTag(); tag != tagMarked {
 			return Value{}, d.malformed(at, "tag %d where an item was expected", tag)
 		}
@@ -288,6 +292,7 @@ func (d *decoder) item() (Value, *decodeError) {
 		// marks add none (SE-005), and is not tagged again.
 		inner := d.r.Offset()
 		if h, err := d.r.PeekHead(); err == nil && h.Major == cbor.MajorTag {
+			// The head is peeked, so reading it cannot fail.
 			if tag, _ := d.r.ReadTag(); tag != tagMarked {
 				return Value{}, d.malformed(inner, "tag %d where an item was expected", tag)
 			}
@@ -451,7 +456,7 @@ func (d *decoder) typ() (Type, *decodeError) {
 		return Type{}, d.cborError(err)
 	}
 	if h.Major == cbor.MajorUint {
-		k, _ := d.r.ReadUint()
+		k, _ := d.r.ReadUint() // the head is peeked, so reading it cannot fail
 		switch Kind(k) {
 		case KindBool:
 			return Type{boolType}, nil
@@ -794,7 +799,7 @@ func (d *decoder) capsule(t Type, at int) (Value, *decodeError) {
 	if err != nil {
 		return Value{}, err
 	}
-	if !payload.n.isKnown() || payload.n.state == stateNull || payload.n.isMarked() {
+	if !isPayload(payload) {
 		return Value{}, d.malformed(at, "a capsule value serialized as a value that is null, not known, or marked")
 	}
 	p, diags := enc.decode(payload)
@@ -960,7 +965,7 @@ func (d *decoder) numberParts() (small int64, c *big.Int, exp int64, derr *decod
 		return 0, nil, 0, &decodeError{code: CodeSerializeNotCanonical, offset: at,
 			message: "a bignum standing for a number, which a decimal fraction holds"}
 	case h.Major == cbor.MajorTag && h.Arg == tagDecimal:
-		d.r.ReadTag()
+		d.r.ReadTag() // the head is peeked, so reading it cannot fail
 		if err := d.array(2, "a decimal fraction"); err != nil {
 			return 0, nil, 0, err
 		}
@@ -1000,7 +1005,7 @@ func (d *decoder) integer() (small int64, c *big.Int, derr *decodeError) {
 		return 0, nil, d.cborError(err)
 	}
 	if h.Major == cbor.MajorTag {
-		tag, _ := d.r.ReadTag()
+		tag, _ := d.r.ReadTag() // the head is peeked, so reading it cannot fail
 		if tag != tagBignum && tag != tagNegBignum {
 			return 0, nil, d.malformed(at, "expected an integer")
 		}
@@ -1083,7 +1088,7 @@ func (d *decoder) mark() (Mark, *decodeError) {
 		if derr != nil {
 			return nil, derr
 		}
-		if !v.n.isKnown() || v.n.state == stateNull || v.n.isMarked() {
+		if !isPayload(v) {
 			return nil, d.malformed(at, "the mark %s is serialized with a value that is null, not known, or marked", quoted(id))
 		}
 		payload = v
