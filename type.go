@@ -345,14 +345,6 @@ func (t Type) Equal(u Type) bool {
 // IsZero reports whether t is the zero Type, which is not a type.
 func (t Type) IsZero() bool { return t.t == nil }
 
-// Equals reports whether t and u are the same type, as Equal does.
-//
-// Deprecated: use Equal, the name Constraint, Path and Diagnostic share.
-// Equals is removed at 1.0.
-func (t Type) Equals(u Type) bool {
-	return t.Equal(u)
-}
-
 // String returns the display form of t (DI-014), as in
 // object({"name": string, "tags": list(string)}). It is not a format for
 // parsing.
