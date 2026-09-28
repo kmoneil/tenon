@@ -491,13 +491,17 @@ func TestConformance_CV045_UnificationGrowsWithWhatItIsGiven(t *testing.T) {
 		runtime.ReadMemStats(&after)
 		return after.TotalAlloc - before.TotalAlloc
 	}
-	objects := func(k int) func() tenon.Constraint {
+	// objects unifies k objects of distinct fields, each held as held holds
+	// it: as it is, or one level down.
+	objects := func(k int, held func(tenon.Constraint) tenon.Constraint) func() tenon.Constraint {
 		cs := make([]tenon.Constraint, k)
 		for i := range cs {
-			cs[i] = tenon.ObjectWith(map[string]tenon.Field{fmt.Sprintf("f%05d", i): tenon.Required(tenon.Exactly(num))}, false)
+			cs[i] = held(tenon.ObjectWith(map[string]tenon.Field{fmt.Sprintf("f%05d", i): tenon.Required(tenon.Exactly(num))}, false))
 		}
 		return func() tenon.Constraint { return unifyOK(t, tenon.Safe, cs...) }
 	}
+	as := func(c tenon.Constraint) tenon.Constraint { return c }
+	fields := func(_, large tenon.Constraint) bool { return strings.Count(large.String(), "?") == 4000 }
 	nested := func(depth int) func() tenon.Constraint {
 		x := tenon.OneOf(tenon.Exactly(num), tenon.Exactly(str))
 		y := tenon.OneOf(tenon.Exactly(num), tenon.Exactly(str), tenon.Exactly(boo))
@@ -511,9 +515,18 @@ func TestConformance_CV045_UnificationGrowsWithWhatItIsGiven(t *testing.T) {
 		small, large func() tenon.Constraint
 		check        func(small, large tenon.Constraint) bool
 	}{
-		{"objects of distinct fields", objects(1000), objects(4000), func(_, large tenon.Constraint) bool {
-			return strings.Count(large.String(), "?") == 4000
-		}},
+		{"objects of distinct fields", objects(1000, as), objects(4000, as), fields},
+		// Objects one level down are unified where they meet, not paired
+		// with their union written out, which each pair rewrote.
+		{"objects as the elements of lists", objects(1000, tenon.ListOf), objects(4000, tenon.ListOf), fields},
+		{"objects as the elements of maps", objects(1000, tenon.MapOf), objects(4000, tenon.MapOf), fields},
+		{"objects in tuples", objects(1000, func(c tenon.Constraint) tenon.Constraint { return tenon.TupleOf(c) }),
+			objects(4000, func(c tenon.Constraint) tenon.Constraint { return tenon.TupleOf(c) }), fields},
+		{"objects in a field", objects(1000, func(c tenon.Constraint) tenon.Constraint {
+			return tenon.ObjectWith(map[string]tenon.Field{"x": tenon.Required(c)}, false)
+		}), objects(4000, func(c tenon.Constraint) tenon.Constraint {
+			return tenon.ObjectWith(map[string]tenon.Field{"x": tenon.Required(c)}, false)
+		}), fields},
 		{"OneOfs nested in lists", nested(100), nested(400), func(_, large tenon.Constraint) bool {
 			return strings.Count(large.String(), "list_of(") == 400 && strings.Contains(large.String(), "one_of([exactly(number), exactly(string)])")
 		}},

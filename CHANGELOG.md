@@ -44,6 +44,12 @@
   grew. Tuples nested 80 deep around 2,000 objects, each level adding an
   attribute every object is given, converted to nested lists in 144 ms and
   263 MB, and now in 9 ms and 13 MB, in proportion to the result.
+- `Unify` unifies constraints one level down, as the elements of lists,
+  sets or maps, in tuples, or in an object's fields, as it unifies them at
+  the top: each one more touches only its own parts, where it was paired
+  with the union of all before it written out. 4,000 `ObjectWith`
+  constraints of distinct fields, each the element of a `ListOf`, unified
+  in 1.7 GB, and now in 6 MB, as many as at the top.
 - A set that a conversion builds keeps the marks its members give it,
   `Isolate` ones included, when the collection holding it widens its element
   type, as it did when nothing widened it: building it again at the wider
