@@ -100,7 +100,10 @@ func TestConformance_NU003_SmallCoefficientsEncodeAsBigOnes(t *testing.T) {
 // their representation and not only their value: a coefficient that fits an
 // int64 is held in one, wherever it was read from. The bytes include forms no
 // encoder writes, which the decoder reads before refusing them as not
-// canonical, and exponents past the window, which it refuses as out of range.
+// canonical, and exponents past the window, which it refuses as out of range;
+// a decimal fraction whose mantissa is a multiple of ten, zero among them,
+// it refuses as not canonical as it reads the mantissa, whatever the
+// exponent, as the reading stops there.
 func TestConformance_NU003_SmallCoefficientsDecodeAsBigOnes(t *testing.T) {
 	conformance.Covers(t, "NU-003", "SE-001", "SE-032")
 	read := 0
@@ -123,19 +126,27 @@ func TestConformance_NU003_SmallCoefficientsDecodeAsBigOnes(t *testing.T) {
 				item, gotSmall, gotBig, gotExp, wantSmall, wantBig, wantExp)
 		}
 	}
-	// fraction is a decimal fraction's item, its coefficient given by the
-	// head that writes it.
-	fraction := func(exp int64, coefficient func([]byte) []byte) []byte {
-		b := cbor.AppendTag(nil, tagDecimal)
-		b = cbor.AppendArray(b, 2)
-		b = cbor.AppendInt(b, exp)
-		return coefficient(b)
+	// fraction checks the decimal fraction of c and exp, its coefficient
+	// written by the head that coefficient appends.
+	fraction := func(c *big.Int, exp int64, coefficient func([]byte) []byte) {
+		t.Helper()
+		item := cbor.AppendTag(nil, tagDecimal)
+		item = cbor.AppendArray(item, 2)
+		item = cbor.AppendInt(item, exp)
+		item = coefficient(item)
+		if new(big.Int).Rem(c, big.NewInt(10)).Sign() != 0 {
+			check(item, c, exp)
+			return
+		}
+		if _, derr := (&decoder{r: cbor.NewReader(item)}).number(); derr == nil || derr.code != CodeSerializeNotCanonical {
+			t.Errorf("% x: a mantissa that is a multiple of ten read as %v, not refused as not canonical", item, derr)
+		}
 	}
 	cs, exps := edgeParts()
 	for _, c := range cs {
 		check(cbor.AppendInt(nil, c), big.NewInt(c), 0)
 		for _, e := range exps {
-			check(fraction(e, func(b []byte) []byte { return cbor.AppendInt(b, c) }), big.NewInt(c), e)
+			fraction(big.NewInt(c), e, func(b []byte) []byte { return cbor.AppendInt(b, c) })
 		}
 	}
 	// Integers past an int64, which CBOR's integers hold and big.Int reads.
@@ -143,8 +154,8 @@ func TestConformance_NU003_SmallCoefficientsDecodeAsBigOnes(t *testing.T) {
 		positive := new(big.Int).SetUint64(arg)
 		negative := new(big.Int).Neg(new(big.Int).Add(positive, big.NewInt(1)))
 		for _, e := range []int64{0, 1, -1} {
-			check(fraction(e, func(b []byte) []byte { return cbor.AppendUint(b, arg) }), positive, e)
-			check(fraction(e, func(b []byte) []byte { return cbor.AppendHead(b, cbor.MajorNeg, arg) }), negative, e)
+			fraction(positive, e, func(b []byte) []byte { return cbor.AppendUint(b, arg) })
+			fraction(negative, e, func(b []byte) []byte { return cbor.AppendHead(b, cbor.MajorNeg, arg) })
 		}
 		check(cbor.AppendUint(nil, arg), positive, 0)
 		check(cbor.AppendHead(nil, cbor.MajorNeg, arg), negative, 0)
@@ -152,7 +163,7 @@ func TestConformance_NU003_SmallCoefficientsDecodeAsBigOnes(t *testing.T) {
 	r := rand.New(rand.NewSource(1612))
 	for range conformance.Iterations(t, 10000) {
 		c, e := randomParts(r)
-		check(fraction(e, func(b []byte) []byte { return cbor.AppendInt(b, c) }), big.NewInt(c), e)
+		fraction(big.NewInt(c), e, func(b []byte) []byte { return cbor.AppendInt(b, c) })
 	}
 	if read < 5000 {
 		t.Errorf("only %d numbers were read", read)

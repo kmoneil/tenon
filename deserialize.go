@@ -707,8 +707,12 @@ func (d *decoder) bareContent(t Type) (Value, *decodeError) {
 			if err != nil {
 				return Value{}, d.cborError(err)
 			}
+			// A key is normalized as it is read, as a name is (readName), so
+			// that one the same as a key before it is refused where it is
+			// written (SE-002), not once the map is built.
+			key = uni.NFC(key)
 			if _, dup := entries[key]; dup {
-				return Value{}, d.malformed(kat, "a map key that appears twice")
+				return Value{}, d.malformed(kat, "a map key that appears twice, once normalized")
 			}
 			v, derr := d.content(t.t.elem)
 			if derr != nil {
@@ -716,11 +720,7 @@ func (d *decoder) bareContent(t Type) (Value, *decodeError) {
 			}
 			entries[key] = v
 		}
-		m := Map(t.t.elem, entries)
-		if m.n.state == stateError {
-			return Value{}, d.malformed(at, "a map whose keys are the same after normalization")
-		}
-		return m, nil
+		return Map(t.t.elem, entries), nil
 	case KindObject:
 		attrs := t.t.attrs
 		if err := d.arrayOf(len(attrs), t); err != nil {
@@ -830,11 +830,6 @@ func (d *decoder) unknown(t Type, at int) (Value, *decodeError) {
 		}
 		ns = append(ns, nw)
 	}
-	for _, nw := range ns {
-		if !nw.appliesTo(t) {
-			return Value{}, d.malformed(at, "a range recording a narrowing that does not apply to its type")
-		}
-	}
 	v := Narrow(Unknown(t), ns...)
 	if v.n.state == stateError {
 		return Value{}, d.malformed(at, "a range that no value lies in")
@@ -842,12 +837,23 @@ func (d *decoder) unknown(t Type, at int) (Value, *decodeError) {
 	return v, nil
 }
 
-// narrowing reads the narrowing a range records under key.
+// rangeKeys holds the kind of narrowing a range records under each key.
+var rangeKeys = [...]narrowingKind{narrowNotNull, narrowNumberMin, narrowNumberMax, narrowPrefix, narrowLengthMin, narrowLengthMax, narrowMembers}
+
+// narrowing reads the narrowing a range records under key. Whether it
+// applies to the type is known from the key, and judged there, before what
+// the range records under it is read (SE-002).
 func (d *decoder) narrowing(t Type, key uint64, at int) (Narrowing, *decodeError) {
+	if key < uint64(len(rangeKeys)) && !(Narrowing{kind: rangeKeys[key]}).appliesTo(t) {
+		return Narrowing{}, d.malformed(at, "range key %d, recording a narrowing that does not apply to its type", key)
+	}
 	switch key {
 	case 0:
 		b, err := d.r.ReadBool()
-		if err != nil || !b {
+		if err != nil {
+			return Narrowing{}, d.cborError(err)
+		}
+		if !b {
 			return Narrowing{}, d.malformed(at, "a range key 0 that is not true")
 		}
 		return NotNull(), nil
@@ -893,9 +899,6 @@ func (d *decoder) narrowing(t Type, key uint64, at int) (Narrowing, *decodeError
 		}
 		return LengthMax(int64(length)), nil
 	case 6:
-		if t.t.kind != KindSet {
-			return Narrowing{}, d.malformed(at, "a range recording members, of a type that is not a set type")
-		}
 		n, err := d.r.ReadArray()
 		if err != nil {
 			return Narrowing{}, d.cborError(err)
@@ -975,10 +978,11 @@ func (d *decoder) numberParts() (small int64, c *big.Int, exp int64, derr *decod
 		}
 		mat := d.r.Offset()
 		small, c, derr = d.integer()
-		if derr == nil && c != nil && decimal.MultipleOfTen(c) {
+		if derr == nil && (c == nil && small%10 == 0 || c != nil && decimal.MultipleOfTen(c)) {
 			// The mantissa of a number's decimal fraction is no multiple of
-			// ten (SE-032). Refusing it here spares the conversion to text
-			// that stripping its zeros would take.
+			// ten, zero among them (SE-032), and the reading stops where it
+			// is, whatever its size (SE-002). Refusing a bignum here spares
+			// the conversion to text that stripping its zeros would take.
 			return 0, nil, 0, &decodeError{code: CodeSerializeNotCanonical, offset: mat,
 				message: "a decimal fraction whose mantissa is a multiple of ten"}
 		}

@@ -68,6 +68,18 @@
   type's constraint, and decoding took each member on its own, so that a map
   of the type decoded a null list as a nil map, where a map of the same type
   without the method refuses it, as it now does.
+- `Deserialize` fails input holding two faults with the first, as the
+  specification says, in four more places, which each judged their fault
+  only once more had been read. A decimal fraction whose mantissa is a
+  multiple of ten, zero among them, stops the reading whatever the
+  mantissa's size, where only a bignum mantissa did. A map key that is the
+  same as one before it once normalized, and a range's narrowing that does
+  not apply to its type, are refused at the key, where they were refused
+  once the map or the range had been read. Input with one fault fails with
+  the code it did, but for range key 0 holding an indefinite length, which
+  fails with `serialize.not_canonical`, as an indefinite length does
+  anywhere else, where it failed with `serialize.malformed`. Five vectors
+  in `conformance/vectors/vectors.json` pin these.
 
 ### Added
 
