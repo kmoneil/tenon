@@ -669,8 +669,13 @@ func narrowValue(v Value, ns []Narrowing) Value {
 	ceiling := setCeiling(n.typ)
 	// A fact already in force is what the value says about itself, or what a
 	// narrowing given before this one said, so a message withholds it when
-	// either carries a redacting mark.
+	// either carries a redacting mark. The value's type is part of what a
+	// redacting mark on it withholds (MK-011), so it goes unnamed then.
 	withheld := n.redactingMarks()
+	subject := "no value of type " + typeText(n.typ)
+	if withheld != nil {
+		subject = "no value"
+	}
 	// crossed names the two narrowings that left only null, once some have, so
 	// a NotNull after them reports what it contradicts as a NotNull before
 	// them would.
@@ -678,13 +683,13 @@ func narrowValue(v Value, ns []Narrowing) Value {
 	for _, nw := range ns {
 		clash, ok := r.apply(nw, ceiling)
 		if !ok && crossed != "" {
-			return contradiction("no value of type " + n.typ.String() + " satisfies both " + crossed)
+			return contradiction(subject + " satisfies both " + crossed)
 		}
 		if withheld != nil && clash != "" {
 			clash = redactedText(withheld)
 		}
 		if !ok {
-			return contradiction("no value of type " + n.typ.String() + " satisfies both " + clash + " and " + nw.message())
+			return contradiction(subject + " satisfies both " + clash + " and " + nw.message())
 		}
 		if clash != "" && crossed == "" {
 			crossed = clash + " and " + nw.message()

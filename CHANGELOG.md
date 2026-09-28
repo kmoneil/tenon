@@ -18,6 +18,18 @@
   then refused as `serialize.too_large`. A marked value held directly in
   another marked value is refused where the inner one begins, with the code
   it was refused with before.
+- A diagnostic's message no longer names a type that shows what a redacting
+  mark withholds: a narrowing that leaves nothing of a redacted unknown value
+  names no type, where it named its attributes, and a conversion that fails
+  for a value holding a redacted one names its kind, "a tuple", where it
+  named a type holding the redacted value's attribute names, whether the
+  value did not convert, would convert only unsafely, or converted to no
+  member of a `OneOf`.
+- A message names a type by at most its first 32 bytes, as it names a value:
+  a conversion failing for each of many members, a projection failing for
+  each unknown member, and `gotenon.Decode` failing for each part it cannot
+  decode each repeated a long type whole, so their messages grew with the
+  members times the type.
 
 ### Added
 

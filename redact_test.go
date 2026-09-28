@@ -52,10 +52,12 @@ func TestConformance_MK011_DiagnosticsWithholdRedactedContents(t *testing.T) {
 			`the value list(number)[7, redacted("pii")] does not satisfy length <= 1`,
 		},
 		{
+			// The value carries the mark, so its type, which is part of what
+			// the mark withholds, goes unnamed.
 			"what a range says",
 			tenon.Narrow(tenon.WithMarks(tenon.Narrow(notNull, tenon.NumberMax(fortyTwo, true)), secret),
 				tenon.NumberMin(fifty, true)),
-			`no value of type number satisfies both redacted("secret") and >= 50`,
+			`no value satisfies both redacted("secret") and >= 50`,
 		},
 		{
 			"a bound given",
@@ -63,9 +65,10 @@ func TestConformance_MK011_DiagnosticsWithholdRedactedContents(t *testing.T) {
 			`the value 50 does not satisfy <= redacted("secret")`,
 		},
 		{
+			// The bound's redacting mark reached the value it narrowed.
 			"a bound in the range",
 			tenon.Narrow(tenon.Narrow(notNull, secretBound), tenon.NumberMin(fifty, true)),
-			`no value of type number satisfies both redacted("secret") and >= 50`,
+			`no value satisfies both redacted("secret") and >= 50`,
 		},
 		{
 			"a bound given earlier in the same call",
@@ -235,6 +238,51 @@ func TestConformance_MK011_RedactionWithholdsStructure(t *testing.T) {
 	// A redacted object that does not convert names no attribute.
 	record := tenon.WithMarks(tenon.Object(map[string]tenon.Value{"hunter2": tenon.NumberFromInt(1)}), secret)
 	leaks("a redacted object converted to a number", tenon.Convert(record, tenon.Exactly(num), tenon.Unsafe))
+
+	// A value holding a redacted one is named by its kind where a message
+	// would name its type, since its type names the redacted value's
+	// attributes: when it does not convert, when only the unsafe policy
+	// would convert it, and when it converts to no member of a OneOf.
+	for _, h := range []struct {
+		kind   string
+		holder tenon.Value
+	}{
+		{"a tuple", tenon.Tuple(record, tenon.Object(map[string]tenon.Value{"b": tenon.NumberFromInt(2)}))},
+		{"an object", tenon.Object(map[string]tenon.Value{"outer": record})},
+		{"a list", tenon.List(record.Type(), record)},
+		{"a map", tenon.Map(record.Type(), map[string]tenon.Value{"k": record})},
+	} {
+		for _, tt := range []struct {
+			to   string
+			c    tenon.Constraint
+			p    tenon.Policy
+			code tenon.Code
+			want string
+		}{
+			{"a number", tenon.Exactly(num), tenon.Unsafe, tenon.CodeConvertNoConversion, " does not convert to exactly(number)"},
+			{"one of a number and a string", tenon.OneOf(tenon.Exactly(num), tenon.Exactly(str)), tenon.Unsafe, tenon.CodeConvertNoConversion,
+				" does not convert to one_of([exactly(number), exactly(string)])"},
+		} {
+			got := tenon.Convert(h.holder, tt.c, tt.p)
+			if ds := errorsOf(got); len(ds) != 1 || ds[0].Code != tt.code || ds[0].Message != h.kind+tt.want {
+				t.Errorf("%s holding a redacted object converted to %s gave %v, want %s: %q", h.kind, tt.to, got, tt.code, h.kind+tt.want)
+			}
+			leaks(h.kind+" holding a redacted object converted to "+tt.to, got)
+		}
+	}
+	safe := tenon.Convert(tenon.List(record.Type(), record), tenon.SetOf(tenon.Any()), tenon.Safe)
+	if ds := errorsOf(safe); len(ds) != 1 || ds[0].Message != "a list converts to set_of(any) only unsafely, and the policy is safe" {
+		t.Errorf("a list holding a redacted object converted to a set under the safe policy gave %v", safe)
+	}
+	leaks("a list holding a redacted object converted to a set under the safe policy", safe)
+
+	// A narrowing that contradicts an unknown value carrying the mark leaves
+	// its type unnamed, which would name the attributes the mark withholds.
+	narrowed := tenon.Narrow(tenon.WithMarks(tenon.Unknown(record.Type()), secret), tenon.NullOnly(), tenon.NotNull())
+	if ds := errorsOf(narrowed); len(ds) != 1 || ds[0].Code != tenon.CodeRangeContradiction || !strings.HasPrefix(ds[0].Message, "no value satisfies both") {
+		t.Errorf("a redacted unknown object narrowed to nothing gave %v", narrowed)
+	}
+	leaks("a redacted unknown object narrowed to nothing", narrowed)
 
 	// A list whose element type takes attribute names from a redacted map,
 	// through the object it converts to, carries the mark, since its type and

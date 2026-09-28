@@ -347,7 +347,7 @@ func (x converter) known(v Value, c Constraint) Value {
 		return x.exactly(v, s)
 	}
 	if c.c.kind == ConstraintOneOf {
-		m, f := oneOfMember(n.typ, c, x.policy)
+		m, f := oneOfMember(n.typ, typeName(n), c, x.policy)
 		if f != nil {
 			return errorValue(f.diagnostic())
 		}
@@ -362,7 +362,7 @@ func (x converter) known(v Value, c Constraint) Value {
 	if n.typ.t.kind == KindCapsule {
 		// A capsule type converts only to a type that it, or the type it
 		// converts to, declares.
-		return errorValue(noConversion(n.typ, c).diagnostic())
+		return errorValue(noConversion(typeName(n), c).diagnostic())
 	}
 	return x.structure(v, c)
 }
@@ -392,13 +392,13 @@ func (x converter) structure(v Value, c Constraint) Value {
 	case ConstraintObjectWith:
 		return x.object(v, c)
 	}
-	return errorValue(noConversion(v.n.typ, c).diagnostic())
+	return errorValue(noConversion(typeName(v.n), c).diagnostic())
 }
 
 // primitive converts a known value to the primitive type s.
 func (x converter) primitive(v Value, s Type) Value {
 	n := v.n
-	if out := primitiveTypeConvert(n.typ, s, x.policy); out.fail != nil {
+	if out := primitiveTypeConvert(n.typ, s, typeName(n), x.policy); out.fail != nil {
 		return errorValue(out.fail.diagnostic())
 	}
 	switch n.typ.t.kind {
@@ -437,7 +437,7 @@ func (x converter) primitive(v Value, s Type) Value {
 // either is a capsule type, by the conversion the capsule type declares.
 func (x converter) capsule(v Value, s Type) Value {
 	n := v.n
-	if out := capsuleTypeConvert(n.typ, s, x.policy); out.fail != nil {
+	if out := capsuleTypeConvert(n.typ, s, typeName(n), x.policy); out.fail != nil {
 		return errorValue(out.fail.diagnostic())
 	}
 	// The declared conversion reads what the value holds, and the capsule
@@ -543,7 +543,7 @@ func (x converter) collection(v Value, c Constraint) Value {
 	case d.kind != ConstraintMapOf && (from == KindList || from == KindSet || from == KindTuple):
 		unsafe = d.kind == ConstraintSetOf && from != KindSet
 	default:
-		return errorValue(noConversion(n.typ, c).diagnostic())
+		return errorValue(noConversion(typeName(n), c).diagnostic())
 	}
 	h := members(n)
 	converted, e, failed, pending := x.within(n).convertMembers(h, func(int) Constraint { return d.elem })
@@ -551,9 +551,9 @@ func (x converter) collection(v Value, c Constraint) Value {
 	case failed:
 		return e
 	case unsafe && x.policy == Safe:
-		return errorValue(unsafeConversion(n.typ, c).diagnostic())
+		return errorValue(unsafeConversion(typeName(n), c).diagnostic())
 	}
-	withhold := x.within(n).withheld != nil || holdsRedacting(n)
+	withhold := x.within(n).withheld != nil || typeWithheld(n)
 	types := make([]Type, 0, len(converted)+2)
 	var least []Type
 	for i, r := range converted {
@@ -711,14 +711,14 @@ func (x converter) tuple(v Value, c Constraint) Value {
 				Message: message + " does not convert to " + c.String() + ", which has " + count(want, "member")})
 		}
 	default:
-		return errorValue(noConversion(n.typ, c).diagnostic())
+		return errorValue(noConversion(typeName(n), c).diagnostic())
 	}
 	converted, e, failed, pending := x.within(n).convertMembers(members(n), func(i int) Constraint { return d.members[i] })
 	switch {
 	case failed:
 		return e
 	case from != KindTuple && x.policy == Safe:
-		return errorValue(unsafeConversion(n.typ, c).diagnostic())
+		return errorValue(unsafeConversion(typeName(n), c).diagnostic())
 	case pending:
 		return pendingContainer(c, n)
 	}
@@ -770,7 +770,7 @@ func (x converter) object(v Value, c Constraint) Value {
 	n, d := v.n, c.c
 	from := n.typ.t.kind
 	if from != KindObject && from != KindMap {
-		return errorValue(noConversion(n.typ, c).diagnostic())
+		return errorValue(noConversion(typeName(n), c).diagnostic())
 	}
 	h := members(n)
 	inner := x.within(n)
@@ -828,7 +828,7 @@ func (x converter) object(v Value, c Constraint) Value {
 	}
 	switch {
 	case from == KindMap && x.policy == Safe:
-		return errorValue(unsafeConversion(n.typ, c).diagnostic())
+		return errorValue(unsafeConversion(typeName(n), c).diagnostic())
 	case pending:
 		return pendingContainer(c, n)
 	}
@@ -962,6 +962,27 @@ func heldMarks(n *node) []Mark {
 	}
 	walk(n)
 	return t.marks
+}
+
+// typeWithheld reports whether a message leaves out the type of n: where n
+// carries a redacting mark, whose type is part of what the mark withholds, or
+// holds a value that does, whose type shows in n's (MK-011).
+func typeWithheld(n *node) bool { return n.redactingMarks() != nil || holdsRedacting(n) }
+
+// typeName names the type of n, a value being converted, for a diagnostic
+// message: by the placeholder where n carries a redacting mark, by its kind
+// alone where it holds a value that carries one, and otherwise as typeText
+// renders it.
+func typeName(n *node) string {
+	switch {
+	case n.redactingMarks() != nil:
+		return redactedText(n.redactingMarks())
+	case !holdsRedacting(n):
+		return typeText(n.typ)
+	case n.typ.t.kind == KindObject:
+		return "an object"
+	}
+	return "a " + kindNoun(n.typ.t.kind)
 }
 
 // holdsRedacting reports whether a value within n, at any depth, carries a

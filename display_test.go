@@ -356,6 +356,40 @@ func TestConformance_DI003_AMessageWritesNoMoreThanItShows(t *testing.T) {
 	}
 }
 
+// TestConformance_DI003_AMessageNamesATypeInFewBytes holds a message that names
+// a type to the start of it, however long the type: an object type whose one
+// attribute name is 10,000 bytes, named by a narrowing that leaves nothing, by
+// a conversion that fails for each of its members, and by a projection that
+// fails for each unknown member. Each message stays under 200 bytes, where
+// naming the type whole made each longer than the name, once for every
+// member that failed.
+func TestConformance_DI003_AMessageNamesATypeInFewBytes(t *testing.T) {
+	conformance.Covers(t, "DI-003")
+	name := strings.Repeat("a", 10000)
+	long := tenon.ObjectType(map[string]tenon.Type{name: tenon.NumberType()})
+	record := tenon.Object(map[string]tenon.Value{name: tenon.NumberFromInt(1)})
+	_, projected, _ := tryProjectJSON(tenon.List(long, tenon.Unknown(long), tenon.Unknown(long), tenon.Unknown(long)))
+	for _, tt := range []struct {
+		name  string
+		diags []tenon.Diagnostic
+		want  int
+	}{
+		{"a narrowing that leaves nothing", errorsOf(tenon.Narrow(tenon.Unknown(long), tenon.NullOnly(), tenon.NotNull())), 1},
+		{"a conversion that fails for each member",
+			errorsOf(tenon.Convert(tenon.List(long, record, record, record), tenon.ListOf(tenon.ListOf(tenon.Any())), tenon.Unsafe)), 3},
+		{"a projection of unknown members", projected.Diagnostics(), 3},
+	} {
+		if len(tt.diags) != tt.want {
+			t.Errorf("%s gave %d diagnostics, want %d", tt.name, len(tt.diags), tt.want)
+		}
+		for _, d := range tt.diags {
+			if len(d.Message) > 200 {
+				t.Errorf("%s: a message of %d bytes, starting %.80q", tt.name, len(d.Message), d.Message)
+			}
+		}
+	}
+}
+
 // TestConformance_DI015_DeepMarksDisplayOnce holds the display form of a
 // value under many deep marks to growing with the value: k members under k
 // deep marks of distinct identifiers list them once, on the list, where each
