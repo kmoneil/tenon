@@ -8,7 +8,7 @@
 # The tests run with -count=1 because a cached result records nothing.
 RULECOV := $(CURDIR)/.rulecov
 
-.PHONY: check check-slow determinism fuzz fuzz-parse fuzz-string fuzz-deserialize fuzz-convert release-fuzz growth rules codes report lint vuln release-notes
+.PHONY: check check-slow determinism fuzz fuzz-parse fuzz-string fuzz-deserialize fuzz-convert release-fuzz growth bench bench-smoke rules codes report lint vuln release-notes
 
 check:
 	@test -z "$$TENON_UPDATE_VECTORS" || { echo 'check: TENON_UPDATE_VECTORS is set, which rewrites both corpora and passes; unset it'; exit 1; }
@@ -90,6 +90,25 @@ BENCH ?= .
 growth:
 	go run ./tools/growth -bench='$(BENCH)' ./...
 
+
+# bench measures what tenon costs beside encoding/json and go-cty, in the
+# bench module, which has its own go.mod so that go-cty never enters tenon's,
+# and writes BENCHMARKS.md and the README's summary from the medians of
+# BENCHCOUNT runs of each benchmark. It takes about ten minutes; run it on a
+# quiet machine before a release. CI does not run it: timing on shared
+# runners is noise, and the nightly growth job guards how work scales.
+BENCHCOUNT ?= 10
+BENCHTIME ?= 1s
+bench:
+	mkdir -p .bench
+	cd bench && go test -run '^$$' -bench . -benchmem -count '$(BENCHCOUNT)' -benchtime '$(BENCHTIME)' > ../.bench/raw.txt
+	cd bench && go run ./cmd/benchdoc -in ../.bench/raw.txt -doc ../BENCHMARKS.md -readme ../README.md
+
+# bench-smoke vets the bench module, runs staticcheck over it and runs each of
+# its benchmarks once, so that a change to tenon's API cannot leave the
+# benchmarks broken until a release measures them. CI runs it with lint.
+bench-smoke:
+	cd bench && go vet ./... && go run $(STATICCHECK) ./... && go test -run '^$$' -bench . -benchtime 1x ./...
 
 # lint runs staticcheck and vuln runs govulncheck, each at the version named
 # here through go run, so that neither enters go.mod as a dependency. CI runs

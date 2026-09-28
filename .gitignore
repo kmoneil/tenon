@@ -35,6 +35,7 @@ CLAUDE.md
 local.mk
 .rulecov/
 .emit/
+.bench/
 
 # Commands built in the module root
 /rulecheck
