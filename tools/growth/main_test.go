@@ -90,6 +90,16 @@ func TestRunFailsWorkInProportionToTheSquare(t *testing.T) {
 	}
 }
 
+func TestRunFailsFewerPairsThanItIsToRead(t *testing.T) {
+	printed, _, err := growth(t, "-bench=Linear", "-pairs=2")
+	if err == nil || err.Error() != "1 pair read, where a run is to read at least 2" {
+		t.Errorf("growth reading one pair of the two it is to read gave %v\n%s", err, printed)
+	}
+	if printed, _, err := growth(t, "-bench=Linear", "-pairs=1"); err != nil {
+		t.Errorf("growth reading the one pair it is to read failed: %v\n%s", err, printed)
+	}
+}
+
 func TestRunFailsWhatItCannotRead(t *testing.T) {
 	// One of a pair on its own.
 	printed, _, err := growth(t, "-bench=Linear/1000$")

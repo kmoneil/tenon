@@ -49,7 +49,8 @@ EMIT := $(CURDIR)/.emit
 
 # determinism runs the tests twice, in shuffled orders and on different numbers
 # of processors, and fails unless every canonical output that they emit
-# (encodings, display forms, diffs and the like) comes out the same.
+# (encodings, display forms, diffs and the like) comes out the same. CI runs
+# it every night (.github/workflows/determinism.yml).
 determinism:
 	rm -rf '$(EMIT)'
 	TENON_EMIT_DIR='$(EMIT)/first' go test -count=1 -shuffle=on ./...
@@ -85,10 +86,14 @@ release-fuzz:
 # five times its allocations, the work grows faster than its input and the
 # run fails. Time is reported beside them and decides nothing. CI runs this
 # every night (.github/workflows/growth.yml). BENCH narrows the run to the
-# benchmarks a regular expression matches, as go test -bench does.
+# benchmarks a regular expression matches, as go test -bench does. PAIRS is
+# the fewest pairs a run of every benchmark reads, all of those there are, so
+# that a pair dropped, or no longer run with its package, fails the run rather
+# than passing on the pairs left; a narrowed run reads what it selects.
 BENCH ?= .
+PAIRS ?= 32
 growth:
-	go run ./tools/growth -bench='$(BENCH)' ./...
+	go run ./tools/growth -bench='$(BENCH)' -pairs=$(if $(filter .,$(BENCH)),$(PAIRS),1) ./...
 
 
 # bench measures what tenon costs beside encoding/json and go-cty, in the

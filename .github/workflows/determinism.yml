@@ -1,0 +1,29 @@
+# Determinism each night, off the path of any change or release: the tests run
+# twice, in shuffled orders and the second time on one processor, and every
+# canonical output they emit (encodings, display forms, diffs and the like)
+# must come out the same both times (make determinism). check-slow runs it
+# too, but only where someone runs check-slow; this runs it whether or not
+# anyone does. A failed run is reported to the repository's owner by GitHub.
+# It is not a required check.
+name: determinism
+
+on:
+  schedule:
+    - cron: '47 3 * * *'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  determinism:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: '1.26.x'
+      - run: make determinism
