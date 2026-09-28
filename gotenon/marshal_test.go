@@ -3,6 +3,8 @@ package gotenon_test
 import (
 	"errors"
 	"fmt"
+	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -361,6 +363,93 @@ func TestConformance_GO040_EachDirectionMapsOnItsOwn(t *testing.T) {
 	}
 	var none *intKeyed
 	wantValue(t, "a nil pointer to a map with int keys that marshals itself", encoded(t, none), tenon.Null(tenon.ObjectType(nil)))
+}
+
+// noMethods is encodesOnly and decodesOnly without their methods.
+type noMethods struct {
+	N int `tenon:"n"`
+}
+
+// decodedAs returns what decoding v into T gives: the Go value, written out,
+// or the code and path of each diagnostic the decoding fails with.
+func decodedAs[T any](v tenon.Value) string {
+	x, err := gotenon.Decode[T](v, tenon.Safe)
+	var failed *tenon.Error
+	if !errors.As(err, &failed) {
+		return fmt.Sprintf("%v %v", x, err)
+	}
+	var diags []string
+	for _, d := range failed.Diagnostics() {
+		diags = append(diags, string(d.Code)+" at "+d.Path.String())
+	}
+	return strings.Join(diags, "; ")
+}
+
+// TestConformance_GO040_AMethodLeavesTheOtherDirectionToTheTable holds a type
+// implementing one marshaler interface to map in the other direction as the
+// table says, as it would without the method, and so does what holds it: a
+// slice, an array, a map, a pointer and a struct of a type that only encodes
+// itself decode from the constraint that the same Go types of noMethods
+// decode from, and decode what those do, failing where they fail; and those
+// of a type that only decodes itself encode as the same Go types of
+// noMethods do. The method made a type that encodes itself map to no type
+// for decoding as well, so a slice or a map of it decoded from Any, member by
+// member: a map of it decoded a null list as nil, where a map of noMethods
+// refuses it.
+func TestConformance_GO040_AMethodLeavesTheOtherDirectionToTheTable(t *testing.T) {
+	conformance.Covers(t, "GO-040", "GO-010", "GO-012")
+	for _, rt := range [][2]reflect.Type{
+		{reflect.TypeFor[[]encodesOnly](), reflect.TypeFor[[]noMethods]()},
+		{reflect.TypeFor[[2]encodesOnly](), reflect.TypeFor[[2]noMethods]()},
+		{reflect.TypeFor[map[string]encodesOnly](), reflect.TypeFor[map[string]noMethods]()},
+		{reflect.TypeFor[*[]encodesOnly](), reflect.TypeFor[*[]noMethods]()},
+		{reflect.TypeFor[struct{ L []encodesOnly }](), reflect.TypeFor[struct{ L []noMethods }]()},
+	} {
+		if got, want := gotenon.ConstraintFor(rt[0]), gotenon.ConstraintFor(rt[1]); !got.Equal(want) {
+			t.Errorf("ConstraintFor(%v) = %v, where ConstraintFor(%v) = %v", rt[0], got, rt[1], want)
+		}
+	}
+	o := func(v tenon.Value) tenon.Value { return obj(map[string]tenon.Value{"n": v}) }
+	one, two := o(n(1)), o(n(2))
+	lists := tenon.ListType(one.Type())
+	for _, v := range []tenon.Value{
+		tenon.List(one.Type(), one, two),
+		tenon.Set(one.Type(), one, two),
+		tenon.Tuple(one, obj(map[string]tenon.Value{"n": n(3), "x": s("y")})),
+		tenon.Tuple(one, o(s("4"))),
+		tenon.Set(one.Type(), one, tenon.Unknown(one.Type())),
+		tenon.List(one.Type(), one, tenon.WithMarks(two, stamp{id: "m"})),
+		tenon.Map(one.Type(), map[string]tenon.Value{"a": one}),
+		obj(map[string]tenon.Value{"a": one}),
+		tenon.Null(lists),
+		tenon.Unknown(lists),
+	} {
+		for _, got := range []struct{ encodes, plain string }{
+			{decodedAs[[]encodesOnly](v), decodedAs[[]noMethods](v)},
+			{decodedAs[[2]encodesOnly](v), decodedAs[[2]noMethods](v)},
+			{decodedAs[map[string]encodesOnly](v), decodedAs[map[string]noMethods](v)},
+			{decodedAs[*[]encodesOnly](v), decodedAs[*[]noMethods](v)},
+		} {
+			if got.encodes != got.plain {
+				t.Errorf("%v decodes into a type that encodes itself as %s, and into one without the method as %s", v, got.encodes, got.plain)
+			}
+		}
+	}
+
+	// And the other way about.
+	for _, rt := range [][2]reflect.Type{
+		{reflect.TypeFor[[]decodesOnly](), reflect.TypeFor[[]noMethods]()},
+		{reflect.TypeFor[map[string]decodesOnly](), reflect.TypeFor[map[string]noMethods]()},
+		{reflect.TypeFor[*[]decodesOnly](), reflect.TypeFor[*[]noMethods]()},
+	} {
+		got, ok := gotenon.TypeFor(rt[0])
+		if want, _ := gotenon.TypeFor(rt[1]); !ok || !got.Equal(want) {
+			t.Errorf("TypeFor(%v) = %v, %t, where TypeFor(%v) = %v", rt[0], got, ok, rt[1], want)
+		}
+	}
+	wantValue(t, "a slice of a type that decodes itself", encoded(t, []decodesOnly{{1}, {2}}), encoded(t, []noMethods{{1}, {2}}))
+	wantValue(t, "a map of a type that decodes itself", encoded(t, map[string]decodesOnly{"a": {1}}), encoded(t, map[string]noMethods{"a": {1}}))
+	wantValue(t, "a nil slice of a type that decodes itself", encoded(t, []decodesOnly(nil)), encoded(t, []noMethods(nil)))
 }
 
 // errFull is what fullDisk's methods fail with, wrapped.

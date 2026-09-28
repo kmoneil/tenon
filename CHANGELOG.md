@@ -61,6 +61,13 @@
   time, which every read of their marks then walked. Unmarking a list of 100
   lists of 100 numbers and marking it again made 10,313 allocations and
   makes 8, and after 64 times a number held 65 layers of marks and holds 1.
+- gotenon decodes a slice, an array, a map or a pointer holding a Go type
+  that implements `ValueMarshaler` and not `ValueUnmarshaler` as it would if
+  the type did not implement it, since the method concerns encoding alone:
+  `ConstraintFor` of such a slice was `any` where it is the `list_of` of the
+  type's constraint, and decoding took each member on its own, so that a map
+  of the type decoded a null list as a nil map, where a map of the same type
+  without the method refuses it, as it now does.
 
 ### Added
 
