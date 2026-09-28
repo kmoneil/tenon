@@ -1,0 +1,360 @@
+package tenon
+
+import "slices"
+
+// The conversion as it was before a container's members were built once: a
+// container converts its members, unifies their types, and fits each member
+// to the union, so a member is built again at every level above it whose
+// element type grows, the value's size times its depth. It is kept as the
+// reference the conversion is held to (ConvertBothWays): the same result,
+// whatever the value, the constraint and the policy. It shares everything
+// but the containers' conversions, which are its own copies.
+
+// fittingValue converts v, in whatever state, to c. The result carries none of v's
+// own marks: whoever asked for the conversion puts on the marks it calls for.
+//
+// Where v carries a redacting mark, what fails within it fails at v, since a
+// path within it and a message naming its type or what it holds would show
+// its structure: each code the failures have, once, located at v, with a
+// message naming v by the placeholder and c (MK-011, CV-050).
+func (x converter) fittingValue(v Value, c Constraint) Value {
+	ms := v.n.redactingMarks()
+	r := x.fittingValueOf(v, c)
+	if ms == nil || r.n.state != stateError {
+		return r
+	}
+	message := redactedText(ms) + " does not convert to " + c.String()
+	var diags []Diagnostic
+	for _, d := range r.n.diagnostics() {
+		if !slices.ContainsFunc(diags, func(e Diagnostic) bool { return e.Code == d.Code }) {
+			diags = append(diags, Diagnostic{Code: d.Code, Message: message})
+		}
+	}
+	return Value{n: &node{state: stateError, data: diags, marks: r.n.marks}}
+}
+
+// fittingValueOf is value for a value whose failures need not be moved.
+func (x converter) fittingValueOf(v Value, c Constraint) Value {
+	n := v.n
+	switch n.state {
+	case statePending:
+		return x.pending(v, c)
+	case stateNull, stateUnknown:
+		if x.memo.fits(c, n.typ) {
+			u := withoutMarks(v)
+			return u
+		}
+		k := keysUnknown
+		if n.state == stateNull {
+			k = keysNone
+		}
+		out := typeConvert(n.typ, c, x.policy, k)
+		switch {
+		case out.fail != nil:
+			return errorValue(out.fail.diagnostic())
+		case n.state == stateNull:
+			return Null(out.typ)
+		}
+		rd := n.data.(*rangeData)
+		if out.pending {
+			return pendingValue(c, rd.null)
+		}
+		return narrowedUnknown(out.typ, rd.null, lengthNarrowings(n.typ, out.typ, rd))
+	}
+	return x.fittingKnown(v, c)
+}
+
+// fittingMember converts a member of a container to c. Converting a member is a
+// conversion in its own right, so the result carries the member's Propagate
+// marks, as an error result does.
+func (x converter) fittingMember(m Value, c Constraint) Value {
+	return x.carry(x.fittingValue(m, c), m.n)
+}
+
+// fittingKnown converts a known value, whose content is in hand though a member of it
+// may not be known. A constraint that admits exactly one type converts as
+// Exactly of that type, however it is written (CV-026), so that is decided
+// first, once, as typeConvertKind decides it, and the kind of c decides the
+// rest.
+func (x converter) fittingKnown(v Value, c Constraint) Value {
+	n := v.n
+	if x.memo.fits(c, n.typ) {
+		u := withoutMarks(v)
+		return u
+	}
+	if n.typ.t.kind != KindCapsule && isStructural(c) {
+		return x.fittingStructure(v, c)
+	}
+	if s, ok := x.memo.soleType(c); ok {
+		return x.fittingExactly(v, s)
+	}
+	if c.c.kind == ConstraintOneOf {
+		m, f := oneOfMember(n.typ, x.typeName(n), c, x.policy)
+		if f != nil {
+			return errorValue(f.diagnostic())
+		}
+		r := x.fittingKnown(v, m)
+		if r.n.state == statePending {
+			// The value converts to what the target says, whichever member
+			// of it applied.
+			return WithMarks(pendingValue(c, r.n.null), r.n.markList()...)
+		}
+		return r
+	}
+	if n.typ.t.kind == KindCapsule {
+		// A capsule type converts only to a type that it, or the type it
+		// converts to, declares.
+		return errorValue(noConversion(x.typeName(n), c).diagnostic())
+	}
+	return x.fittingStructure(v, c)
+}
+
+// fittingExactly converts a known value to the type s, as converting to Exactly(s)
+// does (CV-020).
+func (x converter) fittingExactly(v Value, s Type) Value {
+	switch {
+	case v.n.typ.t.kind == KindCapsule || s.t.kind == KindCapsule:
+		return x.capsule(v, s)
+	case isPrimitive(s.t.kind):
+		return x.primitive(v, s)
+	}
+	// The structure of s admits s alone, so converting to it does not ask
+	// for its one type again.
+	return x.fittingStructure(v, structural(s))
+}
+
+// fittingStructure converts a known value to a ListOf, SetOf, MapOf, TupleOf or
+// ObjectWith constraint.
+func (x converter) fittingStructure(v Value, c Constraint) Value {
+	switch c.c.kind {
+	case ConstraintListOf, ConstraintSetOf, ConstraintMapOf:
+		return x.fittingCollection(v, c)
+	case ConstraintTupleOf:
+		return x.fittingTuple(v, c)
+	case ConstraintObjectWith:
+		return x.fittingObject(v, c)
+	}
+	return errorValue(noConversion(x.typeName(v.n), c).diagnostic())
+}
+
+// fittingMembers converts each member to the constraint that at gives for its
+// position, reporting the error value that the failed ones make, located by
+// their steps, and whether any converted to a pending value.
+func (x converter) fittingMembers(h held, at func(i int) Constraint) ([]Value, Value, bool, bool) {
+	out := make([]Value, len(h.vals))
+	var errs containerErrors
+	pending := false
+	for i, m := range h.vals {
+		r := x.fittingMember(m, at(i))
+		switch r.n.state {
+		case stateError:
+			errs.add(h.step(i), r)
+		case statePending:
+			pending = true
+		}
+		out[i] = r
+	}
+	e, failed := errs.value()
+	return out, e, failed, pending
+}
+
+// fittingCollection converts a known list, set, tuple, map or object to a ListOf,
+// SetOf or MapOf constraint.
+func (x converter) fittingCollection(v Value, c Constraint) Value {
+	n, d := v.n, c.c
+	from := n.typ.t.kind
+	unsafe := false
+	switch {
+	case d.kind == ConstraintMapOf && (from == KindMap || from == KindObject):
+	case d.kind != ConstraintMapOf && (from == KindList || from == KindSet || from == KindTuple):
+		unsafe = d.kind == ConstraintSetOf && from != KindSet
+	default:
+		return errorValue(noConversion(x.typeName(n), c).diagnostic())
+	}
+	h := members(n)
+	converted, e, failed, pending := x.within(n).fittingMembers(h, func(int) Constraint { return d.elem })
+	switch {
+	case failed:
+		return e
+	case unsafe && x.policy == Safe:
+		return errorValue(unsafeConversion(x.typeName(n), c).diagnostic())
+	}
+	withhold := x.within(n).withheld != nil || x.typeWithheld(n)
+	types := make([]Type, 0, len(converted)+2)
+	var least []Type
+	for i, r := range converted {
+		if r.n.state == statePending {
+			// As in collectionTypeConvert: a member whose no-keys conversion
+			// fails settles no element type, and is left out rather than
+			// contributing the zero Type.
+			if none := typeConvert(h.vals[i].n.typ, d.elem, x.policy, keysNone); none.fail == nil {
+				least = append(least, none.typ)
+			}
+			continue
+		}
+		types = append(types, r.n.typ)
+	}
+	if from == KindList || from == KindSet || from == KindMap {
+		out := typeConvert(n.typ.t.elem, d.elem, x.policy, keysNone)
+		if out.fail != nil {
+			return errorValue(out.fail.diagnostic())
+		}
+		types = append(types, out.typ)
+	}
+	if pending {
+		if out := pendingElements(types, least, d.elem, x.policy, withhold); out.fail != nil {
+			return errorValue(out.fail.diagnostic())
+		}
+		return pendingContainer(c, n)
+	}
+	elem, f := elementType(types, d.elem, x.policy, withhold, x.memo)
+	if f != nil {
+		return errorValue(f.diagnostic())
+	}
+	if from == KindSet && n.partial && d.kind == ConstraintListOf {
+		// A set holding members that are not known has no settled order and
+		// no settled count, so the list it becomes is not known either.
+		low, high := setLengthBounds(n)
+		return Narrow(Unknown(ListType(elem)), NotNull(), LengthMin(int64(low)), LengthMax(int64(high)))
+	}
+	// An element type the members settle holds the attribute names of their
+	// object types, and every member is given those attributes, so one taken
+	// from a redacted member shows its structure in the result's type and
+	// in its siblings: the result carries that member's redacting marks
+	// (CV-033). A constraint that settles the type takes nothing from them.
+	var derived []Mark
+	if _, fixed := x.memo.resultType(d.elem); withhold && !fixed {
+		derived = redactedStructure(converted)
+	}
+	for i, r := range converted {
+		converted[i] = x.fit(r, elem)
+	}
+	var result Value
+	switch d.kind {
+	case ConstraintListOf:
+		result = List(elem, converted...)
+	case ConstraintSetOf:
+		result = setOf(SetType(elem), converted)
+	default:
+		entries := make(map[string]Value, len(converted))
+		for i, r := range converted {
+			entries[h.names[i]] = r
+		}
+		result = Map(elem, entries)
+	}
+	if derived != nil {
+		result = WithMarks(result, derived...)
+	}
+	return result
+}
+
+// fittingTuple converts a known tuple, list or set to a TupleOf constraint.
+func (x converter) fittingTuple(v Value, c Constraint) Value {
+	n, d := v.n, c.c
+	from := n.typ.t.kind
+	switch from {
+	case KindTuple:
+		if len(n.typ.t.elems) != len(d.members) {
+			return errorValue(tupleTypeConvert(n.typ, c, x.policy, keysNone).fail.diagnostic())
+		}
+	case KindList, KindSet:
+		want := len(d.members)
+		if from == KindSet && n.partial {
+			return x.partialSetTuple(v, c)
+		}
+		if got := len(n.data.([]Value)); got != want {
+			message := "a " + kindNoun(from) + " of " + count(got, "member")
+			if x.within(n).withheld != nil {
+				message = "the " + kindNoun(from)
+			}
+			return errorValue(Diagnostic{Code: CodeConvertLengthMismatch,
+				Message: message + " does not convert to " + c.String() + ", which has " + count(want, "member")})
+		}
+	default:
+		return errorValue(noConversion(x.typeName(n), c).diagnostic())
+	}
+	converted, e, failed, pending := x.within(n).fittingMembers(members(n), func(i int) Constraint { return d.members[i] })
+	switch {
+	case failed:
+		return e
+	case from != KindTuple && x.policy == Safe:
+		return errorValue(unsafeConversion(x.typeName(n), c).diagnostic())
+	case pending:
+		return pendingContainer(c, n)
+	}
+	return Tuple(converted...)
+}
+
+// fittingObject converts a known object or map to an ObjectWith constraint.
+func (x converter) fittingObject(v Value, c Constraint) Value {
+	n, d := v.n, c.c
+	from := n.typ.t.kind
+	if from != KindObject && from != KindMap {
+		return errorValue(noConversion(x.typeName(n), c).diagnostic())
+	}
+	h := members(n)
+	inner := x.within(n)
+	var errs containerErrors
+	attrs := make(map[string]Value, len(h.vals))
+	pending := false
+	fields := d.fields
+	missing := func(name string) {
+		errs.addDiagnostic(missingAttribute(name).diagnostic())
+	}
+	for i, name := range h.names {
+		for len(fields) > 0 && fields[0].name < name {
+			if fields[0].Required {
+				missing(fields[0].name)
+			}
+			if r, ok := x.absentValue(fields[0]); ok {
+				attrs[fields[0].name] = r
+			}
+			fields = fields[1:]
+		}
+		m := h.vals[i]
+		switch {
+		case name == "":
+			errs.add(h.step(i), errorValue(Diagnostic{Code: CodeObjectEmptyName,
+				Message: "the map key " + x.keyText(n, name) + " cannot be an attribute name"}))
+		case len(fields) == 0 || fields[0].name != name:
+			if d.closed {
+				f := unexpectedAttribute(name)
+				if from == KindMap {
+					f.message = "key " + x.keyText(n, name) + " is not an attribute the constraint allows"
+				}
+				errs.add(h.step(i), errorValue(f.diagnostic()))
+				continue
+			}
+			// Carried across unchanged, marks and all.
+			attrs[name] = m
+		default:
+			r := inner.fittingMember(m, fields[0].Constraint)
+			switch r.n.state {
+			case stateError:
+				errs.add(h.step(i), r)
+			case statePending:
+				pending = true
+			}
+			attrs[name] = r
+			fields = fields[1:]
+		}
+	}
+	for _, f := range fields {
+		if f.Required {
+			missing(f.name)
+		}
+		if r, ok := x.absentValue(f); ok {
+			attrs[f.name] = r
+		}
+	}
+	if e, failed := errs.value(); failed {
+		return e
+	}
+	switch {
+	case from == KindMap && x.policy == Safe:
+		return errorValue(unsafeConversion(x.typeName(n), c).diagnostic())
+	case pending:
+		return pendingContainer(c, n)
+	}
+	return Object(attrs)
+}

@@ -348,6 +348,18 @@ func Object(attrs map[string]Value) Value {
 	return Value{n: &node{state: stateKnown, partial: anyPartial(vals), markedWithin: anyMarked(vals), typ: ObjectType(types), data: vals}}
 }
 
+// tupleOf returns the tuple of type t holding vals, which are resolved values
+// of t's element types, none of them an error value: what Tuple returns for
+// them, without finding t again.
+func tupleOf(t Type, vals []Value) Value {
+	for i, v := range vals {
+		if isError(v) {
+			internalPanic("tupleOf: element %d of %s is an error value", i, t)
+		}
+	}
+	return Value{n: &node{state: stateKnown, partial: anyPartial(vals), markedWithin: anyMarked(vals), typ: t, data: slices.Clone(vals)}}
+}
+
 // objectOf returns the object value of type t holding vals, one per attribute
 // of t in its order. It is for a caller that has the type and the values it
 // asks for already, where Object takes a map, normalizes its names, orders
