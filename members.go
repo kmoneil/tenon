@@ -11,8 +11,8 @@ package tenon
 // than a count: as many as all of its members, or as the values its element
 // type holds, null among them, where those are fewer, since a set holds each
 // value once; and as few as the members counted in iteration order (see
-// Elements), each provably distinct from every member counted before it. Every other container
-// has the length it has, whether or not its members are known.
+// Elements), each provably distinct from every member counted before it. Every
+// other container has the length it has, whether or not its members are known.
 //
 // A null operand gives an error value, since null has no members, and an error
 // operand carries forward.

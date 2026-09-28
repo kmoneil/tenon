@@ -19,18 +19,18 @@ import (
 // refuses with the conversion's diagnostics. So an object decodes into a Go
 // map under either policy, and a map into a struct under Unsafe only.
 //
-// Decode fails with a *tenon.Error, with a diagnostic for each part of v
-// that cannot be decoded, located by its path: a part that is unknown or
-// pending (tenon.CodeDecodeNotKnown), or carries a mark
-// (tenon.CodeDecodeMarked), other than parts decoded into a tenon.Value or by
-// an unmarshaler; a set holding members that are not known, which has no
-// settled length or order, decoded into a slice or array of any element type
-// (tenon.CodeDecodeNotKnown); a null decoded into a Go type that has no nil,
-// other than a field marked optional (tenon.CodeDecodeNull); a number the Go
-// number type cannot hold, or an integer type a fraction
-// (tenon.CodeDecodeOutOfRange); a list of another length than a Go array
-// (tenon.CodeDecodeLengthMismatch); and an UnmarshalValue or UnmarshalText
-// method's failure (tenon.CodeDecodeUnmarshalFailed, or its own diagnostics). An error value
+// Decode fails with a *tenon.Error, with a diagnostic for each part of v that
+// cannot be decoded, located by its path: a part that is unknown or pending
+// (tenon.CodeDecodeNotKnown), or carries a mark (tenon.CodeDecodeMarked), other
+// than parts decoded into a tenon.Value or by an unmarshaler; a set holding
+// members that are not known, which has no settled length or order, decoded
+// into a slice or array of any element type (tenon.CodeDecodeNotKnown); a null
+// decoded into a Go type that has no nil, other than a field marked optional
+// (tenon.CodeDecodeNull); a number the Go number type cannot hold, or an
+// integer type a fraction (tenon.CodeDecodeOutOfRange); a list of another
+// length than a Go array (tenon.CodeDecodeLengthMismatch); and an
+// UnmarshalValue or UnmarshalText method's failure
+// (tenon.CodeDecodeUnmarshalFailed, or its own diagnostics). An error value
 // gives its own diagnostics. To decode a marked value, unmark it with
 // tenon.UnmarkDeep first and keep the marks.
 //

@@ -1006,12 +1006,12 @@ func carryMarks(v, r Value) Value {
 	return WithMarks(r, v.n.marks.all()...)
 }
 
-// impliedMarks is what a container carrying deep marks implies on the values
-// it holds: they carry those marks because the container does, so [SE-031]
-// does not list them again, nor does a display form (DI-015). The marks a value lists for itself follow from
-// the mark set it holds, so they are decided once per set rather than once
-// per value: a container's members commonly share one set, the one the deep
-// marks were attached to them through.
+// impliedMarks is what a container carrying deep marks implies on the values it
+// holds: they carry those marks because the container does, so [SE-031] does
+// not list them again, nor does a display form (DI-015). The marks a value
+// lists for itself follow from the mark set it holds, so they are decided once
+// per set rather than once per value: a container's members commonly share one
+// set, the one the deep marks were attached to them through.
 type impliedMarks struct {
 	deep   map[Mark]bool       // the container's deep marks
 	own    map[*markSet][]Mark // what a value holding that set lists for itself

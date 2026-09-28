@@ -3,8 +3,6 @@ _plan/
 _tmp/
 _reviews/
 _reports/
-# The benchmark's staging directory.
-_bench/
 
 # Binaries for programs and plugins
 *.exe

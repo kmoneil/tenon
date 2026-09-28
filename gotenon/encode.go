@@ -159,15 +159,15 @@ func (f *failures) withError(p tenon.Path, code tenon.Code, err error) {
 // included.
 //
 // Numbers encode exactly: a float64 is the terminating decimal it holds, not a
-// rounded rendering of it. Encode fails with a *tenon.Error where a part of
-// x cannot be encoded: a NaN or an infinity (tenon.CodeEncodeNotANumber), a big.Rat
-// that is not a terminating decimal (tenon.CodeEncodeInexact), a number outside the
-// range of numbers (tenon.CodeNumberOutOfRange), a json.Number whose text
-// spells no number (tenon.CodeNumberInvalidSyntax), a nil interface
-// (tenon.CodeEncodeUntypedNil), a string that is not valid
-// UTF-8 (tenon.CodeStringInvalidUTF8), a map of values whose types need not
-// agree whose keys are empty or collide once normalized, and a MarshalValue
-// method's failure (tenon.CodeEncodeMarshalFailed, or its own diagnostics). A
+// rounded rendering of it. Encode fails with a *tenon.Error where a part of x
+// cannot be encoded: a NaN or an infinity (tenon.CodeEncodeNotANumber), a
+// big.Rat that is not a terminating decimal (tenon.CodeEncodeInexact), a number
+// outside the range of numbers (tenon.CodeNumberOutOfRange), a json.Number
+// whose text spells no number (tenon.CodeNumberInvalidSyntax), a nil interface
+// (tenon.CodeEncodeUntypedNil), a string that is not valid UTF-8
+// (tenon.CodeStringInvalidUTF8), a map of values whose types need not agree
+// whose keys are empty or collide once normalized, and a MarshalValue method's
+// failure (tenon.CodeEncodeMarshalFailed, or its own diagnostics). A
 // tenon.Value is given as it is, unknown or marked, but Encode never gives an
 // error value: one that a tenon.Value holds, or that a MarshalValue method
 // returns, fails with its own diagnostics, located within the part.
@@ -320,8 +320,8 @@ func (e *encoder) fromData(v tenon.Value, p tenon.Path) (tenon.Value, bool) {
 	return v, true
 }
 
-// marshal encodes rv by its MarshalValue method, which the Go type has itself or
-// through its pointer.
+// marshal encodes rv by its MarshalValue method, which the Go type has itself
+// or through its pointer.
 func (e *encoder) marshal(m *goMapping, rv reflect.Value, p tenon.Path) (tenon.Value, bool) {
 	var mv ValueMarshaler
 	if rv.Type().Implements(marshalerGoType) {

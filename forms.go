@@ -20,7 +20,10 @@ func (v Value) LogValue() slog.Value { return slog.StringValue(v.String()) }
 // projection does, with a *Error: a value that is not known, one a redacting
 // mark withholds, or a capsule value its type gives no display form. It fails
 // as well for the zero Value, which is not a value; a struct field that may
-// hold it is tagged omitzero, and left out.
+// hold it is tagged omitzero, and left out. encoding/json escapes <, > and &
+// in what a MarshalJSON returns, as it escapes them in strings by default, so
+// the bytes json.Marshal writes can differ from ProjectJSON's; an Encoder with
+// SetEscapeHTML(false) writes the projection as ProjectJSON gives it.
 func (v Value) MarshalJSON() ([]byte, error) {
 	if v.IsZero() {
 		return nil, errors.New("tenon: the zero Value is not a value, and has no JSON form")

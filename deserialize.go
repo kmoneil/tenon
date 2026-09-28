@@ -37,22 +37,22 @@ type MarkDecoder func(payload Value, hasPayload bool) (Mark, []Diagnostic)
 const maxDepth = 512
 
 // Deserialize returns the value that data, a document written by Serialize,
-// encodes. Otherwise it returns the zero Value and a [*Error] whose error
-// value says why: CodeSerializeMalformed where data is not a document or describes no value,
-// CodeSerializeNotCanonical where it describes a value but is not that value's
-// encoding, CodeSerializeUnsupportedVersion for a document of another format
-// version, CodeSerializeTooLarge where it nests more deeply than 512 levels,
-// CodeSerializeUnknownCapsule and CodeSerializeUnknownMark for an identifier
-// that decoders supplies nothing for, and the diagnostics a decoder reports
-// where it refuses what it is given. A diagnostic says what is wrong and the
-// byte offset where, and quotes nothing the document holds, since the marks
-// that follow a content, redacting ones among them, are not read yet when it
-// is refused; it names a capsule type's or a mark's identifier, which says
+// encodes. Otherwise it returns the zero Value and a [*Error] whose error value
+// says why: CodeSerializeMalformed where data is not a document or describes no
+// value, CodeSerializeNotCanonical where it describes a value but is not that
+// value's encoding, CodeSerializeUnsupportedVersion for a document of another
+// format version, CodeSerializeTooLarge where it nests more deeply than 512
+// levels, CodeSerializeUnknownCapsule and CodeSerializeUnknownMark for an
+// identifier that decoders supplies nothing for, and the diagnostics a decoder
+// reports where it refuses what it is given. A diagnostic says what is wrong
+// and the byte offset where, and quotes nothing the document holds, since the
+// marks that follow a content, redacting ones among them, are not read yet when
+// it is refused; it names a capsule type's or a mark's identifier, which says
 // what decoder to supply. Where data holds more than one fault, Deserialize
 // gives the first it meets, reading from the first byte: it stops at a fault
-// where it is written, and finds the rest, an integer in a longer form than
-// it needs among them, by comparing data, once read through, with the
-// encoding of the value it describes.
+// where it is written, and finds the rest, an integer in a longer form than it
+// needs among them, by comparing data, once read through, with the encoding of
+// the value it describes.
 //
 // Deserialize never panics on its input, and never allocates for a length the
 // input declares before the input has shown it holds that much. The work it
@@ -68,9 +68,14 @@ const maxDepth = 512
 // and if it holds a nil mark decoder. It panics on a decoder that breaks its
 // contract: a mark decoder returning neither a mark nor a diagnostic, a mark
 // of another identifier, a mark that Go equality cannot compare, a mark whose
-// type declares no encoding, or diagnostics that ErrorVal refuses, and a
-// capsule type's Decode returning neither a pointer nor a diagnostic, or a
-// pointer the type does not encapsulate.
+// propagation policy is neither Propagate nor Isolate, a mark whose type
+// declares no encoding, or diagnostics that ErrorVal refuses, and a capsule
+// type's Decode returning neither a pointer nor a diagnostic, or a pointer the
+// type does not encapsulate. Since it encodes what it read again, to compare
+// the two, it panics as Serialize does on what the decoders gave: a mark
+// payload or a capsule encoding that is not a known, unmarked value of the
+// declared type other than a null, or two unequal marks on one value that
+// serialize alike.
 func Deserialize(data []byte, decoders Decoders) (Value, error) {
 	v, failure, ok := deserialize(data, decoders)
 	if !ok {

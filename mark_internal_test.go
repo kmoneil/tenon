@@ -912,13 +912,13 @@ func TestDecodedDeepMarksAreHeldAsAttached(t *testing.T) {
 
 // TestMergesMakeTheirListOnce holds the merges that put marks among those a
 // value holds to making the merged list once, at its length, and the gatherer
-// of an operation's marks to making room for what it is given at once. T-1608a
-// merged without building a set of the marks held and sorting them again, and
-// T-1615 made room for every mark to come at once, where growing the list a
-// mark at a time made it again and again. Since T-1608b and T-1617 what either
-// saves is a constant factor, which no growth reads, so this holds the lists
-// themselves. The marks held are a handful, which a merge scans rather than
-// indexing: past that, mergeDistinct builds a set of them by design.
+// of an operation's marks to making room for what it is given at once. The
+// merges once built a set of the marks held and sorted them again, and the
+// gatherer grew its list a mark at a time, making it again and again. What
+// either saves now is a constant factor, which no growth reads, so this holds
+// the lists themselves. The marks held are a handful, which a merge scans
+// rather than indexing: past that, mergeDistinct builds a set of them by
+// design.
 func TestMergesMakeTheirListOnce(t *testing.T) {
 	held := make([]Mark, manyMarks)
 	for i := range held {

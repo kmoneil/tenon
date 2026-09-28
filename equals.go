@@ -245,7 +245,8 @@ func mayBeNull(n *node) bool {
 	return false
 }
 
-// holds reports whether the known value n is one of the values that r describes.
+// holds reports whether the known value n is one of the values that r
+// describes.
 func (r *rangeData) holds(n *node) bool {
 	if n.state == stateNull {
 		return r.null != nullNo

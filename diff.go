@@ -58,7 +58,10 @@ type Change struct {
 }
 
 // String returns the display form of the change (DI-037), as in
-// ~ .name: "web" -> "api", + .ports[2]: 8443 or ~ .tags: marks [] -> ["audited"].
+//
+//	~ .name: "web" -> "api"
+//	+ .ports[2]: 8443
+//	~ .tags: marks [] -> ["audited"]
 func (c Change) String() string {
 	var b textWriter
 	c.write(&b)
@@ -160,9 +163,9 @@ type differ struct {
 
 func (d *differ) add(c Change) { d.changes = append(d.changes, c) }
 
-// compare adds the changes between the parts a and b at p. asideA and asideB are
-// the deep marks of the parts that hold a and b, which a and b and every value
-// within them compare without.
+// compare adds the changes between the parts a and b at p. asideA and asideB
+// are the deep marks of the parts that hold a and b, which a and b and every
+// value within them compare without.
 func (d *differ) compare(a, b Value, p Path, asideA, asideB []Mark) {
 	na, nb := a.n, b.n
 	ownA, ownB := marksAside(na.markList(), asideA), marksAside(nb.markList(), asideB)
@@ -406,8 +409,8 @@ func enterable(a, b *node) bool {
 }
 
 // restIdenticalAside reports whether a and b are identical but for the marks
-// they carry themselves, once the marks in asideA are set aside from every value
-// within a, and those in asideB from every value within b.
+// they carry themselves, once the marks in asideA are set aside from every
+// value within a, and those in asideB from every value within b.
 func restIdenticalAside(a, b *node, asideA, asideB []Mark) bool {
 	if a.state != b.state {
 		return false

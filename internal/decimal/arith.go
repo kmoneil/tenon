@@ -235,9 +235,9 @@ func roundedQuotient(x, y *big.Int, prec int64) (*big.Int, int64) {
 	return q, s
 }
 
-// truncatedQuotient returns q, the remainder r and the divisor den with q × 10^-s
-// equal to x/y truncated to prec significant digits, and r/den the part of the
-// last digit that truncation dropped. x and y are positive.
+// truncatedQuotient returns q, the remainder r and the divisor den with
+// q × 10^-s equal to x/y truncated to prec significant digits, and r/den the
+// part of the last digit that truncation dropped. x and y are positive.
 func truncatedQuotient(x, y *big.Int, prec int64) (q, r, den *big.Int, s int64) {
 	lo, hi := pow10(prec-1), pow10(prec)
 	// Guess the shift that gives the quotient prec digits; the loop corrects

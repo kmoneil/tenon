@@ -82,8 +82,8 @@
 // without string keys, a type that holds itself, a struct whose tags are
 // malformed, or a struct whose state is all in unexported fields and which
 // marshals itself neither to a value nor to text, since it would cross as an
-// empty object and come back as its zero value. Decode panics as well on an interface, or a type holding one,
-// whatever the value, where Encode takes what the interface holds. Data that
-// does not fit a type that maps is a failure in the data, and comes back as a
-// *tenon.Error.
+// empty object and come back as its zero value. Decode panics as well on an
+// interface, or a type holding one, whatever the value, where Encode takes what
+// the interface holds. Data that does not fit a type that maps is a failure in
+// the data, and comes back as a *tenon.Error.
 package gotenon

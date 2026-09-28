@@ -32,9 +32,9 @@ const (
 	itemError    = 2
 )
 
-// Serialize returns the encoding of v, a CBOR document. Every value has
-// exactly one encoding, whatever way it was built: two values serialize to the
-// same bytes exactly when they are Identical, so the bytes can be hashed,
+// Serialize returns the encoding of v, a CBOR document. A value that has an
+// encoding has exactly one, whatever way it was built: two values serialize to
+// the same bytes exactly when they are Identical, so the bytes can be hashed,
 // compared or used as a key in place of the value.
 //
 // Where v cannot be serialized, Serialize returns nil and a [*Error] whose
