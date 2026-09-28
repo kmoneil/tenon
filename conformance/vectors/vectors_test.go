@@ -336,6 +336,16 @@ var invalid = []invalidVector{
 	{"members out of order, then a malformed value", document + "8300820502 83 01 20 f816", "serialize.malformed"},
 	{"members out of order, then an indefinite length", document + "8300820502 83 01 20 9f ff", "serialize.not_canonical"},
 	{"an integer in a longer form, then a malformed value", document + "8300820402 82 1801 f816", "serialize.malformed"},
+	// A mantissa that is a multiple of ten stops the reading whatever its
+	// size, zero among them; a map key the same as one before it once
+	// normalized, and a narrowing that does not apply to its type, stop it
+	// at the key; and an indefinite length stops it even where range key 0
+	// expects true.
+	{"a mantissa a multiple of ten, then a malformed value", document + "8300820402 82 c482200a f816", "serialize.not_canonical"},
+	{"a mantissa of zero, then a malformed value", document + "8300820402 82 c4820000 f816", "serialize.not_canonical"},
+	{"a map key twice once normalized, then a bare bignum", document + "8300820602 82 8262c3a901 826365cc81 c249010000000000000000", "serialize.malformed"},
+	{"a narrowing that does not apply, then a bare bignum", document + "830001 da74656e01 a1 01 82 c249010000000000000000 f5", "serialize.malformed"},
+	{"range key 0 holding an indefinite length", document + "830002 da74656e01 a1 00 9fff", "serialize.not_canonical"},
 	{"two-byte simple value", document + "830001f816", "serialize.malformed"},
 	{"no document tag", "d9d9f78201830001f5", "serialize.malformed"},
 	{"byte after the document", document + "830001f500", "serialize.malformed"},
