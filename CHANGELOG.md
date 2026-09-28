@@ -11,6 +11,13 @@
   package documentation allows, could see the race detector report inside
   tenon. The fields are atomic types now, and `go vet` keeps them from being
   copied any other way.
+- `Deserialize` reads back every document `Serialize` writes near the depth
+  bound. It counted a marked value one level deeper than `Serialize` does, and
+  than the specification says, where a mark adds no level, so 510 nested lists
+  with the outer one marked, or 256 marked at every level, serialized and were
+  then refused as `serialize.too_large`. A marked value held directly in
+  another marked value is refused where the inner one begins, with the code
+  it was refused with before.
 
 ### Added
 

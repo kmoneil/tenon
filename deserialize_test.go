@@ -1296,6 +1296,123 @@ func TestConformance_SE003_OnlyValuesWithinTheBoundHaveAnEncoding(t *testing.T) 
 	}
 }
 
+// reaching is a mark serialized with a value whose type is k list types around
+// a number, and read back from that type, so that a mark's payload reaches as
+// deep as a test asks.
+type reaching struct{ k int }
+
+func (reaching) MarkID() string                 { return "k" }
+func (reaching) Propagation() tenon.Propagation { return tenon.Propagate }
+func (reaching) Redacting() bool                { return false }
+func (m reaching) MarkPayload() (tenon.Value, bool) {
+	v := tenon.NumberFromInt(int64(m.k))
+	for range m.k {
+		v = tenon.List(v.Type(), v)
+	}
+	return v, true
+}
+
+// TestConformance_SE003_WhatSerializesNearTheBoundReadsBack holds Serialize and
+// Deserialize to one count of levels near the bound, whatever the levels hold
+// and wherever the marks are: lists nested around a number with marks on
+// levels chosen at random and a deep mark on the outermost; marks whose
+// payloads reach down, on a content and on a pending value; a marked pending
+// value whose constraint nests; a marked unknown value whose type nests; and a
+// marked unknown set recording a member that nests. Each is either refused as
+// too large or read back identical, and each shape is both, over depths on
+// either side of the bound. A mark adds no level (SE-005), so the marked
+// shapes reach as deep as the same values unmarked.
+func TestConformance_SE003_WhatSerializesNearTheBoundReadsBack(t *testing.T) {
+	conformance.Covers(t, "SE-003", "SE-005")
+	read := tenon.Decoders{Marks: map[string]tenon.MarkDecoder{
+		"m": decoders.Marks["m"],
+		"d": decoders.Marks["d"],
+		"k": func(payload tenon.Value, _ bool) (tenon.Mark, []tenon.Diagnostic) {
+			k := 0
+			for typ := payload.Type(); typ.Kind() == tenon.KindList; typ = typ.ElementType() {
+				k++
+			}
+			return reaching{k}, nil
+		},
+	}}
+	lists := func(k int) tenon.Type {
+		typ := tenon.NumberType()
+		for range k {
+			typ = tenon.ListType(typ)
+		}
+		return typ
+	}
+	nested := func(k int) tenon.Value {
+		v := tenon.NumberFromInt(1)
+		for range k {
+			v = tenon.List(v.Type(), v)
+		}
+		return v
+	}
+	listsOf := func(k int) tenon.Constraint {
+		c := tenon.Any()
+		for range k {
+			c = tenon.ListOf(c)
+		}
+		return c
+	}
+	type outcome struct{ written, refused int }
+	outcomes := map[string]*outcome{}
+	try := func(shape string, d int, v tenon.Value) {
+		o := outcomes[shape]
+		if o == nil {
+			o = &outcome{}
+			outcomes[shape] = o
+		}
+		data, fail, ok := trySerialize(v)
+		if !ok {
+			o.refused++
+			if ds := fail.Diagnostics(); len(ds) != 1 || ds[0].Code != tenon.CodeSerializeTooLarge {
+				t.Errorf("%s, %d: %v, want %s", shape, d, fail, tenon.CodeSerializeTooLarge)
+			}
+			return
+		}
+		o.written++
+		if back, fail, ok := tryDeserialize(data, read); !ok || !tenon.Identical(back, v) {
+			t.Errorf("%s, %d: serialized, and read back as %v, %v", shape, d, back, fail)
+		}
+	}
+	r := rand.New(rand.NewSource(1337))
+	for range conformance.Iterations(t, 4) {
+		// The item is the first level, so d lists around a number reach d+2,
+		// and each shape below is sized to cross 512 between 505 and 515.
+		for d := 505; d <= 515; d++ {
+			v := tenon.NumberFromInt(1)
+			for range d {
+				v = tenon.List(v.Type(), v)
+				if r.Intn(2) == 0 {
+					v = tenon.WithMarks(v, markPlain)
+				}
+			}
+			if r.Intn(2) == 0 {
+				v = tenon.WithMarks(v, markDeep)
+			}
+			try("lists marked at random", d, v)
+			// A payload's type is one level below what holds the mark: two
+			// below the item for a content, one below a marked item.
+			try("a payload on a content", d, tenon.WithMarks(tenon.NumberFromInt(1), reaching{d - 3}))
+			try("a payload on a pending value", d, tenon.WithMarks(tenon.Pending(tenon.Any()), reaching{d - 2}))
+			try("a marked pending value", d, tenon.WithMarks(tenon.Pending(listsOf(d-3)), markPlain))
+			try("a marked unknown value", d, tenon.WithMarks(tenon.Unknown(lists(d-3)), markPlain))
+			set := tenon.Narrow(tenon.Unknown(tenon.SetType(lists(d-4))), tenon.Members(nested(d-4)))
+			try("a marked unknown set recording a member", d, tenon.WithMarks(set, markPlain))
+		}
+	}
+	for shape, o := range outcomes {
+		if o.written == 0 || o.refused == 0 {
+			t.Errorf("%s: %d serialized and %d were refused; want some of each", shape, o.written, o.refused)
+		}
+	}
+	if len(outcomes) != 6 {
+		t.Errorf("%d shapes tried, want 6", len(outcomes))
+	}
+}
+
 // holding is a mark serialized with whatever value it holds. It holds the
 // value by pointer, since a struct holding a Value is not comparable.
 type holding struct{ v *tenon.Value }
