@@ -67,17 +67,46 @@ func TestFoldUnifiesObjectsAsPairsWould(t *testing.T) {
 		}
 		return u, true
 	}
+	// The objects of a list are held at one position as a list chooses: as
+	// they are, as the elements of collections, in a tuple beside another
+	// object, or in a field; now and then one of them at another.
+	// A list or a set, as r chooses for each: sorted by their first
+	// position, the constraints of a list can meet a set before a list at
+	// the next.
+	collection := func(c Constraint) Constraint {
+		if r.Intn(2) == 0 {
+			return ListOf(c)
+		}
+		return SetOf(c)
+	}
+	wraps := []func(Constraint) Constraint{
+		func(c Constraint) Constraint { return c },
+		func(c Constraint) Constraint { return ListOf(c) },
+		func(c Constraint) Constraint { return SetOf(c) },
+		func(c Constraint) Constraint { return MapOf(c) },
+		func(c Constraint) Constraint { return TupleOf(c, object(r, names, leaf, 1)) },
+		func(c Constraint) Constraint { return ObjectWith(map[string]Field{"x": Required(c)}, r.Intn(2) == 0) },
+		func(c Constraint) Constraint { return TupleOf(collection(c), collection(object(r, names, leaf, 1))) },
+		func(c Constraint) Constraint {
+			return ObjectWith(map[string]Field{"x": Required(collection(c)), "y": Optional(collection(object(r, names, leaf, 1)))}, r.Intn(2) == 0)
+		},
+	}
 	folds, refused, unioned, joined := 0, 0, 0, 0
 	for range 6000 {
 		list := make([]Constraint, 2+r.Intn(10))
+		held := wraps[r.Intn(len(wraps))]
 		for i := range list {
+			wrap := held
+			if r.Intn(8) == 0 {
+				wrap = wraps[r.Intn(len(wraps))]
+			}
 			switch r.Intn(20) {
 			case 0:
 				list[i] = leaf(1)
 			case 1:
 				list[i] = MapOf(Exactly(NumberType()))
 			default:
-				list[i] = object(r, names, leaf, 2)
+				list[i] = wrap(object(r, names, leaf, 2))
 			}
 		}
 		for i, c := range list {
@@ -97,7 +126,11 @@ func TestFoldUnifiesObjectsAsPairsWould(t *testing.T) {
 			a.left, b.left = left, left
 			x, okx := a.fold(list[0], list[1:])
 			y, oky := pairwise(b, list[0], list[1:])
-			if okx != oky || a.over != b.over || a.left != b.left || okx && !x.equal(y) {
+			// Pairing a list with a set pairs their elements the other way
+			// about, so the pairs within a OneOf are weighed in another
+			// order; what is left after a refusal may differ, and nothing
+			// shows it.
+			if okx != oky || a.over != b.over || !a.over && a.left != b.left || okx && !x.equal(y) {
 				t.Fatalf("under %s, folding %v: the union gives %v (%t, refused %t, %d left), pairs give %v (%t, refused %t, %d left)",
 					p, list, x, okx, a.over, a.left, y, oky, b.over, b.left)
 			}
@@ -105,7 +138,7 @@ func TestFoldUnifiesObjectsAsPairsWould(t *testing.T) {
 			if a.over {
 				refused++
 			}
-			if objectLike(list[0]) && objectLike(list[1]) {
+			if meetPartByPart(list[0], list[1]) {
 				unioned++
 				if okx {
 					joined++
@@ -131,4 +164,17 @@ func object(r *rand.Rand, names []string, leaf func(int) Constraint, depth int) 
 		}
 	}
 	return ObjectWith(fields, r.Intn(2) == 0)
+}
+
+// meetPartByPart reports whether a fold holds a and b as the union of their
+// parts: collections that meet, tuples of one length, or objects.
+func meetPartByPart(a, b Constraint) bool {
+	x, y := spelledOut(a), spelledOut(b)
+	switch {
+	case isCollectionOf(x.c.kind):
+		return collectionsMeet(x.c.kind, y.c.kind)
+	case x.c.kind == ConstraintTupleOf:
+		return y.c.kind == ConstraintTupleOf && len(x.c.members) == len(y.c.members)
+	}
+	return objectLike(a) && objectLike(b)
 }

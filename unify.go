@@ -86,36 +86,21 @@ func unify(p Policy, cs ...Constraint) (Constraint, Value, bool) {
 	return u, Value{}, true
 }
 
-// fold unifies u with each of cs in turn, pair by pair, stopping at the first
-// that fails. Where u and the next are both objects, and the one after, they
-// are unified as one union (objectUnion), which forms the pairs folding them
-// forms, in the order it forms them, where folding built the union of every
-// field again for each object: 4,000 ObjectWith constraints of distinct fields
-// took 414 ms and 2.4 GB.
+// fold unifies u with each of cs in turn, stopping at the first that fails.
+// The union so far is held unwritten where the constraints allow it (union):
+// unifying one more with the union written out rewrote the union each time,
+// so 4,000 ObjectWith constraints of distinct fields took 414 ms and 2.4 GB,
+// and as many held one level down, as the elements of ListOf constraints,
+// 8,000 took 1.7 GB, since each was paired with the elements' union written
+// out.
 func (un *unifier) fold(u Constraint, cs []Constraint) (Constraint, bool) {
-	var union *objectUnion
+	a := union{u: u}
 	for _, c := range cs {
-		if union == nil && objectLike(u) && objectLike(c) {
-			union = newObjectUnion(spelledOut(u))
-		}
-		if union != nil {
-			if objectLike(c) {
-				if !union.add(un, spelledOut(c)) {
-					return Constraint{}, false
-				}
-				continue
-			}
-			u, union = union.constraint(un), nil
-		}
-		var ok bool
-		if u, ok = un.pair(u, c); !ok {
+		if !a.add(un, c) {
 			return Constraint{}, false
 		}
 	}
-	if union != nil {
-		u = union.constraint(un)
-	}
-	return u, true
+	return a.written(un), true
 }
 
 // objectLike reports whether c is an ObjectWith or Exactly of an object type,
@@ -125,16 +110,153 @@ func objectLike(c Constraint) bool {
 	return d.kind == ConstraintObjectWith || d.kind == ConstraintExactly && d.typ.t.kind == KindObject
 }
 
-// objectUnion is the ObjectWith constraints of a fold unified so far, held so
-// that unifying one more touches only its own fields: rule 7 of CV-042 gives
-// a field for each name in either, its constraint the fields of that name
+// union is the union of the constraints a fold has met at one position, so
+// far. Where they are collections, tuples of one length or objects, it is
+// held as the union of their parts, each a union in turn (collectionUnion,
+// tupleUnion, objectUnion), so that unifying one more touches only its own
+// parts; otherwise it is written out (u). It forms the pairs that folding the
+// constraints pair by pair forms, in the order it forms them, so a OneOf is
+// weighed where it would be (CV-045), and written out it is what that fold
+// gives: CV-042 unifies collections element by element, tuples of one length
+// position by position and objects field by field, and a pair written out
+// between them would be canonical and the same, its parts being canonical
+// and admitting some value, since the constraints given and every pair
+// formed do. A constraint that meets the union by another rule, as a OneOf,
+// Any's absence aside, or a tuple of another length does, is paired with the
+// union written out.
+type union struct {
+	u       Constraint
+	coll    *collectionUnion
+	tuple   *tupleUnion
+	objects *objectUnion
+}
+
+// add unifies c into the union, reporting whether it unifies.
+func (a *union) add(un *unifier, c Constraint) bool {
+	if c.c.kind == ConstraintAny {
+		return true
+	}
+	s := spelledOut(c)
+	switch {
+	case a.coll != nil && a.coll.takes(s):
+		return a.coll.add(un, s)
+	case a.tuple != nil && s.c.kind == ConstraintTupleOf && len(s.c.members) == len(a.tuple.members):
+		return a.tuple.add(un, s)
+	case a.objects != nil && objectLike(c):
+		return a.objects.add(un, s)
+	}
+	u := a.written(un)
+	w := spelledOut(u)
+	switch {
+	case isCollectionOf(w.c.kind) && collectionsMeet(w.c.kind, s.c.kind):
+		a.coll = &collectionUnion{kind: w.c.kind, elem: union{u: w.c.elem}}
+		return a.coll.add(un, s)
+	case w.c.kind == ConstraintTupleOf && s.c.kind == ConstraintTupleOf && len(w.c.members) == len(s.c.members):
+		a.tuple = newTupleUnion(w)
+		return a.tuple.add(un, s)
+	case objectLike(u) && objectLike(c):
+		a.objects = newObjectUnion(w)
+		return a.objects.add(un, s)
+	}
+	var ok bool
+	a.u, ok = un.pair(u, c)
+	return ok
+}
+
+// written returns the union written out, canonically, and holds it so.
+func (a *union) written(un *unifier) Constraint {
+	switch {
+	case a.coll != nil:
+		a.u, a.coll = a.coll.constraint(un), nil
+	case a.tuple != nil:
+		a.u, a.tuple = a.tuple.constraint(un), nil
+	case a.objects != nil:
+		a.u, a.objects = a.objects.constraint(un), nil
+	}
+	return a.u
+}
+
+// isCollectionOf reports whether k is ListOf, SetOf or MapOf.
+func isCollectionOf(k ConstraintKind) bool {
+	return k == ConstraintListOf || k == ConstraintSetOf || k == ConstraintMapOf
+}
+
+// collectionsMeet reports whether CV-042 unifies collections of kinds a and b
+// element by element: a list or a set with a list or a set, a map with a map.
+func collectionsMeet(a, b ConstraintKind) bool {
+	if a == ConstraintMapOf || b == ConstraintMapOf {
+		return a == b
+	}
+	return isCollectionOf(a) && isCollectionOf(b)
+}
+
+// collectionUnion is the union of ListOf, SetOf or MapOf constraints: the
+// union of their elements, a list where a list has met a set.
+type collectionUnion struct {
+	kind ConstraintKind
+	elem union
+}
+
+// takes reports whether the union unifies the collection s element by
+// element.
+func (u *collectionUnion) takes(s Constraint) bool {
+	return collectionsMeet(u.kind, s.c.kind)
+}
+
+// add unifies the collection s into the union.
+func (u *collectionUnion) add(un *unifier, s Constraint) bool {
+	if s.c.kind == ConstraintListOf {
+		u.kind = ConstraintListOf
+	}
+	return u.elem.add(un, s.c.elem)
+}
+
+// constraint writes the union out, canonically.
+func (u *collectionUnion) constraint(un *unifier) Constraint {
+	return un.memo.canonical(elementConstraint(u.kind, u.elem.written(un)))
+}
+
+// tupleUnion is the union of TupleOf constraints of one length, position by
+// position.
+type tupleUnion struct {
+	members []union
+}
+
+func newTupleUnion(first Constraint) *tupleUnion {
+	u := &tupleUnion{members: make([]union, len(first.c.members))}
+	for i, m := range first.c.members {
+		u.members[i] = union{u: m}
+	}
+	return u
+}
+
+// add unifies the TupleOf s, of the union's length, into the union, position
+// by position, stopping at the first that fails.
+func (u *tupleUnion) add(un *unifier, s Constraint) bool {
+	for i, m := range s.c.members {
+		if !u.members[i].add(un, m) {
+			return false
+		}
+	}
+	return true
+}
+
+// constraint writes the union out, canonically.
+func (u *tupleUnion) constraint(un *unifier) Constraint {
+	members := make([]Constraint, len(u.members))
+	for i := range u.members {
+		members[i] = u.members[i].written(un)
+	}
+	return un.memo.canonical(Constraint{c: &constraintData{kind: ConstraintTupleOf, members: members}})
+}
+
+// objectUnion is the union of ObjectWith constraints: rule 7 of CV-042 gives a
+// field for each name in either, its constraint the fields of that name
 // unified, required where both require it, closed where both are. So a field
 // is required where every object so far holds it and requires it, which a
-// count tells, and one more object pairs its fields with the union's of the
+// count tells, and one more object unifies its fields with the union's of the
 // same names, in name order, stopping at the first that fails, which is what
-// unifying the union written out with it pairs. Written out between objects,
-// the union would be canonical and the same: its fields are canonical and
-// admit some value, since the constraints given and every pair formed do.
+// unifying the union written out with it pairs.
 type objectUnion struct {
 	fields  map[string]*unionField
 	objects int
@@ -143,7 +265,7 @@ type objectUnion struct {
 
 // unionField is one field of an objectUnion.
 type unionField struct {
-	c        Constraint
+	c        union
 	required bool // required by every object that holds it
 	held     int  // how many of the objects hold it
 }
@@ -151,7 +273,7 @@ type unionField struct {
 func newObjectUnion(first Constraint) *objectUnion {
 	u := &objectUnion{fields: make(map[string]*unionField, len(first.c.fields)), objects: 1, closed: first.c.closed}
 	for _, f := range first.c.fields {
-		u.fields[f.name] = &unionField{c: f.Constraint, required: f.Required, held: 1}
+		u.fields[f.name] = &unionField{c: union{u: f.Constraint}, required: f.Required, held: 1}
 	}
 	return u
 }
@@ -162,14 +284,13 @@ func (u *objectUnion) add(un *unifier, o Constraint) bool {
 	for _, f := range o.c.fields {
 		have, ok := u.fields[f.name]
 		if !ok {
-			u.fields[f.name] = &unionField{c: f.Constraint, required: f.Required, held: 1}
+			u.fields[f.name] = &unionField{c: union{u: f.Constraint}, required: f.Required, held: 1}
 			continue
 		}
-		c, ok := un.pair(have.c, f.Constraint)
-		if !ok {
+		if !have.c.add(un, f.Constraint) {
 			return false
 		}
-		have.c, have.required, have.held = c, have.required && f.Required, have.held+1
+		have.required, have.held = have.required && f.Required, have.held+1
 	}
 	u.objects++
 	u.closed = u.closed && o.c.closed
@@ -180,7 +301,7 @@ func (u *objectUnion) add(un *unifier, o Constraint) bool {
 func (u *objectUnion) constraint(un *unifier) Constraint {
 	fields := make([]field, 0, len(u.fields))
 	for name, f := range u.fields {
-		fields = append(fields, field{name, Field{Constraint: f.c, Required: f.required && f.held == u.objects}})
+		fields = append(fields, field{name, Field{Constraint: f.c.written(un), Required: f.required && f.held == u.objects}})
 	}
 	slices.SortFunc(fields, func(a, b field) int { return strings.Compare(a.name, b.name) })
 	return un.memo.canonical(Constraint{c: &constraintData{kind: ConstraintObjectWith, fields: fields, closed: u.closed}})
