@@ -86,6 +86,14 @@
   which order values whose declared hashes collide by their encodings,
   failed with a nil pointer dereference. `CONFORMANCE.md` now says that
   such values order by their encodings, as they have since 0.7.0.
+- `CapsuleOps` and `NewCapsule` state what ordering a capsule type's values
+  asks of their memory. A type declaring neither `Equal` nor `Compare` is
+  ordered, in a set and by `CanonicalCompare`, by weak pointers to its
+  values, which the Go runtime makes only for memory Go allocated: where the
+  pointers lead into memory C allocates or `syscall.Mmap` maps, ordering them
+  can end the process with a fatal error that no recover catches. Such a
+  type declares `Compare`, or `Equal` and `Hash`, and is then ordered
+  without them.
 - A usage panic names the call that was misused: `Deserialize` refuses a
   mark decoder's mark that cannot be told from other marks naming the
   decoder, where it named `WithMarks`, which its caller never called, and

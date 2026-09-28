@@ -10,6 +10,15 @@ import (
 // CapsuleOps declares the optional operations of a capsule type whose values
 // encapsulate pointers of type *E. A nil function is an operation that the
 // type does not declare.
+//
+// A type that declares neither Equal nor Compare is ordered, where tenon
+// orders its values, as in a set and by CanonicalCompare, by weak pointers to
+// them, which keep nothing alive and which the Go runtime makes only for
+// memory Go allocated. Where *E points to memory Go did not allocate, as C
+// allocates or syscall.Mmap maps, ordering such values can end the process
+// with a fatal error that no recover catches. A type whose values may point
+// there declares Compare, or Equal and Hash, and is then ordered without
+// weak pointers.
 type CapsuleOps[E any] struct {
 	// Equal reports whether two encapsulated values are equal. Without it, two
 	// values are equal only when they encapsulate the same pointer. A capsule
@@ -141,7 +150,8 @@ type CapsuleType[E any] struct {
 // NewCapsule returns a new capsule type, whose values carry pointers of type
 // *E through tenon opaquely. Every call returns a distinct type, equal to no
 // other type whatever its name and operations. The name describes the type in
-// messages.
+// messages. A type whose values may point to memory Go did not allocate
+// declares Compare, or Equal and Hash, as CapsuleOps says.
 //
 // NewCapsule panics if ops declares Equal but not Hash, or declares an
 // encoding with no identifier, an identifier that is not valid UTF-8, the
