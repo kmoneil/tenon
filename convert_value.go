@@ -17,6 +17,9 @@ type converter struct {
 	// carried is what the conversion keeps to carry members' marks, shared
 	// by every converter of one conversion.
 	carried *carrying
+	// memo is what the conversion remembers of the constraints and values it
+	// meets, shared by every converter of one conversion.
+	memo *convertMemo
 }
 
 // within returns the converter for the members of n.
@@ -50,7 +53,90 @@ func (x converter) keyText(n *node, key string) string {
 // an error operand already, and puts the operand's Propagate marks on the
 // result, so the result carries no marks of the operand's own.
 func convertTop(v Value, cv conversion) Value {
-	return converter{policy: cv.policy, carried: &carrying{}}.value(v, cv.target)
+	return converter{policy: cv.policy, carried: &carrying{}, memo: &convertMemo{}}.value(v, cv.target)
+}
+
+// convertMemo is what one conversion remembers of what it meets. A conversion
+// asks of each member it converts whether the member's type fits the member's
+// constraint, and what that constraint admits and gives, and it asks of each
+// container whether a value within it carries a redacting mark. Each answer
+// walked the rest of the constraint, or the marked values beneath the
+// container, and asking again at every level cost the value's size times its
+// depth. Remembered, each constraint, type and marked value is walked once.
+type convertMemo struct {
+	fit       map[typeAsked]bool
+	sat       map[typeAsked]bool
+	canon     *canonMemo
+	given     map[*constraintData]soleResult
+	redacting map[*node]bool
+}
+
+// typeAsked is a constraint and a type, as fits and Satisfies are asked of
+// them.
+type typeAsked struct {
+	c *constraintData
+	t *typeData
+}
+
+// fits is fits, remembered where m is not nil.
+func (m *convertMemo) fits(c Constraint, t Type) bool {
+	if m == nil {
+		return fits(c, t)
+	}
+	k := typeAsked{c.c, t.t}
+	if r, ok := m.fit[k]; ok {
+		return r
+	}
+	r := fits(c, t)
+	if m.fit == nil {
+		m.fit = map[typeAsked]bool{}
+	}
+	m.fit[k] = r
+	return r
+}
+
+// satisfies is Satisfies, remembered where m is not nil.
+func (m *convertMemo) satisfies(c Constraint, t Type) bool {
+	if m == nil {
+		return Satisfies(c, t)
+	}
+	k := typeAsked{c.c, t.t}
+	if r, ok := m.sat[k]; ok {
+		return r
+	}
+	r := Satisfies(c, t)
+	if m.sat == nil {
+		m.sat = map[typeAsked]bool{}
+	}
+	m.sat[k] = r
+	return r
+}
+
+// soleType is soleType, remembered where m is not nil.
+func (m *convertMemo) soleType(c Constraint) (Type, bool) {
+	if m == nil {
+		return soleType(c)
+	}
+	if m.canon == nil {
+		m.canon = newCanonMemo()
+	}
+	return m.canon.soleType(c)
+}
+
+// resultType is resultType, remembered where m is not nil.
+func (m *convertMemo) resultType(c Constraint) (Type, bool) {
+	if m == nil {
+		return resultType(c)
+	}
+	if r, ok := m.given[c.c]; ok {
+		return r.t, r.ok
+	}
+	t, ok := resultType(c)
+	if m.given == nil {
+		m.given = map[*constraintData]soleResult{}
+	}
+	m.given[c.c] = soleResult{t, ok}
+	return t, ok
 }
 
 // value converts v, in whatever state, to c. The result carries none of v's
@@ -83,7 +169,7 @@ func (x converter) valueOf(v Value, c Constraint) Value {
 	case statePending:
 		return x.pending(v, c)
 	case stateNull, stateUnknown:
-		if fits(c, n.typ) {
+		if x.memo.fits(c, n.typ) {
 			u := withoutMarks(v)
 			return u
 		}
@@ -336,18 +422,18 @@ func (x converter) pending(v Value, c Constraint) Value {
 // rest.
 func (x converter) known(v Value, c Constraint) Value {
 	n := v.n
-	if fits(c, n.typ) {
+	if x.memo.fits(c, n.typ) {
 		u := withoutMarks(v)
 		return u
 	}
 	if n.typ.t.kind != KindCapsule && isStructural(c) {
 		return x.structure(v, c)
 	}
-	if s, ok := soleType(c); ok {
+	if s, ok := x.memo.soleType(c); ok {
 		return x.exactly(v, s)
 	}
 	if c.c.kind == ConstraintOneOf {
-		m, f := oneOfMember(n.typ, typeName(n), c, x.policy)
+		m, f := oneOfMember(n.typ, x.typeName(n), c, x.policy)
 		if f != nil {
 			return errorValue(f.diagnostic())
 		}
@@ -362,7 +448,7 @@ func (x converter) known(v Value, c Constraint) Value {
 	if n.typ.t.kind == KindCapsule {
 		// A capsule type converts only to a type that it, or the type it
 		// converts to, declares.
-		return errorValue(noConversion(typeName(n), c).diagnostic())
+		return errorValue(noConversion(x.typeName(n), c).diagnostic())
 	}
 	return x.structure(v, c)
 }
@@ -392,13 +478,13 @@ func (x converter) structure(v Value, c Constraint) Value {
 	case ConstraintObjectWith:
 		return x.object(v, c)
 	}
-	return errorValue(noConversion(typeName(v.n), c).diagnostic())
+	return errorValue(noConversion(x.typeName(v.n), c).diagnostic())
 }
 
 // primitive converts a known value to the primitive type s.
 func (x converter) primitive(v Value, s Type) Value {
 	n := v.n
-	if out := primitiveTypeConvert(n.typ, s, typeName(n), x.policy); out.fail != nil {
+	if out := primitiveTypeConvert(n.typ, s, x.typeName(n), x.policy); out.fail != nil {
 		return errorValue(out.fail.diagnostic())
 	}
 	switch n.typ.t.kind {
@@ -437,7 +523,7 @@ func (x converter) primitive(v Value, s Type) Value {
 // either is a capsule type, by the conversion the capsule type declares.
 func (x converter) capsule(v Value, s Type) Value {
 	n := v.n
-	if out := capsuleTypeConvert(n.typ, s, typeName(n), x.policy); out.fail != nil {
+	if out := capsuleTypeConvert(n.typ, s, x.typeName(n), x.policy); out.fail != nil {
 		return errorValue(out.fail.diagnostic())
 	}
 	// The declared conversion reads what the value holds, and the capsule
@@ -474,39 +560,48 @@ func capsuleName(t, s Type) string {
 }
 
 // held is the members of a container, in the order a conversion takes them,
-// with the step that locates each and the name each has where it has one.
+// with the name each has where it has one. The step that locates a member is
+// made only for a member that fails (step), as most do not: making one for
+// every member, a Number for each index, cost more than the members did.
 type held struct {
 	vals  []Value
-	steps []Step
 	names []string // map keys or attribute names; nil for other containers
+	kind  Kind     // the kind of the container
+}
+
+// step returns the step that locates the member at i.
+func (h held) step(i int) Step {
+	switch h.kind {
+	case KindMap:
+		return indexStep(String(h.names[i]))
+	case KindObject:
+		return attributeStep(h.names[i])
+	}
+	return indexStep(NumberFromInt(int64(i)))
 }
 
 // members returns what the known container n holds. A set's members come out
 // as Elements gives them, carrying the set's deep marks.
 func members(n *node) held {
-	var h held
-	switch n.typ.t.kind {
+	h := held{kind: n.typ.t.kind}
+	switch h.kind {
 	case KindMap:
-		for _, e := range n.data.([]mapEntry) {
-			h.vals = append(h.vals, e.val)
-			h.steps = append(h.steps, indexStep(String(e.key)))
-			h.names = append(h.names, e.key)
+		entries := n.data.([]mapEntry)
+		h.vals = make([]Value, len(entries))
+		h.names = make([]string, len(entries))
+		for i, e := range entries {
+			h.vals[i], h.names[i] = e.val, e.key
 		}
-		return h
 	case KindObject:
 		h.vals = n.data.([]Value)
-		for _, a := range n.typ.t.attrs {
-			h.steps = append(h.steps, attributeStep(a.name))
-			h.names = append(h.names, a.name)
+		h.names = make([]string, len(n.typ.t.attrs))
+		for i, a := range n.typ.t.attrs {
+			h.names[i] = a.name
 		}
-		return h
 	case KindSet:
 		h.vals = n.retrievedMembers()
 	default:
 		h.vals = n.data.([]Value)
-	}
-	for i := range h.vals {
-		h.steps = append(h.steps, indexStep(NumberFromInt(int64(i))))
 	}
 	return h
 }
@@ -522,7 +617,7 @@ func (x converter) convertMembers(h held, at func(i int) Constraint) ([]Value, V
 		r := x.member(m, at(i))
 		switch r.n.state {
 		case stateError:
-			errs.add(h.steps[i], r)
+			errs.add(h.step(i), r)
 		case statePending:
 			pending = true
 		}
@@ -543,7 +638,7 @@ func (x converter) collection(v Value, c Constraint) Value {
 	case d.kind != ConstraintMapOf && (from == KindList || from == KindSet || from == KindTuple):
 		unsafe = d.kind == ConstraintSetOf && from != KindSet
 	default:
-		return errorValue(noConversion(typeName(n), c).diagnostic())
+		return errorValue(noConversion(x.typeName(n), c).diagnostic())
 	}
 	h := members(n)
 	converted, e, failed, pending := x.within(n).convertMembers(h, func(int) Constraint { return d.elem })
@@ -551,9 +646,9 @@ func (x converter) collection(v Value, c Constraint) Value {
 	case failed:
 		return e
 	case unsafe && x.policy == Safe:
-		return errorValue(unsafeConversion(typeName(n), c).diagnostic())
+		return errorValue(unsafeConversion(x.typeName(n), c).diagnostic())
 	}
-	withhold := x.within(n).withheld != nil || typeWithheld(n)
+	withhold := x.within(n).withheld != nil || x.typeWithheld(n)
 	types := make([]Type, 0, len(converted)+2)
 	var least []Type
 	for i, r := range converted {
@@ -581,7 +676,7 @@ func (x converter) collection(v Value, c Constraint) Value {
 		}
 		return pendingContainer(c, n)
 	}
-	elem, f := elementType(types, d.elem, x.policy, withhold)
+	elem, f := elementType(types, d.elem, x.policy, withhold, x.memo)
 	if f != nil {
 		return errorValue(f.diagnostic())
 	}
@@ -597,7 +692,7 @@ func (x converter) collection(v Value, c Constraint) Value {
 	// in its siblings: the result carries that member's redacting marks
 	// (CV-033). A constraint that settles the type takes nothing from them.
 	var derived []Mark
-	if _, fixed := resultType(d.elem); withhold && !fixed {
+	if _, fixed := x.memo.resultType(d.elem); withhold && !fixed {
 		derived = redactedStructure(converted)
 	}
 	for i, r := range converted {
@@ -711,14 +806,14 @@ func (x converter) tuple(v Value, c Constraint) Value {
 				Message: message + " does not convert to " + c.String() + ", which has " + count(want, "member")})
 		}
 	default:
-		return errorValue(noConversion(typeName(n), c).diagnostic())
+		return errorValue(noConversion(x.typeName(n), c).diagnostic())
 	}
 	converted, e, failed, pending := x.within(n).convertMembers(members(n), func(i int) Constraint { return d.members[i] })
 	switch {
 	case failed:
 		return e
 	case from != KindTuple && x.policy == Safe:
-		return errorValue(unsafeConversion(typeName(n), c).diagnostic())
+		return errorValue(unsafeConversion(x.typeName(n), c).diagnostic())
 	case pending:
 		return pendingContainer(c, n)
 	}
@@ -770,7 +865,7 @@ func (x converter) object(v Value, c Constraint) Value {
 	n, d := v.n, c.c
 	from := n.typ.t.kind
 	if from != KindObject && from != KindMap {
-		return errorValue(noConversion(typeName(n), c).diagnostic())
+		return errorValue(noConversion(x.typeName(n), c).diagnostic())
 	}
 	h := members(n)
 	inner := x.within(n)
@@ -786,13 +881,13 @@ func (x converter) object(v Value, c Constraint) Value {
 			if fields[0].Required {
 				missing(fields[0].name)
 			}
-			addNullValue(attrs, fields[0])
+			x.addNullValue(attrs, fields[0])
 			fields = fields[1:]
 		}
 		m := h.vals[i]
 		switch {
 		case name == "":
-			errs.add(h.steps[i], errorValue(Diagnostic{Code: CodeObjectEmptyName,
+			errs.add(h.step(i), errorValue(Diagnostic{Code: CodeObjectEmptyName,
 				Message: "the map key " + x.keyText(n, name) + " cannot be an attribute name"}))
 		case len(fields) == 0 || fields[0].name != name:
 			if d.closed {
@@ -800,7 +895,7 @@ func (x converter) object(v Value, c Constraint) Value {
 				if from == KindMap {
 					f.message = "key " + x.keyText(n, name) + " is not an attribute the constraint allows"
 				}
-				errs.add(h.steps[i], errorValue(f.diagnostic()))
+				errs.add(h.step(i), errorValue(f.diagnostic()))
 				continue
 			}
 			// Carried across unchanged, marks and all.
@@ -809,7 +904,7 @@ func (x converter) object(v Value, c Constraint) Value {
 			r := inner.member(m, fields[0].Constraint)
 			switch r.n.state {
 			case stateError:
-				errs.add(h.steps[i], r)
+				errs.add(h.step(i), r)
 			case statePending:
 				pending = true
 			}
@@ -821,14 +916,14 @@ func (x converter) object(v Value, c Constraint) Value {
 		if f.Required {
 			missing(f.name)
 		}
-		addNullValue(attrs, f)
+		x.addNullValue(attrs, f)
 	}
 	if e, failed := errs.value(); failed {
 		return e
 	}
 	switch {
 	case from == KindMap && x.policy == Safe:
-		return errorValue(unsafeConversion(typeName(n), c).diagnostic())
+		return errorValue(unsafeConversion(x.typeName(n), c).diagnostic())
 	case pending:
 		return pendingContainer(c, n)
 	}
@@ -967,17 +1062,19 @@ func heldMarks(n *node) []Mark {
 // typeWithheld reports whether a message leaves out the type of n: where n
 // carries a redacting mark, whose type is part of what the mark withholds, or
 // holds a value that does, whose type shows in n's (MK-011).
-func typeWithheld(n *node) bool { return n.redactingMarks() != nil || holdsRedacting(n) }
+func (x converter) typeWithheld(n *node) bool {
+	return n.redactingMarks() != nil || x.holdsRedacting(n)
+}
 
 // typeName names the type of n, a value being converted, for a diagnostic
 // message: by the placeholder where n carries a redacting mark, by its kind
 // alone where it holds a value that carries one, and otherwise as typeText
 // renders it.
-func typeName(n *node) string {
+func (x converter) typeName(n *node) string {
 	switch {
 	case n.redactingMarks() != nil:
 		return redactedText(n.redactingMarks())
-	case !holdsRedacting(n):
+	case !x.holdsRedacting(n):
 		return typeText(n.typ)
 	case n.typ.t.kind == KindObject:
 		return "an object"
@@ -986,32 +1083,34 @@ func typeName(n *node) string {
 }
 
 // holdsRedacting reports whether a value within n, at any depth, carries a
-// redacting mark.
-func holdsRedacting(n *node) bool {
+// redacting mark. Each container a conversion meets asks it of the values
+// beneath it, so each value's answer is remembered for the conversion.
+func (x converter) holdsRedacting(n *node) bool {
 	if !n.markedWithin {
 		return false
 	}
+	if r, ok := x.memo.redacting[n]; ok {
+		return r
+	}
+	holds := func(m *node) bool { return m.redactingMarks() != nil || x.holdsRedacting(m) }
+	r := false
 	switch data := n.data.(type) {
 	case []Value:
-		for _, m := range data {
-			if m.n.redactingMarks() != nil || holdsRedacting(m.n) {
-				return true
-			}
-		}
+		r = slices.ContainsFunc(data, func(m Value) bool { return holds(m.n) })
 	case []mapEntry:
-		for _, e := range data {
-			if e.val.n.redactingMarks() != nil || holdsRedacting(e.val.n) {
-				return true
-			}
-		}
+		r = slices.ContainsFunc(data, func(e mapEntry) bool { return holds(e.val.n) })
 	}
-	return false
+	if x.memo.redacting == nil {
+		x.memo.redacting = map[*node]bool{}
+	}
+	x.memo.redacting[n] = r
+	return r
 }
 
 // addNullValue adds to attrs the attribute that an absent optional field f
 // adds, where its constraint gives a type: the null of that type.
-func addNullValue(attrs map[string]Value, f field) {
-	if t, ok := resultType(f.Constraint); ok {
+func (x converter) addNullValue(attrs map[string]Value, f field) {
+	if t, ok := x.memo.resultType(f.Constraint); ok {
 		attrs[f.name] = Null(t)
 	}
 }

@@ -1515,6 +1515,39 @@ func BenchmarkObjectUnions(b *testing.B) {
 	}
 }
 
+// BenchmarkMarkedComb measures converting a comb of tuples to lists nested as
+// deep: each level holds the level below it and a chain of one-member tuples as
+// long as the levels beneath, ending in a number that carries a mark, so the
+// comb holds about half the square of its depth in values, and its size is that
+// square. A conversion that asked again at every level what it had asked below,
+// of the constraints it met and of the marked values beneath, took time that
+// grew with the values times the depth; asking each once, it grows with the
+// values.
+func BenchmarkMarkedComb(b *testing.B) {
+	for _, depth := range []int{100, 200} {
+		v := tenon.Tuple(tenon.WithMarks(n(0), stamp{id: "p"}))
+		for i := depth - 1; i >= 0; i-- {
+			chain := tenon.WithMarks(n(1), stamp{id: "p"})
+			for range depth - i {
+				chain = tenon.Tuple(chain)
+			}
+			v = tenon.Tuple(v, chain)
+		}
+		c := tenon.Any()
+		for range depth + 1 {
+			c = tenon.ListOf(c)
+		}
+		b.Run(fmt.Sprintf("comb/%d", depth*depth), func(b *testing.B) {
+			b.ReportAllocs()
+			for b.Loop() {
+				if got := tenon.Convert(v, c, tenon.Safe); got.IsError() {
+					b.Fatalf("the comb did not convert: %v", got)
+				}
+			}
+		})
+	}
+}
+
 // FuzzConvert holds Convert to ER-002 and CV-001 over both policies: it
 // never panics, a result that is neither an error nor pending satisfies its
 // target, and the same call gives the same result twice. The value and the
