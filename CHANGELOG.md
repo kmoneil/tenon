@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+### Removed
+
+- `Type.Equals`, deprecated since 0.6.0: use `Type.Equal`, which answers as
+  it did. The package-level `Equals`, the language's equality of values, is
+  unchanged.
+
 ## 0.9.0 (2026-09-27)
 
 This release is the API that 1.0 keeps. The pre-1.0 audit left questions open

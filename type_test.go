@@ -214,14 +214,13 @@ func TestTypeEqual(t *testing.T) {
 		{tenon.TupleType(str), tenon.TupleType(str, str)},
 		{tenon.TupleType(), object(nil)},
 	}
-	// Equals, deprecated until 1.0, answers as Equal does.
 	for _, p := range equal {
-		if !p[0].Equal(p[1]) || !p[1].Equal(p[0]) || p[0] != p[1] || !p[0].Equals(p[1]) {
+		if !p[0].Equal(p[1]) || !p[1].Equal(p[0]) || p[0] != p[1] {
 			t.Errorf("%v and %v are not equal", p[0], p[1])
 		}
 	}
 	for _, p := range unequal {
-		if p[0].Equal(p[1]) || p[1].Equal(p[0]) || p[0] == p[1] || p[0].Equals(p[1]) {
+		if p[0].Equal(p[1]) || p[1].Equal(p[0]) || p[0] == p[1] {
 			t.Errorf("%v and %v are equal", p[0], p[1])
 		}
 	}
