@@ -3,7 +3,6 @@ package tenon
 import (
 	"hash/maphash"
 	"slices"
-	"sync/atomic"
 
 	"github.com/kmoneil/tenon/internal/decimal"
 )
@@ -45,14 +44,14 @@ func Hash(v Value) uint64 {
 // members', so a value is hashed in proportion to it however many values
 // that hold it are hashed in turn.
 func hashNode(n *node) uint64 {
-	if h := atomic.LoadUint64(&n.hash); h != 0 {
+	if h := n.hash.Load(); h != 0 {
 		return h
 	}
 	var h maphash.Hash
 	h.SetSeed(hashSeed)
 	writeHash(&h, n)
 	sum := h.Sum64()
-	atomic.StoreUint64(&n.hash, sum)
+	n.hash.Store(sum)
 	return sum
 }
 

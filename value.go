@@ -67,10 +67,11 @@ type node struct {
 	// been worked out (or where it is zero). It follows from the content,
 	// which never changes, so it is worked out once for the value's lifetime,
 	// where a set nested in sets had its members hashed again at every level
-	// that holds it: a list 400 sets down was hashed 400 times over. Read and
-	// written with atomic loads and stores, as distinct is, and first so that
-	// it is aligned for them on every platform.
-	hash  uint64
+	// that holds it: a list 400 sets down was hashed 400 times over. It is
+	// atomic, as distinct is, since values are shared between goroutines and
+	// one may cache it while another reads or copies the node; being atomic,
+	// it also has go vet refuse any copy of a node but clone's.
+	hash  atomic.Uint64
 	state state
 	// partial is set on a collection or structural value that holds a member
 	// which is not known. The range of such a value is every value of its type
@@ -91,40 +92,42 @@ type node struct {
 	// than the count of members provably distinct (EQ-042), zero while it has
 	// not been counted. The count follows from the members, which never
 	// change, so it is counted once for the value's lifetime; marks do not
-	// move it, so a copy that re-marks the members keeps it. Read and written
-	// with atomic loads and stores: values are shared between goroutines, and
-	// two counting at once store the same number.
-	distinct int32
+	// move it, so a copy that re-marks the members keeps it. Atomic, as hash
+	// is: two goroutines counting at once store the same number.
+	distinct atomic.Int32
 	typ      Type // the type of a resolved value
 	// marks is the set of marks on the value: nil when there are none, so a
 	// value that is never marked pays a nil pointer and nothing else.
 	marks *markSet
-	// data is the []Diagnostic of an error value, the Constraint of a pending
-	// value, the *rangeData of an unknown value, or nil for a null value. For
-	// a known value it is the content that the kind of its type calls for: a
-	// bool, a decimal.Dec, a canonical string, the pointer that a capsule
-	// encapsulates, the []Value elements of a list, set or tuple, the []Value
-	// attributes of an object in its type's attribute order, or the
+	// data is the []Diagnostic of an error value (or the *hoisted that lists
+	// them, where a container's error members made it), the Constraint of a
+	// pending value, the *rangeData of an unknown value, or nil for a null
+	// value. For a known value it is the content that the kind of its type
+	// calls for: a bool, a decimal.Dec, a canonical string, the pointer that a
+	// capsule encapsulates, the []Value elements of a list, set or tuple, the
+	// []Value attributes of an object in its type's attribute order, or the
 	// []mapEntry entries of a map, sorted by key.
 	data any
 }
 
-// clone returns a copy of n, reading the fields cached with atomic stores
-// atomically, since another goroutine may be caching them as n is copied. A
+// clone returns a new copy of n, the one way a node is copied: another
+// goroutine may be caching n's hash or count as it is copied, so they are read
+// atomically, and go vet refuses a plain copy, which would not read them so. A
 // copy holds the same content, whatever marks it is given, so what is cached
 // holds for it too.
-func (n *node) clone() node {
-	return node{
-		hash:         atomic.LoadUint64(&n.hash),
+func (n *node) clone() *node {
+	c := &node{
 		state:        n.state,
 		partial:      n.partial,
 		markedWithin: n.markedWithin,
 		null:         n.null,
-		distinct:     atomic.LoadInt32(&n.distinct),
 		typ:          n.typ,
 		marks:        n.marks,
 		data:         n.data,
 	}
+	c.hash.Store(n.hash.Load())
+	c.distinct.Store(n.distinct.Load())
+	return c
 }
 
 var (
