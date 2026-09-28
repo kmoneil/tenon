@@ -317,7 +317,8 @@ func canonical(c Constraint) Constraint { return (*canonMemo)(nil).canonical(c) 
 // parts written so already, so remembering them makes that the work of the
 // pair alone, where it was the work of everything within it: unifying list
 // constraints nested 800 deep wrote each level out again from the bottom.
-// A nil *canonMemo remembers nothing.
+// A conversion keeps one for the soleType it asks (convertMemo). A nil
+// *canonMemo remembers nothing.
 type canonMemo struct {
 	forms map[*constraintData]Constraint
 	sole  map[*constraintData]soleResult

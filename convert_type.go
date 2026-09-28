@@ -242,7 +242,7 @@ func collectionTypeConvert(t Type, c Constraint, p Policy, k keys) typeOutcome {
 	if pending {
 		return pendingElements(results, least, d.elem, p, false)
 	}
-	elem, f := elementType(results, d.elem, p, false)
+	elem, f := elementType(results, d.elem, p, false, nil)
 	if f != nil {
 		return failed(f)
 	}
@@ -259,9 +259,10 @@ func collectionTypeConvert(t Type, c Constraint, p Policy, k keys) typeOutcome {
 // to these types under the element constraint c: their unification, with the
 // type c names where it names one, which must satisfy c. withhold leaves the
 // types out of a message, where a map's keys that a redacting mark withholds
-// may have named their attributes.
-func elementType(types []Type, c Constraint, p Policy, withhold bool) (Type, *failure) {
-	if s, ok := resultType(c); ok {
+// may have named their attributes. memo remembers what a conversion of values
+// asks, and is nil for a conversion of types.
+func elementType(types []Type, c Constraint, p Policy, withhold bool, memo *convertMemo) (Type, *failure) {
+	if s, ok := memo.resultType(c); ok {
 		types = append(types[:len(types):len(types)], s)
 	}
 	if len(types) == 0 {
@@ -274,9 +275,9 @@ func elementType(types []Type, c Constraint, p Policy, withhold bool) (Type, *fa
 		return Type{}, &failure{CodeConvertNoCommonType, "the members have no common type"}
 	case !ok:
 		return Type{}, &failure{CodeConvertNoCommonType, "the members have no common type: " + typeList(types)}
-	case !Satisfies(c, elem) && withhold:
+	case !memo.satisfies(c, elem) && withhold:
 		return Type{}, &failure{CodeConvertNoCommonType, "the members' common type does not satisfy " + c.String()}
-	case !Satisfies(c, elem):
+	case !memo.satisfies(c, elem):
 		return Type{}, &failure{CodeConvertNoCommonType,
 			"the members' common type " + typeText(elem) + " does not satisfy " + c.String()}
 	}

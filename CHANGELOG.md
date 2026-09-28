@@ -30,6 +30,14 @@
   each unknown member, and `gotenon.Decode` failing for each part it cannot
   decode each repeated a long type whole, so their messages grew with the
   members times the type.
+- `Convert` asks what it needs of a constraint, a type or a marked value once
+  in a conversion, where it asked again at every level: whether a member's
+  type fits its constraint, what that constraint admits and gives, whether a
+  collection's element type satisfies it, and whether a container holds a
+  redacted value. A comb of values 400 deep with marked leaves converted in
+  606 ms and now in 33 ms, and it now grows with the values rather than with
+  the values times the depth. A member's path step is made only when the
+  member fails, where every member made one, a number for each index.
 
 ### Added
 
