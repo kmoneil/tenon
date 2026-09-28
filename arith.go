@@ -24,21 +24,21 @@ func Sub(a, b Value) Value { return subOp.apply(a, b) }
 // known of the other.
 func Mul(a, b Value) Value { return mulOp.apply(a, b) }
 
-// Div returns the quotient of two Number values, rounded to the fixed
-// precision that the specification gives when it does not terminate, and
-// exactly when it does. Division by zero is an error value with code
-// CodeNumberDivideByZero, and so is dividing a number not known yet by a zero
-// divisor, which fails whatever the number turns out to be. Div treats its operands as Mul does, bounding a
-// quotient where the divisor's bounds keep it away from zero; a divisor that
-// may come as near zero as it likes leaves the quotient unbounded. Since a
-// quotient is rounded, a bound on one includes its own value.
+// Div returns the quotient of two Number values, rounded to the fixed precision
+// that the specification gives when it does not terminate, and exactly when it
+// does. Division by zero is an error value with code CodeNumberDivideByZero,
+// and so is dividing a number not known yet by a zero divisor, which fails
+// whatever the number turns out to be. Div treats its operands as Mul does,
+// bounding a quotient where the divisor's bounds keep it away from zero; a
+// divisor that may come as near zero as it likes leaves the quotient unbounded.
+// Since a quotient is rounded, a bound on one includes its own value.
 func Div(a, b Value) Value { return divOp.apply(a, b) }
 
 // Mod returns the remainder of dividing two Number values, whose sign follows
 // the dividend. A zero divisor is an error value with code
-// CodeNumberModuloByZero, whether or not the dividend is known yet. Mod treats its operands as Mul does: a remainder
-// lies between zero and the dividend, and is smaller in magnitude than the
-// divisor can be.
+// CodeNumberModuloByZero, whether or not the dividend is known yet. Mod treats
+// its operands as Mul does: a remainder lies between zero and the dividend, and
+// is smaller in magnitude than the divisor can be.
 func Mod(a, b Value) Value { return modOp.apply(a, b) }
 
 var (

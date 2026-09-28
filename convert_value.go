@@ -923,11 +923,11 @@ func namesAttributes(t Type) bool {
 }
 
 // setOf returns the set of type st holding these members, which give their
-// marks, at every depth, to the set, since a set's members carry none. The members are
-// unmarked by one taking, as UnmarkDeep unmarks one value: members under a
-// container's deep marks share the layer that holds them, which is taken
-// once rather than once for each member, so a list of k members under k deep
-// marks costs k and not k by k.
+// marks, at every depth, to the set, since a set's members carry none. The
+// members are unmarked by one taking, as UnmarkDeep unmarks one value: members
+// under a container's deep marks share the layer that holds them, which is
+// taken once rather than once for each member, so a list of k members under k
+// deep marks costs k and not k by k.
 func setOf(st Type, members []Value) Value {
 	var t taking
 	unmarked := make([]Value, len(members))

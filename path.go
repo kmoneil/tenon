@@ -113,7 +113,8 @@ func (s Step) equal(t Step) bool {
 }
 
 // sameKey reports whether two index keys, which are Number or String values
-// that carry no marks (Index refuses marked keys), are the same value. Value equality proper belongs to Equals.
+// that carry no marks (Index refuses marked keys), are the same value. Value
+// equality proper belongs to Equals.
 func sameKey(a, b Value) bool {
 	if a.n.typ != b.n.typ {
 		return false

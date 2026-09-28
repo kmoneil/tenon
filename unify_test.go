@@ -469,17 +469,15 @@ func TestConformance_CV041_UnificationIsOrderIndependent(t *testing.T) {
 	}
 }
 
-// TestConformance_CV045_UnificationIsBounded holds unification to the weight
-// of the pairs it forms: the bound falls where the rule's arithmetic puts it,
-// the multiplying shape is refused in every order with one diagnostic, and
-// unions that stay small pass however many of them there are.
 // TestConformance_CV045_UnificationGrowsWithWhatItIsGiven holds unification
-// to work in proportion to the constraints given, in two shapes the bound on
+// to work in proportion to the constraints given, in shapes the bound on
 // pairs does not reach, since they form no pairs of OneOf members: many
 // ObjectWith constraints of distinct fields, whose union folding built again
-// for each (4,000 of them allocated 2.4 GB), and OneOfs nested deep in lists,
-// whose every level was written canonically again from the bottom. Four times
-// as many, or as deep, allocate under eight times as much.
+// for each (4,000 of them allocated 2.4 GB), at the top and one level down,
+// as the elements of lists and maps, in tuples and in a field (1.7 GB as
+// the elements of lists); and OneOfs nested deep in lists, whose every level
+// was written canonically again from the bottom. Four times as many, or as
+// deep, allocate under eight times as much.
 func TestConformance_CV045_UnificationGrowsWithWhatItIsGiven(t *testing.T) {
 	conformance.Covers(t, "CV-045", "CV-042")
 	num, str, boo := tenon.NumberType(), tenon.StringType(), tenon.BoolType()
@@ -543,6 +541,10 @@ func TestConformance_CV045_UnificationGrowsWithWhatItIsGiven(t *testing.T) {
 	}
 }
 
+// TestConformance_CV045_UnificationIsBounded holds unification to the weight
+// of the pairs it forms: the bound falls where the rule's arithmetic puts it,
+// the multiplying shape is refused in every order with one diagnostic, and
+// unions that stay small pass however many of them there are.
 func TestConformance_CV045_UnificationIsBounded(t *testing.T) {
 	conformance.Covers(t, "CV-045", "CV-041")
 	// singles returns n objects of one attribute each, their names distinct,

@@ -95,8 +95,8 @@ func TestFailuresCollectAsTheScan(t *testing.T) {
 // compared with every one collected. The comparisons a scan makes are the
 // package's own, and nothing outside it can count them, so this asks failures
 // what it holds, which a collection comparing each diagnostic with every one
-// leaves without a set (T-1601). The failures are alike but for where they
-// are, as those of a JSON array of nulls are.
+// leaves without a set. The failures are alike but for where they are, as
+// those of a JSON array of nulls are.
 func TestFailuresPastAHandfulAreLookedUp(t *testing.T) {
 	var f failures
 	for i := range 3 * manyFailures {
