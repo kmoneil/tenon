@@ -455,11 +455,7 @@ func (e *encoder) capsule(b []byte, n *node, at int) []byte {
 		e.fail(at, CodeSerializeUnencodableCapsule, "capsule type "+quoted(d.name)+" declares no encoding")
 		return cbor.AppendNull(b)
 	}
-	payload := d.encoding.encode(n.data)
-	if payload.n == nil || !payload.n.isKnown() || payload.n.state == stateNull || payload.n.isMarked() || payload.n.typ != d.encoding.typ {
-		usagePanic("capsule type %q serialized a value as %s, not a known, unmarked value of %s other than null",
-			d.name, payload, d.encoding.typ)
-	}
+	payload := d.encoded(n.data)
 	b = cbor.AppendArray(b, 2)
 	b = e.typ(b, d.encoding.typ, at)
 	return e.content(b, payload, at, nil)

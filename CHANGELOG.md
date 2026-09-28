@@ -80,6 +80,12 @@
   fails with `serialize.not_canonical`, as an indefinite length does
   anywhere else, where it failed with `serialize.malformed`. Five vectors
   in `conformance/vectors/vectors.json` pin these.
+- A capsule type whose encoding's `Encode` returns what it promises not to,
+  an error value or the zero `Value` among them, panics with a usage error
+  wherever tenon reads it, as `Serialize` did: `Set` and `CanonicalCompare`,
+  which order values whose declared hashes collide by their encodings,
+  failed with a nil pointer dereference. `CONFORMANCE.md` now says that
+  such values order by their encodings, as they have since 0.7.0.
 
 ### Added
 
