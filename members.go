@@ -1,7 +1,5 @@
 package tenon
 
-import "sync/atomic"
-
 // Length returns how many members a value has, as a Number value: the count of
 // extended grapheme clusters of a String, the elements of a list, the members
 // of a set or the entries of a map. Those are the kinds a length narrowing
@@ -115,11 +113,11 @@ func setLengthBounds(n *node) (low, high int) {
 // cachedDistinct returns the count of the set node n's members that are
 // provably distinct, counting on the first ask and reading the count after.
 func cachedDistinct(n *node) int {
-	if c := atomic.LoadInt32(&n.distinct); c > 0 {
+	if c := n.distinct.Load(); c > 0 {
 		return int(c - 1)
 	}
 	c := provablyDistinct(n.data.([]Value))
-	atomic.StoreInt32(&n.distinct, int32(c)+1)
+	n.distinct.Store(int32(c) + 1)
 	return c
 }
 

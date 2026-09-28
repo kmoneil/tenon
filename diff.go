@@ -449,9 +449,9 @@ func withMarksOf(a, b *node) Value {
 	if a.marks == b.marks {
 		return Value{n: a}
 	}
-	c := *a
+	c := a.clone()
 	c.marks = b.marks
-	return Value{n: &c}
+	return Value{n: c}
 }
 
 // marksAside returns the marks of list other than those in aside, which are

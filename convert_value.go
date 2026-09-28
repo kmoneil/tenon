@@ -206,9 +206,9 @@ func (x converter) carry(r Value, from *node) Value {
 			deep = x.carried.part(s.outer)
 		}
 		if deep != nil {
-			x.carried.attachment(deep).within(&nn)
+			x.carried.attachment(deep).within(nn)
 		}
-		return Value{n: &nn}
+		return Value{n: nn}
 	}
 	if ms := propagateMarks(from); ms != nil {
 		return WithMarks(r, ms...)

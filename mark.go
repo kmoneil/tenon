@@ -181,7 +181,7 @@ func withoutMarks(v Value) Value {
 	}
 	nn := v.n.clone()
 	nn.marks = nil
-	return Value{n: &nn}
+	return Value{n: nn}
 }
 
 // contains reports whether s holds m, looking in each layer in turn.
@@ -233,9 +233,9 @@ func WithMarks(v Value, marks ...Mark) Value {
 	nn := n.clone()
 	nn.marks = &markSet{list: merged}
 	if deep := deepMarks(marks); deep != nil {
-		newAttachment(deep, nil).within(&nn)
+		newAttachment(deep, nil).within(nn)
 	}
-	return Value{n: &nn}
+	return Value{n: nn}
 }
 
 // comparableMark reports whether Go equality can compare m at all, and
@@ -517,8 +517,8 @@ func (a *attachment) attach(n *node) *node {
 	}
 	nn := n.clone()
 	nn.marks = marks
-	a.within(&nn)
-	return &nn
+	a.within(nn)
+	return nn
 }
 
 // merged returns the mark set that a value holding held holds once the deep
@@ -585,7 +585,7 @@ func withOwnMarks(v Value, marks []Mark) Value {
 	}
 	nn := v.n.clone()
 	nn.marks = &markSet{list: merged}
-	return Value{n: &nn}
+	return Value{n: nn}
 }
 
 // settleDeep gives n, and every value within it but a set's members, the deep
@@ -609,7 +609,7 @@ func settleDeep(n *node, a *attachment) *node {
 		if marks, grew := a.merged(n.marks); grew {
 			nn := n.clone()
 			nn.marks = marks
-			out = &nn
+			out = nn
 		}
 	}
 	// What the values within n are given: n's own deep marks, then those n
@@ -641,8 +641,7 @@ func settleDeep(n *node, a *attachment) *node {
 		}
 		if members != nil {
 			if out == n {
-				nn := n.clone()
-				out = &nn
+				out = n.clone()
 			}
 			out.data, out.markedWithin = members, true
 		}
@@ -658,8 +657,7 @@ func settleDeep(n *node, a *attachment) *node {
 		}
 		if entries != nil {
 			if out == n {
-				nn := n.clone()
-				out = &nn
+				out = n.clone()
 			}
 			out.data, out.markedWithin = entries, true
 		}
@@ -702,7 +700,7 @@ func Unmark(v Value) (Value, []Mark) {
 	}
 	nn := n.clone()
 	nn.marks = nil
-	return Value{n: &nn}, slices.Clone(n.marks.all())
+	return Value{n: nn}, slices.Clone(n.marks.all())
 }
 
 // UnmarkDeep returns v without a mark anywhere in it: without its own marks,
@@ -784,7 +782,7 @@ func (n *node) unmarkDeep(t *taking) *node {
 			nn.data = entries
 		}
 	}
-	return &nn
+	return nn
 }
 
 // isMarked reports whether n carries a mark or holds, at any depth, a value

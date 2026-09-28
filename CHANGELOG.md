@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+### Fixed
+
+- `Diff` no longer races with `Hash`, `Length` and the other functions that
+  work out a value's hash, or a set's count of distinct members, and keep it:
+  `Diff` copied a value without the atomic reads the rest of the package uses
+  for those, so a program reading one value from several goroutines, as the
+  package documentation allows, could see the race detector report inside
+  tenon. The fields are atomic types now, and `go vet` keeps them from being
+  copied any other way.
+
 ### Added
 
 - `BENCHMARKS.md` says what tenon costs beside `encoding/json` and go-cty:
