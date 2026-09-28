@@ -1098,6 +1098,15 @@ func (d *decoder) mark() (Mark, *decodeError) {
 	case m.MarkID() != id:
 		usagePanic("the decoder of the mark %q returned the mark %q", id, m.MarkID())
 	}
+	// What WithMarks asks of a mark, the decoder asks of what a mark decoder
+	// returns, naming the decoder rather than WithMarks, which its caller
+	// never called.
+	switch comparable, self := comparableMark(m); {
+	case !comparable || !self:
+		usagePanic("the decoder of the mark %q returned a mark of type %T, which cannot be told from other marks", id, m)
+	case !knownPolicy(m.Propagation()):
+		usagePanic("the decoder of the mark %q returned a mark whose propagation policy is %s, neither Propagate nor Isolate", id, m.Propagation())
+	}
 	if _, ok := m.(EncodableMark); !ok {
 		usagePanic("the decoder of the mark %q returned a mark whose type declares no encoding, which cannot serialize again", id)
 	}

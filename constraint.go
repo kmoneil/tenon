@@ -412,7 +412,7 @@ func (c Constraint) FieldNames() []string {
 // name, which is normalized before the lookup, and whether there is one. It
 // panics for other kinds.
 func (c Constraint) LookupField(name string) (Field, bool) {
-	f, ok := findName(c.mustKind("Field", ConstraintObjectWith).fields, name, func(f field) string { return f.name })
+	f, ok := findName(c.mustKind("LookupField", ConstraintObjectWith).fields, name, func(f field) string { return f.name })
 	return f.Field, ok
 }
 

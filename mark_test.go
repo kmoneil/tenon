@@ -1231,6 +1231,43 @@ func TestConformance_MK001_AMarkMustEqualItself(t *testing.T) {
 	}
 }
 
+// TestConformance_ER001_AMarkIsRefusedByTheCallThatTakesIt holds each mistake
+// with a mark to a usage panic from the call that takes the mark, naming it:
+// a nil mark given to HasMark, whether or not the value carries marks, where
+// a marked value's lookup dereferenced it and an unmarked one answered false;
+// a mark whose propagation policy is neither Propagate nor Isolate, which
+// WithMarks and the decoder both refuse, where it was carried as Isolate is;
+// and what a mark decoder returns that no mark may be, which the decoder
+// refuses naming the decoder, where it named WithMarks, which its caller
+// never called.
+func TestConformance_ER001_AMarkIsRefusedByTheCallThatTakesIt(t *testing.T) {
+	conformance.Covers(t, "ER-001", "MK-001", "MK-002")
+	one := tenon.NumberFromInt(1)
+	for _, v := range []tenon.Value{one, tenon.WithMarks(one, stamp{id: "m"})} {
+		mustPanicUsage(t, "HasMark called with a nil Mark", func() { tenon.HasMark(v, nil) })
+	}
+	odd := stamp{id: "p", policy: tenon.Propagation(2)}
+	mustPanicUsage(t, "WithMarks called with a mark of type tenon_test.stamp whose propagation policy is Propagation(2), neither Propagate nor Isolate", func() {
+		tenon.WithMarks(one, odd)
+	})
+	doc, err := tenon.Serialize(tenon.WithMarks(one, note{"p", "x"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tt := range []struct {
+		returns tenon.Mark
+		want    string
+	}{
+		{slippery{stamp: stamp{id: "p"}}, `the decoder of the mark "p" returned a mark of type tenon_test.slippery, which cannot be told from other marks`},
+		{odd, `the decoder of the mark "p" returned a mark whose propagation policy is Propagation(2), neither Propagate nor Isolate`},
+	} {
+		read := tenon.Decoders{Marks: map[string]tenon.MarkDecoder{
+			"p": func(tenon.Value, bool) (tenon.Mark, []tenon.Diagnostic) { return tt.returns, nil },
+		}}
+		mustPanicUsage(t, tt.want, func() { tenon.Deserialize(doc, read) })
+	}
+}
+
 // nanMark is a mark holding a float, so that one holding a NaN is a mark
 // unequal to itself.
 type nanMark struct{ value float64 }

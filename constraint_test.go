@@ -95,14 +95,16 @@ func TestConformance_TY030_ConstraintKinds(t *testing.T) {
 		t.Errorf("FieldNames() = %q", got)
 	}
 	if f, ok := object.LookupField("name"); !ok || !f.Required || f.Constraint.Type() != str {
-		t.Errorf("Field(%q) = %v, %t", "name", f, ok)
+		t.Errorf("LookupField(%q) = %v, %t", "name", f, ok)
 	}
 	if f, ok := object.LookupField("tags"); !ok || f.Required || f.Constraint.Kind() != tenon.ConstraintAny {
-		t.Errorf("Field(%q) = %v, %t", "tags", f, ok)
+		t.Errorf("LookupField(%q) = %v, %t", "tags", f, ok)
 	}
 	if _, ok := object.LookupField("missing"); ok {
-		t.Errorf("Field(%q) found a field", "missing")
+		t.Errorf("LookupField(%q) found a field", "missing")
 	}
+	// Asked of another kind of constraint, it names itself in its panic.
+	mustPanicUsage(t, "LookupField called on any", func() { tenon.Any().LookupField("name") })
 	if !object.Closed() || tenon.ObjectWith(fields, false).Closed() {
 		t.Error("Closed() does not report how the constraint was built")
 	}
