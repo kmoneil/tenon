@@ -21,8 +21,10 @@ var orderings = []string{
 		"canonical order of those capsule values (`EQ-045`). A set holds no pending value.",
 	"**Capsule values of a type that declares no ordering** (`EQ-045`): values " +
 		"the type's equality reports equal together; other values by the hash the " +
-		"type declares, if it declares one, and then by the order in which the run " +
-		"first compared them, which holds for the rest of the run.",
+		"type declares, if it declares one; values whose hashes collide by their " +
+		"encodings in the canonical order, where the type declares an encoding, and " +
+		"otherwise by the order in which the run first compared them, which holds " +
+		"for the rest of the run.",
 	"**Capsule types of one name** (`EQ-045`): by the order in which the run " +
 		"created them.",
 	"**Ties among unknown members** (`EQ-044`): members that the orders above " +

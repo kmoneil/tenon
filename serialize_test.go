@@ -437,6 +437,23 @@ func TestConformance_SE040_Capsules(t *testing.T) {
 	}})
 	mustPanicUsage(t, "other than null", func() { trySerialize(nothing.Value(&celsius{})) })
 	wantDecodeFailure(t, "a capsule value serialized as a null", document+"83 00 82 09 63 742f63 82 02 f6", tenon.CodeSerializeMalformed)
+
+	// The canonical order breaks a tie between colliding hashes by the
+	// values' encodings, and holds what Encode gives to what it promises as
+	// Serialize does: an error value, or the zero Value, is a usage error in
+	// a set and in the order itself, where the order dereferenced it.
+	for _, gives := range []tenon.Value{tenon.ErrorVal(tenon.Diagnostic{Code: "app.failed", Message: "no"}), {}} {
+		broken := tenon.NewCapsule("broken", tenon.CapsuleOps[celsius]{Equal: celsiusEqual, Hash: func(*celsius) uint64 { return 7 }, Encoding: &tenon.CapsuleEncoding[celsius]{
+			ID: "t/broken", Type: num,
+			Encode: func(*celsius) tenon.Value { return gives },
+			Decode: func(tenon.Value) (*celsius, []tenon.Diagnostic) { return nil, nil },
+		}})
+		x, y := broken.Value(&celsius{1}), broken.Value(&celsius{2})
+		const want = `capsule type "broken" serialized a value as `
+		mustPanicUsage(t, want, func() { tenon.Set(broken.Type(), x, y) })
+		mustPanicUsage(t, want, func() { tenon.CanonicalCompare(x, y) })
+		mustPanicUsage(t, want, func() { trySerialize(x) })
+	}
 }
 
 // TestConformance_MK009_AMarkTypeMayDeclareAnEncoding pins the two sides of

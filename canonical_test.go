@@ -187,8 +187,24 @@ func TestConformance_EQ045_ThePublishedOrderings(t *testing.T) {
 		t.Errorf("the larger declared hash sorts %d against the smaller, want after it", got)
 	}
 
-	// Where the hashes collide, the value the run compared first sorts
-	// first, for the rest of the run.
+	// Where the hashes collide and the type declares an encoding, the
+	// encodings order them, the same in every run: the larger encoding is
+	// compared first, so numbering the values would give the reverse.
+	encoded := tenon.NewCapsule("encoded_in_canonical_test", tenon.CapsuleOps[point]{
+		Equal: func(a, b *point) bool { return *a == *b },
+		Hash:  func(*point) uint64 { return 7 },
+		Encoding: &tenon.CapsuleEncoding[point]{
+			ID: "t/encoded_in_canonical_test", Type: num,
+			Encode: func(p *point) tenon.Value { return tenon.NumberFromInt(int64(p.x)) },
+			Decode: func(tenon.Value) (*point, []tenon.Diagnostic) { return &point{}, nil },
+		},
+	})
+	if got := tenon.CanonicalCompare(encoded.Value(&point{9, 0}), encoded.Value(&point{1, 0})); got <= 0 {
+		t.Errorf("the value of the larger encoding sorts %d against the smaller, want after it", got)
+	}
+
+	// Where the hashes collide and the type declares no encoding, the value
+	// the run compared first sorts first, for the rest of the run.
 	numbered := tenon.NewCapsule("numbered_in_canonical_test", tenon.CapsuleOps[point]{
 		Equal: func(a, b *point) bool { return *a == *b },
 		Hash:  func(*point) uint64 { return 7 },

@@ -113,6 +113,22 @@ type capsuleEncoding struct {
 	decode func(v Value) (any, []Diagnostic)
 }
 
+// encoded returns the value the type d serializes v as, which d's encoding
+// must declare: what Encode returns, held to what Encode promises, a known,
+// unmarked value of the encoding's type other than its null. The encoder and
+// the canonical order, which breaks ties between colliding hashes by the
+// encodings, both read it through here, so that an Encode that breaks its
+// promise is a usage error wherever it is met rather than a nil dereference
+// where the order meets it first.
+func (d *capsuleData) encoded(v any) Value {
+	payload := d.encoding.encode(v)
+	if payload.n == nil || !payload.n.isKnown() || payload.n.state == stateNull || payload.n.isMarked() || payload.n.typ != d.encoding.typ {
+		usagePanic("capsule type %q serialized a value as %s, not a known, unmarked value of %s other than null",
+			d.name, payload, d.encoding.typ)
+	}
+	return payload
+}
+
 // CapsuleType is a capsule type whose values encapsulate pointers of type *E:
 // the handle that NewCapsule returns, through which a program builds the
 // type's values and reads them back, the pointer type checked where the

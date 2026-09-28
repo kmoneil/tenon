@@ -233,7 +233,7 @@ func (d *capsuleData) order(a, b any) int {
 	// Unequal values encode apart, which the encoding promises, so their
 	// encodings order them without numbering either: the same in every run.
 	if d.encoding != nil {
-		if c := compareCanonical(d.encoding.encode(a).n, d.encoding.encode(b).n); c != 0 {
+		if c := compareCanonical(d.encoded(a).n, d.encoded(b).n); c != 0 {
 			return c
 		}
 	}
