@@ -12,6 +12,11 @@
   module, which has its own `go.mod` so that go-cty never becomes a
   dependency of tenon's, and writes the file and the README's Performance
   summary.
+- The README says where tenon differs from go-cty, each difference checked
+  against go-cty 1.19, how to take a document from JSON into a Go struct with
+  gotenon, and what 1.0 will hold stable; its redaction example is whole, as
+  `ExampleWithMarks`, and the quick start is gotenon's `Example_quickStart`.
+  The table of `make` targets moves to `CONTRIBUTING.md`.
 
 ### Removed
 

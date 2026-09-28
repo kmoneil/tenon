@@ -48,7 +48,7 @@ Every example below is a program in the test suite, run by `make check`, so
 nothing here is code that has never been compiled. They are on pkg.go.dev
 under [Examples](https://pkg.go.dev/github.com/kmoneil/tenon#pkg-examples).
 
-# What is not known yet
+## What is not known yet
 
 An unknown value is a promise about a value that is not in hand. What the
 program does know about it is recorded as it learns it, and operations answer
@@ -83,34 +83,51 @@ Bounds, prefixes and lengths say nothing about null, so where a value may still
 be null, narrowings that leave it no other value leave it null.
 See `ExampleUnknown` and `ExampleNarrow`.
 
-# What must not be shown
+## What must not be shown
 
 A mark is a label that travels with a value. A redacting mark keeps the value's
 contents, its keys and attribute names among them, out of display forms,
 diagnostics and JSON projections, and follows into whatever is derived from
-it, so a secret cannot reach a log by a route nobody thought about.
+it, so a secret cannot reach a log by a route nobody thought about. A mark is
+any comparable Go type that says how it behaves:
 
 ```go
-fmt.Println("200", checked)
+// secret marks a value whose contents must not be shown.
+type secret struct{}
 
-// What comes back out is what a log or a response may hold. The
-// projection refuses the secret rather than printing it.
-var refused *tenon.Error
-if _, err := tenon.ProjectJSON(checked); errors.As(err, &refused) {
-	d := refused.Diagnostics()[0]
-	fmt.Println("   not loggable:", d.Code, "at", d.Path)
-}
+func (secret) MarkID() string                 { return "secret" }
+func (secret) Propagation() tenon.Propagation { return tenon.Propagate }
+func (secret) Redacting() bool                { return true }
 ```
 
-```
-200 {"name": "web", "password": redacted("password"), "port": 8080}
-   not loggable: serialize.redacted at .password
+```go
+login := tenon.Object(map[string]tenon.Value{
+	"user":     tenon.String("ada"),
+	"password": tenon.WithMarks(tenon.String("hunter2"), secret{}),
+})
+fmt.Println(login)
+
+// What is derived from the secret carries the mark, and shows nothing.
+fmt.Println(tenon.Length(login.Attribute("password")))
+
+// A diagnostic about it names it by its placeholder, never by its text.
+fmt.Println(tenon.Convert(login.Attribute("password"), tenon.Exactly(tenon.NumberType()), tenon.Unsafe))
+
+// The projection a log or a response would hold refuses it.
+_, err := tenon.ProjectJSON(login)
+fmt.Println(err)
+// Output:
+// {"password": redacted("secret"), "user": "ada"}
+// redacted("secret")
+// marked(error(number.invalid_syntax: "redacted(\"secret\") does not convert to exactly(number)"), "secret")
+// serialize.redacted: the value carries the redacting mark redacted("secret"), and is not projected at .password
 ```
 
-See `Example_validation` for the whole program, and `Example_planAndApply` for
-a diff that reports a secret changing without showing either secret.
+See `Example_validation` for a service that takes a secret from a request,
+and `Example_planAndApply` for a diff that reports a secret changing without
+showing either secret.
 
-# What is wrong
+## What is wrong
 
 Data that is wrong becomes an error value carrying a diagnostic for each
 problem: a stable code for programs, a message for people, and the path to the
@@ -130,7 +147,7 @@ for _, d := range converted.Diagnostics() {
 Passing a value of the wrong type to an operation is not a diagnostic but a
 panic: that is a mistake in the program, not in the data.
 
-# One value, one encoding
+## One value, one encoding
 
 However a value was built, two values that say the same thing are one value:
 they are `Identical`, they hash alike, and they serialize to the same bytes.
@@ -140,7 +157,61 @@ they were written. `Serialize` writes a CBOR document that carries unknown
 values, their bounds, marks and diagnostics, and `Deserialize` reads it back
 into a value identical to the one that was sent.
 
-# What it is for
+## Go values
+
+Package `gotenon` maps Go values to tenon values and back. A program that
+reads data it did not declare takes it in by what each part holds, and one
+that has Go types for the data decodes into them, converting under the policy
+it chooses and failing with a diagnostic for each part that does not fit.
+
+```go
+// Service is what a program expects a service's configuration to be.
+type Service struct {
+	Name     string   `tenon:"name"`
+	Port     int      `tenon:"port"`
+	Replicas int      `tenon:"replicas,optional"`
+	Tags     []string `tenon:"tags,optional"`
+}
+```
+
+```go
+// Read the document as encoding/json does, keeping its numbers as
+// written rather than as the nearest float64.
+decoder := json.NewDecoder(strings.NewReader(`{"name": "web", "port": 8080, "tags": ["edge"]}`))
+decoder.UseNumber()
+var document any
+if err := decoder.Decode(&document); err != nil {
+	fmt.Println(err)
+	return
+}
+
+// Take it in as a value, whatever it holds, then decode the value into
+// the Go type, converting it under the policy given.
+value, err := gotenon.Encode(document)
+if err != nil {
+	fmt.Println(err)
+	return
+}
+service, err := gotenon.Decode[Service](value, tenon.Safe)
+fmt.Printf("%+v %v\n", service, err)
+
+// A document that does not fit says where, for each part.
+wrong, _ := gotenon.Encode(map[string]any{"name": "web", "port": "http", "colour": "blue"})
+_, err = gotenon.Decode[Service](wrong, tenon.Safe)
+fmt.Println(err)
+// Output:
+// {Name:web Port:8080 Replicas:0 Tags:[edge]} <nil>
+// convert.unexpected_attribute: attribute "colour" is not one the constraint allows at .colour; convert.unsafe: string converts to exactly(number) only unsafely, and the policy is safe at .port
+```
+
+Fields are named by their `tenon` tag, and decoding into a struct is closed
+and exact: an attribute that no field names fails, and a name matches only as
+it is written, case included. A type that marshals itself to text, as
+`time.Time` does, crosses as its text. The
+[gotenon documentation](https://pkg.go.dev/github.com/kmoneil/tenon/gotenon)
+has the whole mapping.
+
+## What it is for
 
 | What it does | The example that builds it |
 | --- | --- |
@@ -148,10 +219,27 @@ into a value identical to the one that was sent.
 | **Plugin protocols** pass values, unknown and marked ones included, across a process boundary in one canonical encoding, and tell a receiver about a mark it does not know rather than dropping it. | `Example_pluginProtocol` |
 | **Validation layers** check values against constraints and report every failure with a stable code and the path to it. | `Example_validation` |
 | **Configuration languages** evaluate expressions over values some of which are not settled, unify the branches of a conditional, and locate what is wrong in the file. | `Example_configLanguage` |
-| **Go programs with types already** encode their structs and decode them back, keeping in a `tenon.Value` field whatever Go has no type for. | `gotenon` |
-| **Go programs without them** take data whose types they do not know, the `map[string]any` that `encoding/json` gives, by what each value holds, with the document's own numbers kept exactly. | `gotenon` |
+| **Go programs with types already** encode their structs and decode them back, keeping in a `tenon.Value` field whatever Go has no type for. | gotenon's `Example_quickStart` |
+| **Go programs without them** take data whose types they do not know, the `map[string]any` that `encoding/json` gives, by what each value holds, with the document's own numbers kept exactly. | gotenon's `Example_json` |
 
-# Performance
+## Coming from go-cty
+
+tenon answers the problems that [go-cty](https://github.com/zclconf/go-cty)
+answers for HCL and Terraform, and differs where cty's answers leave a
+program exposed. It is not a drop-in replacement: its API is its own, and
+moving a program across means rewriting the code that handles its values.
+
+| | go-cty v1.19 | tenon |
+| --- | --- | --- |
+| Numbers | 512-bit binary floats: a 150-digit integer comes back with its last digits changed, and `1/0` is infinity | Exact decimals, never rounded; dividing by zero is an error value |
+| Number text | `Inf`, `+5` and `1p4` parse as numbers | Each is refused, with a diagnostic |
+| Strings | Text that is not UTF-8 passes through | An error value, where the string is made |
+| Secrets | A mark is any Go value, and nothing withholds what it marks: a marked value's Go syntax shows it | A redacting mark keeps the contents and structure of what it marks out of display forms, messages and projections, and follows whatever is derived from it |
+| Unknown values | Refinements: not null, a string prefix, number bounds, collection lengths | Ranges: the same facts, and the members a set is known to hold |
+| Types | One `Type` serves as a type and as a constraint, `DynamicPseudoType` standing for any | Types and constraints are distinct, and a value whose type is not settled yet carries a constraint in its place |
+| Diffs | None: each program writes its own | `Diff`, which never looks inside what a redacting mark withholds |
+
+## Performance
 
 tenon does more for each value than a Go map does: it parses every number
 into an exact decimal, normalizes every string, and records what is known
@@ -174,7 +262,15 @@ For a configuration of 32 KB, measured on Apple M5 Max with go1.26.4:
 | Diff one change | – | 179 µs | – |
 <!-- benchmarks:end -->
 
-# Immutability and concurrent use
+## Stability
+
+tenon is before 1.0. Version 0.9.0 holds the API that 1.0 is to keep, and
+1.0 will freeze the API, the encoding and the specification: after it, a
+change that breaks a program waits for a new major version. Until then a
+minor version may break a program, and its release notes say how to upgrade.
+tenon needs Go 1.26 or later; CI tests it on Go 1.26 and 1.27.
+
+## Immutability and concurrent use
 
 Values, types, constraints, paths and diagnostics are immutable. Every
 operation returns a new value, and nothing a caller holds is written to again,
@@ -183,7 +279,7 @@ synchronization. The operations a caller supplies, which are the operations of
 a capsule type, the methods of a mark and the decoders given to `Deserialize`,
 may be called from any goroutine that uses the value carrying them.
 
-# Unicode
+## Unicode
 
 tenon holds strings in Normalization Form C and measures their length in
 grapheme clusters, both under Unicode 15.0.0, and its display form escapes text
@@ -209,37 +305,17 @@ To regenerate the data for another Unicode version, run `tools/unigen` on a
 toolchain that carries it, change `UnicodeVersion`, and treat it as the
 breaking change it is.
 
-# Why this exists
+## Why this exists
 
-When I need something that I need and don't want to modify an existing library, I usually write it myself. If you find
+When I need something that I need and don't want to modify an existing library, I usually write it myself. If you find it
 useful, awesome. If you find where it might be lacking, let me know. Find a bug, post an issue.
 
-# Development
+## Development
 
-`make check` is the gate: a change is not done until it passes. It checks
-formatting, runs `go vet` and the tests under the race detector, and then
-checks the conformance suite against the specification's rules: every rule has
-a passing conformance test, the diagnostic codes agree with the specification,
-and `CONFORMANCE.md` is current.
+`make check` is the gate: a change is not done until it passes.
+`CONTRIBUTING.md` says how to propose a change, and what each of the other
+`make` targets does.
 
-The other targets:
-
-| Target | What it does |
-| ------ | ------------ |
-| `make bench` | Runs the benchmarks of the `bench` module, which measure tenon beside `encoding/json` and go-cty, ten times, and writes `BENCHMARKS.md` and the Performance summary from the medians. Run it on a quiet machine before a release. |
-| `make check-slow` | `make check`, then every property test at twenty times its cases (`TENON_SLOW=20`), then `make determinism`. Run it before a release, and after changing how values are stored, ordered or encoded. |
-| `make determinism` | Runs the tests twice, in shuffled orders and on different numbers of processors, writing the canonical output they emit (encodings, display forms, diffs, conversions) to `.emit/`, and fails unless both runs wrote the same bytes. |
-| `make fuzz` | Runs each fuzz target (the number parser, string construction, decoding, and conversion) for `FUZZTIME`, 30 minutes by default; `make -j4 fuzz` runs them at once. An input that fails is saved under the package's `testdata/fuzz`, where it runs with the tests from then on. CI does this every night. |
-| `make release-fuzz` | Every fuzz target at once for five minutes: the fuzzing a release asks for, the depth coming from the nightly runs. |
-| `make release-notes VERSION=x.y.z` | Prints that version's section of `CHANGELOG.md`, which becomes the GitHub Release when its tag is pushed. |
-| `make growth` | Measures each benchmark at a size and at four times that size, and fails where the larger allocates more than five times what the smaller does: work growing faster than its input. CI does this every night. |
-| `make lint` | Runs staticcheck, at the version the Makefile names, over every package. CI requires it of every change. |
-| `make report` | Runs the tests, recording the rules they cover, and regenerates `CONFORMANCE.md`. |
-| `make rules`, `make codes` | Regenerate `conformance/rules.json` and the specification's appendix of diagnostic codes from the specification that `TENON_SPEC` names. |
-| `make vuln` | Runs govulncheck, at the version the Makefile names, and fails on a known vulnerability tenon's code can reach, in its dependencies or in the Go standard library it is built with. CI runs it on every change and every night. |
-
-`CONTRIBUTING.md` says how to propose a change and what a pull request needs.
-
-# License
+## License
 
 tenon is licensed under the Apache License, Version 2.0. See `LICENSE`.
