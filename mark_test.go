@@ -1175,24 +1175,39 @@ func BenchmarkMarkUnions(b *testing.B) {
 // a marked value exactly where markedWithin says so. It walks the whole
 // corpus and its deep-marked, unmarked, decoded and converted forms, so a
 // site that mis-sets a flag fails here whichever way the value was built.
+// Each form is first compared with the others and hashed where it has a
+// hash, and the walk holds what its values then keep to what asking again
+// gives: their hashes (EQ-030) and their sets' counts of members provably
+// distinct (EQ-042).
 func TestConformance_VA003_TheFlagsAgreeWithAFullWalk(t *testing.T) {
-	conformance.Covers(t, "VA-003", "VA-002")
+	conformance.Covers(t, "VA-003", "VA-002", "EQ-030", "EQ-042")
 	deep, shallow := stamp{id: "deep", deep: true}, stamp{id: "shallow"}
-	checked := 0
+	checked, hashed := 0, 0
 	for _, v := range values.All() {
-		checked += tenon.FlagsChecked(t, v)
 		marked := tenon.WithMarks(v, deep, shallow)
-		checked += tenon.FlagsChecked(t, marked)
 		unmarked, _ := tenon.UnmarkDeep(marked)
-		checked += tenon.FlagsChecked(t, unmarked)
+		forms := []tenon.Value{v, marked, unmarked}
 		if b, _, ok := trySerialize(v); ok {
 			if decoded, _, ok := tryDeserialize(b, decoders); ok {
-				checked += tenon.FlagsChecked(t, decoded)
+				forms = append(forms, decoded)
 			}
 		}
 		if converted := tenon.Convert(v, tenon.Any(), tenon.Unsafe); !converted.IsError() {
-			checked += tenon.FlagsChecked(t, converted)
+			forms = append(forms, converted)
 		}
+		for _, f := range forms {
+			for _, g := range forms {
+				tenon.Equals(f, g)
+			}
+			if _, marks := tenon.UnmarkDeep(f); marks == nil && f.IsKnown() && !tenon.IsNull(f).AsBool() {
+				tenon.Hash(f)
+				hashed++
+			}
+			checked += tenon.FlagsChecked(t, f)
+		}
+	}
+	if hashed < 50 {
+		t.Errorf("only %d forms were hashed; the corpus holds more", hashed)
 	}
 	// A corpus that shrank to a handful of values would pass as cleanly.
 	if checked < 500 {

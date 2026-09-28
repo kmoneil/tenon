@@ -1,6 +1,9 @@
 package tenon
 
-import "testing"
+import (
+	"slices"
+	"testing"
+)
 
 // RegisteredOperation describes a registered operation to the operand matrix,
 // which lives outside the package.
@@ -61,7 +64,8 @@ func AdmitsNone(c Constraint) bool { return admitsNone(c) }
 
 // FlagsChecked verifies, for tests outside the package, that v and every
 // value within it carry the partial and markedWithin flags a full walk
-// finds, and returns how many values it checked.
+// finds, and keep only what asking again gives (checkKept), and returns how
+// many values it checked.
 func FlagsChecked(t *testing.T, v Value) int { return checkFlags(t, v) }
 
 // SameNode reports whether a and b hold one node: whether an operation handed
@@ -77,4 +81,23 @@ func ConvertBothWays(v Value, c Constraint, p Policy) (converted, fitted Value) 
 	converted = converter{policy: p, carried: &carrying{}, memo: &convertMemo{}}.value(v, c)
 	fitted = converter{policy: p, carried: &carrying{}, memo: &convertMemo{}}.fittingValue(v, c)
 	return converted, fitted
+}
+
+// CarryBothWays gives each value of into, what the value at its index in from
+// converted to without its own marks, from's Propagate marks two ways: as a
+// conversion carries them, through one converter for them all, so that what
+// members share is kept once for all of them; and as WithMarks gives them,
+// one by one, which is what carrying's shortcut stands in for. shortcut says
+// where it applies: the value into holds carries no marks, and from holds a
+// layer, or no deep mark in its own list.
+func CarryBothWays(into, from []Value) (carried, given []Value, shortcut []bool) {
+	x := converter{policy: Unsafe, carried: &carrying{}, memo: &convertMemo{}}
+	for i, r := range into {
+		n := from[i].n
+		s := n.marks
+		shortcut = append(shortcut, s != nil && r.n.marks == nil && (s.layer || !slices.ContainsFunc(s.list, isDeep)))
+		carried = append(carried, x.carry(r, n))
+		given = append(given, WithMarks(r, propagateMarks(n)...))
+	}
+	return carried, given, shortcut
 }

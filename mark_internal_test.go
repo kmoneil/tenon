@@ -2,6 +2,7 @@ package tenon
 
 import (
 	"fmt"
+	"hash/maphash"
 	"math/rand"
 	"slices"
 	"strconv"
@@ -168,7 +169,8 @@ func TestMarkedWithinAgreesWithTheMembers(t *testing.T) {
 // a full walk finds: partial exactly where a collection or structural value
 // holds a member that is not known, so that its range is not a singleton and
 // the value is not known (VA-003), and markedWithin exactly where it holds a
-// marked value. It returns how many values it checked, itself included.
+// marked value. It checks the facts a value keeps once asked for them as
+// well (checkKept). It returns how many values it checked, itself included.
 func checkFlags(t *testing.T, v Value) int {
 	t.Helper()
 	checked := 1
@@ -195,7 +197,40 @@ func checkFlags(t *testing.T, v Value) int {
 	if v.n.partial != wantPartial {
 		t.Errorf("%v says it holds a member that is not known: %t, want %t", v, v.n.partial, wantPartial)
 	}
+	checkKept(t, v.n)
 	return checked
+}
+
+// checkKept fails t unless what n keeps once it is asked is what asking
+// again gives: its hash (EQ-030), made from its members' kept hashes, which
+// the walk checks in turn; a set's count of members provably distinct
+// (EQ-042); and that a mark set flagged as a layer, which values share,
+// holds deep marks alone, as conversion's carrying relies on.
+func checkKept(t *testing.T, n *node) {
+	t.Helper()
+	if kept := n.hash.Load(); kept != 0 {
+		var h maphash.Hash
+		h.SetSeed(hashSeed)
+		writeHash(&h, n)
+		if again := h.Sum64(); again != kept {
+			t.Errorf("%s keeps the hash %x, where hashing it again gives %x", n.describe(), kept, again)
+		}
+	}
+	if kept := n.distinct.Load(); kept != 0 {
+		if again := provablyDistinct(n.data.([]Value)); int(kept) != again+1 {
+			t.Errorf("%s keeps %d members provably distinct, where counting again gives %d", n.describe(), kept-1, again)
+		}
+	}
+	for s := n.marks; s != nil; s = s.outer {
+		if !s.layer {
+			continue
+		}
+		for _, m := range s.list {
+			if !isDeep(m) {
+				t.Errorf("%s holds a layer of marks holding %s, which is not deep", n.describe(), m.MarkID())
+			}
+		}
+	}
 }
 
 // TestPlainWritesOutNoMark holds a plain writer, as a message renders a

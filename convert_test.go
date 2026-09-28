@@ -160,6 +160,48 @@ func TestConformance_CV003_ResultTypeFollowsFromTypes(t *testing.T) {
 	}
 }
 
+// TestConformance_CV003_UnknownsConvertAsTheirTypesValuesDo holds converting
+// an unknown value, which its type alone decides, to converting known values
+// of its type (CV-003): where the unknown value does not convert, no value of
+// its type does, and where both convert, their results are of one type. It
+// runs over random values of every kind, marked or not, null among them, and
+// constraints random or of the value's shape, under both policies, and lets
+// be a result that CV-031 or CV-032 makes pending, as CV-003 does.
+func TestConformance_CV003_UnknownsConvertAsTheirTypesValuesDo(t *testing.T) {
+	conformance.Covers(t, "CV-003")
+	r := rand.New(rand.NewSource(3))
+	g := generator{r}
+	policies := []tenon.Policy{tenon.Safe, tenon.Unsafe}
+	var refused, resolved int
+	for range conformance.Iterations(t, 10000) {
+		v := g.value(g.typ(3), 3, false)
+		if !v.IsKnown() {
+			continue
+		}
+		typ := v.Type()
+		for _, c := range []tenon.Constraint{randomConstraint(r, 3, degrees.Type()), shapedLike(r, typ)} {
+			p := policies[r.Intn(2)]
+			unknown, known := tenon.Convert(tenon.Unknown(typ), c, p), tenon.Convert(v, c, p)
+			switch {
+			case unknown.IsPending() || known.IsPending():
+			case unknown.IsError():
+				refused++
+				if !known.IsError() {
+					t.Errorf("an unknown %v does not convert to %v under the %v policy, but %v does, to %v", typ, c, p, v, known)
+				}
+			case !known.IsError():
+				resolved++
+				if unknown.Type() != known.Type() {
+					t.Errorf("an unknown %v converts to %v under the %v policy as a value of %v, and %v as one of %v", typ, c, p, unknown.Type(), v, known.Type())
+				}
+			}
+		}
+	}
+	if refused < 1000 || resolved < 1000 {
+		t.Errorf("%d refused and %d resolved both ways; want at least 1,000 of each", refused, resolved)
+	}
+}
+
 func TestConformance_CV010_ConversionTable(t *testing.T) {
 	conformance.Covers(t, "CV-010")
 	listNum := tenon.List(num, n(2), n(1), n(2))
@@ -1416,6 +1458,80 @@ func TestConformance_CV033_CarryingMarksGrowsWithTheMembers(t *testing.T) {
 		if grew := float64(sizes[1]) / float64(sizes[0]); grew > 8 {
 			t.Errorf("%s: four times the members and marks allocated %.1f times as much (%d bytes, then %d)", name, grew, sizes[0], sizes[1])
 		}
+	}
+}
+
+// TestConformance_CV033_CarryingIsWhatWithMarksGives holds the shortcut by
+// which a conversion carries a member's marks to what it converts to, the
+// member's Propagate part sharing its layers and the deep marks among them
+// attached within through one attachment per layer, to what WithMarks gives,
+// the Propagate marks given one by one, which the shortcut stands in for. The
+// members are those of random values at every depth, marked with marks of
+// every kind, deep, Isolate and redacting ones among them, each converted
+// without its own marks to a constraint of its shape, and one converter
+// carries the marks of all the members of a value, as a conversion does.
+func TestConformance_CV033_CarryingIsWhatWithMarksGives(t *testing.T) {
+	conformance.Covers(t, "CV-033", "MK-008", "MK-002")
+	r := rand.New(rand.NewSource(1849))
+	g := generator{r}
+	secret := stamp{id: "secret", policy: tenon.Isolate, redact: true}
+	// members returns the values v holds at every depth, as a caller reads
+	// them, a redacting Isolate mark put on one now and then.
+	var members func(v tenon.Value) []tenon.Value
+	members = func(v tenon.Value) []tenon.Value {
+		if !v.HasContent() {
+			return nil
+		}
+		var out []tenon.Value
+		add := func(m tenon.Value) {
+			if r.Intn(8) == 0 && v.Type().Kind() != tenon.KindSet {
+				m = tenon.WithMarks(m, secret)
+			}
+			out = append(append(out, m), members(m)...)
+		}
+		switch v.Type().Kind() {
+		case tenon.KindList, tenon.KindSet, tenon.KindTuple:
+			for _, m := range v.Elements() {
+				add(m)
+			}
+		case tenon.KindMap:
+			for _, k := range v.MapKeys() {
+				m, _ := v.LookupMapElement(k)
+				add(m)
+			}
+		case tenon.KindObject:
+			for _, name := range v.Type().AttributeNames() {
+				add(v.Attribute(name))
+			}
+		}
+		return out
+	}
+	policies := []tenon.Policy{tenon.Safe, tenon.Unsafe}
+	var pairs, shortcuts int
+	for range conformance.Iterations(t, 3000) {
+		v := g.value(g.typ(3), 3, false)
+		if r.Intn(2) == 0 {
+			v = tenon.WithMarks(v, markDeep)
+		}
+		from := members(v)
+		into := make([]tenon.Value, len(from))
+		for i, m := range from {
+			own, _ := tenon.Unmark(m)
+			into[i] = tenon.Convert(own, shapedLike(r, m.Type()), policies[r.Intn(2)])
+		}
+		carried, given, shortcut := tenon.CarryBothWays(into, from)
+		for i := range from {
+			pairs++
+			if shortcut[i] {
+				shortcuts++
+			}
+			if !tenon.Identical(carried[i], given[i]) {
+				t.Errorf("%v, converted to %v, carries its marks as %v, where WithMarks gives %v", from[i], into[i], carried[i], given[i])
+			}
+		}
+	}
+	if shortcuts < 1000 {
+		t.Errorf("%d members, of which %d took the shortcut; want at least 1,000", pairs, shortcuts)
 	}
 }
 
