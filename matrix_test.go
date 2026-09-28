@@ -127,6 +127,28 @@ func TestOperandMatrixCatchesBrokenOperations(t *testing.T) {
 				return tenon.Equals(args[0], args[1])
 			},
 		}},
+		// Isolate marks stay behind, but not a redacting one (MK-002), which
+		// only an operand carrying one alone tells apart.
+		{"MK-003", matrix.Operation{Name: "carries a redacting Isolate mark no further", Operands: numbers, Fixed: true, Call: func(args ...tenon.Value) tenon.Value {
+			var propagated []tenon.Mark
+			for _, a := range args {
+				for _, m := range marksOf(a) {
+					if m.Propagation() == tenon.Propagate {
+						propagated = append(propagated, m)
+					}
+				}
+			}
+			return tenon.WithMarks(add(unmarkAll(args)), propagated...)
+		}}},
+		// A position whose constraint no value the matrix draws on satisfies
+		// meets no unknown, known or null operand, which its calls in the
+		// other states would not show.
+		{"coverage", matrix.Operation{
+			Name:     "takes what no generated value is",
+			Operands: []matrix.Operand{{Constraint: tenon.Exactly(tenon.ObjectType(map[string]tenon.Type{"never": num}))}},
+			Fixed:    true,
+			Call:     func(...tenon.Value) tenon.Value { return tenon.Bool(true) },
+		}},
 		{"no panic", matrix.Operation{Name: "panics on an unknown", Operands: numbers, Fixed: true, Call: func(args ...tenon.Value) tenon.Value {
 			if args[0].IsResolved() && !args[0].IsKnown() {
 				return tenon.Add(args[0], tenon.Bool(true)) // a usage panic
