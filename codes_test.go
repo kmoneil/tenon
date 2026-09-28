@@ -95,29 +95,32 @@ func TestConformance_ER007_DiagnosticCodes(t *testing.T) {
 	// included, which sits at the boundary and mints nothing of its own.
 	// Test files are left out: they hold file names, such as that of
 	// usage.go, which read like codes.
-	files, err := filepath.Glob("*.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	gotenonFiles, err := filepath.Glob(filepath.Join("gotenon", "*.go"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	scanned := 0
-	for _, name := range append(files, gotenonFiles...) {
-		if name == "codes.go" || strings.HasSuffix(name, "_test.go") {
-			continue
+	// least is the fewest files each package holds, so that one whose
+	// directory moved, and whose glob matches nothing, fails rather than
+	// passing with the other's files to count.
+	for _, dir := range []struct {
+		name  string
+		least int
+	}{{".", 30}, {"gotenon", 4}} {
+		files, err := filepath.Glob(filepath.Join(dir.name, "*.go"))
+		if err != nil {
+			t.Fatal(err)
 		}
-		scanned++
-		for _, lit := range stringLiterals(t, name) {
-			if codePattern.MatchString(lit) {
-				t.Errorf("%s spells out the code %q; use the constant from codes.go", name, lit)
+		scanned := 0
+		for _, name := range files {
+			if name == "codes.go" || strings.HasSuffix(name, "_test.go") {
+				continue
+			}
+			scanned++
+			for _, lit := range stringLiterals(t, name) {
+				if codePattern.MatchString(lit) {
+					t.Errorf("%s spells out the code %q; use the constant from codes.go", name, lit)
+				}
 			}
 		}
-	}
-	// A glob that stopped matching would pass as cleanly.
-	if scanned < 20 {
-		t.Errorf("only %d files were scanned; the packages hold more", scanned)
+		if scanned < dir.least {
+			t.Errorf("only %d files of %s were scanned; it holds at least %d", scanned, dir.name, dir.least)
+		}
 	}
 }
 

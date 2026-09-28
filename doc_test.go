@@ -1,15 +1,74 @@
 package tenon_test
 
 import (
+	"encoding/json"
 	"go/ast"
 	"go/doc/comment"
 	"go/parser"
 	"go/token"
 	"os"
+	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 )
+
+// TestTheDocsStateTheSpecification holds what the package doc and the README
+// say of the specification the package implements to the manifest rulecheck
+// writes from it, conformance/rules.json: its version, and how many rules a
+// conformance test covers, those neither withdrawn nor an outline. A version
+// or a count left behind when the manifest moved would tell a reader the
+// package implements what it does not.
+func TestTheDocsStateTheSpecification(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("conformance", "rules.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var manifest struct {
+		Version string `json:"version"`
+		Rules   []struct {
+			Withdrawn bool `json:"withdrawn"`
+			Outline   bool `json:"outline"`
+		} `json:"rules"`
+	}
+	if err := json.Unmarshal(data, &manifest); err != nil {
+		t.Fatal(err)
+	}
+	covered := 0
+	for _, r := range manifest.Rules {
+		if !r.Withdrawn && !r.Outline {
+			covered++
+		}
+	}
+	// prose returns a file's text as one line, the comment markers of a Go
+	// file's lines taken out, so that a statement wrapped across lines reads
+	// as one.
+	prose := func(name string) string {
+		b, err := os.ReadFile(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return strings.Join(strings.Fields(strings.ReplaceAll(string(b), "\n//", "\n")), " ")
+	}
+	for _, tt := range []struct {
+		file, says string
+		pattern    *regexp.Regexp
+		want       string
+	}{
+		{"doc.go", "the version", regexp.MustCompile(`implements tenon specification version (\d+\.\d+\.\d+)`), manifest.Version},
+		{"README.md", "the version", regexp.MustCompile(`implements version (\d+\.\d+\.\d+) of the tenon specification`), manifest.Version},
+		{"README.md", "the rules covered", regexp.MustCompile(`every one of its (\d+) rules`), strconv.Itoa(covered)},
+	} {
+		m := tt.pattern.FindStringSubmatch(prose(tt.file))
+		switch {
+		case m == nil:
+			t.Errorf("%s no longer states %s as %q finds it", tt.file, tt.says, tt.pattern)
+		case m[1] != tt.want:
+			t.Errorf("%s states %s as %s, where the manifest gives %s", tt.file, tt.says, m[1], tt.want)
+		}
+	}
+}
 
 // TestPackageDocNamesRealSymbols holds the package doc to the API it names.
 // Every bracketed name in it is a documentation link, which pkg.go.dev renders

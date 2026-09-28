@@ -21,15 +21,20 @@ import (
 // the lexical list does not name. gotenon is the declared edge where Go
 // floats cross, and is exempt.
 func TestNoBinaryFloatsByType(t *testing.T) {
-	packages := []struct{ path, dir string }{
-		{"github.com/kmoneil/tenon", "."},
-		{"github.com/kmoneil/tenon/internal/decimal", "internal/decimal"},
-		{"github.com/kmoneil/tenon/internal/cbor", "internal/cbor"},
-		{"github.com/kmoneil/tenon/internal/uni", "internal/uni"},
+	// least is the fewest files each package holds, so that one whose
+	// directory moved, and whose glob matches nothing, fails rather than
+	// passing with the others' files to count.
+	packages := []struct {
+		path, dir string
+		least     int
+	}{
+		{"github.com/kmoneil/tenon", ".", 30},
+		{"github.com/kmoneil/tenon/internal/decimal", "internal/decimal", 3},
+		{"github.com/kmoneil/tenon/internal/cbor", "internal/cbor", 1},
+		{"github.com/kmoneil/tenon/internal/uni", "internal/uni", 4},
 	}
 	fset := token.NewFileSet()
 	conf := types.Config{Importer: importer.ForCompiler(fset, "source", nil)}
-	scanned := 0
 	for _, p := range packages {
 		names, err := filepath.Glob(filepath.Join(p.dir, "*.go"))
 		if err != nil {
@@ -45,7 +50,9 @@ func TestNoBinaryFloatsByType(t *testing.T) {
 				t.Fatal(err)
 			}
 			files = append(files, f)
-			scanned++
+		}
+		if len(files) < p.least {
+			t.Errorf("only %d files of %s were scanned; it holds at least %d", len(files), p.path, p.least)
 		}
 		info := &types.Info{Types: map[ast.Expr]types.TypeAndValue{}}
 		if _, err := conf.Check(p.path, fset, files, info); err != nil {
@@ -56,10 +63,6 @@ func TestNoBinaryFloatsByType(t *testing.T) {
 				t.Errorf("%s: type %s", fset.Position(expr.Pos()), tv.Type)
 			}
 		}
-	}
-	// A glob that stopped matching would pass as cleanly.
-	if scanned < 40 {
-		t.Errorf("only %d files were scanned; the packages hold more", scanned)
 	}
 }
 

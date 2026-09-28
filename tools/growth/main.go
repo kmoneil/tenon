@@ -26,6 +26,11 @@
 // run with GOMAXPROCS at 8. A benchmark whose name does not end in a size is
 // run and not read.
 //
+// The -pairs flag names the fewest pairs a run must read, one by default, so
+// that a run of every benchmark fails where a pair has stopped being read,
+// dropped or its package no longer run, rather than passing on the pairs that
+// are left.
+//
 // The -summary flag names a file to append a Markdown table of the pairs to,
 // by default $GITHUB_STEP_SUMMARY, which is where GitHub Actions shows it on
 // the run's page.
@@ -58,6 +63,7 @@ func run(args []string, stdout, stderr io.Writer) error {
 	bench := flags.String("bench", ".", "run the benchmarks matching `regexp`, as go test -bench does")
 	benchtime := flags.String("benchtime", "", "run each benchmark for `d`, or Nx times, as go test -benchtime does; go test's own default if empty")
 	summary := flags.String("summary", os.Getenv("GITHUB_STEP_SUMMARY"), "append a Markdown table of the pairs to `file`; defaults to $GITHUB_STEP_SUMMARY")
+	least := flags.Int("pairs", 1, "fail unless at least `n` pairs are read")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -113,7 +119,10 @@ func run(args []string, stdout, stderr io.Writer) error {
 	switch {
 	case len(readings) == 0:
 		problems = append(problems, "no benchmark was measured at a size and at four times it")
-	case failed > 0:
+	case len(readings) < *least:
+		problems = append(problems, fmt.Sprintf("%s read, where a run is to read at least %d", count(len(readings), "pair"), *least))
+	}
+	if failed > 0 {
 		problems = append(problems, fmt.Sprintf("%d of %d pairs allocate more than five times as much at four times the size", failed, len(readings)))
 	}
 	if len(problems) == 0 {
