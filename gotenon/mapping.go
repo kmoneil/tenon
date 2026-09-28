@@ -190,7 +190,9 @@ func byKind(rt reflect.Type) (m *goMapping, ok bool) {
 
 // buildMapping builds the mapping of rt for dir, with building holding the
 // types whose mappings are being built around it, which a finite type cannot
-// meet again.
+// meet again. A type is a leaf where its methods map it in dir; otherwise the
+// table maps it by what it is (GO-010), and settle then does what its methods
+// ask of dir.
 func buildMapping(rt reflect.Type, dir direction, building map[reflect.Type]bool) *goMapping {
 	key := mappingKey{rt, dir}
 	if m, ok := goMappings.Load(key); ok {
@@ -202,6 +204,21 @@ func buildMapping(rt reflect.Type, dir direction, building map[reflect.Type]bool
 	building[rt] = true
 	defer delete(building, rt)
 
+	m := methods(rt)
+	if !m.leaf(dir) {
+		if dir == encodingByKind {
+			dir = encoding
+		}
+		m.byTable(dir, building)
+		m.settle(dir)
+	}
+	actual, _ := goMappings.LoadOrStore(key, m)
+	return actual.(*goMapping)
+}
+
+// methods returns a mapping of rt that says which of the methods tenon maps
+// by rt implements, itself or through its pointer, and nothing else yet.
+func methods(rt reflect.Type) *goMapping {
 	m := &goMapping{rt: rt}
 	if k := rt.Kind(); k != reflect.Interface && k != reflect.Pointer {
 		m.marshal = rt.Implements(marshalerGoType) || reflect.PointerTo(rt).Implements(marshalerGoType)
@@ -209,27 +226,36 @@ func buildMapping(rt reflect.Type, dir direction, building map[reflect.Type]bool
 		m.marshalText = rt.Implements(textMarshalerGoType) || reflect.PointerTo(rt).Implements(textMarshalerGoType)
 		m.unmarshalText = reflect.PointerTo(rt).Implements(textUnmarshalerGoType)
 	}
-	// A type that encodes itself needs no mapping of its kind to be encoded,
-	// and one that decodes itself none to be decoded: in that direction it is
-	// a leaf, whatever its kind.
-	if m.marshal && m.unmarshal || dir == encoding && m.marshal || dir == decoding && m.unmarshal {
+	return m
+}
+
+// leaf reports whether m's Go type is mapped by its methods in dir, whatever
+// its kind, and maps it so where it is. A type that encodes itself needs no
+// mapping of its kind to be encoded, and one that decodes itself none to be
+// decoded [GO-040]. A type that marshals itself to text, and not by
+// MarshalValue, is a string in that direction [GO-044]: ValueMarshaler and
+// ValueUnmarshaler come first, being tenon's own, and so do the types the
+// table maps itself, the big numbers among them, whose text methods would
+// make text of numbers.
+func (m *goMapping) leaf(dir direction) bool {
+	switch {
+	case m.marshal && m.unmarshal, dir == encoding && m.marshal, dir == decoding && m.unmarshal:
 		m.kind, m.constraint = goCustom, tenon.Any()
-		actual, _ := goMappings.LoadOrStore(key, m)
-		return actual.(*goMapping)
-	}
-	if dir == encodingByKind {
-		dir = encoding
-	}
-	// A type that marshals itself to text, and not by MarshalValue, is a
-	// string in that direction, whatever its kind [GO-044]; ValueMarshaler
-	// and ValueUnmarshaler come first, being tenon's own, and so do the
-	// types the table maps itself, the big numbers among them, whose text
-	// methods would make text of numbers.
-	if !mappedItself[rt] && (dir == encoding && !m.marshal && m.marshalText || dir == decoding && !m.unmarshal && m.unmarshalText) {
+	case mappedItself[m.rt]:
+		return false
+	case dir != decoding && !m.marshal && m.marshalText, dir == decoding && !m.unmarshal && m.unmarshalText:
 		m.kind, m.typ, m.constraint = goText, tenon.StringType(), tenon.Exactly(tenon.StringType())
-		actual, _ := goMappings.LoadOrStore(key, m)
-		return actual.(*goMapping)
+	default:
+		return false
 	}
+	return true
+}
+
+// byTable maps m's Go type for dir as GO-010's table says: by the type
+// itself where the table names it, and otherwise by its kind, building the
+// mappings of what it holds.
+func (m *goMapping) byTable(dir direction, building map[reflect.Type]bool) {
+	rt := m.rt
 	number := tenon.Exactly(tenon.NumberType())
 	switch rt {
 	case valueGoType:
@@ -304,18 +330,21 @@ func buildMapping(rt reflect.Type, dir direction, building map[reflect.Type]bool
 			usagePanic("the Go type %s is of kind %s, which does not map to tenon", rt, rt.Kind())
 		}
 	}
-	// A type that encodes or decodes itself maps to no type, or to Any, in
-	// that direction, and by its own kind in the other.
-	if m.marshal {
+}
+
+// settle finishes m for dir once the table has mapped it. For encoding, a
+// type that encodes itself, mapped by its kind all the same for the null of
+// a nil pointer to it (encodingByKind), maps to no type [GO-010, GO-040]:
+// what its values encode as is what the method gives. For decoding, the type
+// maps as the table says, whatever it does to encode itself, and Decode
+// refuses the interface types it meets (iface).
+func (m *goMapping) settle(dir direction) {
+	switch {
+	case dir == decoding:
+		m.iface = decodedInterface(m)
+	case m.marshal:
 		m.typ = tenon.Type{}
 	}
-	if m.unmarshal {
-		m.constraint = tenon.Any()
-	} else {
-		m.iface = decodedInterface(m)
-	}
-	actual, _ := goMappings.LoadOrStore(key, m)
-	return actual.(*goMapping)
 }
 
 // decodedInterface returns the interface type that decoding into m's Go type
