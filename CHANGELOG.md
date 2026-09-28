@@ -1,6 +1,59 @@
 # Changelog
 
-## Unreleased
+## 0.10.0 (2026-09-28)
+
+An architecture review of 0.9.0 found places where tenon did not keep the
+promises `SECURITY.md` makes, and this release keeps them: a diagnostic could
+name a type holding a redacted value's attribute names, and `Convert`,
+`Unify` and `gotenon.Decode` did work out of proportion to their input on
+shapes a document can take. With them come the review's other fixes: `Diff`
+raced with the functions that keep a value's hash, `Deserialize` refused
+documents `Serialize` wrote near the depth bound, a deep mark attached again
+copied the whole value, and gotenon decoded a slice of a type that only
+encodes itself member by member. It implements version 0.9.0 of the tenon
+specification, which amends `GO-010` and `CV-050`, rewords the rationales of
+`CV-042` and `EQ-012`, and checks Appendix B's divergences from go-cty
+against go-cty 1.19: 201 rules, as before.
+
+**Upgrade if a redacting mark guards anything you log, display or return, or
+if you convert, unify or decode values from parties you do not trust.** In
+0.9.0 a conversion failing for a value that held a redacted object, and a
+narrowing that left nothing of a redacted unknown value, named in its message
+a type holding the object's attribute names. And converting nested tuples
+whose element type grows at every level, or a value whose leaves carry
+marks, unifying object constraints one level down, and naming a long type
+once for each of many failing members did work growing with the square of
+the input or faster: 4,000 object constraints as the elements of lists
+unified in 1.7 GB, and a document of 112 KB decoded through
+`gotenon.Decode` allocated 642 MB. A security advisory follows this release.
+
+The minor version moves because results change: `Type.Equals`, deprecated
+since 0.6.0, is gone, two misuses of marks panic where they passed quietly,
+gotenon decodes a few Go types differently, and `Deserialize` gives another
+code for a few inputs.
+
+**Upgrading from 0.9.0.** Documents 0.9.0 wrote decode as they did, and
+values encode to the same bytes. The compiler finds one change: use
+`Type.Equal` where you used `Type.Equals`, which answered alike. Four it does
+not find:
+
+- `HasMark` panics on a nil mark, where it answered false for a value
+  carrying no marks.
+- `WithMarks`, and `Deserialize` for what a mark decoder returns, panic on a
+  mark whose `Propagation` is neither `Propagate` nor `Isolate`, which was
+  carried as an `Isolate` mark is.
+- gotenon decodes a slice, array, map or pointer holding a type that
+  implements `ValueMarshaler` and not `ValueUnmarshaler` as it would without
+  the method: `ConstraintFor` gives the `list_of` or `map_of` of the type's
+  constraint, where it gave `any`, and a map of such a type refuses a null
+  list, which it decoded as a nil map.
+- `Deserialize` fails a few inputs holding two faults with the code of the
+  first, where it gave the second's, and range key 0 holding an indefinite
+  length with `serialize.not_canonical`, where it gave
+  `serialize.malformed`.
+
+**What `CONFORMANCE.md` states.** 201 of 201, and no rule more widely than its
+test exercises.
 
 ### Fixed
 
