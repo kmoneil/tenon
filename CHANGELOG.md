@@ -86,6 +86,11 @@
   which order values whose declared hashes collide by their encodings,
   failed with a nil pointer dereference. `CONFORMANCE.md` now says that
   such values order by their encodings, as they have since 0.7.0.
+- A usage panic names the call that was misused: `Deserialize` refuses a
+  mark decoder's mark that cannot be told from other marks naming the
+  decoder, where it named `WithMarks`, which its caller never called, and
+  `LookupField` asked of a constraint of another kind names `LookupField`,
+  where it named `Field`.
 
 ### Added
 
@@ -102,6 +107,17 @@
   gotenon, and what 1.0 will hold stable; its redaction example is whole, as
   `ExampleWithMarks`, and the quick start is gotenon's `Example_quickStart`.
   The table of `make` targets moves to `CONTRIBUTING.md`.
+
+### Changed
+
+- `WithMarks`, and `Deserialize` for what a mark decoder returns, refuse a
+  mark whose `Propagation` is neither `Propagate` nor `Isolate` with a usage
+  panic. Such a mark was carried as an `Isolate` mark is, a policy it did
+  not declare, and a policy a later version adds would be taken for
+  `Isolate` by this one.
+- `HasMark` panics with a usage error when the mark is nil, whether or not
+  the value carries marks: it answered false for a value carrying none, and
+  failed with a nil pointer dereference for one carrying some.
 
 ### Removed
 

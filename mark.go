@@ -30,9 +30,10 @@ type Mark interface {
 	// MarkID returns the stable identifier of the mark, used where the mark
 	// must be named without its value: redaction placeholders and encodings.
 	MarkID() string
-	// Propagation returns how the mark moves through operations. A
-	// redacting mark propagates whatever this says, since what it withholds
-	// must not show in anything derived from the value.
+	// Propagation returns how the mark moves through operations: Propagate
+	// or Isolate, and attaching a mark that returns anything else is a
+	// usage panic. A redacting mark propagates whatever this says, since
+	// what it withholds must not show in anything derived from the value.
 	Propagation() Propagation
 	// Redacting reports whether the contents of a value carrying the mark
 	// are withheld wherever the value is described: in the messages of
@@ -89,6 +90,12 @@ const (
 	// even so: a result that did not carry it would show what it withholds.
 	Isolate
 )
+
+// knownPolicy reports whether p is one of the propagation policies, which a
+// mark must declare: a mark declaring another would be carried as Isolate
+// is, which is no policy it said, and one a later version adds would be
+// taken for Isolate by this one.
+func knownPolicy(p Propagation) bool { return p == Propagate || p == Isolate }
 
 // String returns the name of the propagation policy, "propagate" or
 // "isolate".
@@ -210,7 +217,8 @@ func (n *node) markList() []Mark {
 // which Elements marks as it returns them.
 //
 // WithMarks panics if a mark is nil or of a type that is not comparable,
-// since Go equality is what tells marks apart.
+// since Go equality is what tells marks apart, and if its propagation policy
+// is neither Propagate nor Isolate.
 func WithMarks(v Value, marks ...Mark) Value {
 	n := v.data()
 	for i, m := range marks {
@@ -222,6 +230,9 @@ func WithMarks(v Value, marks ...Mark) Value {
 			usagePanic("WithMarks called with a mark of type %T, which is not comparable and so cannot be told from other marks", m)
 		case !self:
 			usagePanic("WithMarks called with a mark of type %T holding a value that does not equal itself, so it cannot be told from other marks", m)
+		}
+		if p := m.Propagation(); !knownPolicy(p) {
+			usagePanic("WithMarks called with a mark of type %T whose propagation policy is %s, neither Propagate nor Isolate", m, p)
 		}
 	}
 	merged, grew := mergeMarks(n.markList(), marks)
@@ -646,15 +657,9 @@ func (a *attachment) beyond(outer *markSet) *markSet {
 // withOwnMarks returns v carrying marks on itself alone, as WithMarks does but
 // for a deep mark, which it leaves for settleDeep to give the values within v.
 // The decoder reads a value this way, part by part, and settles it once read.
+// The marks are the decoder's, which it has held to what WithMarks asks of a
+// mark as each mark decoder returned it (mark).
 func withOwnMarks(v Value, marks []Mark) Value {
-	for i, m := range marks {
-		if m == nil {
-			usagePanic("WithMarks called with mark %d of type %T, which cannot be told from other marks", i, m)
-		}
-		if comparable, self := comparableMark(m); !comparable || !self {
-			usagePanic("WithMarks called with mark %d of type %T, which cannot be told from other marks", i, m)
-		}
-	}
 	merged, grew := mergeMarks(v.n.markList(), marks)
 	if !grew {
 		return v
@@ -912,9 +917,14 @@ func (n *node) markedMember() (Step, *node) {
 	return Step{}, nil
 }
 
-// HasMark reports whether v carries the mark.
+// HasMark reports whether v carries the mark. It panics if the mark is nil,
+// which no value carries, whether or not v carries marks.
 func HasMark(v Value, m Mark) bool {
-	return v.data().marks.contains(m)
+	n := v.data()
+	if m == nil {
+		usagePanic("HasMark called with a nil Mark")
+	}
+	return n.marks.contains(m)
 }
 
 // propagated returns the marks that the result of the operation over these
