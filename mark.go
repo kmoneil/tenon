@@ -454,10 +454,28 @@ func deepMarks(marks []Mark) []Mark {
 // its outer layer, after any it had: a value that held no marks holds the
 // layer itself, and one that held some holds its own layer before it. Values
 // that held the same set before the attachment hold the same set after it.
+//
+// A value whose own layer, or one of its outer layers, holds every mark
+// attached carries them already, and the attachment stops there. A long list
+// of marks is asked that once (held), since a list is shared: by the values
+// of one container, and by every copy of an outer layer an attachment makes.
+// Unasked, a mark attached again copied every value it reached and gave it
+// one more layer each time: unmarking a value and marking it again, or
+// putting its members in another container and marking that, copied the
+// whole value however often it was done.
 type attachment struct {
 	layer  *markSet              // the marks to attach, and the layers out from them
 	sets   map[*markSet]*markSet // what a value that held a set holds after
 	chains map[*markSet]*markSet // what an outer layer becomes with layer beyond it
+	held   map[listKey]bool      // whether a list holds every mark attached
+}
+
+// listKey is a list of marks as the lists that share it know it: where it
+// starts and how long it is. Nothing changes a list of marks once it is made,
+// so what a list holds follows from these.
+type listKey struct {
+	first *Mark
+	n     int
 }
 
 // newAttachment returns an attachment of the deep marks deep, sorted and
@@ -511,6 +529,9 @@ func (a *attachment) within(n *node) {
 // attach returns n carrying the deep marks, with everything within it
 // carrying them too, or n itself when it carries them already.
 func (a *attachment) attach(n *node) *node {
+	if n.marks != nil && a.holds(n.marks.list) {
+		return n
+	}
 	marks, grew := a.merged(n.marks)
 	if !grew {
 		return n
@@ -521,12 +542,62 @@ func (a *attachment) attach(n *node) *node {
 	return nn
 }
 
+// holds reports whether list holds every mark attached, those of the
+// attached layer and of the layers out from it. A list shorter than those
+// marks cannot. A short list is looked through each time it is asked, which
+// costs less than keeping the answer, and a long one once, however many mark
+// sets share it.
+func (a *attachment) holds(list []Mark) bool {
+	marks := a.layer.all()
+	switch {
+	case len(list) < len(marks):
+		return false
+	case len(list) <= manyMarks:
+		return holdsMarks(list, marks)
+	}
+	key := listKey{&list[0], len(list)}
+	if held, asked := a.held[key]; asked {
+		return held
+	}
+	held := holdsMarks(list, marks)
+	if a.held == nil {
+		a.held = map[listKey]bool{}
+	}
+	a.held[key] = held
+	return held
+}
+
+// holdsMarks reports whether list, sorted by identifier, holds every mark of
+// marks, which are distinct: a few are each looked for among the marks
+// sharing its identifier, as mergeMarks places them, and many through a
+// markLookup, which scanning for each would cost the square of.
+func holdsMarks(list, marks []Mark) bool {
+	if len(marks) <= manyMarks {
+		for _, m := range marks {
+			if _, found := placeMark(list, m); !found {
+				return false
+			}
+		}
+		return true
+	}
+	var seen markLookup
+	for _, m := range marks {
+		if !seen.holds(list, m) {
+			return false
+		}
+	}
+	return true
+}
+
 // merged returns the mark set that a value holding held holds once the deep
 // marks are attached to it, and whether that is another set. The value keeps
 // its own layer and gains the attached one beyond its outer layers, sharing
-// both with every value that held what it held; whether that adds a mark is
-// not asked, which would look for every attached mark in every set given
-// them, and a mark held twice is held once (all).
+// both with every value that held what it held, unless one of its outer
+// layers holds the marks already (beyond). Whether its own layer does is
+// asked by attach, not here: the decoder settles each value it reads through
+// merged, and a value read lists none of the deep marks above it, which a
+// document may not list again (SE-031). A mark its own layer holds beside
+// others it lacks is held twice, and carried once (all).
 func (a *attachment) merged(held *markSet) (*markSet, bool) {
 	if held == nil {
 		return a.layer, true
@@ -546,20 +617,25 @@ func (a *attachment) merged(held *markSet) (*markSet, bool) {
 }
 
 // beyond returns the layers outer with the attached layer beyond them, which
-// is outer itself where the attached layer is among them already.
+// is outer itself where the attached layer is among them already, or a layer
+// among them holds every mark attached. Each layer is asked once, however
+// many chains it is in.
 func (a *attachment) beyond(outer *markSet) *markSet {
 	if outer == nil {
 		return a.layer
 	}
-	for l := outer; l != nil; l = l.outer {
-		if l == a.layer {
-			return outer
-		}
+	if outer == a.layer {
+		return outer
 	}
 	if c, ok := a.chains[outer]; ok {
 		return c
 	}
-	c := &markSet{list: outer.list, outer: a.beyond(outer.outer), layer: true}
+	c := outer
+	if !a.holds(outer.list) {
+		if rest := a.beyond(outer.outer); rest != outer.outer {
+			c = &markSet{list: outer.list, outer: rest, layer: true}
+		}
+	}
 	if a.chains == nil {
 		a.chains = map[*markSet]*markSet{}
 	}

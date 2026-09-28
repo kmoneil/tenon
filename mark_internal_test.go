@@ -317,6 +317,72 @@ func checkDeepMarks(t *testing.T, v Value) {
 	}
 }
 
+// TestAMarkAttachedAgainAddsNoLayer holds a deep mark attached again to leave
+// the values that carry it as they are: marked, then unmarked and marked
+// again 64 times, or put in another list that is marked 64 times, no value
+// within holds more than two layers of marks, its own and the one the mark
+// was first attached through, where each time added a layer to every value
+// it reached and one held 67. Among the values within are some carrying
+// marks of their own, deep ones among them, which stop the mark at their
+// outer layer, and some carrying none, which stop it at the layer they hold.
+func TestAMarkAttachedAgainAddsNoLayer(t *testing.T) {
+	deep, other := probe{id: "deep", deep: true}, probe{id: "other", deep: true}
+	shallow := probe{id: "shallow"}
+	num, str := Type{numberType}, Type{stringType}
+	one := NumberFromInt(1)
+	object := Object(map[string]Value{
+		"plain":   List(num, one, Unknown(num)),
+		"shallow": WithMarks(List(num, WithMarks(one, shallow), one), shallow),
+		"other":   WithMarks(Map(num, map[string]Value{"k": WithMarks(one, other)}), other),
+		"set":     Set(str, String("a")),
+	})
+	tree := List(object.Type(), object, WithMarks(object, shallow))
+	// layers returns the most layers of marks a value within n holds.
+	var layers func(n *node) int
+	layers = func(n *node) int {
+		most := 0
+		for s := n.marks; s != nil; s = s.outer {
+			most++
+		}
+		switch data := n.data.(type) {
+		case []Value:
+			for _, m := range data {
+				most = max(most, layers(m.n))
+			}
+		case []mapEntry:
+			for _, e := range data {
+				most = max(most, layers(e.val.n))
+			}
+		}
+		return most
+	}
+	for _, again := range []struct {
+		name string
+		mark func(Value) Value
+	}{
+		{"unmarked and marked again", func(v Value) Value {
+			u, _ := Unmark(v)
+			return WithMarks(u, deep)
+		}},
+		{"put in another list that is marked", func(v Value) Value {
+			return WithMarks(List(v.Type().ElementType(), v.Elements()...), deep)
+		}},
+	} {
+		v := WithMarks(tree, deep)
+		for range 64 {
+			v = again.mark(v)
+		}
+		if got := layers(v.n); got > 2 {
+			t.Errorf("%s 64 times, a value within holds %d layers of marks", again.name, got)
+		}
+		if !Identical(v, WithMarks(tree, deep)) {
+			t.Errorf("%s 64 times, the value is %v", again.name, v)
+		}
+		checkDeepMarks(t, v)
+		checkFlags(t, v)
+	}
+}
+
 // BenchmarkDeepMarks weighs applying a deep mark as it is attached, which is
 // what WithMarks does, against a lazy design that records the mark on the
 // value alone and applies it to each member as the member is read. The tree

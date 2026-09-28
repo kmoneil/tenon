@@ -808,6 +808,115 @@ func TestConformance_MK008_DeepMarks(t *testing.T) {
 	}
 }
 
+// TestConformance_MK008_AMarkAttachedAgainStopsWhereItIsHeld holds a deep mark
+// attached to a value to stop at the values within that carry it already,
+// since everything within them carries it too: a value unmarked and marked
+// again, a marked list's elements put in another list that is marked, and
+// lists marked one by one put in a list that is marked. Each is done to ten
+// lists of k numbers and of 4k, and the larger makes under twice the
+// allocations the smaller does, as many in fact, where the mark attached
+// again copied every value it reached, the numbers among them, and made four
+// times as many.
+func TestConformance_MK008_AMarkAttachedAgainStopsWhereItIsHeld(t *testing.T) {
+	conformance.Covers(t, "MK-008")
+	deep := stamp{id: "deep", deep: true}
+	lists := func(k int) []tenon.Value {
+		out := make([]tenon.Value, 10)
+		for i := range out {
+			nums := make([]tenon.Value, k)
+			for j := range nums {
+				nums[j] = n(int64(j))
+			}
+			out[i] = tenon.List(num, nums...)
+		}
+		return out
+	}
+	marked := func(ls []tenon.Value) tenon.Value { return tenon.WithMarks(tenon.List(ls[0].Type(), ls...), deep) }
+	for _, tt := range []struct {
+		name  string
+		given func(ls []tenon.Value) tenon.Value // what the mark is attached to again
+		again func(v tenon.Value) tenon.Value
+	}{
+		{"unmarked and marked again", marked, func(v tenon.Value) tenon.Value {
+			u, _ := tenon.Unmark(v)
+			return tenon.WithMarks(u, deep)
+		}},
+		{"its elements put in another list, which is marked", marked, func(v tenon.Value) tenon.Value {
+			return tenon.WithMarks(tenon.List(v.Type().ElementType(), v.Elements()...), deep)
+		}},
+		{"lists marked one by one, put in a list that is marked", func(ls []tenon.Value) tenon.Value {
+			each := make([]tenon.Value, len(ls))
+			for i, l := range ls {
+				each[i] = tenon.WithMarks(l, deep)
+			}
+			return tenon.List(each[0].Type(), each...)
+		}, func(v tenon.Value) tenon.Value { return tenon.WithMarks(v, deep) }},
+	} {
+		var made [2]float64
+		for i, k := range []int{100, 400} {
+			ls := lists(k)
+			v := tt.given(ls)
+			if got, want := tt.again(v), marked(ls); !tenon.Identical(got, want) {
+				t.Errorf("%s: %.80s... is not %.80s...", tt.name, got, want)
+			}
+			made[i] = testing.AllocsPerRun(10, func() { tt.again(v) })
+		}
+		if made[1] > 2*made[0] {
+			t.Errorf("%s: numbers four times as many made %v allocations, where the first made %v", tt.name, made[1], made[0])
+		}
+	}
+}
+
+// TestConformance_MK008_AttachingAsksOfEachListOnce holds attaching deep marks
+// to ask of each list of marks the values hold whether it holds them, once
+// however many mark sets share the list. Each of k lists holds a list marked
+// with k deep marks and is marked with a deep mark of its own, which gives
+// the list within a layer of its own that shares the list of k marks; the k
+// lists, marked together with k deep marks, all but one of them the k held,
+// ask that list once. Asked once for each layer, it was looked through once
+// for each of the k lists, and four times as many allocated sixteen times as
+// much.
+func TestConformance_MK008_AttachingAsksOfEachListOnce(t *testing.T) {
+	conformance.Covers(t, "MK-008")
+	allocated := func(f func()) uint64 {
+		var before, after runtime.MemStats
+		runtime.GC()
+		runtime.ReadMemStats(&before)
+		f()
+		runtime.ReadMemStats(&after)
+		return after.TotalAlloc - before.TotalAlloc
+	}
+	var made [2]uint64
+	for i, k := range []int{250, 1000} {
+		held := make([]tenon.Mark, k)
+		for j := range held {
+			held[j] = stamp{id: fmt.Sprintf("held%05d", j), deep: true}
+		}
+		inner := tenon.List(num, n(1))
+		within := tenon.WithMarks(tenon.List(inner.Type(), inner), held...)
+		own := func(j int) tenon.Mark { return stamp{id: fmt.Sprintf("own%05d", j), deep: true} }
+		ls := make([]tenon.Value, k)
+		for j := range ls {
+			ls[j] = tenon.WithMarks(tenon.List(within.Type(), within), own(j))
+		}
+		v := tenon.List(ls[0].Type(), ls...)
+		// The one mark not held sorts after those that are.
+		last := stamp{id: "last", deep: true}
+		marks := append(slices.Clone(held[1:]), last)
+		var got tenon.Value
+		made[i] = allocated(func() { got = tenon.WithMarks(v, marks...) })
+		number := got.Index(k - 1).Index(0).Index(0).Index(0)
+		for _, m := range []tenon.Mark{held[0], last, own(k - 1)} {
+			if !tenon.HasMark(number, m) {
+				t.Errorf("%d lists: the number within the last does not carry %v: %v", k, m, number)
+			}
+		}
+	}
+	if made[1] > 8*made[0] {
+		t.Errorf("four times as many lists allocated %d bytes, where the first allocated %d: more than eight times as much", made[1], made[0])
+	}
+}
+
 func TestConformance_MK010_ErrorValuesCarryMarks(t *testing.T) {
 	conformance.Covers(t, "MK-010")
 	num, str, bl := tenon.NumberType(), tenon.StringType(), tenon.BoolType()
