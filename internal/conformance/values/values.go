@@ -95,7 +95,10 @@ func All() []tenon.Value {
 		tenon.Null(num),
 		tenon.Null(str),
 		tenon.Null(tenon.ListType(str)),
+		tenon.Null(tenon.SetType(str)),
+		tenon.Null(tenon.MapType(num)),
 		tenon.Null(tenon.TupleType()),
+		tenon.Null(tenon.ObjectType(nil)),
 
 		// Unknown values, from the widest to the narrowly bounded.
 		tenon.Unknown(bl),

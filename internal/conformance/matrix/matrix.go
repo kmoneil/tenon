@@ -1,7 +1,8 @@
 // Package matrix checks what must hold of every operation over the cross
 // product that conformance asks for: each operand in each state it can be in,
-// an error value, a pending value, an unknown value and a known one, and each
-// operand unmarked, carrying marks, or holding a value that carries one.
+// an error value, a pending value, an unknown value, a known one and null, and
+// each operand unmarked, carrying marks, or holding a value that carries one;
+// and each operand in turn carrying a deep mark and a redacting one.
 //
 // It is a package beside conformance rather than part of it because it builds
 // values, so it imports tenon, and tenon's own internal tests import
@@ -40,16 +41,19 @@ type Violation struct {
 
 func (v Violation) String() string { return v.Operation + ": " + v.Rule + ": " + v.Detail }
 
-// label is a mark the matrix attaches. It never redacts, so a message reads
-// the same whether or not what it renders is marked.
+// label is a mark the matrix attaches. None redacts but the one the redacted
+// marking attaches, so that elsewhere a message reads the same whether or not
+// what it renders is marked.
 type label struct {
-	id     string
-	policy tenon.Propagation
+	id           string
+	policy       tenon.Propagation
+	deep, redact bool
 }
 
 func (m label) MarkID() string                 { return m.id }
 func (m label) Propagation() tenon.Propagation { return m.policy }
-func (label) Redacting() bool                  { return false }
+func (m label) Redacting() bool                { return m.redact }
+func (m label) Deep() bool                     { return m.deep }
 
 // markedness is how the operand in one position is marked.
 type markedness int
@@ -58,6 +62,7 @@ const (
 	unmarked markedness = iota
 	carries             // the operand carries a Propagate and an Isolate mark
 	holds               // a value within the operand carries a Propagate mark
+	redacted            // the operand carries a deep mark and a redacting Isolate mark
 )
 
 // Check runs every operation over the matrix. It returns what was violated and
@@ -81,16 +86,53 @@ func checkOperation(op Operation) (violations []Violation, calls int) {
 	if op.Agree {
 		types = sharedTypes(op)
 	}
+	met := make([]map[state]bool, len(op.Operands))
 	for _, typ := range types {
 		pools := make([][]tenon.Value, len(op.Operands))
 		for i, o := range op.Operands {
 			pools[i] = candidates(o, typ)
+			for _, v := range pools[i] {
+				if met[i] == nil {
+					met[i] = map[state]bool{}
+				}
+				met[i][stateOf(v)] = true
+			}
 		}
 		for _, args := range product(pools) {
 			calls += checkArgs(op, args, report)
 		}
 	}
+	// A position that meets no operand in some state is not checked in it,
+	// and the calls the other positions make would hide that it is not.
+	for i := range op.Operands {
+		for _, s := range states {
+			if !met[i][s] {
+				report("coverage", "operand %d is never %s", i+1, s)
+			}
+		}
+	}
 	return violations, calls
+}
+
+// state is a state an operand can be in, as the matrix tells them apart.
+type state string
+
+// states are the states the matrix gives every operand position.
+var states = []state{"an error", "pending", "unknown", "known", "null"}
+
+// stateOf returns the state v is in.
+func stateOf(v tenon.Value) state {
+	switch {
+	case v.IsError():
+		return "an error"
+	case v.IsPending():
+		return "pending"
+	case knownNull(v):
+		return "null"
+	case v.IsKnown():
+		return "known"
+	}
+	return "unknown"
 }
 
 // checkArgs checks one choice of operands in every markedness, returning how
@@ -162,7 +204,7 @@ func checkArgs(op Operation, args []tenon.Value, report func(rule, format string
 		if got := markIDs(mr); !slices.Equal(got, want) {
 			report(rule, "%s(%s) carries %v, want %v", op.Name, render(margs), got, want)
 		}
-		if stripped, _ := tenon.UnmarkDeep(mr); !tenon.Identical(stripped, r) {
+		if stripped, _ := tenon.UnmarkDeep(mr); !sameAnswer(stripped, r, slices.Contains(marks, redacted)) {
 			report("MK-005", "%s(%s) gave %v, but %v unmarked", op.Name, render(margs), stripped, r)
 		}
 	}
@@ -334,9 +376,30 @@ func product(pools [][]tenon.Value) [][]tenon.Value {
 	return out
 }
 
+// sameAnswer reports whether an operation marked gave what it gave unmarked,
+// its marks taken off: the same value, or, where a redacting mark may have
+// changed what a diagnostic says and where it is located, an error value of
+// the same codes (MK-005).
+func sameAnswer(marked, unmarked tenon.Value, redacting bool) bool {
+	if !redacting || !unmarked.IsError() {
+		return tenon.Identical(marked, unmarked)
+	}
+	codes := func(v tenon.Value) []tenon.Code {
+		var out []tenon.Code
+		for _, d := range v.Diagnostics() {
+			out = append(out, d.Code)
+		}
+		slices.Sort(out)
+		return slices.Compact(out)
+	}
+	return marked.IsError() && slices.Equal(codes(marked), codes(unmarked))
+}
+
 // markings returns every markedness of the operands, the unmarked one aside:
 // each operand unmarked or carrying marks, or holding a marked value where it
-// is a known list with an element to mark.
+// is a known list with an element to mark; and each operand in turn carrying
+// a deep mark and a redacting Isolate mark, the others unmarked, which a
+// redacting mark carries as a Propagate mark does (MK-002).
 func markings(args []tenon.Value) [][]markedness {
 	out := [][]markedness{nil}
 	for _, a := range args {
@@ -352,7 +415,13 @@ func markings(args []tenon.Value) [][]markedness {
 		}
 		out = next
 	}
-	return out[1:] // the first is every operand unmarked
+	out = out[1:] // the first is every operand unmarked
+	for i := range args {
+		alone := make([]markedness, len(args))
+		alone[i] = redacted
+		out = append(out, alone)
+	}
+	return out
 }
 
 // mark returns the operands marked as marks says, and the identifiers of the
@@ -364,15 +433,20 @@ func mark(op Operation, args []tenon.Value, marks []markedness) ([]tenon.Value, 
 	for i, m := range marks {
 		switch m {
 		case carries:
-			out[i] = tenon.WithMarks(args[i], label{fmt.Sprintf("carried-%d", i), tenon.Propagate}, label{fmt.Sprintf("isolated-%d", i), tenon.Isolate})
+			out[i] = tenon.WithMarks(args[i], label{id: fmt.Sprintf("carried-%d", i), policy: tenon.Propagate}, label{id: fmt.Sprintf("isolated-%d", i), policy: tenon.Isolate})
 			want = append(want, fmt.Sprintf("carried-%d", i))
 		case holds:
 			elems := args[i].Elements()
-			elems[0] = tenon.WithMarks(elems[0], label{fmt.Sprintf("held-%d", i), tenon.Propagate})
+			elems[0] = tenon.WithMarks(elems[0], label{id: fmt.Sprintf("held-%d", i), policy: tenon.Propagate})
 			out[i] = tenon.List(args[i].Type().ElementType(), elems...)
 			if op.Operands[i].Within {
 				want = append(want, fmt.Sprintf("held-%d", i))
 			}
+		case redacted:
+			deep := label{id: fmt.Sprintf("deep-%d", i), policy: tenon.Propagate, deep: true}
+			secret := label{id: fmt.Sprintf("redacted-%d", i), policy: tenon.Isolate, redact: true}
+			out[i] = tenon.WithMarks(args[i], deep, secret)
+			want = append(want, deep.id, secret.id)
 		}
 	}
 	slices.Sort(want)
