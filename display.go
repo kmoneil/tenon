@@ -169,3 +169,12 @@ func shortText(write func(w *textWriter)) string {
 	write(&w)
 	return shortened(w.String(), func(s string) string { return s })
 }
+
+// typeText renders t for a diagnostic message, shortened if it is long. A type
+// taken from data can be as long as the data, and a message that named it
+// whole for each of many values would cost their number times its length.
+func typeText(t Type) string {
+	w := textWriter{limit: shortLimit}
+	t.write(&w)
+	return shortened(w.String(), func(s string) string { return s })
+}

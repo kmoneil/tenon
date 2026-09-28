@@ -186,16 +186,17 @@ func shortText(s string) string {
 	return s[:cut] + "..."
 }
 
-// typeText renders a tenon type for a message, once for the run of one
-// Decode however many parts name it: a value holding many unknown members
-// of one large type would otherwise pay the type's text for every one.
+// typeText renders a tenon type for a message, shortened as valueText
+// shortens a value, once for the run of one Decode however many parts name
+// it: a value holding many unknown members of one large type would otherwise
+// pay the type's text for every one, and each message would hold it whole.
 func (d *decoder) typeText(t tenon.Type) string {
 	if d.typeTexts == nil {
 		d.typeTexts = map[tenon.Type]string{}
 	}
 	s, ok := d.typeTexts[t]
 	if !ok {
-		s = t.String()
+		s = shortText(t.String())
 		d.typeTexts[t] = s
 	}
 	return s

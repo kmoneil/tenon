@@ -75,7 +75,7 @@ func typeConvertKind(t Type, c Constraint, p Policy, k keys) typeOutcome {
 	if t.t.kind == KindCapsule {
 		// A capsule type converts only to a type that it, or the type it
 		// converts to, declares.
-		return failed(noConversion(t, c))
+		return failed(noConversion(typeText(t), c))
 	}
 	return typeConvertStructure(t, c, p, k)
 }
@@ -85,9 +85,9 @@ func typeConvertKind(t Type, c Constraint, p Policy, k keys) typeOutcome {
 func typeConvertExactly(t, s Type, p Policy, k keys) typeOutcome {
 	switch {
 	case t.t.kind == KindCapsule || s.t.kind == KindCapsule:
-		return capsuleTypeConvert(t, s, p)
+		return capsuleTypeConvert(t, s, typeText(t), p)
 	case isPrimitive(s.t.kind):
-		return primitiveTypeConvert(t, s, p)
+		return primitiveTypeConvert(t, s, typeText(t), p)
 	}
 	// The structure of s admits s alone, so converting to it does not ask
 	// for its one type again.
@@ -105,7 +105,7 @@ func typeConvertStructure(t Type, c Constraint, p Policy, k keys) typeOutcome {
 	case ConstraintObjectWith:
 		return objectTypeConvert(t, c, p, k)
 	}
-	return failed(noConversion(t, c))
+	return failed(noConversion(typeText(t), c))
 }
 
 // structural returns the constraint that names a list, set, map, tuple or
@@ -182,13 +182,13 @@ func isPrimitive(k Kind) bool { return k == KindBool || k == KindNumber || k == 
 
 // primitiveTypeConvert converts t to the distinct primitive type s. String
 // converts to and from Number and Bool, unsafely, and nothing else converts to
-// a primitive type.
-func primitiveTypeConvert(t, s Type, p Policy) typeOutcome {
+// a primitive type. from is what a failure names t by (noConversion).
+func primitiveTypeConvert(t, s Type, from string, p Policy) typeOutcome {
 	if !isPrimitive(t.t.kind) || t.t.kind != KindString && s.t.kind != KindString {
-		return failed(noConversion(t, Exactly(s)))
+		return failed(noConversion(from, Exactly(s)))
 	}
 	if p == Safe {
-		return failed(unsafeConversion(t, Exactly(s)))
+		return failed(unsafeConversion(from, Exactly(s)))
 	}
 	return typeOutcome{typ: s}
 }
@@ -212,7 +212,7 @@ func collectionTypeConvert(t Type, c Constraint, p Policy, k keys) typeOutcome {
 		members = from.elems
 		unsafe = d.kind == ConstraintSetOf
 	default:
-		return failed(noConversion(t, c))
+		return failed(noConversion(typeText(t), c))
 	}
 	results := make([]Type, 0, len(members)+1)
 	var least []Type
@@ -237,7 +237,7 @@ func collectionTypeConvert(t Type, c Constraint, p Policy, k keys) typeOutcome {
 		}
 	}
 	if unsafe && p == Safe {
-		return failed(unsafeConversion(t, c))
+		return failed(unsafeConversion(typeText(t), c))
 	}
 	if pending {
 		return pendingElements(results, least, d.elem, p, false)
@@ -278,7 +278,7 @@ func elementType(types []Type, c Constraint, p Policy, withhold bool) (Type, *fa
 		return Type{}, &failure{CodeConvertNoCommonType, "the members' common type does not satisfy " + c.String()}
 	case !Satisfies(c, elem):
 		return Type{}, &failure{CodeConvertNoCommonType,
-			"the members' common type " + elem.String() + " does not satisfy " + c.String()}
+			"the members' common type " + typeText(elem) + " does not satisfy " + c.String()}
 	}
 	return elem, nil
 }
@@ -343,7 +343,7 @@ func tupleTypeConvert(t Type, c Constraint, p Policy, k keys) typeOutcome {
 	case KindList, KindSet:
 		unsafe = true
 	default:
-		return failed(noConversion(t, c))
+		return failed(noConversion(typeText(t), c))
 	}
 	elems := make([]Type, len(d.members))
 	pending := false
@@ -363,7 +363,7 @@ func tupleTypeConvert(t Type, c Constraint, p Policy, k keys) typeOutcome {
 		}
 	}
 	if unsafe && p == Safe {
-		return failed(unsafeConversion(t, c))
+		return failed(unsafeConversion(typeText(t), c))
 	}
 	if pending {
 		return typeOutcome{pending: true}
@@ -379,7 +379,7 @@ func objectTypeConvert(t Type, c Constraint, p Policy, k keys) typeOutcome {
 	case KindMap:
 		return mapObjectTypeConvert(t, c, p, k)
 	default:
-		return failed(noConversion(t, c))
+		return failed(noConversion(typeText(t), c))
 	}
 	attrs := map[string]Type{}
 	pending := false
@@ -459,7 +459,7 @@ func mapObjectTypeConvert(t Type, c Constraint, p Policy, k keys) typeOutcome {
 		}
 	}
 	if p == Safe {
-		return failed(unsafeConversion(t, c))
+		return failed(unsafeConversion(typeText(t), c))
 	}
 	if pending {
 		return typeOutcome{pending: true}
@@ -470,7 +470,7 @@ func mapObjectTypeConvert(t Type, c Constraint, p Policy, k keys) typeOutcome {
 // typeConvertOneOf converts t to the first member of a OneOf constraint to
 // which a conversion from t exists under the policy.
 func typeConvertOneOf(t Type, c Constraint, p Policy, k keys) typeOutcome {
-	m, f := oneOfMember(t, c, p)
+	m, f := oneOfMember(t, typeText(t), c, p)
 	if f != nil {
 		return failed(f)
 	}
@@ -478,8 +478,9 @@ func typeConvertOneOf(t Type, c Constraint, p Policy, k keys) typeOutcome {
 }
 
 // oneOfMember returns the first member of the OneOf constraint c to which a
-// conversion from t exists under the policy, or the failure when none does.
-func oneOfMember(t Type, c Constraint, p Policy) (Constraint, *failure) {
+// conversion from t exists under the policy, or the failure when none does,
+// which names t by from (noConversion).
+func oneOfMember(t Type, from string, c Constraint, p Policy) (Constraint, *failure) {
 	for _, m := range c.c.members {
 		if typeConvert(t, m, p, keysNone).fail == nil {
 			return m, nil
@@ -488,36 +489,39 @@ func oneOfMember(t Type, c Constraint, p Policy) (Constraint, *failure) {
 	if p == Safe {
 		for _, m := range c.c.members {
 			if typeConvert(t, m, Unsafe, keysNone).fail == nil {
-				return Constraint{}, unsafeConversion(t, c)
+				return Constraint{}, unsafeConversion(from, c)
 			}
 		}
 	}
-	return Constraint{}, noConversion(t, c)
+	return Constraint{}, noConversion(from, c)
 }
 
 // capsuleTypeConvert converts between t and the type s where either is a
 // capsule type, by the conversions a capsule type declares: the source type's
-// conversion to s, and failing that the target type's conversion from t.
-func capsuleTypeConvert(t, s Type, p Policy) typeOutcome {
+// conversion to s, and failing that the target type's conversion from t. from
+// is what a failure names t by (noConversion).
+func capsuleTypeConvert(t, s Type, from string, p Policy) typeOutcome {
 	_, _, safe, ok := capsuleConversion(t, s)
 	switch {
 	case !ok:
-		return failed(noConversion(t, Exactly(s)))
+		return failed(noConversion(from, Exactly(s)))
 	case !safe && p == Safe:
-		return failed(unsafeConversion(t, Exactly(s)))
+		return failed(unsafeConversion(from, Exactly(s)))
 	}
 	return typeOutcome{typ: s}
 }
 
-// noConversion returns the failure of a conversion that does not exist.
-func noConversion(t Type, c Constraint) *failure {
-	return &failure{CodeConvertNoConversion, t.String() + " does not convert to " + c.String()}
+// noConversion returns the failure of a conversion that does not exist, from
+// what the message names the source by: a type as typeText renders it, or a
+// value's type as typeName does.
+func noConversion(from string, c Constraint) *failure {
+	return &failure{CodeConvertNoConversion, from + " does not convert to " + c.String()}
 }
 
 // unsafeConversion returns the failure of a conversion that exists only under
 // the unsafe policy, applied under the safe one.
-func unsafeConversion(t Type, c Constraint) *failure {
-	return &failure{CodeConvertUnsafe, t.String() + " converts to " + c.String() + " only unsafely, and the policy is safe"}
+func unsafeConversion(from string, c Constraint) *failure {
+	return &failure{CodeConvertUnsafe, from + " converts to " + c.String() + " only unsafely, and the policy is safe"}
 }
 
 // missingAttribute returns the failure of an object that lacks an attribute

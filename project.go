@@ -83,7 +83,7 @@ func (p *projector) value(b []byte, v Value, at int) []byte {
 		p.fail(at, CodeSerializeNotKnown, "a pending value has no content to project")
 		return b
 	case stateUnknown:
-		p.fail(at, CodeSerializeNotKnown, "an unknown value of type "+n.typ.String()+" has no content to project")
+		p.fail(at, CodeSerializeNotKnown, "an unknown value of type "+typeText(n.typ)+" has no content to project")
 		return b
 	case stateNull:
 		return append(b, "null"...)

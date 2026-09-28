@@ -450,3 +450,35 @@ func TestConformance_GO004_RoundTrip(t *testing.T) {
 		}
 	}
 }
+
+// holdsConfig decodes an object whose one attribute, config, it takes as a
+// tenon.Value, so that a member's type reaches Decode's messages whole.
+type holdsConfig struct {
+	Config tenon.Value `tenon:"config"`
+}
+
+// TestConformance_DI003_DecodeNamesATypeInFewBytes holds Decode's messages to
+// the start of a type, however long it is: three unknown members of an object
+// type whose attribute holds an object type with an attribute name of 10,000
+// bytes each fail in a message under 200 bytes, where naming the type whole
+// made each longer than the name.
+func TestConformance_DI003_DecodeNamesATypeInFewBytes(t *testing.T) {
+	conformance.Covers(t, "DI-003")
+	inner := tenon.ObjectType(map[string]tenon.Type{strings.Repeat("a", 10000): tenon.NumberType()})
+	outer := tenon.ObjectType(map[string]tenon.Type{"config": inner})
+	v := tenon.List(outer, tenon.Unknown(outer), tenon.Unknown(outer), tenon.Unknown(outer))
+	_, err := gotenon.Decode[[]holdsConfig](v, tenon.Safe)
+	var te *tenon.Error
+	if !errors.As(err, &te) {
+		t.Fatalf("Decode gave %v, want a *tenon.Error", err)
+	}
+	ds := te.Diagnostics()
+	if len(ds) != 3 {
+		t.Errorf("Decode gave %d diagnostics, want 3: %v", len(ds), err)
+	}
+	for _, d := range ds {
+		if d.Code != tenon.CodeDecodeNotKnown || len(d.Message) > 200 {
+			t.Errorf("%s: a message of %d bytes, starting %.80q", d.Code, len(d.Message), d.Message)
+		}
+	}
+}
