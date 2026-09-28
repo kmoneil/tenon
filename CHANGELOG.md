@@ -38,6 +38,16 @@
   606 ms and now in 33 ms, and it now grows with the values rather than with
   the values times the depth. A member's path step is made only when the
   member fails, where every member made one, a number for each index.
+- `Convert` builds each member of a container once, at the element type the
+  levels above it settle, where it built each member at its own collection's
+  element type and built it again at every level above whose element type
+  grew. Tuples nested 80 deep around 2,000 objects, each level adding an
+  attribute every object is given, converted to nested lists in 144 ms and
+  263 MB, and now in 9 ms and 13 MB, in proportion to the result.
+- A set that a conversion builds keeps the marks its members give it,
+  `Isolate` ones included, when the collection holding it widens its element
+  type, as it did when nothing widened it: building it again at the wider
+  type lost them.
 
 ### Added
 

@@ -1,6 +1,7 @@
 package tenon
 
 import (
+	"maps"
 	"slices"
 	"strconv"
 
@@ -141,63 +142,252 @@ func (m *convertMemo) resultType(c Constraint) (Type, bool) {
 
 // value converts v, in whatever state, to c. The result carries none of v's
 // own marks: whoever asked for the conversion puts on the marks it calls for.
+func (x converter) value(v Value, c Constraint) Value {
+	d := x.draft(v, c)
+	if d.done.n != nil {
+		return d.done
+	}
+	return x.build(d, d.typ)
+}
+
+// draft is a conversion worked out and not yet built. A conversion to a
+// collection unifies its members' types into the collection's element type,
+// and builds each member at that type; built as it was converted, a member was
+// built again at every level above it whose element type grew, which cost the
+// value's size times its depth. So a container's conversion is worked out
+// first, to its type and its members' drafts, and built once, at the type the
+// levels above it settle (build). The draft of any other conversion holds its
+// result, which building fits to the type it is built at, as a member of a
+// collection is fitted to the collection's element type.
+type draft struct {
+	// done is the result of a conversion that builds no container here,
+	// fails, or is pending.
+	done Value
+	// typ is the type a container's conversion gives, where done is zero,
+	// and parts are what it is built from. Most drafts are of members that
+	// build no container, so what only a container has is held apart.
+	typ Type
+	*parts
+}
+
+// parts are what a container's conversion is built from.
+type parts struct {
+	// members are the drafts of its members, in the order it holds them, and
+	// names are the keys of a map's members or the names of an object's.
+	members []memberDraft
+	names   []string
+	// marks are what a collection takes from its members: the redacting marks
+	// of those that name its element type's attributes (CV-033).
+	marks []Mark
+	// withheld is what redactedStructure finds within the container once
+	// built: the redacting marks of the values within it whose types name
+	// attributes.
+	withheld []Mark
+}
+
+// memberDraft is the draft of a member's conversion, with the member, whose
+// Propagate marks what it converts to carries (CV-033). from is nil for what a
+// conversion puts in an object without converting it: an attribute carried
+// across unchanged, and the null of an absent optional one.
+type memberDraft struct {
+	draft
+	from *node
+}
+
+// finished returns the draft of a conversion whose result is r.
+func finished(r Value) draft { return draft{done: r} }
+
+// typeOf returns the type that d's conversion gives.
+func (d draft) typeOf() Type {
+	if d.done.n != nil {
+		return d.done.n.typ
+	}
+	return d.typ
+}
+
+// draft works out the conversion of v to c, building no container.
 //
 // Where v carries a redacting mark, what fails within it fails at v, since a
 // path within it and a message naming its type or what it holds would show
 // its structure: each code the failures have, once, located at v, with a
 // message naming v by the placeholder and c (MK-011, CV-050).
-func (x converter) value(v Value, c Constraint) Value {
+func (x converter) draft(v Value, c Constraint) draft {
 	ms := v.n.redactingMarks()
-	r := x.valueOf(v, c)
-	if ms == nil || r.n.state != stateError {
-		return r
+	d := x.draftOf(v, c)
+	if ms == nil || d.done.n == nil || d.done.n.state != stateError {
+		return d
 	}
+	r := d.done
 	message := redactedText(ms) + " does not convert to " + c.String()
 	var diags []Diagnostic
-	for _, d := range r.n.diagnostics() {
-		if !slices.ContainsFunc(diags, func(e Diagnostic) bool { return e.Code == d.Code }) {
-			diags = append(diags, Diagnostic{Code: d.Code, Message: message})
+	for _, dg := range r.n.diagnostics() {
+		if !slices.ContainsFunc(diags, func(e Diagnostic) bool { return e.Code == dg.Code }) {
+			diags = append(diags, Diagnostic{Code: dg.Code, Message: message})
 		}
 	}
-	return Value{n: &node{state: stateError, data: diags, marks: r.n.marks}}
+	return finished(Value{n: &node{state: stateError, data: diags, marks: r.n.marks}})
 }
 
-// valueOf is value for a value whose failures need not be moved.
-func (x converter) valueOf(v Value, c Constraint) Value {
+// draftOf is draft for a value whose failures need not be moved.
+func (x converter) draftOf(v Value, c Constraint) draft {
+	if v.n.state == stateKnown {
+		return x.known(v, c)
+	}
+	return finished(x.unsettled(v, c))
+}
+
+// unsettled converts a pending, null or unknown value.
+func (x converter) unsettled(v Value, c Constraint) Value {
 	n := v.n
-	switch n.state {
-	case statePending:
+	if n.state == statePending {
 		return x.pending(v, c)
-	case stateNull, stateUnknown:
-		if x.memo.fits(c, n.typ) {
-			u := withoutMarks(v)
-			return u
-		}
-		k := keysUnknown
-		if n.state == stateNull {
-			k = keysNone
-		}
-		out := typeConvert(n.typ, c, x.policy, k)
-		switch {
-		case out.fail != nil:
-			return errorValue(out.fail.diagnostic())
-		case n.state == stateNull:
-			return Null(out.typ)
-		}
-		rd := n.data.(*rangeData)
-		if out.pending {
-			return pendingValue(c, rd.null)
-		}
-		return narrowedUnknown(out.typ, rd.null, lengthNarrowings(n.typ, out.typ, rd))
 	}
-	return x.known(v, c)
+	if x.memo.fits(c, n.typ) {
+		u := withoutMarks(v)
+		return u
+	}
+	k := keysUnknown
+	if n.state == stateNull {
+		k = keysNone
+	}
+	out := typeConvert(n.typ, c, x.policy, k)
+	switch {
+	case out.fail != nil:
+		return errorValue(out.fail.diagnostic())
+	case n.state == stateNull:
+		return Null(out.typ)
+	}
+	rd := n.data.(*rangeData)
+	if out.pending {
+		return pendingValue(c, rd.null)
+	}
+	return narrowedUnknown(out.typ, rd.null, lengthNarrowings(n.typ, out.typ, rd))
 }
 
-// member converts a member of a container to c. Converting a member is a
-// conversion in its own right, so the result carries the member's Propagate
-// marks, as an error result does.
-func (x converter) member(m Value, c Constraint) Value {
-	return x.carry(x.value(m, c), m.n)
+// build builds what d works out as a value of type t: the type d gives, or
+// one that the levels above it settled, which unification made from d's type
+// and others'. A container is built at t, each member at the part of t that
+// holds it, so that nothing is built at a type a level above would widen, and
+// the result of any other conversion is fitted to t.
+func (x converter) build(d draft, t Type) Value {
+	switch {
+	case d.done.n != nil:
+		return x.fit(d.done, t)
+	case t.t.kind != d.typ.t.kind, t.t.kind == KindTuple && len(t.t.elems) != len(d.members):
+		// A union of another shape, as a list is of a tuple: built at the
+		// type the conversion gives, then fitted.
+		return x.fit(x.build(d, d.typ), t)
+	case t.t.kind == KindObject:
+		return x.buildObject(d, t)
+	}
+	vals := make([]Value, len(d.members))
+	for i, md := range d.members {
+		part := t.t.elem
+		if t.t.kind == KindTuple {
+			part = t.t.elems[i]
+		}
+		vals[i] = x.buildMember(md, part)
+	}
+	// The type is in hand, so the list, set or tuple is made of it, not of
+	// a type found again for it.
+	var r Value
+	switch t.t.kind {
+	case KindList:
+		r = sequenceValue(t, "List", vals)
+	case KindSet:
+		r = setOf(t, vals)
+	case KindMap:
+		entries := make(map[string]Value, len(vals))
+		for i, v := range vals {
+			entries[d.names[i]] = v
+		}
+		r = Map(t.t.elem, entries)
+	default:
+		r = tupleOf(t, vals)
+	}
+	if d.marks != nil {
+		r = WithMarks(r, d.marks...)
+	}
+	return r
+}
+
+// buildObject builds the object that d works out as a value of the object type
+// t, which holds each of its attributes and may hold more: an attribute it
+// lacks it holds as the null of its type, as fitting it to a union does. The
+// names of d's attributes and of t's are in one order, so the two are walked
+// together.
+func (x converter) buildObject(d draft, t Type) Value {
+	attrs := t.t.attrs
+	vals := make([]Value, len(attrs))
+	own := 0
+	for i, a := range attrs {
+		for own < len(d.names) && d.names[own] < a.name {
+			own++
+		}
+		if own < len(d.names) && d.names[own] == a.name {
+			vals[i] = x.buildMember(d.members[own], a.typ)
+			own++
+			continue
+		}
+		vals[i] = Null(a.typ)
+	}
+	return objectOf(t, vals)
+}
+
+// buildMember builds what the member md converts to as a value of type t,
+// carrying the member's Propagate marks (CV-033). What builds no container here
+// is carried and then fitted, as a member converted and then fitted to a
+// collection's element type is.
+func (x converter) buildMember(md memberDraft, t Type) Value {
+	if r := md.done; r.n != nil {
+		if md.from != nil {
+			r = x.carry(r, md.from)
+		}
+		return x.fit(r, t)
+	}
+	r := x.build(md.draft, t)
+	if md.from != nil {
+		r = x.carry(r, md.from)
+	}
+	return r
+}
+
+// withheldWithin returns what redactedStructure finds in what the members
+// drafts convert to, without building them.
+func withheldWithin(drafts []memberDraft) []Mark {
+	var marks []Mark
+	for _, md := range drafts {
+		marks, _ = mergeMarks(marks, md.withheldIn())
+	}
+	return marks
+}
+
+// withheldIn returns what redactedStructure finds in what md converts to: the
+// redacting marks it carries, where its type names attributes, and otherwise
+// those of the values within it. What it carries are its member's, which
+// carrying puts on it, and those its own result carries.
+func (md memberDraft) withheldIn() []Mark {
+	var own []Mark
+	if md.from != nil {
+		own = md.from.redactingMarks()
+	}
+	if r := md.done; r.n != nil {
+		if r.n.state == stateError {
+			return nil
+		}
+		own, _ = mergeMarks(own, r.n.redactingMarks())
+	} else {
+		own, _ = mergeMarks(own, md.marks)
+	}
+	switch {
+	case own != nil && namesAttributes(md.typeOf()):
+		return own
+	case own != nil:
+		return nil
+	case md.done.n != nil:
+		return redactedStructure([]Value{md.done})
+	}
+	return md.withheld
 }
 
 // carrying carries the marks of a conversion's members to what they convert
@@ -415,16 +605,16 @@ func (x converter) pending(v Value, c Constraint) Value {
 	return pendingValue(c, n.null)
 }
 
-// known converts a known value, whose content is in hand though a member of it
-// may not be known. A constraint that admits exactly one type converts as
-// Exactly of that type, however it is written (CV-026), so that is decided
-// first, once, as typeConvertKind decides it, and the kind of c decides the
-// rest.
-func (x converter) known(v Value, c Constraint) Value {
+// known works out the conversion of a known value, whose content is in hand
+// though a member of it may not be known. A constraint that admits exactly one
+// type converts as Exactly of that type, however it is written (CV-026), so
+// that is decided first, once, as typeConvertKind decides it, and the kind of
+// c decides the rest.
+func (x converter) known(v Value, c Constraint) draft {
 	n := v.n
 	if x.memo.fits(c, n.typ) {
 		u := withoutMarks(v)
-		return u
+		return finished(u)
 	}
 	if n.typ.t.kind != KindCapsule && isStructural(c) {
 		return x.structure(v, c)
@@ -435,41 +625,41 @@ func (x converter) known(v Value, c Constraint) Value {
 	if c.c.kind == ConstraintOneOf {
 		m, f := oneOfMember(n.typ, x.typeName(n), c, x.policy)
 		if f != nil {
-			return errorValue(f.diagnostic())
+			return finished(errorValue(f.diagnostic()))
 		}
-		r := x.known(v, m)
-		if r.n.state == statePending {
+		d := x.known(v, m)
+		if r := d.done; r.n != nil && r.n.state == statePending {
 			// The value converts to what the target says, whichever member
 			// of it applied.
-			return WithMarks(pendingValue(c, r.n.null), r.n.markList()...)
+			return finished(WithMarks(pendingValue(c, r.n.null), r.n.markList()...))
 		}
-		return r
+		return d
 	}
 	if n.typ.t.kind == KindCapsule {
 		// A capsule type converts only to a type that it, or the type it
 		// converts to, declares.
-		return errorValue(noConversion(x.typeName(n), c).diagnostic())
+		return finished(errorValue(noConversion(x.typeName(n), c).diagnostic()))
 	}
 	return x.structure(v, c)
 }
 
-// exactly converts a known value to the type s, as converting to Exactly(s)
-// does (CV-020).
-func (x converter) exactly(v Value, s Type) Value {
+// exactly works out the conversion of a known value to the type s, as
+// converting to Exactly(s) does (CV-020).
+func (x converter) exactly(v Value, s Type) draft {
 	switch {
 	case v.n.typ.t.kind == KindCapsule || s.t.kind == KindCapsule:
-		return x.capsule(v, s)
+		return finished(x.capsule(v, s))
 	case isPrimitive(s.t.kind):
-		return x.primitive(v, s)
+		return finished(x.primitive(v, s))
 	}
 	// The structure of s admits s alone, so converting to it does not ask
 	// for its one type again.
 	return x.structure(v, structural(s))
 }
 
-// structure converts a known value to a ListOf, SetOf, MapOf, TupleOf or
-// ObjectWith constraint.
-func (x converter) structure(v Value, c Constraint) Value {
+// structure works out the conversion of a known value to a ListOf, SetOf,
+// MapOf, TupleOf or ObjectWith constraint.
+func (x converter) structure(v Value, c Constraint) draft {
 	switch c.c.kind {
 	case ConstraintListOf, ConstraintSetOf, ConstraintMapOf:
 		return x.collection(v, c)
@@ -478,7 +668,7 @@ func (x converter) structure(v Value, c Constraint) Value {
 	case ConstraintObjectWith:
 		return x.object(v, c)
 	}
-	return errorValue(noConversion(x.typeName(v.n), c).diagnostic())
+	return finished(errorValue(noConversion(x.typeName(v.n), c).diagnostic()))
 }
 
 // primitive converts a known value to the primitive type s.
@@ -606,30 +796,32 @@ func members(n *node) held {
 	return h
 }
 
-// convertMembers converts each member to the constraint that at gives for its
-// position, reporting the error value that the failed ones make, located by
-// their steps, and whether any converted to a pending value.
-func (x converter) convertMembers(h held, at func(i int) Constraint) ([]Value, Value, bool, bool) {
-	out := make([]Value, len(h.vals))
+// draftMembers works out the conversion of each member to the constraint that
+// at gives for its position, reporting the error value that the failed ones
+// make, located by their steps and carrying their marks, and whether any
+// converts to a pending value.
+func (x converter) draftMembers(h held, at func(i int) Constraint) ([]memberDraft, Value, bool, bool) {
+	out := make([]memberDraft, len(h.vals))
 	var errs containerErrors
 	pending := false
 	for i, m := range h.vals {
-		r := x.member(m, at(i))
-		switch r.n.state {
-		case stateError:
-			errs.add(h.step(i), r)
-		case statePending:
+		d := x.draft(m, at(i))
+		out[i] = memberDraft{draft: d, from: m.n}
+		switch r := d.done; {
+		case r.n == nil:
+		case r.n.state == stateError:
+			errs.add(h.step(i), x.carry(r, m.n))
+		case r.n.state == statePending:
 			pending = true
 		}
-		out[i] = r
 	}
 	e, failed := errs.value()
 	return out, e, failed, pending
 }
 
-// collection converts a known list, set, tuple, map or object to a ListOf,
-// SetOf or MapOf constraint.
-func (x converter) collection(v Value, c Constraint) Value {
+// collection works out the conversion of a known list, set, tuple, map or
+// object to a ListOf, SetOf or MapOf constraint.
+func (x converter) collection(v Value, c Constraint) draft {
 	n, d := v.n, c.c
 	from := n.typ.t.kind
 	unsafe := false
@@ -638,21 +830,21 @@ func (x converter) collection(v Value, c Constraint) Value {
 	case d.kind != ConstraintMapOf && (from == KindList || from == KindSet || from == KindTuple):
 		unsafe = d.kind == ConstraintSetOf && from != KindSet
 	default:
-		return errorValue(noConversion(x.typeName(n), c).diagnostic())
+		return finished(errorValue(noConversion(x.typeName(n), c).diagnostic()))
 	}
 	h := members(n)
-	converted, e, failed, pending := x.within(n).convertMembers(h, func(int) Constraint { return d.elem })
+	drafts, e, failed, pending := x.within(n).draftMembers(h, func(int) Constraint { return d.elem })
 	switch {
 	case failed:
-		return e
+		return finished(e)
 	case unsafe && x.policy == Safe:
-		return errorValue(unsafeConversion(x.typeName(n), c).diagnostic())
+		return finished(errorValue(unsafeConversion(x.typeName(n), c).diagnostic()))
 	}
 	withhold := x.within(n).withheld != nil || x.typeWithheld(n)
-	types := make([]Type, 0, len(converted)+2)
+	types := make([]Type, 0, len(drafts)+2)
 	var least []Type
-	for i, r := range converted {
-		if r.n.state == statePending {
+	for i, md := range drafts {
+		if r := md.done; r.n != nil && r.n.state == statePending {
 			// As in collectionTypeConvert: a member whose no-keys conversion
 			// fails settles no element type, and is left out rather than
 			// contributing the zero Type.
@@ -661,60 +853,52 @@ func (x converter) collection(v Value, c Constraint) Value {
 			}
 			continue
 		}
-		types = append(types, r.n.typ)
+		types = append(types, md.typeOf())
 	}
 	if from == KindList || from == KindSet || from == KindMap {
 		out := typeConvert(n.typ.t.elem, d.elem, x.policy, keysNone)
 		if out.fail != nil {
-			return errorValue(out.fail.diagnostic())
+			return finished(errorValue(out.fail.diagnostic()))
 		}
 		types = append(types, out.typ)
 	}
 	if pending {
 		if out := pendingElements(types, least, d.elem, x.policy, withhold); out.fail != nil {
-			return errorValue(out.fail.diagnostic())
+			return finished(errorValue(out.fail.diagnostic()))
 		}
-		return pendingContainer(c, n)
+		return finished(pendingContainer(c, n))
 	}
 	elem, f := elementType(types, d.elem, x.policy, withhold, x.memo)
 	if f != nil {
-		return errorValue(f.diagnostic())
+		return finished(errorValue(f.diagnostic()))
 	}
 	if from == KindSet && n.partial && d.kind == ConstraintListOf {
 		// A set holding members that are not known has no settled order and
 		// no settled count, so the list it becomes is not known either.
 		low, high := setLengthBounds(n)
-		return Narrow(Unknown(ListType(elem)), NotNull(), LengthMin(int64(low)), LengthMax(int64(high)))
+		return finished(Narrow(Unknown(ListType(elem)), NotNull(), LengthMin(int64(low)), LengthMax(int64(high))))
+	}
+	r := draft{parts: &parts{members: drafts, names: h.names}}
+	switch d.kind {
+	case ConstraintListOf:
+		r.typ = ListType(elem)
+	case ConstraintSetOf:
+		r.typ = SetType(elem)
+	default:
+		r.typ = MapType(elem)
+	}
+	if x.holdsRedacting(n) {
+		r.withheld = withheldWithin(drafts)
 	}
 	// An element type the members settle holds the attribute names of their
 	// object types, and every member is given those attributes, so one taken
 	// from a redacted member shows its structure in the result's type and
 	// in its siblings: the result carries that member's redacting marks
 	// (CV-033). A constraint that settles the type takes nothing from them.
-	var derived []Mark
 	if _, fixed := x.memo.resultType(d.elem); withhold && !fixed {
-		derived = redactedStructure(converted)
+		r.marks = r.withheld
 	}
-	for i, r := range converted {
-		converted[i] = x.fit(r, elem)
-	}
-	var result Value
-	switch d.kind {
-	case ConstraintListOf:
-		result = List(elem, converted...)
-	case ConstraintSetOf:
-		result = setOf(elem, converted)
-	default:
-		entries := make(map[string]Value, len(converted))
-		for i, r := range converted {
-			entries[h.names[i]] = r
-		}
-		result = Map(elem, entries)
-	}
-	if derived != nil {
-		result = WithMarks(result, derived...)
-	}
-	return result
+	return r
 }
 
 // redactedStructure returns the redacting marks of the values among members,
@@ -767,57 +951,66 @@ func namesAttributes(t Type) bool {
 	return false
 }
 
-// setOf returns the set of these members, which give their marks, at every
-// depth, to the set, since a set's members carry none. The members are
+// setOf returns the set of type st holding these members, which give their
+// marks, at every depth, to the set, since a set's members carry none. The members are
 // unmarked by one taking, as UnmarkDeep unmarks one value: members under a
 // container's deep marks share the layer that holds them, which is taken
 // once rather than once for each member, so a list of k members under k deep
 // marks costs k and not k by k.
-func setOf(elem Type, members []Value) Value {
+func setOf(st Type, members []Value) Value {
 	var t taking
 	unmarked := make([]Value, len(members))
 	for i, m := range members {
 		unmarked[i] = Value{n: m.n.unmarkDeep(&t)}
 	}
 	sortMarks(t.marks)
-	return WithMarks(Set(elem, unmarked...), t.marks...)
+	return WithMarks(sequenceValue(st, "Set", unmarked), t.marks...)
 }
 
-// tuple converts a known tuple, list or set to a TupleOf constraint.
-func (x converter) tuple(v Value, c Constraint) Value {
+// tuple works out the conversion of a known tuple, list or set to a TupleOf
+// constraint.
+func (x converter) tuple(v Value, c Constraint) draft {
 	n, d := v.n, c.c
 	from := n.typ.t.kind
 	switch from {
 	case KindTuple:
 		if len(n.typ.t.elems) != len(d.members) {
-			return errorValue(tupleTypeConvert(n.typ, c, x.policy, keysNone).fail.diagnostic())
+			return finished(errorValue(tupleTypeConvert(n.typ, c, x.policy, keysNone).fail.diagnostic()))
 		}
 	case KindList, KindSet:
 		want := len(d.members)
 		if from == KindSet && n.partial {
-			return x.partialSetTuple(v, c)
+			return finished(x.partialSetTuple(v, c))
 		}
 		if got := len(n.data.([]Value)); got != want {
 			message := "a " + kindNoun(from) + " of " + count(got, "member")
 			if x.within(n).withheld != nil {
 				message = "the " + kindNoun(from)
 			}
-			return errorValue(Diagnostic{Code: CodeConvertLengthMismatch,
-				Message: message + " does not convert to " + c.String() + ", which has " + count(want, "member")})
+			return finished(errorValue(Diagnostic{Code: CodeConvertLengthMismatch,
+				Message: message + " does not convert to " + c.String() + ", which has " + count(want, "member")}))
 		}
 	default:
-		return errorValue(noConversion(x.typeName(n), c).diagnostic())
+		return finished(errorValue(noConversion(x.typeName(n), c).diagnostic()))
 	}
-	converted, e, failed, pending := x.within(n).convertMembers(members(n), func(i int) Constraint { return d.members[i] })
+	drafts, e, failed, pending := x.within(n).draftMembers(members(n), func(i int) Constraint { return d.members[i] })
 	switch {
 	case failed:
-		return e
+		return finished(e)
 	case from != KindTuple && x.policy == Safe:
-		return errorValue(unsafeConversion(x.typeName(n), c).diagnostic())
+		return finished(errorValue(unsafeConversion(x.typeName(n), c).diagnostic()))
 	case pending:
-		return pendingContainer(c, n)
+		return finished(pendingContainer(c, n))
 	}
-	return Tuple(converted...)
+	types := make([]Type, len(drafts))
+	for i, md := range drafts {
+		types[i] = md.typeOf()
+	}
+	r := draft{typ: TupleType(types...), parts: &parts{members: drafts}}
+	if x.holdsRedacting(n) {
+		r.withheld = withheldWithin(drafts)
+	}
+	return r
 }
 
 // partialSetTuple converts a set holding members that are not known to a
@@ -860,28 +1053,34 @@ func kindNoun(k Kind) string {
 	return "object"
 }
 
-// object converts a known object or map to an ObjectWith constraint.
-func (x converter) object(v Value, c Constraint) Value {
+// object works out the conversion of a known object or map to an ObjectWith
+// constraint.
+func (x converter) object(v Value, c Constraint) draft {
 	n, d := v.n, c.c
 	from := n.typ.t.kind
 	if from != KindObject && from != KindMap {
-		return errorValue(noConversion(x.typeName(n), c).diagnostic())
+		return finished(errorValue(noConversion(x.typeName(n), c).diagnostic()))
 	}
 	h := members(n)
 	inner := x.within(n)
 	var errs containerErrors
-	attrs := make(map[string]Value, len(h.vals))
+	attrs := make(map[string]memberDraft, len(h.vals))
 	pending := false
 	fields := d.fields
 	missing := func(name string) {
 		errs.addDiagnostic(missingAttribute(name).diagnostic())
+	}
+	absent := func(f field) {
+		if r, ok := x.absentValue(f); ok {
+			attrs[f.name] = memberDraft{draft: finished(r)}
+		}
 	}
 	for i, name := range h.names {
 		for len(fields) > 0 && fields[0].name < name {
 			if fields[0].Required {
 				missing(fields[0].name)
 			}
-			x.addNullValue(attrs, fields[0])
+			absent(fields[0])
 			fields = fields[1:]
 		}
 		m := h.vals[i]
@@ -899,16 +1098,17 @@ func (x converter) object(v Value, c Constraint) Value {
 				continue
 			}
 			// Carried across unchanged, marks and all.
-			attrs[name] = m
+			attrs[name] = memberDraft{draft: finished(m)}
 		default:
-			r := inner.member(m, fields[0].Constraint)
-			switch r.n.state {
-			case stateError:
-				errs.add(h.step(i), r)
-			case statePending:
+			md := memberDraft{draft: inner.draft(m, fields[0].Constraint), from: m.n}
+			switch r := md.done; {
+			case r.n == nil:
+			case r.n.state == stateError:
+				errs.add(h.step(i), inner.carry(r, m.n))
+			case r.n.state == statePending:
 				pending = true
 			}
-			attrs[name] = r
+			attrs[name] = md
 			fields = fields[1:]
 		}
 	}
@@ -916,18 +1116,29 @@ func (x converter) object(v Value, c Constraint) Value {
 		if f.Required {
 			missing(f.name)
 		}
-		x.addNullValue(attrs, f)
+		absent(f)
 	}
 	if e, failed := errs.value(); failed {
-		return e
+		return finished(e)
 	}
 	switch {
 	case from == KindMap && x.policy == Safe:
-		return errorValue(unsafeConversion(x.typeName(n), c).diagnostic())
+		return finished(errorValue(unsafeConversion(x.typeName(n), c).diagnostic()))
 	case pending:
-		return pendingContainer(c, n)
+		return finished(pendingContainer(c, n))
 	}
-	return Object(attrs)
+	r := draft{parts: &parts{names: slices.Sorted(maps.Keys(attrs))}}
+	r.members = make([]memberDraft, len(r.names))
+	types := make(map[string]Type, len(r.names))
+	for i, name := range r.names {
+		r.members[i] = attrs[name]
+		types[name] = r.members[i].typeOf()
+	}
+	r.typ = ObjectType(types)
+	if x.holdsRedacting(n) {
+		r.withheld = withheldWithin(r.members)
+	}
+	return r
 }
 
 // fit returns m, a member already converted to a collection's element
@@ -978,10 +1189,15 @@ func (x converter) fitKnown(m Value, e Type) Value {
 		for i, v := range vals {
 			fitted[i] = x.fit(v, to.elem)
 		}
-		switch to.kind {
-		case KindList:
+		switch {
+		case to.kind == KindList:
 			return List(to.elem, fitted...)
-		case KindSet:
+		case to.kind == KindSet && n.typ.t.kind == KindSet:
+			// Every mark stays on the set, Isolate ones too: they include
+			// those its members gave it at every depth (CV-033), which members
+			// fitted again, carrying none, do not give back.
+			return WithMarks(Set(to.elem, fitted...), n.markList()...)
+		case to.kind == KindSet:
 			return Set(to.elem, fitted...)
 		}
 		entries := make(map[string]Value, len(fitted))
@@ -1107,10 +1323,11 @@ func (x converter) holdsRedacting(n *node) bool {
 	return r
 }
 
-// addNullValue adds to attrs the attribute that an absent optional field f
-// adds, where its constraint gives a type: the null of that type.
-func (x converter) addNullValue(attrs map[string]Value, f field) {
+// absentValue returns the attribute that an absent optional field f adds,
+// where its constraint gives a type: the null of that type.
+func (x converter) absentValue(f field) (Value, bool) {
 	if t, ok := x.memo.resultType(f.Constraint); ok {
-		attrs[f.name] = Null(t)
+		return Null(t), true
 	}
+	return Value{}, false
 }

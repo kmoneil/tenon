@@ -67,3 +67,14 @@ func FlagsChecked(t *testing.T, v Value) int { return checkFlags(t, v) }
 // SameNode reports whether a and b hold one node: whether an operation handed
 // back the value it was given rather than a copy of it.
 func SameNode(a, b Value) bool { return a.n == b.n }
+
+// ConvertBothWays converts v, which is not an error value, to c under p as
+// Convert does, and as the reference that converts a container's members and
+// fits them to its element type at every level does, for the property test
+// that holds the two to one result. Neither goes through the operation
+// framework, which they would share.
+func ConvertBothWays(v Value, c Constraint, p Policy) (converted, fitted Value) {
+	converted = converter{policy: p, carried: &carrying{}, memo: &convertMemo{}}.value(v, c)
+	fitted = converter{policy: p, carried: &carrying{}, memo: &convertMemo{}}.fittingValue(v, c)
+	return converted, fitted
+}
