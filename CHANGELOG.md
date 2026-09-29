@@ -51,6 +51,15 @@
 
 ### Changed
 
+- `gotenon.Encode` panics on a pending value below the top of what it is
+  given, whether a `tenon.Value` or a `MarshalValue` method gives it, naming
+  the path where it is: `Encode: the pending value at ".items[0].v" has no
+  type`. It panicked from the root's constructors, which name an attribute
+  but no path. A pending value that is the whole of what `Encode` is given is
+  kept, as before. `SECURITY.md` and gotenon's documentation now state that
+  decoding into `big.Int`, `big.Rat` or `big.Float` costs work set by a
+  number's magnitude rather than its length, and advise decoding numbers
+  from outside into `tenon.Value` or a fixed-size type.
 - Under `Safe`, a container that converts only unsafely, a list or a tuple
   to a set, a list or a set to a tuple, or a map to an object, fails as a
   whole with `convert.unsafe` before any member is read, as the policy

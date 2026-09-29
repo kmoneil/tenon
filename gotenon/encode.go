@@ -313,11 +313,17 @@ func (e *encoder) encode(m *goMapping, rv reflect.Value, p tenon.Path) (tenon.Va
 
 // fromData returns v, or records its diagnostics, located within the part at
 // p, where it is an error value: one that data made, or that a tenon.Value or
-// a marshaler supplied.
+// a marshaler supplied. A pending value has no type, and no container holds
+// one, so below the top of what is encoded it is the calling program's
+// mistake, named where it is, rather than one a container's constructor finds
+// knowing only the attribute it would be [GO-043].
 func (e *encoder) fromData(v tenon.Value, p tenon.Path) (tenon.Value, bool) {
 	if v.IsError() {
 		e.fails.within(p, v.Diagnostics())
 		return tenon.Value{}, false
+	}
+	if v.IsPending() && !p.IsZero() {
+		usagePanic("Encode: the pending value at %q has no type, and no container holds one; Resolve it to a type first, or encode it alone", p.String())
 	}
 	return v, true
 }

@@ -55,6 +55,13 @@ tree it describes: a slice, map or pointer reached from two places counts at
 each, as `encoding/json` counts it, so a value built by sharing one part many
 times is as long as what it spells out.
 
+`gotenon.Decode` into a `big.Int`, a `big.Rat` or a `big.Float` is exact, and
+an exact number costs work in proportion to how large or small it is, not to
+how long it is written: `1e-999999` is nine characters, and a hundred bytes
+of such numbers take about a second to decode into a `[]big.Float`. Decode
+numbers that come from outside into `tenon.Value`, or into a fixed-size type
+such as `int64` or `float64`, whose cost is bounded.
+
 ## Supported versions
 
 Fixes go into the latest minor release. tenon is before 1.0, so a fix that

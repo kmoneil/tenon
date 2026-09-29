@@ -139,6 +139,16 @@ func TestConformance_GO041_TheBoundaryRefusesWhatGoCannotHold(t *testing.T) {
 	wantDecodeFailures[int](t, "a pending value", tenon.Narrow(tenon.Pending(tenon.Any()), tenon.NotNull()), safe,
 		wantDiag{tenon.CodeDecodeNotKnown, "."})
 
+	// A value the conversion refuses fails with the conversion's diagnostics
+	// alone: its unknown and marked parts are not reported, there being no Go
+	// value built for them to be refused from.
+	type pair struct {
+		A int `tenon:"a"`
+		B int `tenon:"b"`
+	}
+	wantDecodeFailures[pair](t, "a value that does not convert", obj(map[string]tenon.Value{"a": tenon.WithMarks(tenon.Unknown(num), prop), "b": s("x")}), uns,
+		wantDiag{tenon.CodeNumberInvalidSyntax, ".b"})
+
 	// A tenon.Value takes what it is given, error values included.
 	failed := tenon.ErrorVal(tenon.Diagnostic{Code: "app.failed", Message: "it failed"})
 	if got := decoded[tenon.Value](t, failed, safe); !tenon.Identical(got, failed) {
@@ -448,6 +458,28 @@ func TestConformance_GO004_RoundTrip(t *testing.T) {
 				t.Fatalf("Decode(Encode(%+v)) = %+v\n%v", x, got, v)
 			}
 		}
+	}
+}
+
+// decomposed marshals itself as the text it holds, and reads back the text it
+// is given.
+type decomposed struct{ text string }
+
+func (d decomposed) MarshalText() ([]byte, error) { return []byte(d.text), nil }
+
+func (d *decomposed) UnmarshalText(b []byte) error {
+	d.text = string(b)
+	return nil
+}
+
+// TestConformance_GO004_TextReadsBackNormalized holds a type that writes
+// itself as text outside Normalization Form C to reading back the text
+// normalized, as every String is, rather than what it wrote.
+func TestConformance_GO004_TextReadsBackNormalized(t *testing.T) {
+	conformance.Covers(t, "GO-004", "GO-044", "ST-002")
+	v := encoded(t, decomposed{"cafe\U00000301"})
+	if got := decoded[decomposed](t, v, safe); got.text != "caf\U000000e9" {
+		t.Errorf("decomposed text read back as %q, want it composed", got.text)
 	}
 }
 
