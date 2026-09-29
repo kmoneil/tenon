@@ -15,10 +15,12 @@ import (
 // TestConformance_ST002_NormalizationFixtures holds Normalization Form C to
 // fixtures whose expected forms came from outside this module, and outside
 // golang.org/x/text: Python's unicodedata, which is another implementation
-// running on another copy of the Unicode data. The cross-check against x/text
-// lives beside this and cannot run on a toolchain of go1.27 or later, x/text
-// having moved to another Unicode version there; this runs everywhere, and is
-// what says the version has not moved with the toolchain.
+// running on another copy of the Unicode data. The cross-checks against x/text
+// and against Unicode's own NormalizationTest.txt are in tools/unigen, whose
+// module is apart from tenon's, and the first cannot run on a toolchain of
+// go1.27 or later, x/text having moved to another Unicode version there; this
+// runs everywhere, with tenon's own tests, and is what says the version has
+// not moved with the toolchain.
 //
 // The fixture holds the twenty sequences that compose in Unicode 17.0.0 and
 // not in 15.0.0, which is exactly what a build that followed its toolchain

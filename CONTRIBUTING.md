@@ -16,9 +16,9 @@ request: see `SECURITY.md`.
 tenon needs Go 1.26 or later, and nothing else to build and test.
 
 - `make check` is the gate: gofmt, `go vet`, the tests under the race
-  detector, and a check that every rule has a passing conformance test. A
-  change is not done until it passes. CI runs it on Go 1.26 and 1.27 for every
-  pull request.
+  detector, in tenon's module and in `tools/unigen`'s, and a check that every
+  rule has a passing conformance test. A change is not done until it passes.
+  CI runs it on Go 1.26 and 1.27 for every pull request.
 - `make lint` runs staticcheck, which CI requires as well.
 - `make vuln` runs govulncheck.
 - `make check-slow` runs the property tests at twenty times their cases and
@@ -32,7 +32,7 @@ The other targets:
 | `make bench` | Runs the benchmarks of the `bench` module, which measure tenon beside `encoding/json` and go-cty, ten times, and writes `BENCHMARKS.md` and the Performance summary from the medians. Run it on a quiet machine before a release. |
 | `make check-slow` | `make check`, then every property test at twenty times its cases (`TENON_SLOW=20`), then `make determinism`. Run it before a release, and after changing how values are stored, ordered or encoded. |
 | `make determinism` | Runs the tests twice, in shuffled orders and on different numbers of processors, writing the canonical output they emit (encodings, display forms, diffs, conversions) to `.emit/`, and fails unless both runs wrote the same bytes. CI does this every night. |
-| `make fuzz` | Runs each fuzz target (the number parser, string construction, decoding, and conversion) for `FUZZTIME`, 30 minutes by default; `make -j4 fuzz` runs them at once. An input that fails is saved under the package's `testdata/fuzz`, where it runs with the tests from then on. CI does this every night. |
+| `make fuzz` | Runs each fuzz target (the number parser, string construction, string construction against `golang.org/x/text`, decoding, and conversion) for `FUZZTIME`, 30 minutes by default; `make -j5 fuzz` runs them at once. An input that fails is saved under the package's `testdata/fuzz`, where it runs with the tests from then on. CI does this every night. |
 | `make release-fuzz` | Every fuzz target at once for five minutes: the fuzzing a release asks for, the depth coming from the nightly runs. |
 | `make release-notes VERSION=x.y.z` | Prints that version's section of `CHANGELOG.md`, which becomes the GitHub Release when its tag is pushed. |
 | `make growth` | Measures each benchmark at a size and at four times that size, and fails where the larger allocates more than five times what the smaller does: work growing faster than its input. CI does this every night. |
@@ -58,8 +58,10 @@ The other targets:
   `tenon: usage:`.
 - Nothing a caller can observe depends on the order Go iterates a map in.
 - Values are immutable: every operation returns a new value.
-- Dependencies stay few: `golang.org/x/text` and `github.com/rivo/uniseg`. A
-  new one needs its reason given in the pull request.
+- tenon requires no other module, and a dependency needs its reason given in
+  an issue first. `bench` and `tools/unigen` are modules of their own, so that
+  what they measure against and check with, go-cty and `golang.org/x/text`,
+  never enters tenon's `go.mod`.
 
 ## Pull requests
 

@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+### Fixed
+
+- tenon requires no other module, and grapheme segmentation, which gives a
+  string its length, is its own, generated from Unicode 15.0.0's data as its
+  normalization is. It came from `github.com/rivo/uniseg` v0.4.7, which Go
+  treats as a minimum: a program requiring a later uniseg, itself or through
+  another module, would raise it, and a uniseg of a later Unicode would
+  count some strings' lengths, and so encode some unknown strings narrowed by
+  a prefix, otherwise than the Unicode 15.0.0 that tenon states does. Nothing
+  a program requires moves the version now, and `golang.org/x/text`, which
+  only tenon's tests used, leaves your module graph too. Normalization and
+  segmentation are held to Unicode's own conformance tests for the version
+  on every toolchain.
+
 ### Changed
 
 - Narrowing a set that holds members that are not known is decided by its

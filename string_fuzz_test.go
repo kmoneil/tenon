@@ -11,10 +11,12 @@ import (
 
 // FuzzString holds string construction to its rules for any input. Ill-formed
 // UTF-8 is an error value with its code. Anything else is a String whose content
-// is normalized and constructs the same value again; which equals the string
-// written in any other normalization form; whose length is known and no more
-// than its scalar values; whose display form writes every character it must
-// escape as an escape; and which serializes and projects to JSON faithfully.
+// constructs the same value again; whose length is known and no more than its
+// scalar values; whose display form writes every character it must escape as
+// an escape; and which serializes and projects to JSON faithfully. That the
+// content is normalized, and equals the string written in any other
+// normalization form, is held to golang.org/x/text by FuzzStringAgainstXText in
+// tools/unigen, whose module is apart from tenon's, from the inputs this keeps.
 func FuzzString(f *testing.F) {
 	for _, s := range []string{
 		"", "a", "caf\U000000E9", "cafe\U00000301", "\xff", "a\xed\xa0\x80b", "\U0001F600",
@@ -38,7 +40,6 @@ func FuzzString(f *testing.F) {
 		if again := tenon.String(content); !tenon.Identical(again, v) {
 			t.Fatalf("String(%q) = %v, but its content constructs %v", s, v, again)
 		}
-		checkAgainstXText(t, s, v, content)
 		if n, ok := tenon.Length(v).AsInt64(); !ok || n < 0 || n > int64(utf8.RuneCountInString(content)) || (n == 0) != (content == "") {
 			t.Fatalf("Length(%v) = %v", v, tenon.Length(v))
 		}

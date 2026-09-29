@@ -8,7 +8,13 @@
 # The tests run with -count=1 because a cached result records nothing.
 RULECOV := $(CURDIR)/.rulecov
 
-.PHONY: check check-slow determinism fuzz fuzz-parse fuzz-string fuzz-deserialize fuzz-convert release-fuzz growth bench bench-smoke rules codes report lint vuln release-notes
+.PHONY: check check-slow determinism fuzz fuzz-parse fuzz-string fuzz-string-xtext fuzz-deserialize fuzz-convert release-fuzz growth bench bench-smoke rules codes report lint vuln release-notes
+
+# tools/unigen is a module of its own, which ./... does not reach, so that
+# tenon requires no other module: its tests hold internal/uni to Unicode's own
+# conformance tests, and to golang.org/x/text where the toolchain carries the
+# same Unicode version. The gate and the linter run there too.
+UNIGEN := tools/unigen
 
 check:
 	@test -z "$$TENON_UPDATE_VECTORS" || { echo 'check: TENON_UPDATE_VECTORS is set, which rewrites both corpora and passes; unset it'; exit 1; }
@@ -16,9 +22,11 @@ check:
 	@test -z "$$(gofmt -l .)" || { echo 'gofmt: these files need formatting:'; gofmt -l .; exit 1; }
 	@echo '==> go vet'
 	go vet ./...
+	cd $(UNIGEN) && go vet ./...
 	@echo '==> go test -race'
 	rm -rf '$(RULECOV)'
 	TENON_RULECOV_DIR='$(RULECOV)' go test -race -count=1 ./...
+	cd $(UNIGEN) && TENON_RULECOV_DIR='$(RULECOV)' go test -race -count=1 ./...
 	@echo '==> rulecheck'
 	go run ./tools/rulecheck -cover '$(RULECOV)'
 
@@ -42,6 +50,7 @@ report:
 # cases, then the determinism harness.
 check-slow: check
 	TENON_SLOW=20 go test -count=1 ./...
+	cd $(UNIGEN) && TENON_SLOW=20 go test -count=1 ./...
 	$(MAKE) determinism
 
 # Canonical output from two runs of the tests, which determinism compares.
@@ -60,15 +69,18 @@ determinism:
 	@echo "determinism: $$(find '$(EMIT)/first' -type f | wc -l | tr -d ' ') outputs came out the same in both runs"
 
 # fuzz runs each fuzz target for FUZZTIME, 30 minutes by default, one after
-# another, or all at once with make -j4 fuzz. What the fuzzer finds that fails
+# another, or all at once with make -j5 fuzz. What the fuzzer finds that fails
 # is written to the package's testdata/fuzz directory, where it joins the seeds
-# that every test run replays.
+# that every test run replays. FuzzStringAgainstXText, in tools/unigen, holds
+# string construction to golang.org/x/text, and runs only below go1.27.
 FUZZTIME ?= 30m
-fuzz: fuzz-parse fuzz-string fuzz-deserialize fuzz-convert
+fuzz: fuzz-parse fuzz-string fuzz-string-xtext fuzz-deserialize fuzz-convert
 fuzz-parse:
 	go test -run='^$$' -fuzz='^FuzzParse$$' -fuzztime=$(FUZZTIME) ./internal/decimal
 fuzz-string:
 	go test -run='^$$' -fuzz='^FuzzString$$' -fuzztime=$(FUZZTIME) .
+fuzz-string-xtext:
+	cd $(UNIGEN) && go test -run='^$$' -fuzz='^FuzzStringAgainstXText$$' -fuzztime=$(FUZZTIME) .
 fuzz-deserialize:
 	go test -run='^$$' -fuzz='^FuzzDeserialize$$' -fuzztime=$(FUZZTIME) .
 fuzz-convert:
@@ -78,7 +90,7 @@ fuzz-convert:
 # minutes. The depth is CI's, which fuzzes each for thirty minutes every night
 # (.github/workflows/fuzz.yml), and keeps what it found from night to night.
 release-fuzz:
-	$(MAKE) -j4 fuzz FUZZTIME=5m
+	$(MAKE) -j5 fuzz FUZZTIME=5m
 
 # growth runs every benchmark once and reads the pairs among them, each a
 # benchmark measured at a size and at four times that size: where the larger
@@ -126,6 +138,7 @@ STATICCHECK := honnef.co/go/tools/cmd/staticcheck@v0.8.1
 GOVULNCHECK := golang.org/x/vuln/cmd/govulncheck@v1.8.0
 lint:
 	go run $(STATICCHECK) ./...
+	cd $(UNIGEN) && go run $(STATICCHECK) ./...
 vuln:
 	go run $(GOVULNCHECK) ./...
 
