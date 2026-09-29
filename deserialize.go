@@ -161,6 +161,62 @@ type decoder struct {
 	// deferred says a deep mark was read, which the decoder gives only the
 	// value it is listed on until the value read is settled (settleDeep).
 	deferred bool
+	// barred says what the content being read may not hold.
+	barred barred
+}
+
+// A part is a content that bars what the contents within it may hold.
+type part uint8
+
+const (
+	unbarred       part = iota
+	setMember           // holds no mark (MK-006)
+	recordedMember      // holds no mark (MK-006)
+	capsulePayload      // holds neither a mark nor an unknown value (SE-040)
+	markPayload         // holds neither a mark nor an unknown value (SE-041)
+)
+
+// barred says what the content being read may not hold: the part that bars a
+// mark there, and the part that bars an unknown value, each unbarred where
+// none does, and the identifier of the mark whose payload is being read, which
+// no other payload is read within. What a part bars is refused where its tag
+// is written, before what the tag holds is read, so that input holding a later
+// fault as well fails with this one, the first (SE-002).
+type barred struct {
+	marks, unknowns part
+	mark            string
+}
+
+// refusal says why what p bars is refused.
+func (d *decoder) refusal(p part) string {
+	switch p {
+	case setMember:
+		return "a set member that carries marks"
+	case recordedMember:
+		return "a recorded member that carries marks"
+	case capsulePayload:
+		return "a capsule value serialized as a value that is null, not known, or marked"
+	}
+	// A copy of the identifier is quoted, not the decoder's own, through
+	// which the escape analysis would put the decoder's reader on the heap
+	// for every document; the refusal is made once at most.
+	return "the mark " + quoted(strings.Clone(d.barred.mark)) + " is serialized with a value that is null, not known, or marked"
+}
+
+// barredContent reads the content of a value of type t, refusing a mark as
+// marks bars one within it, and an unknown value as unknowns does, or as the
+// content holding it does where unknowns is unbarred. Only the parts are held
+// and restored, never the identifier, which the escape analysis would take for
+// the decoder escaping.
+func (d *decoder) barredContent(t Type, marks, unknowns part) (Value, *decodeError) {
+	heldMarks, heldUnknowns := d.barred.marks, d.barred.unknowns
+	d.barred.marks = marks
+	if unknowns != unbarred {
+		d.barred.unknowns = unknowns
+	}
+	v, err := d.content(t)
+	d.barred.marks, d.barred.unknowns = heldMarks, heldUnknowns
+	return v, err
 }
 
 // malformed returns the error of input that is not a document of a value, at
@@ -303,12 +359,9 @@ func (d *decoder) item() (Value, *decodeError) {
 			}
 			return Value{}, d.malformed(inner, "a marked item holds a resolved or marked value, whose marks go on its content")
 		}
-		v, err := d.bareItem()
+		v, err := d.bareItem(true)
 		if err != nil {
 			return Value{}, err
-		}
-		if v.n.state.resolved() || v.n.marks != nil {
-			return Value{}, d.malformed(inner, "a marked item holds a resolved or marked value, whose marks go on its content")
 		}
 		marks, err := d.markList()
 		if err != nil {
@@ -316,11 +369,14 @@ func (d *decoder) item() (Value, *decodeError) {
 		}
 		return WithMarks(v, marks...), nil
 	}
-	return d.bareItem()
+	return d.bareItem(false)
 }
 
-// bareItem reads an item that is not marked, at the level being read.
-func (d *decoder) bareItem() (Value, *decodeError) {
+// bareItem reads an item that is not marked, at the level being read. marked
+// says it is what a marked item holds, which is refused at its kind where it
+// is resolved: a resolved value's marks go on its content.
+func (d *decoder) bareItem(marked bool) (Value, *decodeError) {
+	at := d.r.Offset()
 	n, err := d.r.ReadArray()
 	if err != nil {
 		return Value{}, d.cborError(err)
@@ -328,6 +384,9 @@ func (d *decoder) bareItem() (Value, *decodeError) {
 	k, kat, derr := d.kind("an item")
 	if derr != nil {
 		return Value{}, derr
+	}
+	if marked && k == itemResolved {
+		return Value{}, d.malformed(at, "a marked item holds a resolved or marked value, whose marks go on its content")
 	}
 	switch {
 	case k == itemResolved && n == 3:
@@ -641,6 +700,9 @@ func (d *decoder) content(t Type) (Value, *decodeError) {
 	if h, err := d.r.PeekHead(); err != nil || h.Major != cbor.MajorTag || h.Arg != tagMarked {
 		return d.bareContent(t)
 	}
+	if d.barred.marks != unbarred {
+		return Value{}, d.malformed(d.r.Offset(), "%s", d.refusal(d.barred.marks))
+	}
 	d.r.ReadTag() // the head is peeked, so reading it cannot fail
 	if err := d.array(2, "a marked value"); err != nil {
 		return Value{}, err
@@ -682,6 +744,9 @@ func (d *decoder) bareContent(t Type) (Value, *decodeError) {
 		return Value{}, d.cborError(err)
 	}
 	if h.Major == cbor.MajorTag && h.Arg == tagUnknown {
+		if d.barred.unknowns != unbarred {
+			return Value{}, d.malformed(at, "%s", d.refusal(d.barred.unknowns))
+		}
 		d.r.ReadTag() // the head is peeked, so reading it cannot fail
 		return d.unknown(t, at)
 	}
@@ -768,13 +833,15 @@ func (d *decoder) sequence(t Type, at int) (Value, *decodeError) {
 		if t.t.kind == KindTuple {
 			mt = t.t.elems[i]
 		}
-		mat := d.r.Offset()
-		v, derr := d.content(mt)
+		var v Value
+		var derr *decodeError
+		if t.t.kind == KindSet {
+			v, derr = d.barredContent(mt, setMember, unbarred)
+		} else {
+			v, derr = d.content(mt)
+		}
 		if derr != nil {
 			return Value{}, derr
-		}
-		if t.t.kind == KindSet && v.n.isMarked() {
-			return Value{}, d.malformed(mat, "a set member that carries marks")
 		}
 		members = append(members, v)
 	}
@@ -800,12 +867,15 @@ func (d *decoder) capsule(t Type, at int) (Value, *decodeError) {
 	if pt != enc.typ {
 		return Value{}, d.malformed(at, "capsule type %s is serialized as another type than %s", quoted(t.t.capsule.name), enc.typ)
 	}
-	payload, err := d.content(pt)
+	pat := d.r.Offset()
+	payload, err := d.barredContent(pt, capsulePayload, capsulePayload)
 	if err != nil {
 		return Value{}, err
 	}
 	if !isPayload(payload) {
-		return Value{}, d.malformed(at, "a capsule value serialized as a value that is null, not known, or marked")
+		// A null, the one thing the reading does not refuse where it is
+		// written, being the whole of the payload.
+		return Value{}, d.malformed(pat, "%s", d.refusal(capsulePayload))
 	}
 	p, diags := enc.decode(payload)
 	if len(diags) > 0 {
@@ -915,13 +985,9 @@ func (d *decoder) narrowing(t Type, key uint64, at int) (Narrowing, *decodeError
 		}
 		var members []Value
 		for range n {
-			mat := d.r.Offset()
-			v, derr := d.content(t.t.elem)
+			v, derr := d.barredContent(t.t.elem, recordedMember, unbarred)
 			if derr != nil {
 				return Narrowing{}, derr
-			}
-			if v.n.isMarked() {
-				return Narrowing{}, d.malformed(mat, "a recorded member that carries marks")
 			}
 			members = append(members, v)
 		}
@@ -1089,12 +1155,16 @@ func (d *decoder) mark() (Mark, *decodeError) {
 		if derr != nil {
 			return nil, derr
 		}
-		v, derr := d.content(t)
+		pat := d.r.Offset()
+		d.barred.mark = id
+		v, derr := d.barredContent(t, markPayload, markPayload)
+		if derr == nil && !isPayload(v) {
+			// A null, as for a capsule value's payload.
+			derr = d.malformed(pat, "%s", d.refusal(markPayload))
+		}
+		d.barred.mark = ""
 		if derr != nil {
 			return nil, derr
-		}
-		if !isPayload(v) {
-			return nil, d.malformed(at, "the mark %s is serialized with a value that is null, not known, or marked", quoted(id))
 		}
 		payload = v
 	}

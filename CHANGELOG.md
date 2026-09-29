@@ -15,6 +15,16 @@
   only tenon's tests used, leaves your module graph too. Normalization and
   segmentation are held to Unicode's own conformance tests for the version
   on every toolchain.
+- `Deserialize` refuses a mark within a set member or a recorded member, a
+  mark or an unknown value within the payload of a capsule value or a mark,
+  and a resolved item within a marked item where the tag, or the item's
+  kind, that says so is written. It read the whole part first, so input
+  holding a later fault within the part failed with that one, often with
+  another code: a set member carrying a mark that no decoder was supplied
+  for failed with `serialize.unknown_mark`, though the mark being there at
+  all is the first fault, `serialize.malformed`. These refusals, and that
+  of a payload that is null, now name the byte where the mark, the unknown
+  value or the null is written.
 
 ### Changed
 
