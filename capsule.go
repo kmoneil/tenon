@@ -30,11 +30,21 @@ type CapsuleOps[E any] struct {
 
 	// Hash returns a hash of an encapsulated value. Values that Equal reports
 	// equal must have equal hashes.
+	//
+	// A type that declares Equal and neither Compare nor an Encoding is put in
+	// order, where a set or CanonicalCompare needs one, by its hashes, and
+	// values whose hashes collide by the order the run first met them in.
+	// tenon keeps one value of each equality class whose hash collides with
+	// another's for the rest of the run, so that the order holds: a hash that
+	// seldom collides keeps next to nothing, and declaring Compare or an
+	// Encoding keeps nothing at all.
 	Hash func(v *E) uint64
 
 	// Compare orders encapsulated values, returning a negative number, zero or
 	// a positive number as a sorts before, together with, or after b. It must
-	// be a total order that agrees with the type's equality.
+	// be a total order that agrees with the type's equality. A type that
+	// declares it keeps no value for the sake of its order, which one that
+	// declares Equal without it may: see Hash.
 	Compare func(a, b *E) int
 
 	// Display returns the display form of an encapsulated value.
