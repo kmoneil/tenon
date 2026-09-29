@@ -349,6 +349,19 @@ var invalid = []invalidVector{
 	{"a map key twice once normalized, then a bare bignum", document + "8300820602 82 8262c3a901 826365cc81 c249010000000000000000", "serialize.malformed"},
 	{"a narrowing that does not apply, then a bare bignum", document + "830001 da74656e01 a1 01 82 c249010000000000000000 f5", "serialize.malformed"},
 	{"range key 0 holding an indefinite length", document + "830002 da74656e01 a1 00 9fff", "serialize.not_canonical"},
+	// A set member and a recorded member hold no mark, a capsule value's and
+	// a mark's payloads hold neither a mark nor an unknown value, and a
+	// marked item holds no resolved item: each is refused at the tag or the
+	// kind that says what it holds, before what that holds is read.
+	{"a set member carrying marks, then an unknown mark", document + "8300820502 81 da74656e02 82 01 81 81617a", "serialize.malformed"},
+	{"a set member holding a marked value, then an unknown mark", document + "83008205820402 81 81 da74656e02 82 01 81 81617a", "serialize.malformed"},
+	{"a recorded member carrying marks, then an unknown mark", document + "8300820502 da74656e01 a1 06 81 da74656e02 82 01 81 81617a", "serialize.malformed"},
+	{"a marked item holding a resolved item, then a bare bignum", document + "da74656e02 82 830002 c249010000000000000000 81 81616d", "serialize.malformed"},
+	{"a capsule payload carrying marks, then an unknown mark", document + "8300820963742f63 8202 da74656e02 82 01 81 81617a", "serialize.malformed"},
+	{"a capsule payload not known, then a bare bignum", document + "8300820963742f63 8202 da74656e01 a1 01 82 c249010000000000000000 f5", "serialize.malformed"},
+	{"a mark payload carrying marks, then an unknown mark", document + "830001 da74656e02 82 f5 81 83617003 da74656e02 82 6161 81 81617a", "serialize.malformed"},
+	{"a mark payload not known, then a prefix not in normal form", document + "830001 da74656e02 82 f5 81 83617003 da74656e01 a1 03 6365cc81", "serialize.malformed"},
+	{"a set member not known in a mark payload, then a bare bignum", document + "830001 da74656e02 82 f5 81 836170820502 81 da74656e01 a1 01 82 c249010000000000000000 f5", "serialize.malformed"},
 	{"two-byte simple value", document + "830001f816", "serialize.malformed"},
 	{"no document tag", "d9d9f78201830001f5", "serialize.malformed"},
 	{"byte after the document", document + "830001f500", "serialize.malformed"},
