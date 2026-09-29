@@ -178,13 +178,15 @@ func (f *failures) withError(p tenon.Path, code tenon.Code, err error) {
 // many times costs what it spells out. Bound what a program encodes by that
 // tree, where it builds x from input.
 //
-// Encode panics where T does not map to tenon: a channel, a
-// function, a complex number, a pointer to tenon.Value, a map without string
-// keys, or a type that holds itself, whether T is that type or holds it in an
-// interface; where a struct's tags are malformed, or its state is all in
-// unexported fields and it marshals itself neither to a value nor to text; on a
-// required tenon.Value field, or any other tenon.Value, holding the zero
-// Value; and on a MarshalValue method returning the zero Value.
+// Encode panics where T does not map to tenon: a channel, a function, a
+// complex number, a pointer to tenon.Value, a map without string keys, or a
+// type that holds itself, whether T is that type or holds it in an interface;
+// where a struct's tags are malformed, its state is all in unexported fields
+// and it marshals itself neither to a value nor to text, or it may have
+// MarshalValue or MarshalText from a field it embeds, which would encode that
+// field alone; on a required tenon.Value field, or any other tenon.Value,
+// holding the zero Value; and on a MarshalValue method returning the zero
+// Value.
 func Encode[T any](x T) (tenon.Value, error) {
 	m := mappingOf(reflect.TypeFor[T](), encoding)
 	var e encoder

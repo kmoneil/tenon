@@ -21,6 +21,13 @@
   member added reads `+ .: member marked(2, "d")`, where it read
   `+ .: member 2`. The members are still paired and ordered as the sets
   hold them, so only what the changes carry and show changes.
+- gotenon refuses, with a usage panic naming the method and the field, a
+  struct that may have a `ValueMarshaler`, `ValueUnmarshaler` or text
+  marshaler method from a field it embeds, in the direction the method
+  concerns. Such a struct took on the embedded field's method and crossed
+  as that field alone: ``struct{ time.Time `tenon:"at"`; Name string }``
+  encoded as a timestamp and dropped `Name`, and ``struct{ big.Int }`` as a
+  string. Name the field, and the struct's methods are its own.
 
 ## 0.10.0 (2026-09-28)
 

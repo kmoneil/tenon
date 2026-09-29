@@ -236,19 +236,61 @@ func methods(rt reflect.Type) *goMapping {
 // MarshalValue, is a string in that direction [GO-044]: ValueMarshaler and
 // ValueUnmarshaler come first, being tenon's own, and so do the types the
 // table maps itself, the big numbers among them, whose text methods would
-// make text of numbers.
+// make text of numbers. A struct that may have the method mapping it from a
+// field it embeds panics, as promoter says.
 func (m *goMapping) leaf(dir direction) bool {
+	var decides reflect.Type // the interface whose method maps the type in dir
 	switch {
 	case m.marshal && m.unmarshal, dir == encoding && m.marshal, dir == decoding && m.unmarshal:
 		m.kind, m.constraint = goCustom, tenon.Any()
+		decides = marshalerGoType
+		if dir == decoding {
+			decides = unmarshalerGoType
+		}
 	case mappedItself[m.rt]:
 		return false
-	case dir != decoding && !m.marshal && m.marshalText, dir == decoding && !m.unmarshal && m.unmarshalText:
+	case dir != decoding && !m.marshal && m.marshalText:
 		m.kind, m.typ, m.constraint = goText, tenon.StringType(), tenon.Exactly(tenon.StringType())
+		decides = textMarshalerGoType
+	case dir == decoding && !m.unmarshal && m.unmarshalText:
+		m.kind, m.typ, m.constraint = goText, tenon.StringType(), tenon.Exactly(tenon.StringType())
+		decides = textUnmarshalerGoType
 	default:
 		return false
 	}
+	if field, ok := promoter(m.rt, decides); ok {
+		method, verb := decides.Method(0).Name, "encode"
+		if dir == decoding {
+			verb = "decode"
+		}
+		usagePanic("the Go type %s may have %s from its embedded field %s, which would %s the field alone and drop the rest; name the field, so that the methods of %s are its own",
+			m.rt, method, field, verb, m.rt)
+	}
 	return true
+}
+
+// promoter returns the name of a field that the struct type rt embeds, and
+// whose type has the method of iface as well, and false where rt is no struct
+// or embeds no such field (GO-020). Go does not say whether rt declares the
+// method or has it from the field, and a method it has from the field would
+// map rt as the field alone, so a struct that could be doing so is refused
+// in the direction the method concerns, whichever it is: naming the field
+// settles it. A field embedded more deeply lends its method through the
+// field that embeds it, which has it as well.
+func promoter(rt, iface reflect.Type) (string, bool) {
+	if rt.Kind() != reflect.Struct {
+		return "", false
+	}
+	for i := range rt.NumField() {
+		f := rt.Field(i)
+		if !f.Anonymous {
+			continue
+		}
+		if f.Type.Implements(iface) || f.Type.Kind() != reflect.Pointer && reflect.PointerTo(f.Type).Implements(iface) {
+			return f.Name, true
+		}
+	}
+	return "", false
 }
 
 // byTable maps m's Go type for dir as GO-010's table says: by the type
