@@ -31,9 +31,10 @@ func Length(v Value) Value { return lengthOp.apply(v) }
 // error rather than another answer (UN-010).
 //
 // The value looked for may be of any type: a value of another type than the
-// set's members is simply not one of them. It may also be null, which is a
-// member like any other. A null set gives an error value, since null holds
-// nothing, and an error operand carries forward.
+// set's members is simply not one of them, and a value that cannot be of their
+// type is known false however little of the set is known, unknown or pending.
+// It may also be null, which is a member like any other. A null set gives an
+// error value, since null holds nothing, and an error operand carries forward.
 //
 // Contains panics where set is not of a set type, which is a mistake in the
 // calling program, as an operand of the wrong type is to every operation.
@@ -176,6 +177,12 @@ var containsOp = register(&op{
 		return Bool(found)
 	},
 	decided: func(args []Value) (Value, bool) {
+		// A value that cannot be of the type of the set's members is no
+		// member of it, however little of the set is known (EQ-043), as values
+		// of two types are not equal (EQ-005).
+		if _, ok := sharedType(constraintOf(args[0].n), SetOf(constraintOf(args[1].n))); !ok {
+			return Bool(false), true
+		}
 		switch set := args[0].n; set.state {
 		case stateKnown:
 			if found, settled := membership(set, args[1]); settled {

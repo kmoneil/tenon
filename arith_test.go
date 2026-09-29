@@ -174,34 +174,42 @@ func TestConformance_UN010_AnswersFromValuesOtherThanNull(t *testing.T) {
 // TestConformance_UN011_SureFailuresFailNow holds an operation that its known
 // operands alone make fail to failing now, with the error every outcome
 // shares: a dividend not known yet, bounded or not, or one that may still be
-// null, divided by a known zero, or taken modulo one. A divisor not known yet
-// makes nothing sure, and neither does a zero dividend.
+// null, divided by a known zero, or taken modulo one, or by a divisor whose
+// range holds no number but zero, null being taken as UN-010 takes it. A
+// divisor that may be another number makes nothing sure, and neither does a
+// zero dividend.
 func TestConformance_UN011_SureFailuresFailNow(t *testing.T) {
 	conformance.Covers(t, "UN-011", "UN-010")
 	num := tenon.NumberType()
 	zero := tenon.NumberFromInt(0)
+	zeroOrNull := tenon.Narrow(tenon.Unknown(num), tenon.NumberMin(zero, true), tenon.NumberMax(zero, true))
 	for _, dividend := range []tenon.Value{
 		tenon.Narrow(tenon.Unknown(num), tenon.NotNull()),
 		tenon.Narrow(tenon.Unknown(num), tenon.NotNull(), tenon.NumberMin(tenon.NumberFromInt(5), true)),
 		tenon.Unknown(num),
 		tenon.Narrow(tenon.Pending(tenon.Any()), tenon.NotNull()),
+		tenon.NumberFromInt(5),
 	} {
-		for _, tt := range []struct {
-			name string
-			got  tenon.Value
-			code tenon.Code
-		}{
-			{"Div", tenon.Div(dividend, zero), tenon.CodeNumberDivideByZero},
-			{"Mod", tenon.Mod(dividend, zero), tenon.CodeNumberModuloByZero},
-		} {
-			if !tt.got.IsError() || tt.got.Diagnostics()[0].Code != tt.code {
-				t.Errorf("%s(%v, 0) = %v, want %s", tt.name, dividend, tt.got, tt.code)
+		for _, divisor := range []tenon.Value{zero, zeroOrNull} {
+			for _, tt := range []struct {
+				name string
+				got  tenon.Value
+				code tenon.Code
+			}{
+				{"Div", tenon.Div(dividend, divisor), tenon.CodeNumberDivideByZero},
+				{"Mod", tenon.Mod(dividend, divisor), tenon.CodeNumberModuloByZero},
+			} {
+				if !tt.got.IsError() || tt.got.Diagnostics()[0].Code != tt.code {
+					t.Errorf("%s(%v, %v) = %v, want %s", tt.name, dividend, divisor, tt.got, tt.code)
+				}
 			}
 		}
 	}
 	for _, v := range []tenon.Value{
 		tenon.Div(tenon.NumberFromInt(1), tenon.Narrow(tenon.Unknown(num), tenon.NotNull())),
 		tenon.Div(zero, tenon.Narrow(tenon.Unknown(num), tenon.NotNull())),
+		tenon.Div(tenon.NumberFromInt(1), tenon.Narrow(tenon.Unknown(num), tenon.NumberMin(zero, true), tenon.NumberMax(tenon.NumberFromInt(1), true))),
+		tenon.Mod(tenon.NumberFromInt(1), tenon.Narrow(tenon.Unknown(num), tenon.NumberMin(tenon.NumberFromInt(-1), true), tenon.NumberMax(zero, true))),
 	} {
 		if v.IsError() || v.IsKnown() {
 			t.Errorf("%v is settled, where the divisor is not known", v)

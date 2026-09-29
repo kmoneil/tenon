@@ -27,18 +27,19 @@ func Mul(a, b Value) Value { return mulOp.apply(a, b) }
 // Div returns the quotient of two Number values, rounded to the fixed precision
 // that the specification gives when it does not terminate, and exactly when it
 // does. Division by zero is an error value with code CodeNumberDivideByZero,
-// and so is dividing a number not known yet by a zero divisor, which fails
-// whatever the number turns out to be. Div treats its operands as Mul does,
-// bounding a quotient where the divisor's bounds keep it away from zero; a
-// divisor that may come as near zero as it likes leaves the quotient unbounded.
-// Since a quotient is rounded, a bound on one includes its own value.
+// and so is division by a divisor that can be no number but zero, known or
+// not, whatever the dividend is, known or not: every outcome but a null fails.
+// Div treats its operands as Mul does, bounding a quotient where the divisor's
+// bounds keep it away from zero; a divisor that may come as near zero as it
+// likes leaves the quotient unbounded. Since a quotient is rounded, a bound on
+// one includes its own value.
 func Div(a, b Value) Value { return divOp.apply(a, b) }
 
 // Mod returns the remainder of dividing two Number values, whose sign follows
-// the dividend. A zero divisor is an error value with code
-// CodeNumberModuloByZero, whether or not the dividend is known yet. Mod treats
-// its operands as Mul does: a remainder lies between zero and the dividend, and
-// is smaller in magnitude than the divisor can be.
+// the dividend. A divisor that can be no number but zero, known or not, is an
+// error value with code CodeNumberModuloByZero, whether or not the dividend is
+// known yet. Mod treats its operands as Mul does: a remainder lies between zero
+// and the dividend, and is smaller in magnitude than the divisor can be.
 func Mod(a, b Value) Value { return modOp.apply(a, b) }
 
 var (
@@ -81,15 +82,17 @@ var (
 	})
 )
 
-// byZero decides a division or a modulo whose divisor is known to be zero:
-// it fails whatever the dividend turns out to be, so it fails now (UN-011),
-// with the error that dividing any number by zero gives.
+// byZero decides a division or a modulo whose divisor can only be zero: known
+// to be zero, or not known and bounded to zero, null aside, which would fail
+// rather than give another answer (UN-010). It fails whatever the dividend
+// turns out to be, so it fails now (UN-011), with the error that dividing any
+// number by zero gives.
 func byZero(f func(decimal.Dec, decimal.Dec) (decimal.Dec, error)) func(args []Value) (Value, bool) {
 	return func(args []Value) (Value, bool) {
-		if d := args[1].n; d.state != stateKnown || decOf(args[1]).Sign() != 0 {
+		if lo, hi := numberBounds(args[1]); !lo.set || !hi.set || lo.v.Sign() != 0 || hi.v.Sign() != 0 {
 			return Value{}, false
 		}
-		return arithmetic(f(decimal.Dec{}, decOf(args[1]))), true
+		return arithmetic(f(decimal.Dec{}, decimal.Dec{})), true
 	}
 }
 
@@ -377,8 +380,9 @@ func modBounds(args []Value, r Value) Value {
 		if h := magnitude(bhi.v); h.Cmp(m) > 0 {
 			m = h
 		}
-		// A divisor that can only be zero leaves no remainder at all, every
-		// outcome being an error, and bounds nothing, as it does a quotient.
+		// A divisor that can only be zero fails before it is bounded (byZero);
+		// were one bounded, it would bound nothing, every outcome being an
+		// error.
 		if m.Sign() > 0 {
 			lo = tighterLo(lo, bound{v: m.Neg(), set: true})
 			hi = tighterHi(hi, bound{v: m, set: true})

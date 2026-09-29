@@ -39,6 +39,15 @@
 
 ### Changed
 
+- `Contains` answers false where the value looked for cannot be of the type
+  of the set's members, however little of the set is known:
+  `Contains(unknown set(bool), 1)` was unknown, and is false, as it is for a
+  known set and as `Equals` answers of values of two types. `Div` and `Mod`
+  fail with `number.divide_by_zero` and `number.modulo_by_zero` where the
+  divisor can be no number but zero, as for a divisor known to be zero:
+  `Div(5, u)`, `u` unknown and bounded by `>= 0, <= 0`, was an unknown
+  number, though every outcome but a null divides by zero. The specification
+  says both (`EQ-043`, `UN-011`).
 - Narrowing a set that holds members that are not known is decided by its
   length alone, as the specification now states: the narrowings contradict
   it exactly where the least length they and its members give is above the
