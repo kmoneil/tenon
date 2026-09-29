@@ -51,6 +51,11 @@
 
 ### Changed
 
+- `CapsuleOps.Hash` and `Compare` say that a capsule type declaring `Equal`
+  and neither `Compare` nor an `Encoding` keeps one value of each equality
+  class whose hash collides with another's for the rest of the run, which its
+  canonical order needs, and that declaring `Compare` or an `Encoding` keeps
+  nothing.
 - `gotenon.Encode` reports what fails in a Go map as `tenon.Map` and
   `tenon.Object` do, in one order and at one set of paths: each key in turn
   gives its own failure and its member's, and then comes one failure for each
