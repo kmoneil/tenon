@@ -51,7 +51,7 @@ func TestConformance_VA020_PathSteps(t *testing.T) {
 	// agree on every key: a marked key, redacting or not, is refused, and the
 	// same key unmarked is taken.
 	secret := stamp{id: "secret", redact: true}
-	mustPanicUsage(t, "Index called with a value of type string that carries marks as a key, and a path's keys carry no marks",
+	mustPanicUsage(t, `Index called with a value redacted by "secret" that carries marks as a key, and a path's keys carry no marks`,
 		func() { root.Index(tenon.WithMarks(tenon.String("k"), secret)) })
 	mustPanicUsage(t, "a value of type number that carries marks", func() { root.Index(tenon.WithMarks(tenon.NumberFromInt(0), stamp{id: "m"})) })
 	unmarked, _ := tenon.Unmark(tenon.WithMarks(tenon.String("k"), secret))

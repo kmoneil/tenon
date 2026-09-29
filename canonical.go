@@ -38,7 +38,9 @@ func CanonicalCompare(a, b Value) int {
 // canonicalOperand returns the description of a value the order is defined for.
 func canonicalOperand(v Value) *node {
 	n := v.data()
-	if !n.isKnown() {
+	// A redacted value is refused for its marks, which says nothing they
+	// withhold, where not known would.
+	if !n.isKnown() && !n.withholds() {
 		usagePanic("CanonicalCompare called on %s, which is not a known value", n.describe())
 	}
 	if n.isMarked() {

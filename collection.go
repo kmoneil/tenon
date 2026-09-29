@@ -250,8 +250,13 @@ func sequenceValue(t Type, fn string, elems []Value) Value {
 			errs.add(indexStep(NumberFromInt(int64(i))), e)
 			continue
 		}
-		requireMember(fn, element(i), e, t.t.elem)
-		if t.t.kind == KindSet && e.n.isMarked() {
+		// A redacted member of a set is refused for its marks, which says
+		// nothing they withhold, and not asked its type first.
+		marked := t.t.kind == KindSet && e.n.isMarked()
+		if !marked || !e.n.withholds() {
+			requireMember(fn, element(i), e, t.t.elem)
+		}
+		if marked {
 			usagePanic("%s: element %d is %s, and a set's members carry no marks; %s",
 				fn, i, e.n.describeMarked(), unmarkForSet)
 		}
@@ -771,6 +776,9 @@ func (m memberName) String() string {
 // the message.
 func memberType(fn string, what memberName, v Value) Type {
 	n := v.data()
+	if !n.state.resolved() && n.withholds() {
+		usagePanic("%s: %s is %s, which it cannot take"+withheldReason, fn, what, n.describe())
+	}
 	if n.state == statePending {
 		usagePanic("%s: %s is a pending value, which has no type; Resolve it to one first", fn, what)
 	}
@@ -783,6 +791,9 @@ func memberType(fn string, what memberName, v Value) Type {
 // requireMember panics unless v is a resolved value of type want.
 func requireMember(fn string, what memberName, v Value, want Type) {
 	if got := memberType(fn, what, v); got != want {
+		if n := v.data(); n.withholds() {
+			usagePanic("%s: %s is %s, which it cannot take"+withheldReason, fn, what, n.describe())
+		}
 		usagePanic("%s: %s has type %s, not %s", fn, what, got, want)
 	}
 }
@@ -801,6 +812,9 @@ func (v Value) Len() int {
 			return len(n.data.([]mapEntry))
 		}
 	}
+	if n.withholds() {
+		usagePanic("Len cannot take %s"+withheldReason, n.describe())
+	}
 	usagePanic("Len called on %s, not a collection or structural value", n.describe())
 	return 0
 }
@@ -811,10 +825,16 @@ func (v Value) Index(i int) Value {
 	n := v.data()
 	n.noContent("Index")
 	if n.state != stateKnown || (n.typ.t.kind != KindList && n.typ.t.kind != KindTuple) {
+		if n.withholds() {
+			usagePanic("Index cannot take %s"+withheldReason, n.describe())
+		}
 		usagePanic("Index called on %s, not a list or tuple value", n.describe())
 	}
 	elems := n.data.([]Value)
 	if i < 0 || i >= len(elems) {
+		if n.withholds() {
+			usagePanic("Index(%d) cannot take %s"+withheldReason, i, n.describe())
+		}
 		usagePanic("Index(%d) called on a value with %d elements", i, len(elems))
 	}
 	return elems[i]
@@ -838,6 +858,9 @@ func (v Value) Elements() []Value {
 		case KindSet:
 			return n.retrievedMembers()
 		}
+	}
+	if n.withholds() {
+		usagePanic("Elements cannot take %s"+withheldReason, n.describe())
 	}
 	usagePanic("Elements called on %s, not a list, set or tuple value", n.describe())
 	return nil
@@ -870,6 +893,9 @@ func (v Value) Attribute(name string) Value {
 	n := v.known(KindObject, "Attribute")
 	if a, ok := n.attribute(name); ok {
 		return a
+	}
+	if n.withholds() {
+		usagePanic("Attribute cannot take %s"+withheldReason, n.describe())
 	}
 	usagePanic("Attribute called on %s, which has no attribute %s", n.describe(), quoted(name))
 	return Value{}

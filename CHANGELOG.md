@@ -25,6 +25,17 @@
   all is the first fault, `serialize.malformed`. These refusals, and that
   of a payload that is null, now name the byte where the mark, the unknown
   value or the null is written.
+- A usage panic names a value carrying a redacting mark by its marks alone,
+  as `a value redacted by "secret"`, as its display does. `Hash`, `Set`,
+  `Attribute` and the rest named it by its type, whose attribute names are
+  the value's shape: ``Hash called on a value of type object({"password":
+  string}) that carries marks``. A panic's message reaches crash reports and
+  logs. Where the reason for a panic would say whether such a value is null,
+  known or pending, what kind it is or what it holds, the message withholds
+  it and says to unmark the value to see it; where the call refuses marked
+  values anyway, as `Hash` and `Set` do, it says that. `SECURITY.md` says
+  so, and that a collection's declared type is its own: a list of objects
+  shows its element type beside a redacted member as beside any other.
 
 ### Changed
 

@@ -30,6 +30,9 @@ type Range struct {
 func (v Value) Range() Range {
 	n := v.data()
 	if !n.state.resolved() {
+		if n.withholds() {
+			usagePanic("Range cannot take %s"+withheldReason, n.describe())
+		}
 		usagePanic("Range called on %s, which has no range", n.describe())
 	}
 	return Range{v}
@@ -427,7 +430,9 @@ func LengthMax(n int64) Narrowing {
 func Members(vs ...Value) Narrowing {
 	for i, v := range vs {
 		n := v.data()
-		if !n.state.resolved() {
+		// A redacted member is refused for its marks, which says nothing
+		// they withhold, where not resolved would.
+		if !n.state.resolved() && !n.withholds() {
 			usagePanic("Members called with %s as member %d, not a resolved value", n.describe(), i)
 		}
 		if n.isMarked() {
@@ -443,6 +448,9 @@ func Members(vs ...Value) Narrowing {
 func numberBound(fn string, v Value) decimal.Dec {
 	n := v.data()
 	if n.state != stateKnown || n.typ.t.kind != KindNumber {
+		if n.withholds() {
+			usagePanic("%s cannot take %s as a bound"+withheldReason, fn, n.describe())
+		}
 		usagePanic("%s called with %s as a bound, not a known Number value", fn, n.describe())
 	}
 	return n.data.(decimal.Dec)
@@ -650,10 +658,16 @@ func narrowValue(v Value, ns []Narrowing) Value {
 	}
 	for _, nw := range ns {
 		if !nw.appliesTo(n.typ) {
+			if n.withholds() {
+				usagePanic("Narrow cannot take %s with %s"+withheldReason, n.describe(), nw)
+			}
 			usagePanic("Narrow called with %s, which does not apply to a value of type %s", nw, n.typ)
 		}
 		for i, m := range nw.members {
 			if m.n.typ != n.typ.t.elem {
+				if n.withholds() {
+					usagePanic("Narrow cannot take %s with %s"+withheldReason, n.describe(), nw)
+				}
 				usagePanic("Narrow called with %s as member %d of a Members narrowing, but the members of %s are of type %s",
 					m.n.describe(), i, n.typ, n.typ.t.elem)
 			}
@@ -899,6 +913,9 @@ func narrowPending(v Value, n *node, ns []Narrowing) Value {
 	// contradiction among the others.
 	for _, nw := range ns {
 		if nw.kind != narrowNotNull && nw.kind != narrowNull {
+			if n.withholds() {
+				usagePanic("Narrow cannot take %s with %s"+withheldReason, n.describe(), nw)
+			}
 			usagePanic("Narrow called with %s, which does not apply to a pending value, whose type is not determined", nw)
 		}
 	}

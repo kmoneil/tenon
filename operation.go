@@ -156,12 +156,20 @@ func (o *op) applyValue(args []Value) Value {
 			continue
 		}
 		if !Satisfies(o.operands[i].constraint, n.typ) {
+			if n.withholds() {
+				usagePanic("%s: %s is %s, which it cannot take"+withheldReason, o.name, operandName(i, len(args)), n.describe())
+			}
 			usagePanic("%s: %s is %s, which does not satisfy %s",
 				o.name, operandName(i, len(args)), n.describe(), o.operands[i].constraint)
 		}
 	}
 	if o.agree {
 		if i, j, ok := o.disagreeing(args, false); ok {
+			for _, k := range []int{i, j} {
+				if args[k].n.withholds() {
+					usagePanic("%s: %s is %s, which it cannot take"+withheldReason, o.name, operandName(k, len(args)), args[k].n.describe())
+				}
+			}
 			usagePanic("%s: %s is %s and %s is %s, but %s takes operands of one type",
 				o.name, operandName(i, len(args)), args[i].n.describe(),
 				operandName(j, len(args)), args[j].n.describe(), o.name)

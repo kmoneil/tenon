@@ -180,7 +180,9 @@ func (p Path) Attribute(name string) Path {
 // decoded. Unmark the key first, deciding what a diagnostic should show.
 func (p Path) Index(key Value) Path {
 	n := key.data()
-	if n.state != stateKnown || (n.typ.t.kind != KindNumber && n.typ.t.kind != KindString) {
+	// A redacted key is refused for its marks, which says nothing they
+	// withhold, where its kind or state would.
+	if (n.state != stateKnown || n.typ.t.kind != KindNumber && n.typ.t.kind != KindString) && !n.withholds() {
 		usagePanic("Index called with %s as a key; a path indexes by a known Number or String value", n.describe())
 	}
 	if n.isMarked() {

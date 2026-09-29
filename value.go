@@ -310,10 +310,16 @@ func Resolve(v Value, t Type) Value {
 	}
 	n := v.data()
 	if n.state != statePending {
+		if n.withholds() {
+			usagePanic("Resolve cannot take %s"+withheldReason, n.describe())
+		}
 		usagePanic("Resolve called on %s, which is not a pending value", n.describe())
 	}
 	c := n.data.(Constraint)
 	if !Satisfies(c, t) {
+		if n.withholds() {
+			usagePanic("Resolve cannot take %s with type %s"+withheldReason, n.describe(), t)
+		}
 		usagePanic("Resolve called with type %s, which does not satisfy the constraint %s of the pending value", t, c)
 	}
 	switch n.null {
@@ -374,8 +380,13 @@ func (v Value) data() *node {
 	return v.n
 }
 
-// describe names what n describes, for panic messages.
+// describe names what n describes, for panic messages. A value carrying a
+// redacting mark is named by the marks, as its display is, since a panic's
+// message reaches crash reports and logs (withholds).
 func (n *node) describe() string {
+	if n.withholds() {
+		return redactedBy(n.redactingMarks())
+	}
 	switch n.state {
 	case stateError:
 		return "an error value"
@@ -393,6 +404,9 @@ func (n *node) describe() string {
 // unknown. method names the caller.
 func (n *node) noContent(method string) {
 	if n.state == stateNull || n.state == stateUnknown {
+		if n.withholds() {
+			usagePanic("%s cannot take %s"+withheldReason, method, n.describe())
+		}
 		usagePanic("%s called on %s, which has no content", method, n.describe())
 	}
 }
@@ -402,6 +416,9 @@ func (n *node) noContent(method string) {
 func (v Value) known(kind Kind, method string) *node {
 	n := v.data()
 	if !n.state.resolved() || n.typ.t.kind != kind {
+		if n.withholds() {
+			usagePanic("%s cannot take %s"+withheldReason, method, n.describe())
+		}
 		usagePanic("%s called on %s, not a value of kind %s", method, n.describe(), kind)
 	}
 	n.noContent(method)
@@ -439,6 +456,9 @@ func (v Value) IsPending() bool { return v.data().state == statePending }
 func (v Value) Type() Type {
 	n := v.data()
 	if !n.state.resolved() {
+		if n.withholds() {
+			usagePanic("Type cannot take %s"+withheldReason, n.describe())
+		}
 		usagePanic("Type called on %s, which has no type", n.describe())
 	}
 	return n.typ
@@ -450,6 +470,9 @@ func (v Value) Type() Type {
 func (v Value) Constraint() Constraint {
 	n := v.data()
 	if n.state != statePending {
+		if n.withholds() {
+			usagePanic("Constraint cannot take %s"+withheldReason, n.describe())
+		}
 		usagePanic("Constraint called on %s, which is not a pending value", n.describe())
 	}
 	return n.data.(Constraint)
