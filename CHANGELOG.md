@@ -1,6 +1,79 @@
 # Changelog
 
-## Unreleased
+## 0.11.0 (2026-09-29)
+
+The rest of the architecture review of 0.9.0: the fixes that waited on
+answers to its questions, and two more found along the way. Above all,
+`String` and the text of a diff did work out of proportion to their input,
+spelling out a member's type for every member. With them, tenon requires no
+other module and holds the Unicode data for a string's length itself;
+decoders a program supplies fail with an `error`; `Deserialize` refuses
+what a part may not hold where its tag says so; a panic names a redacted
+value by its marks alone; `Contains`, `Div` and `Mod` answer as soon as the
+type or the divisor decides; `Convert` refuses a container by its policy
+before reading its members; gotenon reports a Go map's name failures as
+`Map` does, and refuses a marshaler a struct would take on from a field it
+embeds; and `encoding/xml` and go-cmp see values as they are. It implements
+version 0.10.0 of the tenon specification, which amends `NU-024`,
+`UN-011`, `EQ-042`, `EQ-043`, `CV-031`, `CV-033`, `CV-051`, `SE-043`,
+`SE-051`, `GO-004`, `GO-020`, `GO-022`, `GO-041`, `GO-043`, `GO-044`,
+`DI-010`, `DI-030`, `DI-035` and `DI-037`, clarifies `GO-012`, and adds the
+code `serialize.decoder_failed`: 201 rules, as before.
+
+**Upgrade if you log, display or diff values from parties you do not
+trust.** In 0.10.0 a value's display form, which `String`, `LogValue`,
+`MarshalText` and `fmt` give, spelled out a member's type for every null or
+unknown member and every nested collection, and a diff's text spelled out
+each changed part's: a document of 101 KB holding 100,000 nulls of a type
+509 levels deep displayed in 307 MB, and the diff of two lists of 4,000
+such members, of 5 KB and 25 KB, in 24 MB. `Diff` itself did work of that
+size to order the members of two sets that are not known. They now display
+in 603 KB and 107 KB. A security advisory follows this release.
+
+The minor version moves because results change and two signatures break:
+`MarkDecoder` and `CapsuleEncoding.Decode` return an `error`, display forms
+and diffs read differently, and `Contains`, `Div`, `Mod`, `Narrow`,
+`Convert`, `gotenon.Encode` and `Deserialize` answer otherwise in a few
+cases.
+
+**Upgrading from 0.10.0.** Documents 0.10.0 wrote decode as they did, and
+values encode to the same bytes. The compiler finds two changes:
+
+- A `MarkDecoder` returns `(Mark, error)`, and a `CapsuleEncoding.Decode`
+  `(*E, error)`: return `tenon.NewError(tenon.ErrorVal(d))` where one
+  returned `[]tenon.Diagnostic{d}`, or an error of your own, which fails
+  with `serialize.decoder_failed` and stays the cause of `Deserialize`'s
+  error.
+- A `tenon.Change` written as a composite literal without field names
+  needs the new field, `InCollection`; one with names compiles as it did.
+
+These it does not find:
+
+- A member of a list, set or map displays without its type, as in
+  `list(number)[1, null, unknown]`; a diff's change within one shows its
+  parts without theirs; and a set's member changes carry the set's deep
+  marks, as `+ .: member marked(2, "d")`. A test comparing `String` or a
+  diff's text with text written for 0.10.0 needs the new text, and
+  `encoding/xml` writes a value as its display form, where it wrote
+  nothing.
+- `Contains` answers false where the value looked for cannot be of the
+  members' type, and `Div` and `Mod` fail where the divisor can be no
+  number but zero, where each answered unknown.
+- Narrowing a set that holds members that are not known is decided by its
+  length alone, so some narrowings it refused leave the set as it was.
+- Under `Safe`, a container that converts only unsafely fails as a whole,
+  at its own path, before its members are read.
+- `gotenon.Encode` panics on a pending value below the top of what it is
+  given, and gotenon on a struct that would take on a marshaler from a
+  field it embeds; `Encode` reports a Go map's name failures in `Map`'s
+  order and at its paths.
+- `Deserialize` fails a few inputs with another code, or at another byte,
+  where a mark, an unknown value or a null stands where its tag forbids it.
+- In a diff, two members of a set of objects or tuples that are not known
+  can come in the other order.
+
+**What `CONFORMANCE.md` states.** 201 of 201, and no rule more widely than
+its test exercises.
 
 ### Fixed
 

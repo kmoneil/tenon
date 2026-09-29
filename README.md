@@ -37,9 +37,9 @@ fmt.Println(address.IsKnown(), tenon.Length(address))
 // false unknown(number, not null, >= 0)
 ```
 
-    go get github.com/kmoneil/tenon@v0.10.0
+    go get github.com/kmoneil/tenon@v0.11.0
 
-Version 0.10.0 implements version 0.9.0 of the tenon specification. A
+Version 0.11.0 implements version 0.10.0 of the tenon specification. A
 conformance test covers every one of its 201 rules, as `CONFORMANCE.md`
 reports; `CHANGELOG.md` says what each release holds, and, where there are
 any, which rules the report states more widely than its test exercises.
@@ -254,17 +254,17 @@ For a configuration of 32 KB, measured on Apple M5 Max with go1.26.4:
 
 | | encoding/json | tenon | go-cty |
 | --- | --- | --- | --- |
-| Parse JSON into a value | 251 µs | 1.45 ms | 4.80 ms |
-| Convert to a schema | – | 579 µs | 1.95 ms |
-| Encode and decode | 459 µs | 419 µs | 3.57 ms |
-| Compare two copies | 470 µs | 14.7 µs | 8.00 ms |
-| Read a nested value | 16.1 ns | 57.5 ns | 95.7 ns |
-| Diff one change | – | 185 µs | – |
+| Parse JSON into a value | 265 µs | 1.27 ms | 4.74 ms |
+| Convert to a schema | – | 564 µs | 1.90 ms |
+| Encode and decode | 456 µs | 410 µs | 3.48 ms |
+| Compare two copies | 473 µs | 14.8 µs | 8.03 ms |
+| Read a nested value | 15.8 ns | 56.1 ns | 96.2 ns |
+| Diff one change | – | 178 µs | – |
 <!-- benchmarks:end -->
 
 ## Stability
 
-tenon is before 1.0. Version 0.10.0 holds the API that 1.0 is to keep, and
+tenon is before 1.0. Version 0.11.0 holds the API that 1.0 is to keep, and
 1.0 will freeze the API, the encoding and the specification: after it, a
 change that breaks a program waits for a new major version. Until then a
 minor version may break a program, and its release notes say how to upgrade.
