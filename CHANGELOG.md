@@ -48,6 +48,10 @@
   that go-cmp's `cmp.Equal` calls, so that a struct holding one compares by
   what it says, where go-cmp panicked on their unexported fields. Every
   exported type go-cmp would reach an unexported field in now has one.
+- `Change.InCollection`, which says that a change lies within a list, set or
+  map that `Diff` looked within, whose element type fixes its parts' type in
+  both values. A change's display form leaves that type out where it is set,
+  so a change built or copied by hand sets it to display as `Diff`'s does.
 
 ### Changed
 
@@ -148,6 +152,20 @@
   `MarshalText` and the messages that quote a value show the new form, and
   the conformance vectors' display forms change with it. The specification
   says so (`DI-010`).
+- A diff shows the parts of a change within a list, set or map without
+  their type, as a value's display form shows members:
+  `~ .items[0]: null -> unknown` where it read
+  `~ .items[0]: null(list(number)) -> unknown(list(number))`. The type is the
+  collection's element type in both values; a part above the first such
+  collection keeps its type, in which the two values can differ. Spelled out
+  for every change, the type made a diff's text grow with the changed
+  members times their type: two lists of 4,000 members of a type 500 levels
+  deep encode in 5 KB and 25 KB, and their diff displayed in 24 MB, and now
+  displays in 107 KB. `Diff` read the members of two sets that are not known
+  with their type to order them, work of the same size, and now reads them
+  as members are shown, which can order two members of a set of objects or
+  tuples the other way. The conformance corpus's diffs change with it. The
+  specification says so (`DI-030`, `DI-035`, `DI-037`).
 
 ## 0.10.0 (2026-09-28)
 

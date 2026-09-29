@@ -51,7 +51,12 @@ func (k ChangeKind) String() string {
 // depends on its kind. OldMarks and NewMarks are slices of the change's own,
 // which the caller may keep or change without touching the values diffed.
 type Change struct {
-	Kind               ChangeKind
+	Kind ChangeKind
+	// InCollection says that the change lies within a list, set or map that
+	// Diff looked within, as a member change lies within its set. Both values
+	// hold that collection with one element type, so Old and New are of one
+	// type, which the change's display form leaves out (DI-037).
+	InCollection       bool
 	Path               Path
 	Old, New           Value
 	OldMarks, NewMarks []Mark
@@ -62,6 +67,10 @@ type Change struct {
 //	~ .name: "web" -> "api"
 //	+ .ports[2]: 8443
 //	~ .tags: marks [] -> ["audited"]
+//	~ .ports[0]: null -> 80
+//
+// A change within a list, set or map, as the last is, shows its parts without
+// their type, which the collection's element type fixes in both values.
 func (c Change) String() string {
 	var b textWriter
 	c.write(&b)
@@ -82,6 +91,7 @@ func (c Change) write(b *textWriter) {
 	}
 	c.Path.write(b)
 	b.WriteString(": ")
+	defer b.keepStated(c.InCollection)()
 	switch c.Kind {
 	case ChangeReplaced:
 		c.Old.write(b)
@@ -133,7 +143,9 @@ func (cs Changes) String() string {
 // name, and set members by membership, and a part only one side has is an
 // addition or a removal. Where the marks of two such parts differ, the diff has
 // a mark change for them first. A deep mark is counted once, where it is
-// attached: the values within compare as if they did not carry it.
+// attached: the values within compare as if they did not carry it. A change
+// within a list, set or map, which both values hold with one element type,
+// says so in InCollection, and its display form leaves its parts' type out.
 //
 // The changes are in the order a walk of both values meets them: elements in
 // index order, entries and attributes in name order, set members in the order
@@ -145,15 +157,15 @@ func Diff(a, b Value) Changes {
 	a.data()
 	b.data()
 	var d differ
-	d.compare(a, b, Path{}, nil, nil)
+	d.compare(a, b, Path{}, nil, nil, false)
 	return d.changes
 }
 
-// marksChanged returns the change of a part's marks from ownA to ownB, at p.
-// The lists are copied: they may be the parts' own storage, which a value
-// never lets out.
-func marksChanged(p Path, ownA, ownB []Mark) Change {
-	return Change{Kind: ChangeMarks, Path: p, OldMarks: slices.Clone(ownA), NewMarks: slices.Clone(ownB)}
+// marksChanged returns the change of a part's marks from ownA to ownB, at p,
+// within a collection where in says so. The lists are copied: they may be
+// the parts' own storage, which a value never lets out.
+func marksChanged(p Path, ownA, ownB []Mark, in bool) Change {
+	return Change{Kind: ChangeMarks, Path: p, OldMarks: slices.Clone(ownA), NewMarks: slices.Clone(ownB), InCollection: in}
 }
 
 // differ collects the changes of a diff.
@@ -165,20 +177,22 @@ func (d *differ) add(c Change) { d.changes = append(d.changes, c) }
 
 // compare adds the changes between the parts a and b at p. asideA and asideB
 // are the deep marks of the parts that hold a and b, which a and b and every
-// value within them compare without.
-func (d *differ) compare(a, b Value, p Path, asideA, asideB []Mark) {
+// value within them compare without. in says that p lies within a list, set
+// or map that both values hold with one element type, which fixes the type
+// of a and b and of every part within them.
+func (d *differ) compare(a, b Value, p Path, asideA, asideB []Mark, in bool) {
 	na, nb := a.n, b.n
 	ownA, ownB := marksAside(na.markList(), asideA), marksAside(nb.markList(), asideB)
 	sameOwn := sameMarkSet(ownA, ownB)
 	if !enterable(na, nb) {
 		switch {
 		case !restIdenticalAside(na, nb, asideA, asideB):
-			d.add(Change{Kind: ChangeReplaced, Path: p, Old: a, New: b})
+			d.add(Change{Kind: ChangeReplaced, Path: p, Old: a, New: b, InCollection: in})
 		case sameOwn:
 		case na.redactingMarks() != nil || nb.redactingMarks() != nil:
-			d.add(Change{Kind: ChangeReplaced, Path: p, Old: a, New: b})
+			d.add(Change{Kind: ChangeReplaced, Path: p, Old: a, New: b, InCollection: in})
 		default:
-			d.add(marksChanged(p, ownA, ownB))
+			d.add(marksChanged(p, ownA, ownB, in))
 		}
 		return
 	}
@@ -186,21 +200,24 @@ func (d *differ) compare(a, b Value, p Path, asideA, asideB []Mark) {
 		return
 	}
 	if !sameOwn {
-		d.add(marksChanged(p, ownA, ownB))
+		d.add(marksChanged(p, ownA, ownB, in))
 	}
 	innerA, innerB := deepOf(na.markList()), deepOf(nb.markList())
 	switch na.typ.t.kind {
 	case KindList, KindTuple:
+		// A list's elements are of its element type in both values; a tuple's
+		// are fixed only where the tuple's own type is.
+		within := in || na.typ.t.kind == KindList
 		x, y := na.data.([]Value), nb.data.([]Value)
 		for i := range max(len(x), len(y)) {
 			at := p.extend(indexStep(NumberFromInt(int64(i))))
 			switch {
 			case i >= len(x):
-				d.add(Change{Kind: ChangeAdded, Path: at, New: y[i]})
+				d.add(Change{Kind: ChangeAdded, Path: at, New: y[i], InCollection: within})
 			case i >= len(y):
-				d.add(Change{Kind: ChangeRemoved, Path: at, Old: x[i]})
+				d.add(Change{Kind: ChangeRemoved, Path: at, Old: x[i], InCollection: within})
 			default:
-				d.compare(x[i], y[i], at, innerA, innerB)
+				d.compare(x[i], y[i], at, innerA, innerB, within)
 			}
 		}
 	case KindMap:
@@ -210,11 +227,11 @@ func (d *differ) compare(a, b Value, p Path, asideA, asideB []Mark) {
 		mergeByName(x, y, key, func(i, j int) {
 			switch {
 			case j < 0:
-				d.add(Change{Kind: ChangeRemoved, Path: at(x[i].key), Old: x[i].val})
+				d.add(Change{Kind: ChangeRemoved, Path: at(x[i].key), Old: x[i].val, InCollection: true})
 			case i < 0:
-				d.add(Change{Kind: ChangeAdded, Path: at(y[j].key), New: y[j].val})
+				d.add(Change{Kind: ChangeAdded, Path: at(y[j].key), New: y[j].val, InCollection: true})
 			default:
-				d.compare(x[i].val, y[j].val, at(x[i].key), innerA, innerB)
+				d.compare(x[i].val, y[j].val, at(x[i].key), innerA, innerB, true)
 			}
 		})
 	case KindObject:
@@ -225,11 +242,11 @@ func (d *differ) compare(a, b Value, p Path, asideA, asideB []Mark) {
 		mergeByName(x, y, name, func(i, j int) {
 			switch {
 			case j < 0:
-				d.add(Change{Kind: ChangeRemoved, Path: at(x[i].name), Old: vx[i]})
+				d.add(Change{Kind: ChangeRemoved, Path: at(x[i].name), Old: vx[i], InCollection: in})
 			case i < 0:
-				d.add(Change{Kind: ChangeAdded, Path: at(y[j].name), New: vy[j]})
+				d.add(Change{Kind: ChangeAdded, Path: at(y[j].name), New: vy[j], InCollection: in})
 			default:
-				d.compare(vx[i], vy[j], at(x[i].name), innerA, innerB)
+				d.compare(vx[i], vy[j], at(x[i].name), innerA, innerB, in)
 			}
 		})
 	case KindSet:
@@ -247,8 +264,8 @@ func (d *differ) compare(a, b Value, p Path, asideA, asideB []Mark) {
 func (d *differ) members(na, nb *node, p Path) {
 	x, y := na.data.([]Value), nb.data.([]Value)
 	oldAs, newAs := givenBy(na), givenBy(nb)
-	removed := func(m Value) { d.add(Change{Kind: ChangeMemberRemoved, Path: p, Old: oldAs(m)}) }
-	added := func(m Value) { d.add(Change{Kind: ChangeMemberAdded, Path: p, New: newAs(m)}) }
+	removed := func(m Value) { d.add(Change{Kind: ChangeMemberRemoved, Path: p, Old: oldAs(m), InCollection: true}) }
+	added := func(m Value) { d.add(Change{Kind: ChangeMemberAdded, Path: p, New: newAs(m), InCollection: true}) }
 	kx, ky := knownMembers(x), knownMembers(y)
 	knownMemberChanges(x[:kx], y[:ky], removed, added)
 	gone, come := unpairedMembers(x[kx:], y[ky:])
@@ -360,8 +377,10 @@ func unpairedMembers(x, y []Value) (removed, added []Value) {
 }
 
 // interleave reports the removals and additions of members that are not
-// known in the order of their display forms as the sets hold them, each
-// written once however long it waits its turn. A removal and an addition that
+// known in the order of their display forms as the sets hold them, without
+// their type (DI-010), each written once however long it waits its turn: the
+// type is the sets' element type, and writing it for each member would cost
+// the members times its length. A removal and an addition that
 // read alike are ordered by the members themselves, as a set holding the
 // members of both sets orders members that encode alike (DI-035, EQ-044): the
 // key follows from the member and not from the side it came from, so
@@ -374,7 +393,9 @@ func interleave(gone, come []Value, removed, added func(Value)) {
 	texts := func(ms []Value) []string {
 		out := make([]string, len(ms))
 		for i, m := range ms {
-			out[i] = m.String()
+			b := textWriter{stated: true}
+			m.write(&b)
+			out[i] = b.String()
 		}
 		return out
 	}
