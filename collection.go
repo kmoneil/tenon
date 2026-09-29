@@ -318,7 +318,7 @@ func Object(attrs map[string]Value) Value {
 	for name, v := range attrs {
 		given = append(given, namedEntry[Value]{original: name, value: v})
 	}
-	entries, shared := checkNames(given)
+	entries, shared := checkNames(given, attributeNames)
 	for _, e := range entries {
 		if !isError(e.value) {
 			memberType("Object", attributeNamed(e.original), e.value)
@@ -328,7 +328,7 @@ func Object(attrs map[string]Value) Value {
 	for _, e := range entries {
 		switch {
 		case e.fault != "":
-			errs.addDiagnostic(nameFault(e.fault, e.original))
+			errs.addDiagnostic(nameFault(attributeNames, e.fault, e.original))
 			// No path step can name what is not an attribute name, so an
 			// error attribute under it keeps the paths it came with.
 			if isError(e.value) {
@@ -339,7 +339,7 @@ func Object(attrs map[string]Value) Value {
 		}
 	}
 	for _, group := range shared {
-		errs.addDiagnostic(sharedName(group))
+		errs.addDiagnostic(sharedName(attributeNames, group))
 	}
 	if v, ok := errs.value(); ok {
 		return v
@@ -643,85 +643,43 @@ func anyMarked(vals []Value) bool {
 // resolved value of type elem.
 func Map(elem Type, entries map[string]Value) Value {
 	t := MapType(elem)
-	// keyed is an entry beside its key as given. Its key is the normalized
-	// form, or the key as given where that is not well-formed UTF-8, which no
-	// normalized key can equal.
-	type keyed struct {
-		mapEntry
-		original string
-		invalid  bool
-	}
-	list := make([]keyed, 0, len(entries))
+	given := make([]namedEntry[Value], 0, len(entries))
 	for _, key := range slices.Sorted(maps.Keys(entries)) {
 		val := entries[key]
 		if !isError(val) {
 			requireMember("Map", mapElement(key), val, elem)
 		}
-		normalized, err := uni.Canonical(key)
-		if err != nil {
-			list = append(list, keyed{mapEntry{key, val}, key, true})
-			continue
-		}
-		list = append(list, keyed{mapEntry{normalized, val}, key, false})
+		given = append(given, namedEntry[Value]{original: key, value: val})
 	}
-
-	// Bytewise order is string order for the normalized keys, and places the
-	// others among them; entries that share a key follow their keys as given
-	// (TY-017). Each entry reports in that order, and a key that entries share
-	// is reported after them all, whatever their elements are.
-	slices.SortFunc(list, func(a, b keyed) int {
-		if c := strings.Compare(a.key, b.key); c != 0 {
-			return c
-		}
-		return strings.Compare(a.original, b.original)
-	})
+	// Each entry reports in the order of its key, and a key that entries
+	// share is reported after them all, whatever their elements are (TY-017).
+	sorted, shared := checkNames(given, mapKeys)
 	var errs containerErrors
-	var shared [][]keyed
-	out := make([]mapEntry, 0, len(list))
-	for i := 0; i < len(list); {
-		j := i + 1
-		for j < len(list) && list[j].key == list[i].key {
-			j++
-		}
-		for _, e := range list[i:j] {
-			switch {
-			case e.invalid:
-				errs.addDiagnostic(Diagnostic{
-					Code:    CodeStringInvalidUTF8,
-					Message: "map key " + quotedASCII(e.original) + " is not well-formed UTF-8 at byte " + strconv.Itoa(invalidUTF8At(e.original)),
-				})
-				// No path step can name a key that is not a string, so an
-				// error element under it keeps the path it came with.
-				if isError(e.val) {
-					errs.addUnlocated(e.val)
-				}
-			case isError(e.val):
-				errs.add(indexStep(String(e.key)), e.val)
+	for _, e := range sorted {
+		switch {
+		case e.fault != "":
+			errs.addDiagnostic(nameFault(mapKeys, e.fault, e.original))
+			// No path step can name a key that is not a string, so an
+			// error element under it keeps the path it came with.
+			if isError(e.value) {
+				errs.addUnlocated(e.value)
 			}
+		case isError(e.value):
+			errs.add(indexStep(String(e.key)), e.value)
 		}
-		if j-i > 1 {
-			shared = append(shared, list[i:j])
-		}
-		out = append(out, list[i].mapEntry)
-		i = j
 	}
 	for _, group := range shared {
-		spellings := make([]string, len(group))
-		for k, e := range group {
-			spellings[k] = quotedASCII(e.original)
-		}
-		errs.addDiagnostic(Diagnostic{
-			Code:    CodeMapDuplicateKey,
-			Message: "map keys " + strings.Join(spellings, " and ") + " are the same key after normalization",
-		})
+		errs.addDiagnostic(sharedName(mapKeys, group))
 	}
 	if v, ok := errs.value(); ok {
 		return v
 	}
+	out := make([]mapEntry, len(sorted))
 	partial, marked := false, false
-	for _, e := range out {
-		partial = partial || !e.val.n.isKnown()
-		marked = marked || e.val.n.isMarked()
+	for i, e := range sorted {
+		out[i] = mapEntry{e.key, e.value}
+		partial = partial || !e.value.n.isKnown()
+		marked = marked || e.value.n.isMarked()
 	}
 	return Value{n: &node{state: stateKnown, partial: partial, markedWithin: marked, typ: t, data: out}}
 }
