@@ -275,7 +275,7 @@ func TestConformance_EQ042_TheCountIsAskedOncePerValue(t *testing.T) {
 			ID:     "t/counted",
 			Type:   num,
 			Encode: func(v *int) tenon.Value { return tenon.NumberFromInt(int64(*v)) },
-			Decode: func(v tenon.Value) (*int, []tenon.Diagnostic) {
+			Decode: func(v tenon.Value) (*int, error) {
 				i, _ := v.AsInt64()
 				n := int(i)
 				return &n, nil

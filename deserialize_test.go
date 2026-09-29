@@ -2,6 +2,7 @@ package tenon_test
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"math/big"
 	"math/rand"
@@ -27,12 +28,12 @@ var (
 var decoders = tenon.Decoders{
 	Capsules: []tenon.Type{degrees.Type()},
 	Marks: map[string]tenon.MarkDecoder{
-		"m": func(tenon.Value, bool) (tenon.Mark, []tenon.Diagnostic) { return markPlain, nil },
-		"d": func(tenon.Value, bool) (tenon.Mark, []tenon.Diagnostic) { return markDeep, nil },
-		"i": func(tenon.Value, bool) (tenon.Mark, []tenon.Diagnostic) { return markIsolated, nil },
-		"p": func(payload tenon.Value, has bool) (tenon.Mark, []tenon.Diagnostic) {
+		"m": func(tenon.Value, bool) (tenon.Mark, error) { return markPlain, nil },
+		"d": func(tenon.Value, bool) (tenon.Mark, error) { return markDeep, nil },
+		"i": func(tenon.Value, bool) (tenon.Mark, error) { return markIsolated, nil },
+		"p": func(payload tenon.Value, has bool) (tenon.Mark, error) {
 			if !has || payload.Type() != tenon.StringType() {
-				return nil, []tenon.Diagnostic{{Code: "app.bad_note", Message: "a note needs text"}}
+				return nil, tenon.NewError(tenon.ErrorVal(tenon.Diagnostic{Code: "app.bad_note", Message: "a note needs text"}))
 			}
 			return note{"p", payload.AsString()}, nil
 		},
@@ -305,6 +306,12 @@ func TestConformance_SE051_TheCodesOfSerialization(t *testing.T) {
 	wantDecodeFailure(t, "serialize.too_large", document+"83 00 "+strings.Repeat("82 04 ", 600)+"02 f6", tenon.CodeSerializeTooLarge)
 	wantDecodeFailure(t, "serialize.unknown_capsule", document+"83 00 82 09 63 782f79 f6", tenon.CodeSerializeUnknownCapsule)
 	wantDecodeFailure(t, "serialize.unknown_mark", document+"83 00 01 da74656e02 82 f5 81 81 617a", tenon.CodeSerializeUnknownMark)
+	failing := tenon.Decoders{Marks: map[string]tenon.MarkDecoder{
+		"m": func(tenon.Value, bool) (tenon.Mark, error) { return nil, errors.New("no mark") },
+	}}
+	if _, failure, ok := tryDeserialize(fromHex(t, document+"83 00 01 da74656e02 82 f5 81 81 616d"), failing); ok || failure.Diagnostics()[0].Code != tenon.CodeSerializeDecoderFailed {
+		t.Errorf("serialize.decoder_failed: a failing decoder gave %v", failure)
+	}
 	opaque := tenon.NewCapsule("opaque", tenon.CapsuleOps[int]{})
 	held := 1
 	wantSerializeFailure(t, "serialize.unencodable_capsule", opaque.Value(&held),
@@ -373,20 +380,57 @@ func TestConformance_SE043_DecodersAreSupplied(t *testing.T) {
 	refusing := tenon.NewCapsule("refusing", tenon.CapsuleOps[celsius]{Equal: celsiusEqual, Hash: celsiusHash, Encoding: &tenon.CapsuleEncoding[celsius]{
 		ID: "t/refusing", Type: num,
 		Encode: func(v *celsius) tenon.Value { return n(v.degrees) },
-		Decode: func(tenon.Value) (*celsius, []tenon.Diagnostic) {
-			return nil, []tenon.Diagnostic{{Code: "app.refused", Message: "no"}}
+		Decode: func(tenon.Value) (*celsius, error) {
+			return nil, tenon.NewError(tenon.ErrorVal(tenon.Diagnostic{Code: "app.refused", Message: "no"}))
 		},
 	}})
 	b, _, _ := trySerialize(refusing.Value(&celsius{1}))
 	if _, failure, ok := tryDeserialize(b, tenon.Decoders{Capsules: []tenon.Type{refusing.Type()}}); ok || failure.Diagnostics()[0].Code != "app.refused" {
 		t.Errorf("a refusing capsule decoder gave %v", failure)
 	}
+
+	// A decoder refuses with an error, as gotenon's marshalers fail: a
+	// *tenon.Error contributes its diagnostics, and any other error its text
+	// with code serialize.decoder_failed. Either way Deserialize's error keeps
+	// it as a cause, which errors.Is finds through it.
+	errNoNote := errors.New("the note is not in the list")
+	plainRefusal := tenon.Decoders{Marks: map[string]tenon.MarkDecoder{
+		"m": func(tenon.Value, bool) (tenon.Mark, error) { return nil, fmt.Errorf("reading m: %w", errNoNote) },
+	}}
+	_, err := tenon.Deserialize(fromHex(t, document+"83 00 01 da74656e02 82 f5 81 81 616d"), plainRefusal)
+	var te *tenon.Error
+	if !errors.As(err, &te) || !errors.Is(err, errNoNote) {
+		t.Fatalf("a mark decoder's plain error gave %v, want a *tenon.Error through which errors.Is finds it", err)
+	}
+	if d := te.Diagnostics(); len(d) != 1 || d[0].Code != tenon.CodeSerializeDecoderFailed || !strings.Contains(d[0].Message, "reading m: the note is not in the list") {
+		t.Errorf("a mark decoder's plain error reports %v, want %s giving its text", d, tenon.CodeSerializeDecoderFailed)
+	}
+	refusal := tenon.NewError(tenon.ErrorVal(tenon.Diagnostic{Code: "app.refused", Message: "no"}))
+	withDiagnostics := tenon.Decoders{Marks: map[string]tenon.MarkDecoder{
+		"m": func(tenon.Value, bool) (tenon.Mark, error) { return nil, refusal },
+	}}
+	_, err = tenon.Deserialize(fromHex(t, document+"83 00 01 da74656e02 82 f5 81 81 616d"), withDiagnostics)
+	if !errors.As(err, &te) || !errors.Is(err, refusal) || te.Diagnostics()[0].Code != "app.refused" {
+		t.Errorf("a mark decoder's *tenon.Error gave %v, want its diagnostics and it kept as a cause", err)
+	}
+	errNoDegrees := errors.New("no such degrees")
+	plainCapsule := tenon.NewCapsule("plain", tenon.CapsuleOps[celsius]{Equal: celsiusEqual, Hash: celsiusHash, Encoding: &tenon.CapsuleEncoding[celsius]{
+		ID: "t/plain", Type: num,
+		Encode: func(v *celsius) tenon.Value { return n(v.degrees) },
+		Decode: func(tenon.Value) (*celsius, error) { return nil, errNoDegrees },
+	}})
+	b, _, _ = trySerialize(plainCapsule.Value(&celsius{1}))
+	_, err = tenon.Deserialize(b, tenon.Decoders{Capsules: []tenon.Type{plainCapsule.Type()}})
+	if !errors.As(err, &te) || !errors.Is(err, errNoDegrees) || te.Diagnostics()[0].Code != tenon.CodeSerializeDecoderFailed {
+		t.Errorf("a capsule decoder's plain error gave %v, want %s with it kept as a cause", err, tenon.CodeSerializeDecoderFailed)
+	}
+
 	// What the caller supplies must itself be sound.
 	opaque := tenon.NewCapsule("opaque", tenon.CapsuleOps[celsius]{}).Type()
 	mustPanicUsage(t, "declares no encoding", func() { tryDeserialize(nil, tenon.Decoders{Capsules: []tenon.Type{opaque}}) })
 	mustPanicUsage(t, "returned the mark", func() {
 		tryDeserialize(fromHex(t, document+"83 00 01 da74656e02 82 f5 81 81 616d"), tenon.Decoders{Marks: map[string]tenon.MarkDecoder{
-			"m": func(tenon.Value, bool) (tenon.Mark, []tenon.Diagnostic) { return markDeep, nil },
+			"m": func(tenon.Value, bool) (tenon.Mark, error) { return markDeep, nil },
 		}})
 	})
 }
@@ -402,7 +446,7 @@ var (
 			ID:     "t/counting",
 			Type:   tenon.NumberType(),
 			Encode: func(v *int64) tenon.Value { return tenon.NumberFromInt(*v) },
-			Decode: func(v tenon.Value) (*int64, []tenon.Diagnostic) {
+			Decode: func(v tenon.Value) (*int64, error) {
 				i, _ := v.AsInt64()
 				return &i, nil
 			},
@@ -431,7 +475,7 @@ func TestConformance_SE005_DecodingWorkIsBounded(t *testing.T) {
 	// two levels below the item, so 509 list types around a number reach 512
 	// and 510 reach 513.
 	payloads := tenon.Decoders{Marks: map[string]tenon.MarkDecoder{
-		"p": func(p tenon.Value, _ bool) (tenon.Mark, []tenon.Diagnostic) { return holding{&p}, nil },
+		"p": func(p tenon.Value, _ bool) (tenon.Mark, error) { return holding{&p}, nil },
 	}}
 	payload := func(k int) string {
 		return document + "830002da74656e02820181836170" + strings.Repeat("82 04 ", k) + "02 80"
@@ -534,7 +578,7 @@ func TestConformance_SE005_DecodingWorkIsBounded(t *testing.T) {
 	for i := range marks {
 		m := note{id: fmt.Sprintf("m%05d", i), text: "x"}
 		marks[i] = m
-		read.Marks[m.id] = func(tenon.Value, bool) (tenon.Mark, []tenon.Diagnostic) { return m, nil }
+		read.Marks[m.id] = func(tenon.Value, bool) (tenon.Mark, error) { return m, nil }
 	}
 	marked := tenon.WithMarks(tenon.NumberFromInt(1), marks...)
 	b, _, _ = trySerialize(marked)
@@ -579,7 +623,7 @@ func TestConformance_SE005_NestedSetsCostWhatTheyHold(t *testing.T) {
 			ID:     "tenon.test/counted",
 			Type:   tenon.NumberType(),
 			Encode: func(v *int64) tenon.Value { return tenon.NumberFromInt(*v) },
-			Decode: func(v tenon.Value) (*int64, []tenon.Diagnostic) {
+			Decode: func(v tenon.Value) (*int64, error) {
 				x, _ := v.AsInt64()
 				return &x, nil
 			},
@@ -656,10 +700,10 @@ func TestConformance_SE005_NestedSetsCostWhatTheyHold(t *testing.T) {
 func TestConformance_SE005_DeepMarksBesideMembersOwn(t *testing.T) {
 	conformance.Covers(t, "SE-005", "MK-008", "SE-031")
 	read := tenon.Decoders{Marks: map[string]tenon.MarkDecoder{
-		"level": func(p tenon.Value, _ bool) (tenon.Mark, []tenon.Diagnostic) {
+		"level": func(p tenon.Value, _ bool) (tenon.Mark, error) {
 			return deepNote{"level", p.AsString()}, nil
 		},
-		"m": func(tenon.Value, bool) (tenon.Mark, []tenon.Diagnostic) { return markPlain, nil },
+		"m": func(tenon.Value, bool) (tenon.Mark, error) { return markPlain, nil },
 	}}
 	allocations := func(f func()) uint64 {
 		var before, after runtime.MemStats
@@ -750,7 +794,7 @@ func TestConformance_SE005_NonCanonicalMantissasAreRefusedFirst(t *testing.T) {
 func TestConformance_SE005_DeepMarksNestedLevelUponLevel(t *testing.T) {
 	conformance.Covers(t, "SE-005", "MK-008", "SE-031")
 	read := tenon.Decoders{Marks: map[string]tenon.MarkDecoder{
-		"level": func(p tenon.Value, _ bool) (tenon.Mark, []tenon.Diagnostic) {
+		"level": func(p tenon.Value, _ bool) (tenon.Mark, error) {
 			return deepNote{"level", p.AsString()}, nil
 		},
 	}}
@@ -799,7 +843,7 @@ func (m tallied) MarkPayload() (tenon.Value, bool) { return tenon.String(m.text)
 
 // tallyDecoders reads tallied marks.
 var tallyDecoders = tenon.Decoders{Marks: map[string]tenon.MarkDecoder{
-	"tallied": func(payload tenon.Value, _ bool) (tenon.Mark, []tenon.Diagnostic) {
+	"tallied": func(payload tenon.Value, _ bool) (tenon.Mark, error) {
 		return tallied{payload.AsString()}, nil
 	},
 }}
@@ -1084,7 +1128,7 @@ func BenchmarkManyMarks(b *testing.B) {
 		for i := range marks {
 			m := note{id: fmt.Sprintf("m%05d", i), text: "x"}
 			marks[i] = m
-			read.Marks[m.id] = func(tenon.Value, bool) (tenon.Mark, []tenon.Diagnostic) { return m, nil }
+			read.Marks[m.id] = func(tenon.Value, bool) (tenon.Mark, error) { return m, nil }
 		}
 		encoded, failure, ok := trySerialize(tenon.WithMarks(tenon.NumberFromInt(1), marks...))
 		if !ok {
@@ -1115,7 +1159,7 @@ func BenchmarkMarkDocuments(b *testing.B) {
 			for _, id := range []string{fmt.Sprintf("m%06d", i), fmt.Sprintf("m%06d_", i)} {
 				mark := signal{id: id}
 				marks = append(marks, mark)
-				read.Marks[id] = func(tenon.Value, bool) (tenon.Mark, []tenon.Diagnostic) { return mark, nil }
+				read.Marks[id] = func(tenon.Value, bool) (tenon.Mark, error) { return mark, nil }
 			}
 		}
 		return tenon.WithMarks(tenon.NumberFromInt(1), marks...), read
@@ -1230,7 +1274,7 @@ func TestConformance_SE043_DecoderContracts(t *testing.T) {
 	})
 	marked := document + "83 00 01 da74656e02 82 f5 81 81 616d"
 	plain := tenon.Decoders{Marks: map[string]tenon.MarkDecoder{
-		"m": func(tenon.Value, bool) (tenon.Mark, []tenon.Diagnostic) { return stamp{id: "m"}, nil },
+		"m": func(tenon.Value, bool) (tenon.Mark, error) { return stamp{id: "m"}, nil },
 	}}
 	mustPanicUsage(t, "declares no encoding, which cannot serialize again", func() {
 		tryDeserialize(fromHex(t, marked), plain)
@@ -1327,7 +1371,7 @@ func TestConformance_SE003_WhatSerializesNearTheBoundReadsBack(t *testing.T) {
 	read := tenon.Decoders{Marks: map[string]tenon.MarkDecoder{
 		"m": decoders.Marks["m"],
 		"d": decoders.Marks["d"],
-		"k": func(payload tenon.Value, _ bool) (tenon.Mark, []tenon.Diagnostic) {
+		"k": func(payload tenon.Value, _ bool) (tenon.Mark, error) {
 			k := 0
 			for typ := payload.Type(); typ.Kind() == tenon.KindList; typ = typ.ElementType() {
 				k++

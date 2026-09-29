@@ -51,6 +51,15 @@
 
 ### Changed
 
+- `MarkDecoder` and `CapsuleEncoding.Decode` return an `error` in place of
+  `[]Diagnostic`, as gotenon's `MarshalValue` and `UnmarshalValue` do, so that
+  every hook a program supplies fails one way. An error that is a
+  `*tenon.Error` contributes its diagnostics, and any other error its text,
+  with the new code `serialize.decoder_failed`; `Deserialize`'s error keeps
+  it as a cause, which `errors.Is` and `errors.As` find. This breaks code that
+  supplies decoders, before 1.0 freezes the signatures: a decoder that
+  returned `[]tenon.Diagnostic{d}` returns `tenon.NewError(tenon.ErrorVal(d))`,
+  or an error of its own.
 - The limit on number text, 10,000, counts bytes of its UTF-8 encoding, as
   parsing always has, and the `number.too_long` message, `NumberFromText`'s
   documentation and `SECURITY.md` now say so, where they said characters:

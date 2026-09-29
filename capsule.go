@@ -91,12 +91,14 @@ type CapsuleEncoding[E any] struct {
 	Encode func(v *E) Value
 
 	// Decode returns the encapsulated value that a value of Type was
-	// serialized from, or the diagnostics that say why there is none. It is
-	// given a known, unmarked value of Type other than its null, which need not
-	// be one that Encode ever returns: input is refused unless decoding and
-	// encoding it again gives it back, so a value Decode takes and Encode
-	// would write another way is refused as not canonical.
-	Decode func(v Value) (*E, []Diagnostic)
+	// serialized from, or an error saying why there is none: one that is a
+	// *Error contributes its diagnostics, and any other its text, with code
+	// CodeSerializeDecoderFailed, and Deserialize's error keeps it as a
+	// cause. It is given a known, unmarked value of Type other than its null,
+	// which need not be one that Encode ever returns: input is refused unless
+	// decoding and encoding it again gives it back, so a value Decode takes
+	// and Encode would write another way is refused as not canonical.
+	Decode func(v Value) (*E, error)
 }
 
 // capsuleData is what a capsule type declares, with its operations adapted to
@@ -129,7 +131,7 @@ type capsuleEncoding struct {
 	id     string
 	typ    Type
 	encode func(v any) Value
-	decode func(v Value) (any, []Diagnostic)
+	decode func(v Value) (any, error)
 }
 
 // encoded returns the value the type d serializes v as, which d's encoding
@@ -232,16 +234,16 @@ func NewCapsule[E any](name string, ops CapsuleOps[E]) *CapsuleType[E] {
 			id:     enc.ID,
 			typ:    enc.Type,
 			encode: func(v any) Value { return encode(v.(*E)) },
-			decode: func(v Value) (any, []Diagnostic) {
+			decode: func(v Value) (any, error) {
 				// A nil *E put into an any is not nil to the == the decoder
-				// asks, so a Decode that returned neither a value nor a
-				// diagnostic is handed on as a plain nil, which the decoder
+				// asks, so a Decode that returned neither a value nor an
+				// error is handed on as a plain nil, which the decoder
 				// refuses as a broken contract rather than encapsulating.
-				p, diags := decode(v)
+				p, err := decode(v)
 				if p == nil {
-					return nil, diags
+					return nil, err
 				}
-				return p, diags
+				return p, err
 			},
 		}
 	}

@@ -113,7 +113,7 @@ func TestConformance_DI035_MembersThatReadAlikeMirror(t *testing.T) {
 			ID:     "t/coded",
 			Type:   num,
 			Encode: func(v *celsius) tenon.Value { return tenon.NumberFromInt(v.degrees) },
-			Decode: func(v tenon.Value) (*celsius, []tenon.Diagnostic) { i, _ := v.AsInt64(); return &celsius{i}, nil },
+			Decode: func(v tenon.Value) (*celsius, error) { i, _ := v.AsInt64(); return &celsius{i}, nil },
 		},
 	})
 	codedTuple := tenon.TupleType(coded.Type(), num)

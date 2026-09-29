@@ -818,7 +818,7 @@ func TestDecodedDeepMarksAreHeldAsAttached(t *testing.T) {
 	r := rand.New(rand.NewSource(1608))
 	read := Decoders{Marks: map[string]MarkDecoder{}}
 	for _, id := range []string{"a", "b"} {
-		read.Marks[id] = func(p Value, _ bool) (Mark, []Diagnostic) { return payloadMark{id, p.AsString()}, nil }
+		read.Marks[id] = func(p Value, _ bool) (Mark, error) { return payloadMark{id, p.AsString()}, nil }
 	}
 	mark := func() Mark {
 		kind := []string{"deep", "flat"}[r.Intn(2)]
