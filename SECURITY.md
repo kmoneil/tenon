@@ -24,8 +24,14 @@ of them is a vulnerability:
   write checks the names with `CheckAttributeNames` first.
 - A value carrying a redacting mark never shows its contents, the keys of a
   map and the attribute names of an object among them, in a display form, a
-  diagnostic's message or path, or a JSON projection, nor in anything derived
-  from it.
+  diagnostic's message or path, a usage panic's message, or a JSON
+  projection, nor in anything derived from it. A panic names such a value by
+  its marks alone, and withholds why the call could not take it where the
+  reason would say what the marks withhold. A collection's declared type is
+  the collection's own, not a member's: a list the program declared as a
+  list of objects shows that element type, attribute names included, beside
+  a redacted member as beside any other, and a type that tenon takes from a
+  redacted value's attribute names, as a conversion does, carries its mark.
 - `Deserialize` does not panic whatever bytes it is given, does not allocate
   for a length the input declares that the rest of the input could not hold,
   and does work that grows no faster than n log n in the length of its input,

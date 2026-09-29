@@ -363,3 +363,82 @@ func TestConformance_MK002_RedactingMarksAlwaysPropagate(t *testing.T) {
 		t.Errorf("an Isolate mark that does not redact reached the sum: %v", sum)
 	}
 }
+
+// TestConformance_ER001_PanicsNameRedactedValuesByTheirMarks holds a usage
+// panic over a value carrying a redacting mark to what its display shows,
+// since a panic's message reaches crash reports and logs: the value is named
+// by its marks alone, never by its type, whose attribute names are its shape,
+// and the reason for the panic is withheld where it would say whether the
+// value is null, known or pending, what kind it is, or what it holds. Where
+// the call refuses a marked value anyway, it says that, which holds of every
+// redacted value alike. A value under a mark that does not redact is named by
+// its type, as before.
+func TestConformance_ER001_PanicsNameRedactedValuesByTheirMarks(t *testing.T) {
+	conformance.Covers(t, "ER-001")
+	secret := stamp{id: "secret", redact: true}
+	objT := tenon.ObjectType(map[string]tenon.Type{"password": tenon.StringType()})
+	num, str := tenon.NumberType(), tenon.StringType()
+	obj := tenon.Object(map[string]tenon.Value{"password": tenon.String("hunter2")})
+	red := tenon.WithMarks(obj, secret)
+	redNull := tenon.WithMarks(tenon.Null(objT), secret)
+	redUnknown := tenon.WithMarks(tenon.Unknown(objT), secret)
+	redPending := tenon.WithMarks(tenon.Pending(tenon.Exactly(objT)), secret)
+	redNum := tenon.WithMarks(tenon.NumberFromInt(42), secret)
+	redList := tenon.WithMarks(tenon.List(num, tenon.NumberFromInt(42)), secret)
+	one := tenon.NumberFromInt(1)
+	const named, marked = `a value redacted by "secret"`, `a value redacted by "secret" that carries marks`
+	for _, tt := range []struct {
+		name, want string
+		f          func()
+	}{
+		{"Hash of a known value", marked, func() { tenon.Hash(red) }},
+		{"Hash of a null", marked, func() { tenon.Hash(redNull) }},
+		{"Hash of an unknown value", marked, func() { tenon.Hash(redUnknown) }},
+		{"CanonicalCompare", marked, func() { tenon.CanonicalCompare(redUnknown, one) }},
+		{"Set", "element 0 is " + marked, func() { tenon.Set(objT, red) }},
+		{"Set of another type", "element 0 is " + marked, func() { tenon.Set(str, red) }},
+		{"Members", marked + " as member 0", func() { tenon.Members(redPending) }},
+		{"a path's key", marked + " as a key", func() { tenon.Path{}.Index(redNull) }},
+		{"Attribute", "Attribute cannot take " + named, func() { red.Attribute("nope") }},
+		{"Attribute of a null", "Attribute cannot take " + named, func() { redNull.Attribute("password") }},
+		{"AsString", "AsString cannot take " + named, func() { redNum.AsString() }},
+		{"Len", "Len cannot take " + named, func() { redNum.Len() }},
+		{"Index", "Index cannot take " + named, func() { redNum.Index(0) }},
+		{"Index past the last element", "Index(5) cannot take " + named, func() { redList.Index(5) }},
+		{"Elements", "Elements cannot take " + named, func() { redUnknown.Elements() }},
+		{"Type", "Type cannot take " + named, func() { redPending.Type() }},
+		{"Constraint", "Constraint cannot take " + named, func() { red.Constraint() }},
+		{"Resolve", "Resolve cannot take " + named, func() { tenon.Resolve(red, objT) }},
+		{"Resolve to a type that does not satisfy", "Resolve cannot take " + named, func() { tenon.Resolve(redPending, str) }},
+		{"Range", "Range cannot take " + named, func() { redPending.Range() }},
+		{"a bound", "NumberMin cannot take " + named, func() { tenon.NumberMin(red, true) }},
+		{"Narrow", "Narrow cannot take " + named, func() { tenon.Narrow(red, tenon.NumberMin(one, true)) }},
+		{"Narrow of a pending value", "Narrow cannot take " + named, func() { tenon.Narrow(redPending, tenon.NumberMin(one, true)) }},
+		{"a list's element", "element 0 is " + named, func() { tenon.List(str, redNum) }},
+		{"a list's pending element", "element 0 is " + named, func() { tenon.List(num, redPending) }},
+		{"an operand", "the first operand is " + named, func() { tenon.Add(red, one) }},
+		{"operands of two types", "the first operand is " + named, func() { tenon.LessThan(redNum, tenon.String("a")) }},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			var msg string
+			func() {
+				defer func() { msg, _ = recover().(string) }()
+				tt.f()
+			}()
+			if !strings.HasPrefix(msg, "tenon: usage: ") || !strings.Contains(msg, tt.want) {
+				t.Fatalf("panicked with %q, want a usage error containing %q", msg, tt.want)
+			}
+			for _, withheld := range []string{"password", "hunter2", "42", "object", "of type", "null", "known", "pending", "kind", "content", "no range", "no type", "satisfy", "elements"} {
+				if strings.Contains(msg, withheld) {
+					t.Errorf("panicked with %q, which says %q of the redacted value", msg, withheld)
+				}
+			}
+		})
+	}
+	mustPanicUsage(t, `Hash called on a value of type object({"password": string}) that carries marks`, func() {
+		tenon.Hash(tenon.WithMarks(obj, stamp{id: "plain"}))
+	})
+	mustPanicUsage(t, `Attribute called on a value of type object({"password": string}), which has no attribute "nope"`, func() {
+		tenon.WithMarks(obj, stamp{id: "plain"}).Attribute("nope")
+	})
+}

@@ -26,10 +26,13 @@ var hashSeed = maphash.MakeSeed()
 // returns, and keep the marks beside the hash where they matter.
 func Hash(v Value) uint64 {
 	n := v.data()
-	if n.state == stateNull {
+	switch {
+	case n.withholds():
+		// A redacted value is refused for its marks, below, which says
+		// nothing they withhold, where null or not known would.
+	case n.state == stateNull:
 		usagePanic("Hash called on %s, and null has no hash", n.describe())
-	}
-	if !n.isKnown() {
+	case !n.isKnown():
 		usagePanic("Hash called on %s, which is not a known value", n.describe())
 	}
 	if n.isMarked() {
