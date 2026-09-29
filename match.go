@@ -68,18 +68,6 @@ func couldEqual(k, u *node) bool {
 	return saturates(edges, len(rest))
 }
 
-// membersCanTake reports whether a set can hold each of these values, one
-// member apiece, where none of them is a member it holds already: each needs
-// one of rest, the set's members that are not known, that could turn out to
-// be it, and no two of them the same member, since one member is one value.
-func membersCanTake(needed, rest []Value) bool {
-	if len(needed) == 0 {
-		return true
-	}
-	edges, _ := valueEdges(needed, rest)
-	return saturates(edges, len(rest))
-}
-
 // valueEdges returns, for each of these values, the members that could turn
 // out to be it, and, for each member, whether it could be any of them.
 func valueEdges(values, members []Value) (edges [][]int, covered []bool) {

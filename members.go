@@ -251,12 +251,6 @@ func indexMembers(members []Value) memberIndex {
 	return x
 }
 
-// holdsKnown reports whether equality settles that the known value v is one
-// of the known members indexed.
-func (x memberIndex) holdsKnown(v Value) bool {
-	return sameAsSome(x.buckets[hashNode(v.n)], v)
-}
-
 // membership says whether v is a member of the set indexed, and gives the
 // answer membership gives.
 func (x memberIndex) membership(v Value) (found, settled bool) {
