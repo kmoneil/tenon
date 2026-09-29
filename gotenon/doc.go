@@ -53,6 +53,12 @@
 // do, crosses as the String of its text, unless it implements ValueMarshaler
 // or ValueUnmarshaler, which come first.
 //
+// A struct that may have one of these methods from a field it embeds panics
+// as a usage error in the direction the method concerns: embedding a
+// time.Time would give the struct its MarshalText, and encode the time alone
+// and drop the struct's other fields, as encoding/json does without a word.
+// Name the field, and the struct's methods are its own.
+//
 // # What Go has no type for
 //
 // A field of type tenon.Value carries whatever Go cannot hold: a value that is

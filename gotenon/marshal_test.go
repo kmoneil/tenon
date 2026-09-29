@@ -3,6 +3,7 @@ package gotenon_test
 import (
 	"errors"
 	"fmt"
+	"math/big"
 	"reflect"
 	"strings"
 	"testing"
@@ -493,4 +494,54 @@ func TestConformance_GO040_FailuresKeepTheirCauses(t *testing.T) {
 		t.Fatalf("decoding into a failing value gave %v, want a *tenon.Error with errFull behind it", err)
 	}
 	wantErrors(t, "decoding", failed.Value(), wantDiag{"app.full", ".disk"})
+}
+
+// stamped embeds a time, which marshals itself to text, beside a field of
+// its own.
+type stamped struct {
+	time.Time `tenon:"at"`
+	Name      string `tenon:"name"`
+}
+
+// counted embeds a big.Int, which marshals itself to text too.
+type counted struct {
+	big.Int `tenon:"n"`
+}
+
+// wrapped embeds, unexported, a type that encodes itself, beside a field of
+// its own.
+type wrapped struct {
+	encodesOnly
+	Name string `tenon:"name"`
+}
+
+// stampedNamed is stamped with its time a named field.
+type stampedNamed struct {
+	At   time.Time `tenon:"at"`
+	Name string    `tenon:"name"`
+}
+
+// TestConformance_GO020_EmbeddedMethodsDecideNothing holds a struct that may
+// have a method of GO-040 or GO-044 from a field it embeds to a usage panic
+// naming the method and the field, in the direction the method concerns:
+// such a method would encode or decode the field alone and drop the rest, as
+// encoding/json's promoted MarshalText does with an embedded time. The other
+// direction maps by the struct's fields, and naming the field makes the
+// struct's methods its own.
+func TestConformance_GO020_EmbeddedMethodsDecideNothing(t *testing.T) {
+	conformance.Covers(t, "GO-020", "GO-044", "GO-040", "GO-011")
+	at := time.Date(2026, 9, 28, 12, 0, 0, 0, time.UTC)
+	mustPanicUsage(t, "may have MarshalText from its embedded field Time", func() { gotenon.Encode(stamped{Time: at, Name: "x"}) })
+	mustPanicUsage(t, "may have UnmarshalText from its embedded field Time", func() {
+		gotenon.Decode[stamped](obj(map[string]tenon.Value{"at": s("2026-09-28T12:00:00Z"), "name": s("x")}), tenon.Safe)
+	})
+	mustPanicUsage(t, "may have MarshalText from its embedded field Int", func() { gotenon.Encode(counted{}) })
+	mustPanicUsage(t, "may have MarshalValue from its embedded field encodesOnly", func() { gotenon.Encode(wrapped{Name: "x"}) })
+	// The embedded type encodes itself and decodes by its fields, so the
+	// struct decodes by its own, the unexported one among them left alone.
+	if got := decoded[wrapped](t, obj(map[string]tenon.Value{"name": s("x")}), tenon.Safe); got.Name != "x" {
+		t.Errorf("decoding the struct by its fields gave %+v", got)
+	}
+	wantValue(t, "a named time beside a field", encoded(t, stampedNamed{At: at, Name: "x"}),
+		obj(map[string]tenon.Value{"at": s("2026-09-28T12:00:00Z"), "name": s("x")}))
 }
