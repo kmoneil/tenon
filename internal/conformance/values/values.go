@@ -177,6 +177,24 @@ func All() []tenon.Value {
 		tenon.List(tenon.ListType(str), tenon.List(str, s("a"))),
 		tenon.Object(map[string]tenon.Value{"a": tenon.List(str, s("a"))}),
 
+		// Members whose type their container's type states, which display
+		// without it: a null, unknown values with and without facts, and
+		// collections, tuples and objects within a collection.
+		tenon.List(str, tenon.Narrow(unknownStr, tenon.NotNull())),
+		tenon.List(tenon.ListType(str), tenon.List(str)),
+		tenon.List(tenon.ListType(str), tenon.Null(tenon.ListType(str))),
+		tenon.List(tenon.ListType(str), tenon.Unknown(tenon.ListType(str))),
+		tenon.List(tenon.SetType(str), tenon.Set(str, s("a"))),
+		tenon.List(tenon.TupleType(str), tenon.Tuple(tenon.Null(str))),
+		tenon.List(tenon.TupleType(str), tenon.Tuple(unknownStr)),
+		tenon.Map(tenon.ObjectType(map[string]tenon.Type{"a": num}), map[string]tenon.Value{
+			"k": tenon.Object(map[string]tenon.Value{"a": tenon.Null(num)}),
+		}),
+		tenon.Map(tenon.ObjectType(map[string]tenon.Type{"a": num}), map[string]tenon.Value{
+			"k": tenon.Object(map[string]tenon.Value{"a": unknownNum}),
+		}),
+		tenon.Narrow(tenon.Unknown(tenon.SetType(str)), tenon.Members(tenon.Null(str))),
+
 		// Marked values, in every state. Two are one value reached two ways: a
 		// number written two ways under one mark, and two marks attached in
 		// either order.

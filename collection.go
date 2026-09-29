@@ -882,17 +882,26 @@ func (n *node) attribute(name string) (Value, bool) {
 }
 
 // writeContainer writes the content of a resolved collection or structural
-// value.
+// value. A list, set or map writes its type, which states its members' type,
+// and they are written without theirs; a tuple or an object writes no type,
+// and its members are written without theirs only where the display form
+// around it states its own. A container is written without its type where
+// the display form around it states it (DI-010).
 func (n *node) writeContainer(b *textWriter) {
 	defer b.within(n)()
 	switch n.typ.t.kind {
 	case KindList, KindSet:
-		n.typ.write(b)
-		writeElements(b, n.data.([]Value))
+		if !b.stated {
+			n.typ.write(b)
+		}
+		writeElements(b, n.data.([]Value), true)
 	case KindTuple:
-		writeElements(b, n.data.([]Value))
+		writeElements(b, n.data.([]Value), b.stated)
 	case KindMap:
-		n.typ.write(b)
+		if !b.stated {
+			n.typ.write(b)
+		}
+		defer b.keepStated(true)()
 		b.WriteByte('{')
 		for i, e := range n.data.([]mapEntry) {
 			if b.full() {
@@ -923,8 +932,10 @@ func (n *node) writeContainer(b *textWriter) {
 	}
 }
 
-// writeElements writes elements in brackets, separated by commas.
-func writeElements(b *textWriter, elems []Value) {
+// writeElements writes elements in brackets, separated by commas, without
+// their type where stated says the display form around them states it.
+func writeElements(b *textWriter, elems []Value, stated bool) {
+	defer b.keepStated(stated)()
 	b.WriteByte('[')
 	for i, e := range elems {
 		if b.full() {

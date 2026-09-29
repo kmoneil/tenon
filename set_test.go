@@ -630,7 +630,7 @@ func TestConformance_EQ044_SetIterationOrder(t *testing.T) {
 	n := func(i int64) tenon.Value { return tenon.NumberFromInt(i) }
 	// Known members come in canonical order, whatever order they were given.
 	given := []tenon.Value{n(3), n(1), n(2), tenon.Null(num), n(1)}
-	want := "set(number)[null(number), 1, 2, 3]"
+	want := "set(number)[null, 1, 2, 3]"
 	for _, order := range [][]int{{0, 1, 2, 3, 4}, {4, 3, 2, 1, 0}, {2, 0, 4, 1, 3}, {3, 1, 4, 0, 2}} {
 		members := make([]tenon.Value, len(order))
 		for i, at := range order {

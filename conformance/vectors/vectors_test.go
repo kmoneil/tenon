@@ -171,6 +171,17 @@ var valid = []vector{
 	{"list/nested", func(*rand.Rand) tenon.Value {
 		return tenon.List(tenon.ListType(num), tenon.List(num, n(1)), tenon.List(num))
 	}},
+	// A container's type states its members', and they display without it:
+	// a null as null, an unknown value as its facts, a nested collection as
+	// its brackets, and the members of a tuple or object whose type is stated
+	// likewise.
+	{"list/null and unknown members", func(r *rand.Rand) tenon.Value {
+		return tenon.List(num, tenon.Null(num), n(1),
+			tenon.Narrow(tenon.Unknown(num), shuffled(r, tenon.NotNull(), tenon.NumberMin(n(5), true))...))
+	}},
+	{"list/tuples", func(*rand.Rand) tenon.Value {
+		return tenon.List(tenon.TupleType(num, str), tenon.Tuple(tenon.Null(num), s("x")), tenon.Tuple(n(1), tenon.Unknown(str)))
+	}},
 	{"set/numbers", func(r *rand.Rand) tenon.Value { return tenon.Set(num, shuffled(r, n(-1), n(1), n(24), n(1000))...) }},
 	{"set/strings given twice", func(r *rand.Rand) tenon.Value {
 		return tenon.Set(str, shuffled(r, s("b"), s("a"), s("b"), s(composed(r)), s(composed(r)))...)
@@ -190,6 +201,12 @@ var valid = []vector{
 	}},
 	{"map/composed key", func(r *rand.Rand) tenon.Value {
 		return tenon.Map(str, map[string]tenon.Value{composed(r): s("x")})
+	}},
+	{"map/objects", func(*rand.Rand) tenon.Value {
+		return tenon.Map(tenon.ObjectType(map[string]tenon.Type{"l": tenon.ListType(num), "n": num}), map[string]tenon.Value{
+			"a": tenon.Object(map[string]tenon.Value{"l": tenon.List(num, n(1)), "n": tenon.Null(num)}),
+			"b": tenon.Object(map[string]tenon.Value{"l": tenon.Null(tenon.ListType(num)), "n": n(2)}),
+		})
 	}},
 	{"tuple/empty", func(*rand.Rand) tenon.Value { return tenon.Tuple() }},
 	{"tuple/mixed", func(r *rand.Rand) tenon.Value {
@@ -215,6 +232,10 @@ var valid = []vector{
 			[]tenon.Narrowing{tenon.Members(n(1), n(2))},
 			[]tenon.Narrowing{tenon.Members(n(2)), tenon.Members(n(1))})
 		return tenon.Narrow(tenon.Unknown(tenon.SetType(num)), shuffled(r, append(members, tenon.LengthMax(5))...)...)
+	}},
+	{"unknown/set members not known", func(r *rand.Rand) tenon.Value {
+		return tenon.Narrow(tenon.Unknown(tenon.SetType(num)), tenon.Members(shuffled(r,
+			tenon.Null(num), tenon.Narrow(tenon.Unknown(num), tenon.NotNull(), tenon.NumberMin(n(5), true)))...))
 	}},
 	{"unknown/capsule", func(*rand.Rand) tenon.Value { return tenon.Narrow(tenon.Unknown(degreesType.Type()), tenon.NotNull()) }},
 	{"pending/any", func(*rand.Rand) tenon.Value { return tenon.Pending(tenon.Any()) }},
@@ -277,8 +298,8 @@ var valid = []vector{
 	// What a mark is on is at the mark's level: 510 tuples around a number,
 	// the outermost marked, reach 512 levels through their content, and a
 	// marked pending value of 510 list constraints around Any through its
-	// constraint. Tuples, since a tuple displays without its type, where each
-	// list in a nest would spell its own.
+	// constraint. Tuples, which display as their brackets alone, where a nest
+	// of lists begins with its type.
 	{"nesting/marked content at 512 levels", func(r *rand.Rand) tenon.Value { return marked(r, nested(510), plain) }},
 	{"nesting/marked pending at 512 levels", func(r *rand.Rand) tenon.Value {
 		return marked(r, tenon.Pending(listsOf(510)), plain)

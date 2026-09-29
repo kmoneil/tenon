@@ -84,7 +84,7 @@ func (r Range) write(b *textWriter) {
 		return
 	}
 	n.typ.write(b)
-	n.data.(*rangeData).write(b)
+	n.data.(*rangeData).write(b, true)
 }
 
 // nullness is what a range says about null.
@@ -268,39 +268,59 @@ func sameListing(x, y []Value) bool {
 	return true
 }
 
-// write writes the facts r records, each after a comma, in the order of DI-017.
-func (r *rangeData) write(b *textWriter) {
+// write writes the facts r records in the order of DI-017, separated by
+// commas, and with a comma before the first as well where lead is true. The
+// members it lists are of the element type the display form around it
+// states, and are written without it.
+func (r *rangeData) write(b *textWriter, lead bool) {
+	next := func() {
+		if lead {
+			b.WriteString(", ")
+		}
+		lead = true
+	}
 	if r.null == nullNo {
-		b.WriteString(", not null")
+		next()
+		b.WriteString("not null")
 	}
 	if r.lo.set {
-		b.WriteString(", ")
+		next()
 		r.lo.write(b, true)
 	}
 	if r.hi.set {
-		b.WriteString(", ")
+		next()
 		r.hi.write(b, false)
 	}
 	if r.pfx != "" {
-		b.WriteString(", prefix ")
+		next()
+		b.WriteString("prefix ")
 		writeQuoted(b, r.pfx)
 	}
 	if r.lenLo > 0 {
-		b.WriteString(", length >= ")
+		next()
+		b.WriteString("length >= ")
 		b.WriteString(strconv.FormatInt(r.lenLo, 10))
 	}
 	if r.lenHi.set {
-		b.WriteString(", length <= ")
+		next()
+		b.WriteString("length <= ")
 		b.WriteString(strconv.FormatInt(r.lenHi.n, 10))
 	}
 	if len(r.members) > 0 {
-		b.WriteString(", ")
-		writeMembers(b, r.members)
+		next()
+		writeMembers(b, r.members, true)
 	}
 }
 
-// writeMembers renders a member listing, as in members {1, 2}.
-func writeMembers(b *textWriter, members []Value) {
+// hasFacts reports whether r records any fact that write writes.
+func (r *rangeData) hasFacts() bool {
+	return r.null == nullNo || r.lo.set || r.hi.set || r.pfx != "" || r.lenLo > 0 || r.lenHi.set || len(r.members) > 0
+}
+
+// writeMembers renders a member listing, as in members {1, 2}, without the
+// members' type where stated says the display form around it states it.
+func writeMembers(b *textWriter, members []Value, stated bool) {
+	defer b.keepStated(stated)()
 	b.WriteString("members {")
 	for i, m := range members {
 		if b.full() {
@@ -317,7 +337,7 @@ func writeMembers(b *textWriter, members []Value) {
 // membersText renders listed members for a message, shortened if they are
 // long.
 func membersText(members []Value) string {
-	return shortText(func(w *textWriter) { writeMembers(w, members) })
+	return shortText(func(w *textWriter) { writeMembers(w, members, false) })
 }
 
 // narrowingKind identifies which row of the narrowings table a Narrowing is.
@@ -502,7 +522,7 @@ func (nw Narrowing) String() string {
 		return "length <= " + strconv.FormatInt(nw.n, 10)
 	case narrowMembers:
 		var b textWriter
-		writeMembers(&b, nw.members)
+		writeMembers(&b, nw.members, false)
 		return b.String()
 	}
 	return "<zero Narrowing>"
@@ -526,7 +546,7 @@ func (nw Narrowing) message() string {
 	case narrowPrefix:
 		return "prefix " + quoted(nw.str)
 	case narrowMembers:
-		return shortText(func(w *textWriter) { writeMembers(w, nw.members) })
+		return shortText(func(w *textWriter) { writeMembers(w, nw.members, false) })
 	}
 	return nw.String()
 }
