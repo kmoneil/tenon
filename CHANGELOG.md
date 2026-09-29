@@ -39,6 +39,19 @@
 
 ### Changed
 
+- Under `Safe`, a container that converts only unsafely, a list or a tuple
+  to a set, a list or a set to a tuple, or a map to an object, fails as a
+  whole with `convert.unsafe` before any member is read, as the policy
+  refuses it whatever the members hold. Its members were converted first,
+  and a member that failed was reported instead: `list(string)["a",
+  "abc"]` converted to `set_of(number)` failed at `.[0]` and `.[1]`, and now
+  fails at `.`. A container that fails once its members are read, as members
+  of no common type do, carries their `Propagate` marks, holding none of
+  them. A set holding members that are not known, converted to a tuple,
+  converts its known members, as it does converted to a list, so one that
+  fails at every position alike fails the conversion: `set(string)["x",
+  unknown]` converted to `tuple_of(number, number)` was an unknown tuple.
+  The specification says so (`CV-031`, `CV-033`, `CV-051`).
 - `Contains` answers false where the value looked for cannot be of the type
   of the set's members, however little of the set is known:
   `Contains(unknown set(bool), 1)` was unknown, and is false, as it is for a

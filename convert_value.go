@@ -803,13 +803,16 @@ func (x converter) collection(v Value, c Constraint) draft {
 	default:
 		return finished(errorValue(noConversion(x.typeName(n), c).diagnostic()))
 	}
+	if unsafe && x.policy == Safe {
+		// The policy refuses the conversion whatever the members hold, so it
+		// fails before any is read, carrying none of their marks (CV-051,
+		// CV-033).
+		return finished(errorValue(unsafeConversion(x.typeName(n), c).diagnostic()))
+	}
 	h := members(n)
 	drafts, e, failed, pending := x.draftMembers(h, func(int) Constraint { return d.elem })
-	switch {
-	case failed:
+	if failed {
 		return finished(e)
-	case unsafe && x.policy == Safe:
-		return finished(errorValue(unsafeConversion(x.typeName(n), c).diagnostic()))
 	}
 	withhold := x.typeWithheld(n)
 	types := make([]Type, 0, len(drafts)+2)
@@ -829,19 +832,19 @@ func (x converter) collection(v Value, c Constraint) draft {
 	if from == KindList || from == KindSet || from == KindMap {
 		out := typeConvert(n.typ.t.elem, d.elem, x.policy, keysNone)
 		if out.fail != nil {
-			return finished(errorValue(out.fail.diagnostic()))
+			return finished(failedReading(n, out.fail.diagnostic()))
 		}
 		types = append(types, out.typ)
 	}
 	if pending {
 		if out := pendingElements(types, least, d.elem, x.policy, withhold); out.fail != nil {
-			return finished(errorValue(out.fail.diagnostic()))
+			return finished(failedReading(n, out.fail.diagnostic()))
 		}
 		return finished(pendingContainer(c, n))
 	}
 	elem, f := elementType(types, d.elem, x.policy, withhold, x.memo)
 	if f != nil {
-		return finished(errorValue(f.diagnostic()))
+		return finished(failedReading(n, f.diagnostic()))
 	}
 	if from == KindSet && n.partial && d.kind == ConstraintListOf {
 		// A set holding members that are not known has no settled order and
@@ -960,12 +963,14 @@ func (x converter) tuple(v Value, c Constraint) draft {
 	default:
 		return finished(errorValue(noConversion(x.typeName(n), c).diagnostic()))
 	}
+	if from != KindTuple && x.policy == Safe {
+		// As for a list to a set (collection).
+		return finished(errorValue(unsafeConversion(x.typeName(n), c).diagnostic()))
+	}
 	drafts, e, failed, pending := x.draftMembers(members(n), func(i int) Constraint { return d.members[i] })
 	switch {
 	case failed:
 		return finished(e)
-	case from != KindTuple && x.policy == Safe:
-		return finished(errorValue(unsafeConversion(x.typeName(n), c).diagnostic()))
 	case pending:
 		return finished(pendingContainer(c, n))
 	}
@@ -983,7 +988,10 @@ func (x converter) tuple(v Value, c Constraint) draft {
 // partialSetTuple converts a set holding members that are not known to a
 // TupleOf constraint. Its members have no settled order, so the tuple is not
 // known, and where the number of members it could have rules out the tuple's
-// length the conversion fails already.
+// length the conversion fails already. Its known members convert all the
+// same, to whichever position they take, which the members not known leave
+// open: one that fails at every position alike fails every outcome, and so
+// fails now (CV-031, UN-011), as it does converted to a list.
 func (x converter) partialSetTuple(v Value, c Constraint) Value {
 	n, d := v.n, c.c
 	low, high := setLengthBounds(n)
@@ -997,6 +1005,16 @@ func (x converter) partialSetTuple(v Value, c Constraint) Value {
 		return errorValue(out.fail.diagnostic())
 	case out.pending:
 		return Narrow(Pending(c), NotNull())
+	}
+	h := members(n)
+	var errs containerErrors
+	for i, m := range h.vals[:knownMembers(h.vals)] {
+		if r, ok := x.failsEverywhere(m, d.members); ok {
+			errs.add(h.step(i), x.carry(r, m.n))
+		}
+	}
+	if e, failed := errs.value(); failed {
+		return e
 	}
 	return Narrow(Unknown(out.typ), NotNull())
 }
@@ -1023,6 +1041,10 @@ func (x converter) object(v Value, c Constraint) draft {
 	from := n.typ.t.kind
 	if from != KindObject && from != KindMap {
 		return finished(errorValue(noConversion(x.typeName(n), c).diagnostic()))
+	}
+	if from == KindMap && x.policy == Safe {
+		// As for a list to a set (collection).
+		return finished(errorValue(unsafeConversion(x.typeName(n), c).diagnostic()))
 	}
 	h := members(n)
 	var errs containerErrors
@@ -1083,10 +1105,7 @@ func (x converter) object(v Value, c Constraint) draft {
 	if e, failed := errs.value(); failed {
 		return finished(e)
 	}
-	switch {
-	case from == KindMap && x.policy == Safe:
-		return finished(errorValue(unsafeConversion(x.typeName(n), c).diagnostic()))
-	case pending:
+	if pending {
 		return finished(pendingContainer(c, n))
 	}
 	r := draft{parts: &parts{names: slices.Sorted(maps.Keys(attrs))}}
@@ -1196,6 +1215,32 @@ func (x converter) fitKnown(m Value, e Type) Value {
 	}
 	internalPanic("fit called with %s for %s", e, n.describe())
 	return Value{}
+}
+
+// failedReading returns the error value of a conversion of the known container
+// n that failed once it had read the values within n: it holds none of them,
+// so it carries their Propagate marks, as pendingContainer does (CV-033).
+func failedReading(n *node, d Diagnostic) Value {
+	return WithMarks(errorValue(d), heldMarks(n)...)
+}
+
+// failsEverywhere converts m to each of cs, and returns the failure where every
+// one fails alike, with the same diagnostics, and false where any succeeds or
+// two fail otherwise: which of them m converts to is not settled yet.
+func (x converter) failsEverywhere(m Value, cs []Constraint) (Value, bool) {
+	var first Value
+	for _, c := range cs {
+		r := x.draft(m, c).done
+		if r.n == nil || r.n.state != stateError {
+			return Value{}, false
+		}
+		if first.n == nil {
+			first = r
+		} else if !slices.EqualFunc(first.n.diagnostics(), r.n.diagnostics(), Diagnostic.Equal) {
+			return Value{}, false
+		}
+	}
+	return first, first.n != nil
 }
 
 // pendingContainer returns the pending value that a known container converts

@@ -42,8 +42,10 @@ func (p Policy) String() string {
 // conversion that the value's type and c call for,
 // and never a chain of them: a number converts to a string and a string to a
 // bool, but a number does not convert to a bool. A conversion that p does not
-// allow fails with code CodeConvertUnsafe. A constraint that admits exactly
-// one type converts as Exactly of that type does, however it is written.
+// allow fails with code CodeConvertUnsafe, and a container's that it does not
+// allow, as a list's to a set under Safe, fails so as a whole, before any
+// member is read. A constraint that admits exactly one type converts as
+// Exactly of that type does, however it is written.
 //
 // The type of the result follows from the type of v and from c, not from what
 // v holds, except where a map becomes an object, whose attributes are the
@@ -63,16 +65,21 @@ func (p Policy) String() string {
 //
 // A null value converts to the null of the result type, and an unknown value
 // to the unknown of it. A container converts member by member, so members that
-// are not known stay unknown within the result. A pending value converts to
-// an unknown value where its type would settle the result type, and to a
-// pending value where it would not, keeping its own constraint when c is Any;
-// an unknown map converted to an object whose attributes its keys would
-// settle converts to a pending value too.
+// are not known stay unknown within the result. A set holding such members,
+// whose order and count are not settled, converts to a list or a tuple that is
+// not known either, but its known members convert all the same: one that
+// fails, at every position of a tuple alike, fails the conversion. A pending
+// value converts to an unknown value where its type would settle the result
+// type, and to a pending value where it would not, keeping its own constraint
+// when c is Any; an unknown map converted to an object whose attributes its
+// keys would settle converts to a pending value too.
 //
 // The result carries the Propagate marks of v. A member converted within v
 // carries its own Propagate marks, a member carried across unchanged keeps
 // every mark it has, and a member placed into a set, whose members carry no
 // marks, gives all of its marks, at every depth, to the set instead. A
+// collection that fails once its members are read, as members of no common
+// type do, carries their Propagate marks, holding none of them. A
 // collection whose element type takes attribute names from a member carrying
 // a redacting mark carries that mark too, since its type would show them.
 //
@@ -106,7 +113,10 @@ var convertOp = register(&op{
 	operands: []operand{{constraint: Any(), nulls: true}},
 	bind: func(o *op, param opParam) {
 		cv := param.(conversion)
-		o.operands[0].marksWithin = makesSet(cv.target)
+		// Under the safe policy a set is made from a set alone, whose
+		// members carry no marks, a list or a tuple failing before its
+		// members are read (CV-051), so no marks within reach the result.
+		o.operands[0].marksWithin = makesSet(cv.target) && cv.policy == Unsafe
 		o.result = func([]Type) Constraint {
 			if t, ok := resultType(cv.target); ok {
 				return Exactly(t)
@@ -131,9 +141,8 @@ var convertOp = register(&op{
 // parse a string, whose failures render it in their messages.
 //
 // The matrix expects the marks within an operand to reach the result for
-// every operand or for none, as makesSet says, so no sample converts to a
-// OneOf that gives a set for some values and not for others, nor to a set
-// under Safe, which a list fails to convert to before it reads a member.
+// every operand or for none, as makesSet and the policy say, so no sample
+// converts to a OneOf that gives a set for some values and not for others.
 func conversionSamples() []opParam {
 	str, num := Type{stringType}, Type{numberType}
 	return []opParam{
@@ -143,6 +152,7 @@ func conversionSamples() []opParam {
 		conversion{Exactly(Type{boolType}), Unsafe},
 		conversion{ListOf(Any()), Safe},
 		conversion{SetOf(Any()), Unsafe},
+		conversion{SetOf(Any()), Safe},
 		conversion{OneOf(SetOf(Any()), SetOf(Exactly(num))), Unsafe},
 		conversion{MapOf(Exactly(num)), Safe},
 		conversion{TupleOf(Any()), Unsafe},

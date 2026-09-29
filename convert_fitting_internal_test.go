@@ -171,13 +171,13 @@ func (x converter) fittingCollection(v Value, c Constraint) Value {
 	default:
 		return errorValue(noConversion(x.typeName(n), c).diagnostic())
 	}
+	if unsafe && x.policy == Safe {
+		return errorValue(unsafeConversion(x.typeName(n), c).diagnostic())
+	}
 	h := members(n)
 	converted, e, failed, pending := x.fittingMembers(h, func(int) Constraint { return d.elem })
-	switch {
-	case failed:
+	if failed {
 		return e
-	case unsafe && x.policy == Safe:
-		return errorValue(unsafeConversion(x.typeName(n), c).diagnostic())
 	}
 	withhold := x.typeWithheld(n)
 	types := make([]Type, 0, len(converted)+2)
@@ -197,19 +197,19 @@ func (x converter) fittingCollection(v Value, c Constraint) Value {
 	if from == KindList || from == KindSet || from == KindMap {
 		out := typeConvert(n.typ.t.elem, d.elem, x.policy, keysNone)
 		if out.fail != nil {
-			return errorValue(out.fail.diagnostic())
+			return failedReading(n, out.fail.diagnostic())
 		}
 		types = append(types, out.typ)
 	}
 	if pending {
 		if out := pendingElements(types, least, d.elem, x.policy, withhold); out.fail != nil {
-			return errorValue(out.fail.diagnostic())
+			return failedReading(n, out.fail.diagnostic())
 		}
 		return pendingContainer(c, n)
 	}
 	elem, f := elementType(types, d.elem, x.policy, withhold, x.memo)
 	if f != nil {
-		return errorValue(f.diagnostic())
+		return failedReading(n, f.diagnostic())
 	}
 	if from == KindSet && n.partial && d.kind == ConstraintListOf {
 		// A set holding members that are not known has no settled order and
@@ -269,12 +269,13 @@ func (x converter) fittingTuple(v Value, c Constraint) Value {
 	default:
 		return errorValue(noConversion(x.typeName(n), c).diagnostic())
 	}
+	if from != KindTuple && x.policy == Safe {
+		return errorValue(unsafeConversion(x.typeName(n), c).diagnostic())
+	}
 	converted, e, failed, pending := x.fittingMembers(members(n), func(i int) Constraint { return d.members[i] })
 	switch {
 	case failed:
 		return e
-	case from != KindTuple && x.policy == Safe:
-		return errorValue(unsafeConversion(x.typeName(n), c).diagnostic())
 	case pending:
 		return pendingContainer(c, n)
 	}
@@ -287,6 +288,9 @@ func (x converter) fittingObject(v Value, c Constraint) Value {
 	from := n.typ.t.kind
 	if from != KindObject && from != KindMap {
 		return errorValue(noConversion(x.typeName(n), c).diagnostic())
+	}
+	if from == KindMap && x.policy == Safe {
+		return errorValue(unsafeConversion(x.typeName(n), c).diagnostic())
 	}
 	h := members(n)
 	var errs containerErrors
@@ -345,10 +349,7 @@ func (x converter) fittingObject(v Value, c Constraint) Value {
 	if e, failed := errs.value(); failed {
 		return e
 	}
-	switch {
-	case from == KindMap && x.policy == Safe:
-		return errorValue(unsafeConversion(x.typeName(n), c).diagnostic())
-	case pending:
+	if pending {
 		return pendingContainer(c, n)
 	}
 	return Object(attrs)
