@@ -15,6 +15,12 @@
   such as `Members` of 2 and 3 asked of `set(number)[1, unknown(number)]`,
   and none makes such a set known: narrowed to one member, it stays as it
   was. No set that satisfies the narrowings is ruled out, as before.
+- `Diff` gives a set's member changes their member as the set gives it when
+  read, carrying the set's deep marks, as `Elements` gives it and as a
+  list's changes carry their elements: with a deep mark `d` on the set, a
+  member added reads `+ .: member marked(2, "d")`, where it read
+  `+ .: member 2`. The members are still paired and ordered as the sets
+  hold them, so only what the changes carry and show changes.
 
 ## 0.10.0 (2026-09-28)
 

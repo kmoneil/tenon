@@ -162,6 +162,41 @@ func TestConformance_DI030_ChangesAndWhatTheyCarry(t *testing.T) {
 			t.Errorf("change %d is %s (%s), want %s (%s)", i, c, c.Kind, w, w.Kind)
 		}
 	}
+
+	// A member change carries its member as its set gives it when read,
+	// with the set's deep marks on it, as Elements gives it, each side's
+	// its own: the removed members carry the old set's deep mark, the added
+	// ones the new set's. The members are paired and ordered as the sets
+	// hold them, so the marks move nothing but what the changes carry.
+	d, e := stamp{id: "d", deep: true}, stamp{id: "e", deep: true}
+	u := tenon.Unknown(num)
+	old := tenon.WithMarks(tenon.Set(num, n(1), n(2), u), d)
+	fresh := tenon.WithMarks(tenon.Set(num, n(2), n(3), tenon.Narrow(u, tenon.NotNull())), e)
+	given := func(set tenon.Value, m tenon.Value) tenon.Value {
+		for _, g := range set.Elements() {
+			if stored, _ := tenon.UnmarkDeep(g); tenon.Identical(stored, m) {
+				return g
+			}
+		}
+		t.Fatalf("%v gives no member %v", set, m)
+		return tenon.Value{}
+	}
+	wantDiff(t, "member changes carrying the sets' deep marks", old, fresh,
+		`~ .: marks ["d"] -> ["e"]`,
+		`- .: member marked(1, "d")`, `+ .: member marked(3, "e")`,
+		`- .: member marked(unknown(number), "d")`, `+ .: member marked(unknown(number, not null), "e")`)
+	for _, c := range tenon.Diff(old, fresh) {
+		switch c.Kind {
+		case tenon.ChangeMemberRemoved:
+			if stored, _ := tenon.UnmarkDeep(c.Old); !tenon.Identical(c.Old, given(old, stored)) {
+				t.Errorf("the removal carries %v, where Elements gives %v", c.Old, given(old, stored))
+			}
+		case tenon.ChangeMemberAdded:
+			if stored, _ := tenon.UnmarkDeep(c.New); !tenon.Identical(c.New, given(fresh, stored)) {
+				t.Errorf("the addition carries %v, where Elements gives %v", c.New, given(fresh, stored))
+			}
+		}
+	}
 }
 
 func TestConformance_DI031_EmptyExactlyWhenIdentical(t *testing.T) {
@@ -289,6 +324,15 @@ func TestConformance_DI035_OrderAndSymmetry(t *testing.T) {
 	wantDiff(t, "and the other way", b, a,
 		`~ .B: 2 -> 1`, `~ .a: marks ["m"] -> []`, `~ .a[0]: 3 -> 1`, `+ .a[1]: 2`,
 		`+ .c: member "x"`, `- .c: member "y"`, `+ .c: member "z"`)
+
+	// Members that are not known interleave by their display forms as the
+	// sets hold them, not by those of the members the changes carry, which
+	// carry the sets' deep marks: read with its mark, the member added here
+	// would come before the one removed.
+	e := stamp{id: "e", deep: true}
+	u := tenon.Unknown(num)
+	wantDiff(t, "members ordered as the sets hold them", tenon.Set(num, u), tenon.WithMarks(tenon.Set(num, tenon.Narrow(u, tenon.NotNull())), e),
+		`~ .: marks [] -> ["e"]`, `- .: member unknown(number)`, `+ .: member marked(unknown(number, not null), "e")`)
 
 	// Over the generator's values, every diff mirrors its reverse, and every
 	// path locates the parts its change carries.
