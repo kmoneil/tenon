@@ -51,6 +51,14 @@
 
 ### Changed
 
+- `gotenon.Encode` reports what fails in a Go map as `tenon.Map` and
+  `tenon.Object` do, in one order and at one set of paths: each key in turn
+  gives its own failure and its member's, and then comes one failure for each
+  key that keys share once normalized. It reported the keys' failures first,
+  and an empty key at `.[""]` where `Object` reports it at `.`, and it did
+  not encode a member under a key that failed, whose own failure was lost.
+  `Map`, `Object` and `CheckAttributeNames` check names by one implementation,
+  which `gotenon.Encode` builds through.
 - `gotenon.Encode` panics on a pending value below the top of what it is
   given, whether a `tenon.Value` or a `MarshalValue` method gives it, naming
   the path where it is: `Encode: the pending value at ".items[0].v" has no

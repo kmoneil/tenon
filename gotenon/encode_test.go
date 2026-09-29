@@ -7,6 +7,7 @@ import (
 	"math"
 	"math/big"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -204,8 +205,10 @@ func TestConformance_GO012_ValuesOfManyTypes(t *testing.T) {
 	wantValue(t, "a slice of values", encoded(t, values), tenon.Tuple(values...))
 	wantValue(t, "a map of values", encoded(t, map[string]tenon.Value{"a": n(1), "b": s("x")}),
 		obj(map[string]tenon.Value{"a": n(1), "b": s("x")}))
+	// An empty key names no attribute, and fails at the object, as Object's
+	// does (TY-018).
 	wantEncodeFailure(t, "an empty key", map[string]tenon.Value{"": n(1)},
-		wantDiag{tenon.CodeObjectEmptyName, `.[""]`})
+		wantDiag{tenon.CodeObjectEmptyName, "."})
 	wantEncodeFailure(t, "keys that are one", map[string]tenon.Value{"caf\U000000e9": n(1), "cafe\U00000301": n(2)},
 		wantDiag{tenon.CodeObjectDuplicateName, "."})
 
@@ -373,6 +376,64 @@ func TestConformance_GO043_EncodingGivesKnownValues(t *testing.T) {
 			G givesPending `tenon:"g"`
 		}, 1)})
 	})
+}
+
+// TestConformance_GO012_NamesFailAsTheConstructorsSay holds a Go map's keys
+// to the rules tenon.Map and tenon.Object hold names to, in one order and at
+// one set of paths: each key in turn gives its own failure and its member's,
+// the member located under the key where it names one and at the map where it
+// does not, and then comes one failure for each key that keys share once
+// normalized. A member under a key that fails is encoded all the same, and
+// its failure reported.
+func TestConformance_GO012_NamesFailAsTheConstructorsSay(t *testing.T) {
+	conformance.Covers(t, "GO-012", "GO-003", "TY-017", "TY-018")
+	composed, decomposed := "\U000000e9", "e\U00000301"
+	failed := func(code tenon.Code) tenon.Value {
+		return tenon.ErrorVal(tenon.Diagnostic{Code: code, Message: "it failed"})
+	}
+	codesAndPaths := func(diags []tenon.Diagnostic) []wantDiag {
+		var out []wantDiag
+		for _, d := range diags {
+			out = append(out, wantDiag{d.Code, d.Path.String()})
+		}
+		return out
+	}
+	for _, tt := range []struct {
+		name        string
+		goValue     any
+		constructed tenon.Value
+		want        []wantDiag
+	}{
+		{"a failing member, then names shared",
+			map[string]any{"a": nil, composed: "x", decomposed: "y"},
+			tenon.Object(map[string]tenon.Value{"a": failed(tenon.CodeEncodeUntypedNil), composed: s("x"), decomposed: s("y")}),
+			[]wantDiag{{tenon.CodeEncodeUntypedNil, ".a"}, {tenon.CodeObjectDuplicateName, "."}}},
+		{"a member under a key that is not well-formed",
+			map[string]any{"\xff": nil},
+			tenon.Object(map[string]tenon.Value{"\xff": failed(tenon.CodeEncodeUntypedNil)}),
+			[]wantDiag{{tenon.CodeStringInvalidUTF8, "."}, {tenon.CodeEncodeUntypedNil, "."}}},
+		{"a member under an empty key",
+			map[string]any{"": nil},
+			tenon.Object(map[string]tenon.Value{"": failed(tenon.CodeEncodeUntypedNil)}),
+			[]wantDiag{{tenon.CodeObjectEmptyName, "."}, {tenon.CodeEncodeUntypedNil, "."}}},
+		{"a map of numbers",
+			map[string]float64{"b": math.NaN(), "\xff": 1, composed: 1, decomposed: 1},
+			tenon.Map(num, map[string]tenon.Value{"b": failed(tenon.CodeEncodeNotANumber), "\xff": n(1), composed: n(1), decomposed: n(1)}),
+			[]wantDiag{{tenon.CodeEncodeNotANumber, `.["b"]`}, {tenon.CodeStringInvalidUTF8, "."}, {tenon.CodeMapDuplicateKey, "."}}},
+	} {
+		_, err := gotenon.Encode(tt.goValue)
+		var te *tenon.Error
+		if !errors.As(err, &te) {
+			t.Errorf("%s: Encode gave %v, want a *tenon.Error", tt.name, err)
+			continue
+		}
+		if got := codesAndPaths(te.Diagnostics()); !slices.Equal(got, tt.want) {
+			t.Errorf("%s: Encode fails with %v, want %v", tt.name, got, tt.want)
+		}
+		if got := codesAndPaths(tt.constructed.Diagnostics()); !slices.Equal(got, tt.want) {
+			t.Errorf("%s: the constructor fails with %v, want %v", tt.name, got, tt.want)
+		}
+	}
 }
 
 // givesPending marshals itself as a pending value, which has no type.

@@ -27,20 +27,29 @@ func CheckAttributeNames(names ...string) error {
 		entries[i] = namedEntry[struct{}]{original: name}
 	}
 	var diags []Diagnostic
-	sorted, shared := checkNames(entries)
+	sorted, shared := checkNames(entries, attributeNames)
 	for _, e := range sorted {
 		if e.fault != "" {
-			diags = append(diags, nameFault(e.fault, e.original))
+			diags = append(diags, nameFault(attributeNames, e.fault, e.original))
 		}
 	}
 	for _, group := range shared {
-		diags = append(diags, sharedName(group))
+		diags = append(diags, sharedName(attributeNames, group))
 	}
 	if len(diags) == 0 {
 		return nil
 	}
 	return asError(errorValue(diags...))
 }
+
+// A nameKind is what a name names: an attribute, whose name may not be empty,
+// or a map's entry, whose key may be (TY-017, TY-018).
+type nameKind uint8
+
+const (
+	attributeNames nameKind = iota
+	mapKeys
+)
 
 // namedEntry is a value given under a name that may not be an attribute name.
 type namedEntry[V any] struct {
@@ -51,19 +60,21 @@ type namedEntry[V any] struct {
 }
 
 // checkNames normalizes the names of entries, notes what makes a name no
-// attribute name, and returns the entries in the order TY-017 gives a map's
-// entries: bytewise by key, and by the name as given between entries whose
-// keys are one. It returns as well each run of two or more entries that share
-// a key, which are one name given more than once.
-func checkNames[V any](entries []namedEntry[V]) (sorted []namedEntry[V], shared [][]namedEntry[V]) {
-	sorted = slices.Clone(entries)
+// name of kind, and puts the entries in the order TY-017 gives a map's
+// entries, in place: bytewise by key, and by the name as given between
+// entries whose keys are one. It returns them, and each run of two or more
+// entries that share a key, which are one name given more than once. It is
+// the one statement of the rules for names, which Map, Object and
+// CheckAttributeNames follow, and gotenon through them.
+func checkNames[V any](entries []namedEntry[V], kind nameKind) (sorted []namedEntry[V], shared [][]namedEntry[V]) {
+	sorted = entries
 	for i := range sorted {
 		e := &sorted[i]
 		normalized, err := uni.Canonical(e.original)
 		switch {
 		case err != nil:
 			e.key, e.fault = e.original, CodeStringInvalidUTF8
-		case normalized == "":
+		case normalized == "" && kind == attributeNames:
 			e.key, e.fault = normalized, CodeObjectEmptyName
 		default:
 			e.key = normalized
@@ -90,20 +101,29 @@ func checkNames[V any](entries []namedEntry[V]) (sorted []namedEntry[V], shared 
 	return sorted, shared
 }
 
-// nameFault returns the diagnostic of a name that fault makes no attribute
-// name.
-func nameFault(fault Code, name string) Diagnostic {
+// nameFault returns the diagnostic of a name that fault makes no name of kind.
+func nameFault(kind nameKind, fault Code, name string) Diagnostic {
 	if fault == CodeObjectEmptyName {
 		return Diagnostic{Code: fault, Message: "an attribute name must not be empty"}
 	}
-	return Diagnostic{Code: fault, Message: "attribute name " + quotedASCII(name) + " is not well-formed UTF-8 at byte " + strconv.Itoa(invalidUTF8At(name))}
+	what := "attribute name "
+	if kind == mapKeys {
+		what = "map key "
+	}
+	return Diagnostic{Code: fault, Message: what + quotedASCII(name) + " is not well-formed UTF-8 at byte " + strconv.Itoa(invalidUTF8At(name))}
 }
 
-// sharedName returns the diagnostic of entries that share one name.
-func sharedName[V any](group []namedEntry[V]) Diagnostic {
+// sharedName returns the diagnostic of entries that share one name of kind.
+func sharedName[V any](kind nameKind, group []namedEntry[V]) Diagnostic {
 	spellings := make([]string, len(group))
 	for i, e := range group {
 		spellings[i] = quotedASCII(e.original)
+	}
+	if kind == mapKeys {
+		return Diagnostic{
+			Code:    CodeMapDuplicateKey,
+			Message: "map keys " + strings.Join(spellings, " and ") + " are the same key after normalization",
+		}
 	}
 	return Diagnostic{
 		Code:    CodeObjectDuplicateName,

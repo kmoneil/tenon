@@ -613,76 +613,120 @@ func (e *encoder) sequence(m *goMapping, rv reflect.Value, p tenon.Path) (tenon.
 	return tenon.Tuple(members...), true
 }
 
-// mapping encodes a map with string keys.
+// mapping encodes a map with string keys, as tenon.Map does a map of
+// elements and tenon.Object an object [GO-012]: under each key, normalized,
+// what its Go member encodes as, the names checked as those constructors
+// check them, and their failures and the members' reported in the order they
+// give. Each member is encoded where its key puts it: under the key, or at
+// the map itself where the key names nothing, being ill-formed or, for an
+// object, empty [TY-017, TY-018]. Where a key fails as a name, what each
+// member fails with is kept aside, at the paths it has within the whole
+// value, and the constructor is given an error value standing in for it; the
+// stand-ins come back among the names' diagnostics in the constructor's
+// order, each replaced by what it stands for. Handing a constructor the
+// failures themselves would build every path again at every level above the
+// member, a cost in the square of the depth.
 func (e *encoder) mapping(m *goMapping, rv reflect.Value, p tenon.Path) (tenon.Value, bool) {
 	if rv.IsNil() {
 		return tenon.Null(nullType(m)), true
 	}
-	keys := make([]string, 0, rv.Len())
-	for _, k := range rv.MapKeys() {
-		keys = append(keys, k.String())
+	type member struct {
+		key, canonical string // the key as given, and normalized where it is well-formed
+		named          bool   // the key names a member, rather than failing as a name
 	}
-	slices.Sort(keys)
-	// The keys are normalized before the members are walked, and the walk
-	// follows the normalized spellings: they name the members, so member
-	// order (GO-003) is their order, not the order of the spellings the Go
-	// map holds, which raw sorting can reverse. The keys that fail here fail
-	// at the map itself, in the raw order, which keeps the pair a duplicate
-	// names stable.
-	type mapKey struct{ canonical, raw string }
-	canon := make([]mapKey, 0, len(keys))
-	normalized := map[string]string{}
-	ok := true
-	for _, key := range keys {
+	members := make([]member, 0, rv.Len())
+	for _, k := range rv.MapKeys() {
+		key := k.String()
 		sv := tenon.String(key)
 		if sv.IsError() {
-			e.fail(p, tenon.CodeStringInvalidUTF8, "the map key "+shortText(strconv.QuoteToASCII(key))+" is not well-formed UTF-8")
-			ok = false
+			members = append(members, member{key, key, false})
 			continue
 		}
 		canonical := sv.AsString()
-		if other, dup := normalized[canonical]; dup {
-			spellings := shortText(strconv.QuoteToASCII(other)) + " and " + shortText(strconv.QuoteToASCII(key))
-			if m.typed() {
-				e.fail(p, tenon.CodeMapDuplicateKey, "the map keys "+spellings+" are the same key after normalization")
-			} else {
-				// A map whose members' types need not agree encodes as an
-				// object, whose attribute names these are [GO-012, TY-018].
-				e.fail(p, tenon.CodeObjectDuplicateName, "the map keys "+spellings+" are the same attribute name after normalization")
-			}
-			ok = false
-			continue
-		}
-		normalized[canonical] = key
-		canon = append(canon, mapKey{canonical, key})
+		members = append(members, member{key, canonical, m.typed() || canonical != ""})
 	}
-	slices.SortFunc(canon, func(a, b mapKey) int { return strings.Compare(a.canonical, b.canonical) })
-	entries := make(map[string]tenon.Value, len(canon))
-	for _, k := range canon {
-		canonical, key := k.canonical, k.raw
-		at := p.Index(tenon.String(canonical))
-		if !m.typed() {
-			if canonical == "" {
-				e.fail(at, tenon.CodeObjectEmptyName, `the map key "" cannot be an attribute name`)
-				ok = false
-				continue
-			}
+	// In the order the constructor reports them, so that what the members'
+	// encoding reports beside the diagnostics, the errors kept as causes and
+	// which usage error panics first, follows no Go map's order.
+	slices.SortFunc(members, func(a, b member) int {
+		if c := strings.Compare(a.canonical, b.canonical); c != 0 {
+			return c
+		}
+		return strings.Compare(a.key, b.key)
+	})
+	// Where every key names a member of its own, no name fails, and the
+	// order is the members' own: each member's failures are recorded as the
+	// member is encoded, and nothing stands in for them.
+	clean := true
+	for i, mb := range members {
+		if !mb.named || i > 0 && members[i-1].canonical == mb.canonical {
+			clean = false
+		}
+	}
+	entries := make(map[string]tenon.Value, len(members))
+	ok := true
+	var aside [][]tenon.Diagnostic
+	for _, mb := range members {
+		at := p
+		switch {
+		case !mb.named:
+		case m.typed():
+			at = p.Index(tenon.String(mb.canonical))
+		default:
 			// A map whose members' types need not agree encodes as an object
 			// [GO-012], so what is in it is located as an attribute of one,
 			// which is where the reader of a diagnostic looks for it.
-			at = p.Attribute(canonical)
+			at = p.Attribute(mb.canonical)
 		}
-		v, good := e.encode(m.elem, rv.MapIndex(reflect.ValueOf(key).Convert(m.rt.Key())), at)
-		entries[canonical], ok = v, ok && good
+		mv := rv.MapIndex(reflect.ValueOf(mb.key).Convert(m.rt.Key()))
+		if clean {
+			v, good := e.encode(m.elem, mv, at)
+			entries[mb.key], ok = v, ok && good
+			continue
+		}
+		held := e.fails
+		e.fails = failures{}
+		v, good := e.encode(m.elem, mv, at)
+		own := e.fails
+		e.fails = held
+		e.fails.causes = append(e.fails.causes, own.causes...)
+		if !good {
+			v = tenon.ErrorVal(tenon.Diagnostic{Code: standIn, Message: strconv.Itoa(len(aside))})
+			aside = append(aside, own.list)
+		}
+		entries[mb.key] = v
 	}
-	switch {
-	case !ok:
+	if !ok {
 		return tenon.Value{}, false
-	case m.typed():
-		return tenon.Map(m.elem.typ, entries), true
 	}
-	return tenon.Object(entries), true
+	var r tenon.Value
+	if m.typed() {
+		r = tenon.Map(m.elem.typ, entries)
+	} else {
+		r = tenon.Object(entries)
+	}
+	if !r.IsError() {
+		return r, true
+	}
+	for _, d := range r.Diagnostics() {
+		if d.Code != standIn {
+			e.fails.within(p, []tenon.Diagnostic{d})
+			continue
+		}
+		i, _ := strconv.Atoi(d.Message)
+		for _, f := range aside[i] {
+			e.fails.add(f)
+		}
+	}
+	return tenon.Value{}, false
 }
+
+// standIn is the code of the error value that mapping gives a constructor in
+// place of a member that failed, its message the member's place among those
+// set aside. gotenon mints no code of its own, and this one serves because no
+// name fails with it, so the stand-ins are told from the names' diagnostics,
+// the only others a constructor gives back; they never leave mapping.
+const standIn = tenon.CodeEncodeMarshalFailed
 
 // structure encodes a struct.
 func (e *encoder) structure(m *goMapping, rv reflect.Value, p tenon.Path) (tenon.Value, bool) {
