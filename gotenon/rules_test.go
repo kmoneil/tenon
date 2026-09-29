@@ -91,8 +91,10 @@ func TestConformance_GO021_MalformedTagsAreUsageErrors(t *testing.T) {
 // TestConformance_GO022_OptionalFieldsCrossBothWays pins the rule's halves:
 // a struct encodes every mapped field, optional ones included, except an
 // optional tenon.Value holding the zero Value, which is left out; a null
-// decodes into an optional field as its zero value, and an absent optional
-// attribute leaves the field at its zero value.
+// decodes into an optional field as its zero value, but into a tenon.Value
+// field as itself and into a field that decodes by an unmarshaler as what its
+// method is given; and an absent optional attribute leaves the field at its
+// zero value.
 func TestConformance_GO022_OptionalFieldsCrossBothWays(t *testing.T) {
 	conformance.Covers(t, "GO-022")
 	type withOpt struct {
@@ -106,6 +108,15 @@ func TestConformance_GO022_OptionalFieldsCrossBothWays(t *testing.T) {
 	got := decoded[withOpt](t, obj(map[string]tenon.Value{"p": tenon.Null(num)}), uns)
 	if got.P != 0 || !got.V.IsZero() {
 		t.Errorf("a null and an absence decoded to %+v, want the zero fields", got)
+	}
+	type takesNulls struct {
+		V tenon.Value `tenon:"v,optional"`
+		O observer    `tenon:"o,optional"`
+	}
+	null := tenon.Null(str)
+	nulls := decoded[takesNulls](t, obj(map[string]tenon.Value{"v": null, "o": null}), uns)
+	if !tenon.Identical(nulls.V, null) || !tenon.Identical(nulls.O.got, null) {
+		t.Errorf("a null decoded into an optional tenon.Value and an unmarshaler as %v and %v, want the null in each", nulls.V, nulls.O.got)
 	}
 }
 

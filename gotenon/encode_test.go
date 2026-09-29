@@ -354,7 +354,31 @@ func TestConformance_GO043_EncodingGivesKnownValues(t *testing.T) {
 		wantDiag{"app.no_value", ".f[0]"},
 		wantDiag{"app.no_value", ".g"},
 		wantDiag{"app.failed", ".v[0].deep"})
+
+	// A pending value is given as it is at the top, and below it, where a
+	// container would have to hold what has no type, it is a usage error
+	// naming where it is, whether a tenon.Value or a marshaler gave it.
+	pending := tenon.Pending(tenon.Any())
+	if v := encoded(t, pending); !tenon.Identical(v, pending) {
+		t.Errorf("a pending value at the top encoded as %v", v)
+	}
+	mustPanicUsage(t, `Encode: the pending value at ".extra" has no type`, func() { gotenon.Encode(holder{Name: "x", Extra: pending}) })
+	mustPanicUsage(t, `Encode: the pending value at ".[1]" has no type`, func() { gotenon.Encode([]tenon.Value{n(1), pending}) })
+	mustPanicUsage(t, `Encode: the pending value at ".items[0].g" has no type`, func() {
+		gotenon.Encode(struct {
+			Items []struct {
+				G givesPending `tenon:"g"`
+			} `tenon:"items"`
+		}{Items: make([]struct {
+			G givesPending `tenon:"g"`
+		}, 1)})
+	})
 }
+
+// givesPending marshals itself as a pending value, which has no type.
+type givesPending struct{}
+
+func (givesPending) MarshalValue() (tenon.Value, error) { return tenon.Pending(tenon.Any()), nil }
 
 // givesError marshals itself as an error value, which fails the encoding as
 // an error the method returned would.

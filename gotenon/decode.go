@@ -16,8 +16,10 @@ import (
 // Encode for the mapping), and builds the Go value from the result: a list
 // into a slice, a map into a map, an object into a struct field by field, and
 // into a tenon.Value, the value as it is. What the conversion refuses, Decode
-// refuses with the conversion's diagnostics. So an object decodes into a Go
-// map under either policy, and a map into a struct under Unsafe only.
+// refuses with the conversion's diagnostics alone, reporting no part of a
+// value that does not convert as not known or marked. So an object decodes
+// into a Go map under either policy, and a map into a struct under Unsafe
+// only.
 //
 // Decode fails with a *tenon.Error, with a diagnostic for each part of v that
 // cannot be decoded, located by its path: a part that is unknown or pending
@@ -47,7 +49,9 @@ import (
 // marks and may convert its members.
 //
 // A null decodes into a pointer, slice or map as nil, and into an optional
-// field as the field's zero value, as an absent optional attribute leaves it. A
+// field as the field's zero value, as an absent optional attribute leaves it,
+// but for an optional tenon.Value field, which takes the null as itself, and
+// an optional field that decodes by an unmarshaler, whose method is given it. A
 // float64 is the nearest to the number, ties to even; a big.Float takes the
 // precision big.Float.SetRat gives it, and a json.Number the number's canonical
 // text.

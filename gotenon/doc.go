@@ -51,7 +51,9 @@
 // A type that says how it is written down, through encoding.TextMarshaler
 // and, on its pointer, encoding.TextUnmarshaler, as time.Time and netip.Addr
 // do, crosses as the String of its text, unless it implements ValueMarshaler
-// or ValueUnmarshaler, which come first.
+// or ValueUnmarshaler, which come first. The text comes back in Normalization
+// Form C, as every String does, so a MarshalText that writes other text reads
+// back its normalized form.
 //
 // A struct that may have one of these methods from a field it embeds panics
 // as a usage error in the direction the method concerns: embedding a
@@ -66,6 +68,10 @@
 // whose type is not settled. Encode keeps it as it is, and Decode fills it
 // without converting, so a program can hand a Go struct to a plan engine or a
 // plugin protocol and get it back with the parts that were open still open.
+// A pending value, whose type is not settled, is the one exception: no
+// container holds a value that has no type, so Encode keeps one only as the
+// whole of what it is given, and one below that is a usage error naming
+// where it is, whether a tenon.Value or a MarshalValue method gave it.
 //
 // Everything else must be known and unmarked to decode: a value that is not
 // known gives tenon.CodeDecodeNotKnown, and a marked one
@@ -81,6 +87,13 @@
 // Decoding into a float64 takes the nearest float64, ties to even, so a round
 // trip through one is not the identity and says so in what it gives back.
 //
+// Decoding into a big.Int, a big.Rat or a big.Float is exact, and an exact
+// number costs work in proportion to how large or small it is, not to how
+// long it is written: 1e-999999 is nine characters, and a hundred bytes of
+// such numbers take about a second to decode into a []big.Float. Decode
+// numbers that come from outside into tenon.Value, or into a fixed-size type
+// such as int64 or float64, whose cost is bounded.
+//
 // # Mistakes against failures
 //
 // A Go type that does not map to tenon is a mistake in the program, and Encode
@@ -92,4 +105,8 @@
 // interface, or a type holding one, whatever the value, where Encode takes what
 // the interface holds. Data that does not fit a type that maps is a failure in
 // the data, and comes back as a *tenon.Error.
+//
+// gotenon works out how each Go type maps once, and keeps it for as long as
+// the program runs, so a program that makes types while it runs, as
+// reflect.StructOf does, keeps a mapping for each one it encodes or decodes.
 package gotenon
