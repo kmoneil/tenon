@@ -596,6 +596,15 @@ func TestConformance_EQ043_MembershipOfASetHoldingUnknowns(t *testing.T) {
 		// A set that is not there to look through leaves it open.
 		{"an unknown set", tenon.Contains(tenon.Unknown(tenon.SetType(num)), n(1)), "unknown(bool, not null)"},
 		{"a pending set", tenon.Contains(tenon.Pending(tenon.SetOf(tenon.Any())), n(1)), "unknown(bool, not null)"},
+		// Unless the value looked for cannot be of the type of its members,
+		// which settles it: a value of another type is no member, however
+		// little of the set is known, as Equals says of values of two types.
+		{"a value of another type, in an unknown set", tenon.Contains(tenon.Unknown(tenon.SetType(num)), tenon.String("1")), "false"},
+		{"an unknown value of another type, in an unknown set", tenon.Contains(tenon.Unknown(tenon.SetType(num)), tenon.Unknown(str)), "false"},
+		{"a pending value of another type, in an unknown set", tenon.Contains(tenon.Unknown(tenon.SetType(num)), tenon.Pending(tenon.Exactly(str))), "false"},
+		{"a value of another type, in a pending set", tenon.Contains(tenon.Pending(tenon.Exactly(tenon.SetType(num))), tenon.String("1")), "false"},
+		{"a value no set the constraint admits holds", tenon.Contains(tenon.Pending(tenon.SetOf(tenon.Exactly(num))), tenon.Bool(true)), "false"},
+		{"a pending value that may be of the members' type", tenon.Contains(tenon.Unknown(tenon.SetType(num)), tenon.Pending(tenon.Any())), "unknown(bool, not null)"},
 	} {
 		if got := tt.got.String(); got != tt.want {
 			t.Errorf("%s: membership is %s, want %s", tt.name, got, tt.want)
