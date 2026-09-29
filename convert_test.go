@@ -503,8 +503,9 @@ func TestConformance_CV023_ConvertingToObjects(t *testing.T) {
 	wantValue(t, "map", tenon.Convert(m, closed, uns), obj(map[string]tenon.Value{"name": s("a"), "port": n(80)}))
 	wantErrors(t, "map, safe", tenon.Convert(tenon.Map(str, map[string]tenon.Value{"name": s("a")}), closed, safe),
 		wantDiag{tenon.CodeConvertUnsafe, "."})
-	// A member that fails is reported first, where it fails.
-	wantErrors(t, "map with a member to convert, safe", tenon.Convert(m, closed, safe), wantDiag{tenon.CodeConvertUnsafe, `.["port"]`})
+	// The policy refuses a map before any member is read, so a member that
+	// would fail as well is not reported (CV-051).
+	wantErrors(t, "map with a member to convert, safe", tenon.Convert(m, closed, safe), wantDiag{tenon.CodeConvertUnsafe, "."})
 	wantErrors(t, "map, extra key", tenon.Convert(tenon.Map(str, map[string]tenon.Value{"name": s("a"), "x": s("1")}), closed, uns),
 		wantDiag{tenon.CodeConvertUnexpectedAttribute, `.["x"]`})
 	// No attribute can be named by the empty key, open or closed.
@@ -965,6 +966,36 @@ func TestConformance_CV051_InnermostFailure(t *testing.T) {
 	wantErrors(t, "nested", got, wantDiag{tenon.CodeNumberInvalidSyntax, ".[0].tags[1]"})
 	if msg := got.Diagnostics()[0].Message; !strings.Contains(msg, `"two"`) {
 		t.Errorf("the message %q does not say what failed", msg)
+	}
+}
+
+// TestConformance_CV051_TheSafePolicyRefusesAContainerFirst holds a container
+// conversion that only an unsafe conversion would do to failing as a whole
+// under the safe policy, with convert.unsafe at the container, before any
+// member is read: members that would fail too are not reported, and a member's
+// marks do not reach the failure (CV-033), since the policy refuses the
+// conversion whatever the members hold.
+func TestConformance_CV051_TheSafePolicyRefusesAContainerFirst(t *testing.T) {
+	conformance.Covers(t, "CV-051", "CV-033")
+	prop := stamp{id: "prop"}
+	failing := tenon.List(str, tenon.WithMarks(s("a"), prop), s("abc"))
+	for _, tt := range []struct {
+		name string
+		v    tenon.Value
+		c    tenon.Constraint
+	}{
+		{"a list to a set", failing, tenon.SetOf(is(num))},
+		{"a tuple to a set", tenon.Tuple(tenon.WithMarks(s("a"), prop), s("abc")), tenon.SetOf(is(num))},
+		{"a list to a tuple", failing, tenon.TupleOf(is(num), is(num))},
+		{"a set to a tuple", tenon.Set(str, s("a"), s("abc")), tenon.TupleOf(is(num), is(num))},
+		{"a map to an object", tenon.Map(str, map[string]tenon.Value{"k": tenon.WithMarks(s("abc"), prop)}),
+			tenon.ObjectWith(map[string]tenon.Field{"k": tenon.Required(is(num))}, true)},
+	} {
+		got := tenon.Convert(tt.v, tt.c, safe)
+		wantErrors(t, tt.name, got, wantDiag{tenon.CodeConvertUnsafe, "."})
+		if tenon.HasMark(got, prop) {
+			t.Errorf("%s: the failure %v carries the mark of a member it did not read", tt.name, got)
+		}
 	}
 }
 
@@ -1583,6 +1614,52 @@ func TestConformance_CV033_FailuresCarryOnlyTheMarksTheyRead(t *testing.T) {
 	// A member read and placed in the set gives the set its mark.
 	if got := tenon.Convert(list, tenon.SetOf(tenon.Any()), uns); got.IsError() || !tenon.HasMark(got, prop) {
 		t.Errorf("a member converted into a set gave %v, want a set carrying its mark", got)
+	}
+}
+
+// TestConformance_CV033_AFailureAfterTheMembersCarriesTheirMarks holds the
+// failure of a container that fails once its members are read, holding none
+// of them, to carrying their Propagate marks, as a pending value in their
+// place does: a tuple whose members share no type fails to become a list
+// under the safe policy only once each member's type is in hand.
+func TestConformance_CV033_AFailureAfterTheMembersCarriesTheirMarks(t *testing.T) {
+	conformance.Covers(t, "CV-033", "MK-003")
+	prop, iso := stamp{id: "prop"}, stamp{id: "iso", policy: tenon.Isolate}
+	v := tenon.Tuple(tenon.WithMarks(n(1), prop, iso), s("a"))
+	got := tenon.Convert(v, tenon.ListOf(tenon.Any()), safe)
+	wantErrors(t, "members of no common type", got, wantDiag{tenon.CodeConvertNoCommonType, "."})
+	if !tenon.HasMark(got, prop) || tenon.HasMark(got, iso) {
+		t.Errorf("the failure %v, want it carrying the member's Propagate mark and not its Isolate one", got)
+	}
+}
+
+// TestConformance_CV031_APartlyKnownSetsKnownMembersConvert holds a set holding
+// members that are not known, converted to a tuple, to converting its known
+// members all the same: which position one takes waits on the members not
+// known, so one that fails at every position alike fails every outcome, and
+// fails the conversion now, at the member, as it would converted to a list
+// (UN-011). One that some position takes, or that fails otherwise at each,
+// leaves the tuple unknown.
+func TestConformance_CV031_APartlyKnownSetsKnownMembersConvert(t *testing.T) {
+	conformance.Covers(t, "CV-031", "UN-011")
+	partial := func(known tenon.Value) tenon.Value { return tenon.Set(str, known, tenon.Unknown(str)) }
+	got := tenon.Convert(partial(s("x")), tenon.TupleOf(is(num), is(num)), uns)
+	wantErrors(t, "a member no position takes", got, wantDiag{tenon.CodeNumberInvalidSyntax, ".[0]"})
+	if list := tenon.Convert(partial(s("x")), tenon.ListOf(is(num)), uns); !list.IsError() || list.Diagnostics()[0].Code != tenon.CodeNumberInvalidSyntax {
+		t.Errorf("the same set converted to a list gave %v, want number.invalid_syntax", list)
+	}
+	for _, tt := range []struct {
+		name string
+		v    tenon.Value
+		c    tenon.Constraint
+	}{
+		{"a member every position takes", partial(s("5")), tenon.TupleOf(is(num), is(num))},
+		{"a member one position takes", partial(s("x")), tenon.TupleOf(is(num), is(str))},
+		{"a member that fails otherwise at each position", partial(s("x")), tenon.TupleOf(is(num), is(boo))},
+	} {
+		if got := tenon.Convert(tt.v, tt.c, uns); got.IsError() || got.IsKnown() {
+			t.Errorf("%s: %v, want an unknown tuple", tt.name, got)
+		}
 	}
 }
 
