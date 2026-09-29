@@ -263,6 +263,9 @@ var valid = []vector{
 	{"marks/set", func(r *rand.Rand) tenon.Value {
 		return tenon.WithMarks(tenon.Set(num, shuffled(r, n(1), n(2))...), deep)
 	}},
+	{"marks/set holding an unknown", func(r *rand.Rand) tenon.Value {
+		return tenon.WithMarks(tenon.Set(num, shuffled(r, n(1), tenon.Unknown(num))...), deep)
+	}},
 	{"marks/redacted", func(r *rand.Rand) tenon.Value {
 		return tenon.Object(map[string]tenon.Value{"password": marked(r, s("hunter2"), secret{}, plain), "user": s("ann")})
 	}},

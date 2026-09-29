@@ -233,87 +233,113 @@ func (d *differ) compare(a, b Value, p Path, asideA, asideB []Mark) {
 			}
 		})
 	case KindSet:
-		d.members(na.data.([]Value), nb.data.([]Value), p)
+		d.members(na, nb, p)
 	}
 }
 
-// members adds the member changes between two sets at p, whose members are as
-// the sets hold them, in iteration order: known members first, in canonical
-// order, and then the rest, in the order of their encodings.
-func (d *differ) members(x, y []Value, p Path) {
-	firstUnknown := func(members []Value) int {
-		if i := slices.IndexFunc(members, func(m Value) bool { return !m.n.isKnown() }); i >= 0 {
-			return i
-		}
-		return len(members)
+// members adds the member changes between the sets na and nb at p. Their
+// members are as the sets hold them, in iteration order: known members first,
+// in canonical order, and then the rest, in the order of their encodings.
+// Each change carries its member as its set gives it when read, the set's
+// deep marks on it (DI-030), and the members are paired and ordered as the
+// sets hold them, without those marks (DI-034, DI-035), which each side's set
+// may hold differently.
+func (d *differ) members(na, nb *node, p Path) {
+	x, y := na.data.([]Value), nb.data.([]Value)
+	oldAs, newAs := givenBy(na), givenBy(nb)
+	removed := func(m Value) { d.add(Change{Kind: ChangeMemberRemoved, Path: p, Old: oldAs(m)}) }
+	added := func(m Value) { d.add(Change{Kind: ChangeMemberAdded, Path: p, New: newAs(m)}) }
+	kx, ky := knownMembers(x), knownMembers(y)
+	knownMemberChanges(x[:kx], y[:ky], removed, added)
+	gone, come := unpairedMembers(x[kx:], y[ky:])
+	interleave(gone, come, removed, added)
+}
+
+// givenBy returns what gives a member of the set n as the set gives it when
+// read: carrying the set's deep marks, attached through one attachment for
+// all of its members, as Elements attaches them (MK-008).
+func givenBy(n *node) func(Value) Value {
+	deep := deepMarks(n.markList())
+	if deep == nil {
+		return func(m Value) Value { return m }
 	}
-	kx, ky := firstUnknown(x), firstUnknown(y)
-	// Known members are distinct and in canonical order, which a merge pairs.
-	for i, j := 0, 0; i < kx || j < ky; {
+	a := newAttachment(deep, nil)
+	return func(m Value) Value { return Value{n: a.attach(m.n)} }
+}
+
+// knownMemberChanges reports the changes between the known members of two sets,
+// which are distinct and in canonical order, so that a merge pairs them: a
+// member of x alone is removed, a member of y alone added, and two that the
+// order ties but that are not identical are one removed and one added.
+func knownMemberChanges(x, y []Value, removed, added func(Value)) {
+	for i, j := 0, 0; i < len(x) || j < len(y); {
 		c := 0
 		switch {
-		case j == ky:
+		case j == len(y):
 			c = -1
-		case i == kx:
+		case i == len(x):
 			c = 1
 		default:
 			c = compareValues(x[i], y[j])
 		}
 		switch {
 		case c < 0:
-			d.add(Change{Kind: ChangeMemberRemoved, Path: p, Old: x[i]})
+			removed(x[i])
 			i++
 		case c > 0:
-			d.add(Change{Kind: ChangeMemberAdded, Path: p, New: y[j]})
+			added(y[j])
 			j++
 		default:
 			if !Identical(x[i], y[j]) {
-				d.add(Change{Kind: ChangeMemberRemoved, Path: p, Old: x[i]})
-				d.add(Change{Kind: ChangeMemberAdded, Path: p, New: y[j]})
+				removed(x[i])
+				added(y[j])
 			}
 			i++
 			j++
 		}
 	}
-	// The rest are in the order a set holds them, which follows from the
-	// members, so identical ones tie there, and they pair one for one in a
-	// merge: within a run of members that tie, each pairs with an identical
-	// one not yet paired, where each looked through all the other's for one,
-	// the square of them (16,000 took 1.4 s).
+}
+
+// unpairedMembers returns the members of x and of y, members of two sets that
+// are not known, that no identical member of the other set pairs with. They
+// are in the order a set holds them, which follows from the members, so
+// identical ones tie there, and they pair one for one in a merge: within a
+// run of members that tie, each pairs with an identical one not yet paired,
+// where each looked through all the other's for one, the square of them
+// (16,000 took 1.4 s).
+func unpairedMembers(x, y []Value) (removed, added []Value) {
 	alike := notKnownOrder()
-	rx, ry := x[kx:], y[ky:]
-	var removed, added []Value
-	for i, j := 0, 0; i < len(rx) || j < len(ry); {
+	for i, j := 0, 0; i < len(x) || j < len(y); {
 		c := 0
 		switch {
-		case j == len(ry):
+		case j == len(y):
 			c = -1
-		case i == len(rx):
+		case i == len(x):
 			c = 1
 		default:
-			c = alike(rx[i].n, ry[j].n)
+			c = alike(x[i].n, y[j].n)
 		}
 		if c < 0 {
-			removed = append(removed, rx[i])
+			removed = append(removed, x[i])
 			i++
 			continue
 		}
 		if c > 0 {
-			added = append(added, ry[j])
+			added = append(added, y[j])
 			j++
 			continue
 		}
 		ei, ej := i+1, j+1
-		for ei < len(rx) && alike(rx[i].n, rx[ei].n) == 0 {
+		for ei < len(x) && alike(x[i].n, x[ei].n) == 0 {
 			ei++
 		}
-		for ej < len(ry) && alike(ry[j].n, ry[ej].n) == 0 {
+		for ej < len(y) && alike(y[j].n, y[ej].n) == 0 {
 			ej++
 		}
 		paired := make([]bool, ej-j)
-		for _, m := range rx[i:ei] {
+		for _, m := range x[i:ei] {
 			found := false
-			for k, o := range ry[j:ej] {
+			for k, o := range y[j:ej] {
 				if !paired[k] && Identical(m, o) {
 					paired[k], found = true, true
 					break
@@ -323,22 +349,28 @@ func (d *differ) members(x, y []Value, p Path) {
 				removed = append(removed, m)
 			}
 		}
-		for k, o := range ry[j:ej] {
+		for k, o := range y[j:ej] {
 			if !paired[k] {
 				added = append(added, o)
 			}
 		}
 		i, j = ei, ej
 	}
-	// Removals and additions interleave by display form, each written once
-	// however long it waits its turn. A removal and an addition that read
-	// alike are ordered by the members themselves, as a set holding the
-	// members of both sets orders members that encode alike (DI-035,
-	// EQ-044): the key follows from the member and not from the side it came
-	// from, so Diff(b, a) mirrors Diff(a, b), where putting the removal first
-	// put a different member first each way. A removal still leads where
-	// even that comparison ties, which only members told apart by what
-	// EQ-045 leaves unordered reach.
+	return removed, added
+}
+
+// interleave reports the removals and additions of members that are not
+// known in the order of their display forms as the sets hold them, each
+// written once however long it waits its turn. A removal and an addition that
+// read alike are ordered by the members themselves, as a set holding the
+// members of both sets orders members that encode alike (DI-035, EQ-044): the
+// key follows from the member and not from the side it came from, so
+// Diff(b, a) mirrors Diff(a, b), where putting the removal first put a
+// different member first each way. A removal still leads where even that
+// comparison ties, which only members told apart by what EQ-045 leaves
+// unordered reach.
+func interleave(gone, come []Value, removed, added func(Value)) {
+	alike := notKnownOrder()
 	texts := func(ms []Value) []string {
 		out := make([]string, len(ms))
 		for i, m := range ms {
@@ -346,24 +378,24 @@ func (d *differ) members(x, y []Value, p Path) {
 		}
 		return out
 	}
-	removedText, addedText := texts(removed), texts(added)
-	for i, j := 0, 0; i < len(removed) || j < len(added); {
+	goneText, comeText := texts(gone), texts(come)
+	for i, j := 0, 0; i < len(gone) || j < len(come); {
 		c := 0
 		switch {
-		case j == len(added):
+		case j == len(come):
 			c = -1
-		case i == len(removed):
+		case i == len(gone):
 			c = 1
 		default:
-			if c = strings.Compare(removedText[i], addedText[j]); c == 0 {
-				c = alike(removed[i].n, added[j].n)
+			if c = strings.Compare(goneText[i], comeText[j]); c == 0 {
+				c = alike(gone[i].n, come[j].n)
 			}
 		}
 		if c <= 0 {
-			d.add(Change{Kind: ChangeMemberRemoved, Path: p, Old: removed[i]})
+			removed(gone[i])
 			i++
 		} else {
-			d.add(Change{Kind: ChangeMemberAdded, Path: p, New: added[j]})
+			added(come[j])
 			j++
 		}
 	}
