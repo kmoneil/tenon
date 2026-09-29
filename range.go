@@ -724,39 +724,38 @@ func narrowValue(v Value, ns []Narrowing) Value {
 // narrowPartialSet narrows v, a set holding members that are not known. Such a
 // set has no range to record a narrowing in: what it could be is given by its
 // members, and so is its length, which lies between the count of those that
-// are provably distinct and the count of all of them. Its narrowings are
-// therefore decided together, by the lengths they leave it and by the values
-// they say it holds. Leaving it no length is a contradiction, and so is asking
-// it for values its members cannot take, one member apiece. Leaving it no more
-// members than the values it must hold means every other member is one of
-// those, so it is the set of them, known. Anything else leaves v as it was,
-// which may allow sets the narrowings rule out, but never rules out one they
-// allow.
+// are provably distinct and the count of all of them (EQ-042). Its narrowings
+// are decided by that length alone: leaving it no length is a contradiction,
+// and anything else leaves v as it was, which may allow sets the narrowings
+// rule out, but never rules out one they allow (UN-007). Matching the values
+// a listing asks for to the members that could be them would decide more,
+// and it is a search every implementation would have to make alike, where
+// the lengths are one pass.
 func narrowPartialSet(v Value, ns []Narrowing) Value {
 	n := v.data()
 	members := n.data.([]Value)
 	// The least length is the most that any of these says: the members, by
-	// the count of those that are provably distinct, the listings beside
-	// them, and a LengthMin. The greatest is the fewest of the members held, a
-	// LengthMax, and the values the element type holds, null among them, since
-	// a set holds each of them once at most. The members are counted only
-	// where a bound could actually bite: their count never exceeds their
-	// number, so while the greatest length is that number, the members go
-	// uncounted, and a narrowing that moves no bound costs no comparison.
+	// the count of those that are provably distinct, the listings, as a
+	// range counts its listing (UN-002), and a LengthMin. The greatest is the
+	// fewest of the members held, a LengthMax, and the values the element
+	// type holds, null among them, since a set holds each of them once at
+	// most. The members are counted only where a bound could actually bite:
+	// their count never exceeds their number, so while the greatest length
+	// is that number, the members go uncounted, and a narrowing that moves
+	// no bound costs no comparison.
 	count := int64(len(members))
 	held := func() int64 { return int64(cachedDistinct(n)) }
 	ceiling := setCeiling(n.typ)
-	var fromListings int64
 	var listed rangeData          // the listings, recorded as a range records them
 	var atLeast, atMost Narrowing // the greatest LengthMin and the least LengthMax
-	least := func() int64 { return max(held(), fromListings, atLeast.n) }
+	least := func() int64 { return max(held(), listed.lenLo, atLeast.n) }
 	// lowerText names what sets the least length, and is empty where the
 	// members set it, since the value shows them.
 	lowerText := func() string {
 		switch l := least(); {
 		case held() >= l:
 			return ""
-		case fromListings >= l:
+		case listed.lenLo >= l:
 			return membersText(listed.members)
 		}
 		return atLeast.message()
@@ -772,18 +771,11 @@ func narrowPartialSet(v Value, ns []Narrowing) Value {
 	// the count could not decide it: it never exceeds their number.
 	within := func() bool {
 		m := most()
-		if fromListings > m || atLeast.n > m {
+		if listed.lenLo > m || atLeast.n > m {
 			return false
 		}
 		return count <= m || held() <= m
 	}
-	// isMember tells a listed value that is one of the set's own members, the
-	// same value, from the rest. Such a value narrows nothing by itself: it
-	// is not lacking, and every value it says the set must hold, the set
-	// holds. A program narrowing a set by values taken from Elements lists
-	// only these, and the narrowing then costs no comparison at all.
-	var isMember map[*node]bool
-	anyNovel := false
 	for _, nw := range ns {
 		switch nw.kind {
 		case narrowLengthMin:
@@ -795,39 +787,7 @@ func narrowPartialSet(v Value, ns []Narrowing) Value {
 				atMost = nw
 			}
 		case narrowMembers:
-			if isMember == nil {
-				isMember = make(map[*node]bool, len(members))
-				for _, m := range members {
-					isMember[m.n] = true
-				}
-			}
-			var novel []Value
-			for _, l := range nw.members {
-				if !isMember[l.n] {
-					novel = append(novel, l)
-				}
-			}
-			anyNovel = anyNovel || len(novel) > 0
-			if lacksSome(n, novel) {
-				return contradiction("the value " + valueText(v) + " does not satisfy " + nw.message())
-			}
-			// The listed values alone, and the set holding them beside the
-			// members, each count a least length. The second can come out
-			// lower, when a member that is not known sorts ahead of them.
-			// Values listed for a set value are counted provably distinct,
-			// where a range counts only its known ones (UN-002): a document
-			// never narrows a set value, and what the set holds is a number
-			// of members, whose length this decides. While every value
-			// listed so far is a member, neither count can exceed the
-			// members' own, which least() holds already, so neither is made.
 			listed.addMembers(nw.members)
-			if anyNovel {
-				together := orderMembers(append(slices.Clone(members), listed.members...))
-				fromListings = max(fromListings, listed.lenLo,
-					int64(provablyDistinct(listed.members)), int64(provablyDistinct(together)))
-			} else {
-				fromListings = max(fromListings, listed.lenLo)
-			}
 		default:
 			if !nw.holdsFor(n) {
 				return contradiction("the value " + valueText(v) + " does not satisfy " + nw.message())
@@ -860,48 +820,6 @@ func narrowPartialSet(v Value, ns []Narrowing) Value {
 			message += "both " + other + " and "
 		}
 		return contradiction(message + moved)
-	}
-	// The values the set must hold: the ones it holds already, the ones a
-	// listing names, and, where its least length is as many members as the
-	// element type has values, every one of those. Each of them that the set
-	// does not hold already needs a member of its own to be.
-	index := indexMembers(members)
-	knowns, rest := index.known, index.rest
-	full := ceiling.set && least() == ceiling.n && ceiling.n <= maxDomainSet
-	// The set holds its known members already, so only the values beside
-	// them need members of their own: each is looked up among the known
-	// members by its hash, rather than compared with every one of them.
-	want, extra := slices.Clone(knowns), []Value(nil)
-	if full {
-		want = memberValues(n.typ.t.elem)
-		for _, v := range want {
-			if !index.holdsKnown(v) {
-				extra = append(extra, v)
-			}
-		}
-	} else {
-		for _, l := range listed.members {
-			if l.n.isKnown() && !index.holdsKnown(l) {
-				extra = append(extra, l)
-			}
-		}
-		want = append(want, extra...)
-	}
-	if !membersCanTake(extra, rest) {
-		// Only a listing asks for a value the set does not hold, unless every
-		// value of the element type is asked for, which a length does.
-		reason := membersText(listed.members)
-		if full {
-			if reason = lowerText(); reason == "" {
-				reason = "length >= " + strconv.FormatInt(least(), 10)
-			}
-		}
-		return contradiction("the value " + valueText(v) + " does not satisfy " + reason)
-	}
-	// No more members than the values it must hold leaves each of the others
-	// to be one of them, so it holds those alone.
-	if most() == int64(len(want)) {
-		return Set(n.typ.t.elem, want...)
 	}
 	return v
 }

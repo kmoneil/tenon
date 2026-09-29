@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- Narrowing a set that holds members that are not known is decided by its
+  length alone, as the specification now states: the narrowings contradict
+  it exactly where the least length they and its members give is above the
+  greatest, and otherwise the set is left as it was. It was decided more
+  finely, by matching the values a listing asks for to the members that
+  could be them and by the values its element type holds, in ways the
+  specification did not state and another implementation could not
+  reproduce. Some narrowings it refused it now leaves the set as it was,
+  such as `Members` of 2 and 3 asked of `set(number)[1, unknown(number)]`,
+  and none makes such a set known: narrowed to one member, it stays as it
+  was. No set that satisfies the narrowings is ruled out, as before.
+
 ## 0.10.0 (2026-09-28)
 
 An architecture review of 0.9.0 found places where tenon did not keep the
