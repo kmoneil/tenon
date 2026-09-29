@@ -210,9 +210,10 @@
 // grapheme clusters, both under Unicode 15.0.0, and its display form escapes
 // text by the same version. Which Unicode version is in use decides which
 // strings are equal and how long they are, so changing it is a breaking
-// change, and the version is held inside this module: it does not follow the
-// Go toolchain a consumer builds with, and two builds of one version of tenon
-// agree on every string whatever toolchain made them.
+// change, and the version is held inside this module: it follows neither the
+// Go toolchain a consumer builds with nor any module their build requires,
+// tenon requiring none, and two builds of one version of tenon agree on every
+// string whatever toolchain made them.
 //
 // Normalization is plain UAX #15. In particular tenon does not apply the
 // Stream-Safe Text Process, which inserts U+034F into a run of more than

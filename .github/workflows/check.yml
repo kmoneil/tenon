@@ -33,6 +33,7 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: ${{ matrix.go }}
+          cache-dependency-path: '**/go.sum'
       # Without the specification file, rulecheck skips the two checks that
       # read it and still holds every rule to a passing test.
       - run: make check
@@ -50,6 +51,7 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: '1.27.x'
+          cache-dependency-path: '**/go.sum'
       - run: make lint
       # The bench module has its own go.mod, so make lint does not reach it;
       # this builds it, lints it and runs each benchmark once.

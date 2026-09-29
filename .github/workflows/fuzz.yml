@@ -23,15 +23,25 @@ jobs:
       matrix:
         include:
           - target: FuzzParse
+            dir: .
             package: ./internal/decimal
             found: internal/decimal/testdata/fuzz/FuzzParse
           - target: FuzzString
+            dir: .
             package: .
             found: testdata/fuzz/FuzzString
+          # In its own module, which holds string construction to
+          # golang.org/x/text; it runs only below go1.27.
+          - target: FuzzStringAgainstXText
+            dir: tools/unigen
+            package: .
+            found: tools/unigen/testdata/fuzz/FuzzStringAgainstXText
           - target: FuzzDeserialize
+            dir: .
             package: .
             found: testdata/fuzz/FuzzDeserialize
           - target: FuzzConvert
+            dir: .
             package: .
             found: testdata/fuzz/FuzzConvert
     steps:
@@ -52,6 +62,7 @@ jobs:
           key: fuzz-${{ matrix.target }}-${{ github.run_id }}
           restore-keys: fuzz-${{ matrix.target }}-
       - run: go test -run='^$' -fuzz='^${{ matrix.target }}$' -fuzztime=30m ${{ matrix.package }}
+        working-directory: ${{ matrix.dir }}
       - if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:

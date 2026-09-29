@@ -3,8 +3,6 @@ package uni
 import (
 	"testing"
 
-	"golang.org/x/text/unicode/norm"
-
 	"github.com/kmoneil/tenon/internal/conformance"
 )
 
@@ -39,7 +37,7 @@ func TestConformance_ST001_ScalarValues(t *testing.T) {
 func TestConformance_ST002_Normalization(t *testing.T) {
 	conformance.Covers(t, "ST-002")
 	// The spellings in each group construct one string, whose canonical form
-	// is in NFC.
+	// is the first spelling, the one in NFC.
 	for _, group := range [][]string{
 		{"caf\u00e9", "cafe\u0301"},
 		{"\u1ead", "a\u0323\u0302", "a\u0302\u0323", "\u1ea1\u0302"},
@@ -47,8 +45,8 @@ func TestConformance_ST002_Normalization(t *testing.T) {
 		{"\u00c5", "\u212b", "A\u030a"},
 	} {
 		want, err := Canonical(group[0])
-		if err != nil || !norm.NFC.IsNormalString(want) {
-			t.Fatalf("Canonical(%+q) = %+q, %v; want an NFC string", group[0], want, err)
+		if err != nil || want != group[0] {
+			t.Fatalf("Canonical(%+q) = %+q, %v; want it unchanged, being in NFC", group[0], want, err)
 		}
 		for _, s := range group[1:] {
 			if got, err := Canonical(s); err != nil || got != want {
