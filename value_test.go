@@ -454,21 +454,28 @@ func TestConformance_UN024_PendingNullness(t *testing.T) {
 }
 
 // TestConformance_NU024_NumberTextHasALengthLimit holds parsing to the limit
-// on how much text it reads: text of 10,000 characters is read, and longer text
-// is refused before any of it is, whatever it holds, with a message that gives
-// its length rather than repeating it. Every route that reads number text meets
-// the limit: NumberFromText, conversion from a string, and a json.Number.
+// on how much text it reads: text of 10,000 bytes is read, and longer text is
+// refused before any of it is, whatever it holds, with a message that gives
+// its length rather than repeating it. The limit counts bytes, not
+// characters: 3,333 euro signs, 9,999 bytes, are read and are no number, and
+// 3,334, 10,002 bytes, are refused unread. Every route that reads number text
+// meets the limit: NumberFromText, conversion from a string, and a
+// json.Number.
 func TestConformance_NU024_NumberTextHasALengthLimit(t *testing.T) {
 	conformance.Covers(t, "NU-024", "NU-021", "CV-010")
 	atLimit := "1" + strings.Repeat("7", 9_999)
 	if got := tenon.NumberFromText(atLimit); got.IsError() {
-		t.Fatalf("10,000 characters were refused: %v", got.Diagnostics()[0])
+		t.Fatalf("10,000 bytes were refused: %v", got.Diagnostics()[0])
+	}
+	if got := tenon.NumberFromText(strings.Repeat("\U000020AC", 3_333)); !got.IsError() || got.Diagnostics()[0].Code != tenon.CodeNumberInvalidSyntax {
+		t.Errorf("3,333 euro signs, 9,999 bytes, gave %v, want them read and refused as %s", got, tenon.CodeNumberInvalidSyntax)
 	}
 	for _, tt := range []struct {
 		name string
 		text string
 	}{
-		{"one character past the limit", atLimit + "7"},
+		{"one byte past the limit", atLimit + "7"},
+		{"3,334 euro signs, fewer characters than the limit and more bytes", strings.Repeat("\U000020AC", 3_334)},
 		{"a million characters", strings.Repeat("7", 1_000_000)},
 		{"text that is no number", strings.Repeat("x", 10_001)},
 		{"a number with a long run of leading zeros", strings.Repeat("0", 10_000) + "1"},

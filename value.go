@@ -175,7 +175,7 @@ func NumberFromBigInt(i *big.Int) Value {
 // error value with code CodeNumberInvalidSyntax, and if the number is out of
 // range, an error value with code CodeNumberOutOfRange.
 //
-// Text longer than 10,000 characters gives an error value with code
+// Text longer than 10,000 bytes gives an error value with code
 // CodeNumberTooLong, without being read: reading digits costs the square of
 // their number, so the limit keeps the cost of text from outside, such as a
 // JSON document's numbers, in proportion to its length. A number of more
@@ -197,12 +197,12 @@ func NumberFromText(s string) Value {
 	return Value{}
 }
 
-// tooLong is the diagnostic for number text of n characters, longer than
+// tooLong is the diagnostic for number text of n bytes, longer than
 // parsing reads. It gives the length rather than the text, which would be as
 // long.
 func tooLong(n int) Diagnostic {
 	return Diagnostic{Code: CodeNumberTooLong, Message: "a number's text of " + strconv.Itoa(n) +
-		" characters is longer than the " + strconv.Itoa(decimal.MaxTextLength) + " that parsing reads"}
+		" bytes is longer than the " + strconv.Itoa(decimal.MaxTextLength) + " that parsing reads"}
 }
 
 func numberValue(d decimal.Dec) Value {
