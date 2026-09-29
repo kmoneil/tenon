@@ -51,6 +51,12 @@
 
 ### Changed
 
+- The limit on number text, 10,000, counts bytes of its UTF-8 encoding, as
+  parsing always has, and the `number.too_long` message, `NumberFromText`'s
+  documentation and `SECURITY.md` now say so, where they said characters:
+  3,334 euro signs are fewer than 10,000 characters and more than 10,000
+  bytes, and are refused unread. Only a count of bytes can refuse text before
+  reading any of it. The specification says so (`NU-024`).
 - `CapsuleOps.Hash` and `Compare` say that a capsule type declaring `Equal`
   and neither `Compare` nor an `Encoding` keeps one value of each equality
   class whose hash collides with another's for the rest of the run, which its

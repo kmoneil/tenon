@@ -37,7 +37,7 @@ of them is a vulnerability:
   and does work that grows no faster than n log n in the length of its input,
   however the input is shaped. Bound the length of what you decode and you
   bound the cost, as with any parser.
-- Number text is read only up to 10,000 characters, and refused beyond,
+- Number text is read only up to 10,000 bytes, and refused beyond,
   before it is read: reading digits costs the square of their number, and
   text arrives from outside, as a JSON document's numbers do.
 

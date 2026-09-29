@@ -217,9 +217,10 @@ var pow10s [pow10Kept]atomic.Pointer[big.Int]
 // text has anywhere near that many digits.
 const expLimit = 1 << 62
 
-// MaxTextLength is the length of the longest text Parse reads. Reading decimal
+// MaxTextLength is the length in bytes of the longest text Parse reads, which
+// only a count of bytes can refuse before reading any of it. Reading decimal
 // digits into a binary coefficient costs the square of their number, so a
-// limit on the text is a limit on the work: 10,000 characters parse in about a
+// limit on the text is a limit on the work: 10,000 digits parse in about a
 // tenth of a millisecond, and a million in more than a second.
 const MaxTextLength = 10_000
 
