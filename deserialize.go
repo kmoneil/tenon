@@ -29,9 +29,11 @@ type Decoders struct {
 // hasPayload says it was serialized with one; where it was not, payload is
 // the zero Value and must not be used. A payload is a known, unmarked value
 // other than a null, of whatever type the input gives, which need not be one
-// the mark ever serializes with. It returns the diagnostics that say why there
-// is no mark where it refuses what it is given.
-type MarkDecoder func(payload Value, hasPayload bool) (Mark, []Diagnostic)
+// the mark ever serializes with. Where it refuses what it is given, it returns
+// an error saying why: one that is a *Error contributes its diagnostics, and
+// any other its text, with code CodeSerializeDecoderFailed. Deserialize's
+// error keeps it as a cause, which errors.Is and errors.As find through it.
+type MarkDecoder func(payload Value, hasPayload bool) (Mark, error)
 
 // maxDepth bounds how deeply a document may nest.
 const maxDepth = 512
@@ -43,16 +45,18 @@ const maxDepth = 512
 // value's encoding, CodeSerializeUnsupportedVersion for a document of another
 // format version, CodeSerializeTooLarge where it nests more deeply than 512
 // levels, CodeSerializeUnknownCapsule and CodeSerializeUnknownMark for an
-// identifier that decoders supplies nothing for, and the diagnostics a decoder
-// reports where it refuses what it is given. A diagnostic says what is wrong
-// and the byte offset where, and quotes nothing the document holds, since the
-// marks that follow a content, redacting ones among them, are not read yet when
-// it is refused; it names a capsule type's or a mark's identifier, which says
-// what decoder to supply. Where data holds more than one fault, Deserialize
-// gives the first it meets, reading from the first byte: it stops at a fault
-// where it is written, and finds the rest, an integer in a longer form than it
-// needs among them, by comparing data, once read through, with the encoding of
-// the value it describes.
+// identifier that decoders supplies nothing for, and, where a decoder refuses
+// what it is given, the diagnostics of the *Error it returns or, for any other
+// error, CodeSerializeDecoderFailed with the error's text, the error kept as a
+// cause that errors.Is and errors.As find. A diagnostic says what is wrong and
+// the byte offset where, and quotes nothing the document holds, since the marks
+// that follow a content, redacting ones among them, are not read yet when it is
+// refused; it names a capsule type's or a mark's identifier, which says what
+// decoder to supply. Where data holds more than one fault, Deserialize gives
+// the first it meets, reading from the first byte: it stops at a fault where it
+// is written, and finds the rest, an integer in a longer form than it needs
+// among them, by comparing data, once read through, with the encoding of the
+// value it describes.
 //
 // Deserialize never panics on its input, and never allocates for a length the
 // input declares before the input has shown it holds that much. The work it
@@ -66,26 +70,26 @@ const maxDepth = 512
 // Deserialize panics if decoders names a type that is not a capsule type, a
 // capsule type that declares no encoding, or two that declare one identifier,
 // and if it holds a nil mark decoder. It panics on a decoder that breaks its
-// contract: a mark decoder returning neither a mark nor a diagnostic, a mark
-// of another identifier, a mark that Go equality cannot compare, a mark whose
-// propagation policy is neither Propagate nor Isolate, a mark whose type
-// declares no encoding, or diagnostics that ErrorVal refuses, and a capsule
-// type's Decode returning neither a pointer nor a diagnostic, or a pointer the
-// type does not encapsulate. Since it encodes what it read again, to compare
-// the two, it panics as Serialize does on what the decoders gave: a mark
-// payload or a capsule encoding that is not a known, unmarked value of the
-// declared type other than a null, or two unequal marks on one value that
-// serialize alike.
+// contract: a mark decoder returning neither a mark nor an error, a mark of
+// another identifier, a mark that Go equality cannot compare, a mark whose
+// propagation policy is neither Propagate nor Isolate, or a mark whose type
+// declares no encoding, and a capsule type's Decode returning neither a pointer
+// nor an error, or a pointer the type does not encapsulate. Since it encodes
+// what it read again, to compare the two, it panics as Serialize does on what
+// the decoders gave: a mark payload or a capsule encoding that is not a known,
+// unmarked value of the declared type other than a null, or two unequal marks
+// on one value that serialize alike.
 func Deserialize(data []byte, decoders Decoders) (Value, error) {
-	v, failure, ok := deserialize(data, decoders)
+	v, failure, cause, ok := deserialize(data, decoders)
 	if !ok {
-		return Value{}, asError(failure)
+		return Value{}, NewError(failure, cause)
 	}
 	return v, nil
 }
 
-// deserialize is Deserialize, giving the error value it fails with and false.
-func deserialize(data []byte, decoders Decoders) (Value, Value, bool) {
+// deserialize is Deserialize, giving the error value it fails with, the
+// error a supplied decoder returned where one failed it, and false.
+func deserialize(data []byte, decoders Decoders) (Value, Value, error, bool) {
 	d := &decoder{r: cbor.NewReader(data), capsules: map[string]Type{}, marks: decoders.Marks}
 	// In the order of their identifiers, so that of two nil decoders the one
 	// named is the same every time, where a map's order would change it.
@@ -107,9 +111,9 @@ func deserialize(data []byte, decoders Decoders) (Value, Value, bool) {
 	v, err := d.document()
 	switch {
 	case err != nil && err.diags != nil:
-		return Value{}, errorValue(err.diags...), false
+		return Value{}, errorValue(err.diags...), err.cause, false
 	case err != nil:
-		return Value{}, errorValue(err.diagnostic()), false
+		return Value{}, errorValue(err.diagnostic()), err.cause, false
 	}
 	again, failure, ok := serialize(v)
 	switch {
@@ -121,12 +125,12 @@ func deserialize(data []byte, decoders Decoders) (Value, Value, bool) {
 			}
 		}
 		return Value{}, errorValue(Diagnostic{Code: CodeSerializeNotCanonical,
-			Message: "the decoded value does not serialize again, failing with " + strings.Join(codes, ", ")}), false
+			Message: "the decoded value does not serialize again, failing with " + strings.Join(codes, ", ")}), nil, false
 	case !bytes.Equal(again, data):
 		return Value{}, errorValue(Diagnostic{Code: CodeSerializeNotCanonical,
-			Message: fmt.Sprintf("the input is not the encoding of the value it describes, which differs from byte %d", firstDifference(again, data))}), false
+			Message: fmt.Sprintf("the input is not the encoding of the value it describes, which differs from byte %d", firstDifference(again, data))}), nil, false
 	}
-	return v, Value{}, true
+	return v, Value{}, nil, true
 }
 
 // firstDifference returns the offset of the first byte at which a and b
@@ -146,6 +150,23 @@ type decodeError struct {
 	offset  int
 	message string
 	diags   []Diagnostic // what a supplied decoder reported, in place of the rest
+	cause   error        // the error a supplied decoder returned, if one did
+}
+
+// refused returns the failure of a document whose decoder, supplied for the
+// capsule value or the mark at offset at, returned err: the diagnostics of a
+// *Error, and otherwise one of code CodeSerializeDecoderFailed giving err's
+// text, the error kept as the failure's cause either way (SE-043).
+func refused(at int, err error) *decodeError {
+	var te *Error
+	if errors.As(err, &te) && !te.v.IsZero() {
+		return &decodeError{offset: at, diags: te.Diagnostics(), cause: err}
+	}
+	message := strings.ToValidUTF8(err.Error(), "\U0000FFFD")
+	if message == "" {
+		message = "the decoder returned an error with no text"
+	}
+	return &decodeError{code: CodeSerializeDecoderFailed, offset: at, message: message, cause: err}
 }
 
 func (e *decodeError) diagnostic() Diagnostic {
@@ -877,13 +898,12 @@ func (d *decoder) capsule(t Type, at int) (Value, *decodeError) {
 		// written, being the whole of the payload.
 		return Value{}, d.malformed(pat, "%s", d.refusal(capsulePayload))
 	}
-	p, diags := enc.decode(payload)
-	if len(diags) > 0 {
-		ErrorVal(diags...) // a decoder's diagnostics must be ones ErrorVal accepts
-		return Value{}, &decodeError{offset: at, diags: diags}
+	p, failed := enc.decode(payload)
+	if failed != nil {
+		return Value{}, refused(at, failed)
 	}
 	if p == nil {
-		usagePanic("the Decode of capsule type %q returned neither a value nor a diagnostic", t.t.capsule.name)
+		usagePanic("the Decode of capsule type %q returned neither a value nor an error", t.t.capsule.name)
 	}
 	if !t.t.capsule.accepts(p) {
 		usagePanic("the Decode of capsule type %q returned a pointer the type does not encapsulate", t.t.capsule.name)
@@ -1168,13 +1188,12 @@ func (d *decoder) mark() (Mark, *decodeError) {
 		}
 		payload = v
 	}
-	m, diags := decode(payload, n == 3)
+	m, err := decode(payload, n == 3)
 	switch {
-	case len(diags) > 0:
-		ErrorVal(diags...) // a decoder's diagnostics must be ones ErrorVal accepts
-		return nil, &decodeError{offset: at, diags: diags}
+	case err != nil:
+		return nil, refused(at, err)
 	case m == nil:
-		usagePanic("the decoder of the mark %q returned neither a mark nor a diagnostic", id)
+		usagePanic("the decoder of the mark %q returned neither a mark nor an error", id)
 	case m.MarkID() != id:
 		usagePanic("the decoder of the mark %q returned the mark %q", id, m.MarkID())
 	}

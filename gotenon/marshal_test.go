@@ -44,10 +44,10 @@ var timeType = tenon.NewCapsule("time", tenon.CapsuleOps[time.Time]{
 		ID:     "tenon.test/time",
 		Type:   tenon.StringType(),
 		Encode: func(v *time.Time) tenon.Value { return tenon.String(v.Format(time.RFC3339Nano)) },
-		Decode: func(v tenon.Value) (*time.Time, []tenon.Diagnostic) {
+		Decode: func(v tenon.Value) (*time.Time, error) {
 			t, err := time.Parse(time.RFC3339Nano, v.AsString())
 			if err != nil {
-				return nil, []tenon.Diagnostic{{Code: "app.bad_time", Message: err.Error()}}
+				return nil, tenon.NewError(tenon.ErrorVal(tenon.Diagnostic{Code: "app.bad_time", Message: err.Error()}))
 			}
 			return &t, nil
 		},

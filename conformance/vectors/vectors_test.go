@@ -24,10 +24,10 @@ var degreesType = tenon.NewCapsule("degrees", tenon.CapsuleOps[degrees]{
 		ID:     "t/c",
 		Type:   tenon.NumberType(),
 		Encode: func(v *degrees) tenon.Value { return tenon.NumberFromInt(v.n) },
-		Decode: func(v tenon.Value) (*degrees, []tenon.Diagnostic) {
+		Decode: func(v tenon.Value) (*degrees, error) {
 			i, ok := v.AsInt64()
 			if !ok {
-				return nil, []tenon.Diagnostic{{Code: "vectors.not_whole", Message: "degrees are whole"}}
+				return nil, tenon.NewError(tenon.ErrorVal(tenon.Diagnostic{Code: "vectors.not_whole", Message: "degrees are whole"}))
 			}
 			return &degrees{i}, nil
 		},
@@ -70,12 +70,12 @@ var (
 var decoders = tenon.Decoders{
 	Capsules: []tenon.Type{degreesType.Type()},
 	Marks: map[string]tenon.MarkDecoder{
-		"m": func(tenon.Value, bool) (tenon.Mark, []tenon.Diagnostic) { return plain, nil },
-		"d": func(tenon.Value, bool) (tenon.Mark, []tenon.Diagnostic) { return deep, nil },
-		"r": func(tenon.Value, bool) (tenon.Mark, []tenon.Diagnostic) { return secret{}, nil },
-		"p": func(payload tenon.Value, has bool) (tenon.Mark, []tenon.Diagnostic) {
+		"m": func(tenon.Value, bool) (tenon.Mark, error) { return plain, nil },
+		"d": func(tenon.Value, bool) (tenon.Mark, error) { return deep, nil },
+		"r": func(tenon.Value, bool) (tenon.Mark, error) { return secret{}, nil },
+		"p": func(payload tenon.Value, has bool) (tenon.Mark, error) {
 			if !has || payload.Type() != tenon.StringType() {
-				return nil, []tenon.Diagnostic{{Code: "vectors.bad_note", Message: "a note needs text"}}
+				return nil, tenon.NewError(tenon.ErrorVal(tenon.Diagnostic{Code: "vectors.bad_note", Message: "a note needs text"}))
 			}
 			return note{payload.AsString()}, nil
 		},

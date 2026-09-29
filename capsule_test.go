@@ -65,7 +65,7 @@ func TestConformance_TY041_CapsuleEqualityNeedsHash(t *testing.T) {
 		tenon.NewCapsule("point", tenon.CapsuleOps[point]{Hash: hash, Encoding: &tenon.CapsuleEncoding[point]{
 			ID: "t/point", Type: tenon.NumberType(),
 			Encode: func(p *point) tenon.Value { return tenon.NumberFromInt(int64(p.x)) },
-			Decode: func(tenon.Value) (*point, []tenon.Diagnostic) { return &point{}, nil },
+			Decode: func(tenon.Value) (*point, error) { return &point{}, nil },
 		}})
 	})
 

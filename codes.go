@@ -36,6 +36,7 @@ const (
 	CodeOperationNullOperand        Code = "operation.null_operand"
 	CodeOperationWrongType          Code = "operation.wrong_type"
 	CodeRangeContradiction          Code = "range.contradiction"
+	CodeSerializeDecoderFailed      Code = "serialize.decoder_failed"
 	CodeSerializeMalformed          Code = "serialize.malformed"
 	CodeSerializeNotCanonical       Code = "serialize.not_canonical"
 	CodeSerializeNotKnown           Code = "serialize.not_known"

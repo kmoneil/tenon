@@ -1263,7 +1263,7 @@ func TestConformance_ER001_AMarkIsRefusedByTheCallThatTakesIt(t *testing.T) {
 		{odd, `the decoder of the mark "p" returned a mark whose propagation policy is Propagation(2), neither Propagate nor Isolate`},
 	} {
 		read := tenon.Decoders{Marks: map[string]tenon.MarkDecoder{
-			"p": func(tenon.Value, bool) (tenon.Mark, []tenon.Diagnostic) { return tt.returns, nil },
+			"p": func(tenon.Value, bool) (tenon.Mark, error) { return tt.returns, nil },
 		}}
 		mustPanicUsage(t, tt.want, func() { tenon.Deserialize(doc, read) })
 	}

@@ -38,7 +38,7 @@ func Example_pluginProtocol() {
 
 	// The plugin's side. It is given a decoder for each mark it understands.
 	decoders := tenon.Decoders{Marks: map[string]tenon.MarkDecoder{
-		"acme/sensitive": func(tenon.Value, bool) (tenon.Mark, []tenon.Diagnostic) { return sensitive{}, nil },
+		"acme/sensitive": func(tenon.Value, bool) (tenon.Mark, error) { return sensitive{}, nil },
 	}}
 	received, err := tenon.Deserialize(wire, decoders)
 	if err != nil {

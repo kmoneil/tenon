@@ -103,7 +103,7 @@ func TestCapsuleOrderRetainsNothing(t *testing.T) {
 		Encoding: &CapsuleEncoding[capsulePoint]{
 			ID: "t/colliding", Type: NumberType(),
 			Encode: func(p *capsulePoint) Value { return NumberFromInt(int64(p.x)) },
-			Decode: func(v Value) (*capsulePoint, []Diagnostic) { x, _ := v.AsInt64(); return &capsulePoint{x: int(x)}, nil },
+			Decode: func(v Value) (*capsulePoint, error) { x, _ := v.AsInt64(); return &capsulePoint{x: int(x)}, nil },
 		},
 	})
 	for _, order := range [][2]int{{2, 1}, {1, 2}} {

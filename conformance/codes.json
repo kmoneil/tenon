@@ -87,6 +87,9 @@
       "code": "range.contradiction"
     },
     {
+      "code": "serialize.decoder_failed"
+    },
+    {
       "code": "serialize.malformed"
     },
     {

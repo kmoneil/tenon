@@ -196,7 +196,7 @@ func TestConformance_EQ045_ThePublishedOrderings(t *testing.T) {
 		Encoding: &tenon.CapsuleEncoding[point]{
 			ID: "t/encoded_in_canonical_test", Type: num,
 			Encode: func(p *point) tenon.Value { return tenon.NumberFromInt(int64(p.x)) },
-			Decode: func(tenon.Value) (*point, []tenon.Diagnostic) { return &point{}, nil },
+			Decode: func(tenon.Value) (*point, error) { return &point{}, nil },
 		},
 	})
 	if got := tenon.CanonicalCompare(encoded.Value(&point{9, 0}), encoded.Value(&point{1, 0})); got <= 0 {

@@ -52,6 +52,7 @@ var specCodes = []string{
 	"operation.null_operand",
 	"operation.wrong_type",
 	"range.contradiction",
+	"serialize.decoder_failed",
 	"serialize.malformed",
 	"serialize.not_canonical",
 	"serialize.not_known",

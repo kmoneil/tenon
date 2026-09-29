@@ -83,7 +83,7 @@ var degrees = tenon.NewCapsule("degrees", tenon.CapsuleOps[celsius]{
 		ID:     "t/c",
 		Type:   tenon.NumberType(),
 		Encode: func(v *celsius) tenon.Value { return tenon.NumberFromInt(v.degrees) },
-		Decode: func(v tenon.Value) (*celsius, []tenon.Diagnostic) {
+		Decode: func(v tenon.Value) (*celsius, error) {
 			i, _ := v.AsInt64()
 			return &celsius{i}, nil
 		},
@@ -302,7 +302,7 @@ func TestConformance_SE031_DeepMarksAreDecidedOncePerMarkSet(t *testing.T) {
 	for i := range marks {
 		m := deepCount{id: fmt.Sprintf("d%d", i), asked: &asked}
 		marks[i] = m
-		read.Marks[m.id] = func(tenon.Value, bool) (tenon.Mark, []tenon.Diagnostic) { return m, nil }
+		read.Marks[m.id] = func(tenon.Value, bool) (tenon.Mark, error) { return m, nil }
 	}
 	// asking returns how often serializing a list of that many numbers under
 	// the marks asks a mark whether it is deep.
@@ -338,7 +338,7 @@ func TestConformance_SE031_DeepMarksAreDecidedOncePerMarkSet(t *testing.T) {
 	deepRead := tenon.Decoders{Marks: map[string]tenon.MarkDecoder{}}
 	for i := range levels {
 		m := deepCount{id: fmt.Sprintf("n%03d", i), asked: &asked}
-		deepRead.Marks[m.id] = func(tenon.Value, bool) (tenon.Mark, []tenon.Diagnostic) { return m, nil }
+		deepRead.Marks[m.id] = func(tenon.Value, bool) (tenon.Mark, error) { return m, nil }
 		nested = tenon.WithMarks(tenon.List(nested.Type(), nested), m)
 	}
 	nestedDoc, why, fine := trySerialize(nested)
@@ -411,7 +411,7 @@ func TestConformance_SE040_Capsules(t *testing.T) {
 	twin := tenon.NewCapsule("degrees", tenon.CapsuleOps[celsius]{Equal: celsiusEqual, Hash: celsiusHash, Encoding: &tenon.CapsuleEncoding[celsius]{
 		ID: "t/c", Type: num,
 		Encode: func(v *celsius) tenon.Value { return n(v.degrees) },
-		Decode: func(tenon.Value) (*celsius, []tenon.Diagnostic) { return &celsius{}, nil },
+		Decode: func(tenon.Value) (*celsius, error) { return &celsius{}, nil },
 	}})
 	wantSerializeFailure(t, "two types of one identifier", obj(map[string]tenon.Value{
 		"a": degrees.Value(&celsius{1}), "b": twin.Value(&celsius{1}),
@@ -423,7 +423,7 @@ func TestConformance_SE040_Capsules(t *testing.T) {
 	liar := tenon.NewCapsule("liar", tenon.CapsuleOps[celsius]{Equal: celsiusEqual, Hash: celsiusHash, Encoding: &tenon.CapsuleEncoding[celsius]{
 		ID: "t/liar", Type: num,
 		Encode: func(*celsius) tenon.Value { return s("not a number") },
-		Decode: func(tenon.Value) (*celsius, []tenon.Diagnostic) { return nil, nil },
+		Decode: func(tenon.Value) (*celsius, error) { return nil, nil },
 	}})
 	mustPanicUsage(t, `capsule type "liar" serialized a value as "not a number"`, func() {
 		trySerialize(liar.Value(&celsius{}))
@@ -433,7 +433,7 @@ func TestConformance_SE040_Capsules(t *testing.T) {
 	nothing := tenon.NewCapsule("nothing", tenon.CapsuleOps[celsius]{Equal: celsiusEqual, Hash: celsiusHash, Encoding: &tenon.CapsuleEncoding[celsius]{
 		ID: "t/nothing", Type: num,
 		Encode: func(*celsius) tenon.Value { return tenon.Null(num) },
-		Decode: func(tenon.Value) (*celsius, []tenon.Diagnostic) { return nil, nil },
+		Decode: func(tenon.Value) (*celsius, error) { return nil, nil },
 	}})
 	mustPanicUsage(t, "other than null", func() { trySerialize(nothing.Value(&celsius{})) })
 	wantDecodeFailure(t, "a capsule value serialized as a null", document+"83 00 82 09 63 742f63 82 02 f6", tenon.CodeSerializeMalformed)
@@ -446,7 +446,7 @@ func TestConformance_SE040_Capsules(t *testing.T) {
 		broken := tenon.NewCapsule("broken", tenon.CapsuleOps[celsius]{Equal: celsiusEqual, Hash: func(*celsius) uint64 { return 7 }, Encoding: &tenon.CapsuleEncoding[celsius]{
 			ID: "t/broken", Type: num,
 			Encode: func(*celsius) tenon.Value { return gives },
-			Decode: func(tenon.Value) (*celsius, []tenon.Diagnostic) { return nil, nil },
+			Decode: func(tenon.Value) (*celsius, error) { return nil, nil },
 		}})
 		x, y := broken.Value(&celsius{1}), broken.Value(&celsius{2})
 		const want = `capsule type "broken" serialized a value as `
@@ -546,7 +546,7 @@ func TestConformance_SE040_CapsuleIdentifiersAreText(t *testing.T) {
 			ID:     "t/\xff",
 			Type:   num,
 			Encode: func(v *celsius) tenon.Value { return n(v.degrees) },
-			Decode: func(tenon.Value) (*celsius, []tenon.Diagnostic) { return &celsius{}, nil },
+			Decode: func(tenon.Value) (*celsius, error) { return &celsius{}, nil },
 		}})
 	})
 }
@@ -716,7 +716,7 @@ func TestConformance_SE050_FailuresAreLocatedAtEveryKindOfMember(t *testing.T) {
 	wrapper := tenon.NewCapsule("wrapper", tenon.CapsuleOps[celsius]{Equal: celsiusEqual, Hash: celsiusHash, Encoding: &tenon.CapsuleEncoding[celsius]{
 		ID: "t/wrapper", Type: tenon.ListType(unencodable.Type()),
 		Encode: func(v *celsius) tenon.Value { return tenon.List(unencodable.Type(), unencodable.Value(v)) },
-		Decode: func(tenon.Value) (*celsius, []tenon.Diagnostic) { return nil, nil },
+		Decode: func(tenon.Value) (*celsius, error) { return nil, nil },
 	}})
 	// Where a type names the capsule type, the type fails at the path of the
 	// value it is the type of, which for these is the root.
@@ -828,7 +828,7 @@ func BenchmarkDeepMarkEncoding(b *testing.B) {
 		for i := range marks {
 			m := deepNote{id: fmt.Sprintf("m%04d", i), text: fmt.Sprintf("payload %d", i)}
 			marks[i] = m
-			read.Marks[m.id] = func(tenon.Value, bool) (tenon.Mark, []tenon.Diagnostic) { return m, nil }
+			read.Marks[m.id] = func(tenon.Value, bool) (tenon.Mark, error) { return m, nil }
 		}
 		members := make([]tenon.Value, 1000)
 		for i := range members {
