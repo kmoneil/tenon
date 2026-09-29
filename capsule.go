@@ -143,8 +143,27 @@ func (d *capsuleData) encoded(v any) Value {
 // type's values and reads them back, the pointer type checked where the
 // program is compiled. Type gives the capsule type itself, for use wherever a
 // type is.
+//
+// A nil or zero CapsuleType handles no capsule type: every method but Equal
+// panics when called on it.
 type CapsuleType[E any] struct {
 	t Type
+}
+
+// Equal reports whether c and d handle the same capsule type, a handle that
+// NewCapsule did not make handling none. It is the method go-cmp's cmp.Equal
+// calls, so a struct holding handles compares by the types they handle.
+func (c *CapsuleType[E]) Equal(d *CapsuleType[E]) bool {
+	return c.handled() == d.handled()
+}
+
+// handled returns the capsule type c handles, the zero Type where it handles
+// none.
+func (c *CapsuleType[E]) handled() Type {
+	if c == nil {
+		return Type{}
+	}
+	return c.t
 }
 
 // NewCapsule returns a new capsule type, whose values carry pointers of type

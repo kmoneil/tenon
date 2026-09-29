@@ -1,6 +1,7 @@
 package tenon
 
 import (
+	"errors"
 	"slices"
 	"strings"
 )
@@ -18,6 +19,25 @@ import (
 type Error struct {
 	v      Value
 	causes []error
+}
+
+// Equal reports whether e and f are the same error: both nil, or holding
+// identical error values, as Value.Equal says, and as many causes, each the
+// same error as the cause beside it in the other, as errors.Is says either way
+// round. It is the method go-cmp's cmp.Equal calls.
+func (e *Error) Equal(f *Error) bool {
+	if e == nil || f == nil {
+		return e == f
+	}
+	if !e.v.Equal(f.v) || len(e.causes) != len(f.causes) {
+		return false
+	}
+	for i, c := range e.causes {
+		if !errors.Is(c, f.causes[i]) || !errors.Is(f.causes[i], c) {
+			return false
+		}
+	}
+	return true
 }
 
 // NewError returns an Error holding v, an error value, and causes, the Go

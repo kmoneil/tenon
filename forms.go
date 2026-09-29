@@ -31,6 +31,18 @@ func (v Value) MarshalJSON() ([]byte, error) {
 	return ProjectJSON(v)
 }
 
+// MarshalText returns the display form of v, as String gives it, which
+// encoding/xml and the YAML and TOML libraries write in place of v's
+// representation; encoding/json writes the projection MarshalJSON gives. What
+// a redacting mark withholds, the text withholds. It fails for the zero Value,
+// which is not a value.
+func (v Value) MarshalText() ([]byte, error) {
+	if v.IsZero() {
+		return nil, errors.New("tenon: the zero Value is not a value, and has no text")
+	}
+	return []byte(v.String()), nil
+}
+
 // LogValue returns the display form of t, which log/slog logs in place of t's
 // representation.
 func (t Type) LogValue() slog.Value { return slog.StringValue(t.String()) }
