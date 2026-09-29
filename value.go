@@ -538,10 +538,14 @@ func (v Value) AsBigInt() (*big.Int, bool) {
 // all its marks. To show what a redacting mark withholds, unmark the value
 // first.
 //
-// A deep mark shows once, on the value it was attached to: every value within
-// carries it, and lists only the marks it carries beyond it, as in
+// A member of a list, set or map displays without its type, which the
+// collection's type states, as in list(list(number))[[1], null, unknown], and
+// so do the members of a tuple or object within one. A deep mark shows once,
+// on the value it was attached to: every value within carries it, and lists
+// only the marks it carries beyond it, as in
 // marked(list(number)[1, marked(2, "audited")], "tracked"). So the display
-// form grows with the value, however many deep marks it carries.
+// form grows with the value, however deep its type and however many deep
+// marks it carries.
 func (v Value) String() string {
 	if v.n == nil {
 		return "<zero Value>"
@@ -624,15 +628,29 @@ func (v Value) writeUnmarked(b *textWriter) {
 		b.WriteByte(')')
 		return
 	case stateNull:
+		if b.stated {
+			b.WriteString("null")
+			return
+		}
 		b.WriteString("null(")
 		n.typ.write(b)
 		b.WriteByte(')')
 		return
 	case stateUnknown:
 		defer b.keepPlain(false)()
+		r := n.data.(*rangeData)
+		if b.stated {
+			b.WriteString("unknown")
+			if r.hasFacts() {
+				b.WriteByte('(')
+				r.write(b, false)
+				b.WriteByte(')')
+			}
+			return
+		}
 		b.WriteString("unknown(")
 		n.typ.write(b)
-		n.data.(*rangeData).write(b)
+		r.write(b, true)
 		b.WriteByte(')')
 		return
 	}

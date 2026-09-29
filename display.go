@@ -85,12 +85,11 @@ func writeIdentifiers(b *textWriter, marks []Mark) {
 
 // textWriter builds a display form, or the start of one. A message shows a
 // value, a type or a listing cut to its first bytes (shortened), and a
-// display form can be far larger than what it shows: a list of k nulls
-// spells their type out k times, and each of k members under k deep marks
-// names k marks. So a writer given a limit takes nothing once it holds more
-// than that, and the writers that walk the parts of a value, a type, a
-// constraint or a range stop at it (full): a message costs its limit, not
-// the display form of what it quotes.
+// display form grows with what it shows, which can be far larger than a
+// message. So a writer given a limit takes nothing once it holds more than
+// that, and the writers that walk the parts of a value, a type, a constraint
+// or a range stop at it (full): a message costs its limit, not the display
+// form of what it quotes.
 type textWriter struct {
 	strings.Builder
 	// limit is how many bytes the text will be cut to; a writer holding more
@@ -107,6 +106,14 @@ type textWriter struct {
 	// mark set, however many containers carry that set.
 	implied *impliedMarks
 	imp     implications
+	// stated says that the display form around the value being written
+	// states its type: list(T), set(T) and map(T) state T for their members,
+	// and a tuple or an object whose own type is stated states its members'.
+	// The value is then written without it, a null as null, an unknown value
+	// as unknown and its facts, and a list, set or map as its brackets alone
+	// (DI-010), so that a display form grows with the value rather than with
+	// its members times their type.
+	stated bool
 }
 
 // within sets what the values within n are given by n's marks, and returns
@@ -123,6 +130,14 @@ func (w *textWriter) keepPlain(plain bool) func() {
 	was := w.plain
 	w.plain = plain
 	return func() { w.plain = was }
+}
+
+// keepStated sets whether the display form around the values w writes next
+// states their type, and returns what restores the setting it had.
+func (w *textWriter) keepStated(stated bool) func() {
+	was := w.stated
+	w.stated = stated
+	return func() { w.stated = was }
 }
 
 // shortLimit is how many bytes shortened keeps of a long text.

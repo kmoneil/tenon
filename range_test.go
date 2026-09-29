@@ -243,42 +243,42 @@ func TestConformance_UN004_ContradictionIsAnErrorValue(t *testing.T) {
 		{
 			"a set that cannot be null", partial,
 			[]tenon.Narrowing{tenon.NullOnly()},
-			"the value set(number)[1, unknown(number)] does not satisfy null",
+			"the value set(number)[1, unknown] does not satisfy null",
 		},
 		{
 			"a set shorter than it can be", partial,
 			[]tenon.Narrowing{tenon.LengthMax(0)},
-			"the value set(number)[1, unknown(number)] does not satisfy length <= 0",
+			"the value set(number)[1, unknown] does not satisfy length <= 0",
 		},
 		{
 			"a set longer than it can be", partial,
 			[]tenon.Narrowing{tenon.LengthMin(3)},
-			"the value set(number)[1, unknown(number)] does not satisfy length >= 3",
+			"the value set(number)[1, unknown] does not satisfy length >= 3",
 		},
 		{
 			"lengths the set can have, bounds that cross", partial,
 			[]tenon.Narrowing{tenon.LengthMin(2), tenon.LengthMax(1)},
-			"the value set(number)[1, unknown(number)] does not satisfy both length >= 2 and length <= 1",
+			"the value set(number)[1, unknown] does not satisfy both length >= 2 and length <= 1",
 		},
 		{
 			"the same bounds the other way round", partial,
 			[]tenon.Narrowing{tenon.LengthMax(1), tenon.LengthMin(2)},
-			"the value set(number)[1, unknown(number)] does not satisfy both length <= 1 and length >= 2",
+			"the value set(number)[1, unknown] does not satisfy both length <= 1 and length >= 2",
 		},
 		{
 			"more listed members than the set holds", partial,
 			[]tenon.Narrowing{tenon.Members(three, two, four)},
-			"the value set(number)[1, unknown(number)] does not satisfy members {2, 3, 4}",
+			"the value set(number)[1, unknown] does not satisfy members {2, 3, 4}",
 		},
 		{
 			"listed members the set can hold, and a length that leaves no room for them", partial,
 			[]tenon.Narrowing{tenon.Members(two, three), tenon.LengthMax(1)},
-			"the value set(number)[1, unknown(number)] does not satisfy both members {2, 3} and length <= 1",
+			"the value set(number)[1, unknown] does not satisfy both members {2, 3} and length <= 1",
 		},
 		{
 			"the same listing after the length", partial,
 			[]tenon.Narrowing{tenon.LengthMax(1), tenon.Members(two, three)},
-			"the value set(number)[1, unknown(number)] does not satisfy both length <= 1 and members {2, 3}",
+			"the value set(number)[1, unknown] does not satisfy both length <= 1 and members {2, 3}",
 		},
 		// Where more than one thing sets the bound that is crossed, the
 		// message names the members, which the value shows, ahead of a
@@ -287,22 +287,22 @@ func TestConformance_UN004_ContradictionIsAnErrorValue(t *testing.T) {
 		{
 			"a least length the members set as well as a bound", partial,
 			[]tenon.Narrowing{tenon.LengthMin(1), tenon.LengthMax(0)},
-			"the value set(number)[1, unknown(number)] does not satisfy length <= 0",
+			"the value set(number)[1, unknown] does not satisfy length <= 0",
 		},
 		{
 			"a greatest length the members set as well as a bound", partial,
 			[]tenon.Narrowing{tenon.LengthMax(2), tenon.LengthMin(3)},
-			"the value set(number)[1, unknown(number)] does not satisfy length >= 3",
+			"the value set(number)[1, unknown] does not satisfy length >= 3",
 		},
 		{
 			"a least length a listing sets as well as a bound", partial,
 			[]tenon.Narrowing{tenon.LengthMin(2), tenon.Members(two, three), tenon.LengthMax(1)},
-			"the value set(number)[1, unknown(number)] does not satisfy both members {2, 3} and length <= 1",
+			"the value set(number)[1, unknown] does not satisfy both members {2, 3} and length <= 1",
 		},
 		{
 			"listings that need more members together than the set holds", partial,
 			[]tenon.Narrowing{tenon.Members(two), tenon.Members(three, four)},
-			"the value set(number)[1, unknown(number)] does not satisfy members {2, 3, 4}",
+			"the value set(number)[1, unknown] does not satisfy members {2, 3, 4}",
 		},
 
 		// A set holds distinct values of its element type, null among them, so
@@ -333,7 +333,7 @@ func TestConformance_UN004_ContradictionIsAnErrorValue(t *testing.T) {
 			"a set holding unknowns, longer than its element type allows",
 			tenon.Set(tenon.BoolType(), unknownBool, unknownBool, unknownBool, unknownBool),
 			[]tenon.Narrowing{tenon.LengthMin(4)},
-			"the value set(bool)[unknown(bool), unknown... does not satisfy both length <= 3 and length >= 4",
+			"the value set(bool)[unknown, unknown, unkn... does not satisfy both length <= 3 and length >= 4",
 		},
 	} {
 		got := tenon.Narrow(tt.v, tt.ns...)
@@ -1156,7 +1156,7 @@ func TestConformance_UN002_MembersNarrowing(t *testing.T) {
 		t.Errorf("listing recorded members again produced %v, want the range unchanged", got)
 	}
 	if got, want := tenon.Narrow(tenon.Unknown(set), tenon.Members(tenon.Null(num), one)).String(),
-		"unknown(set(number), length >= 2, members {null(number), 1})"; got != want {
+		"unknown(set(number), length >= 2, members {null, 1})"; got != want {
 		t.Errorf("a listed null member renders as %s, want %s", got, want)
 	}
 	// The narrowing says nothing about the set being null, so the range
@@ -1190,7 +1190,7 @@ func TestConformance_UN002_MembersNarrowing(t *testing.T) {
 	// recorded once. Only known values count one member each.
 	distinct := tenon.Narrow(tenon.Unknown(set), tenon.Members(atLeast(5), atMostZero))
 	if got, want := distinct.String(),
-		"unknown(set(number), length >= 1, members {unknown(number, not null, >= 5), unknown(number, not null, <= 0)})"; got != want {
+		"unknown(set(number), length >= 1, members {unknown(not null, >= 5), unknown(not null, <= 0)})"; got != want {
 		t.Errorf("provably distinct members render as %s, want %s", got, want)
 	}
 	// The same two ranges while each still holds null are not provably
@@ -1199,17 +1199,17 @@ func TestConformance_UN002_MembersNarrowing(t *testing.T) {
 		tenon.Narrow(tenon.Unknown(num), tenon.NumberMin(n(5), true)),
 		tenon.Narrow(tenon.Unknown(num), tenon.NumberMax(n(0), true))))
 	if got, want := nullable.String(),
-		"unknown(set(number), length >= 1, members {unknown(number, >= 5), unknown(number, <= 0)})"; got != want {
+		"unknown(set(number), length >= 1, members {unknown(>= 5), unknown(<= 0)})"; got != want {
 		t.Errorf("members that could each be null render as %s, want %s", got, want)
 	}
 	overlap := tenon.Narrow(tenon.Unknown(set), tenon.Members(atLeast(5), atLeast(6)))
 	if got, want := overlap.String(),
-		"unknown(set(number), length >= 1, members {unknown(number, not null, >= 5), unknown(number, not null, >= 6)})"; got != want {
+		"unknown(set(number), length >= 1, members {unknown(not null, >= 5), unknown(not null, >= 6)})"; got != want {
 		t.Errorf("possibly-equal members render as %s, want %s", got, want)
 	}
 	twice := tenon.Narrow(tenon.Unknown(set), tenon.Members(atLeast(5), atLeast(5)))
 	if got, want := twice.String(),
-		"unknown(set(number), length >= 1, members {unknown(number, not null, >= 5)})"; got != want {
+		"unknown(set(number), length >= 1, members {unknown(not null, >= 5)})"; got != want {
 		t.Errorf("identical listed values render as %s, want %s", got, want)
 	}
 
@@ -1253,13 +1253,13 @@ func TestConformance_UN002_MembersNarrowing(t *testing.T) {
 	held := tenon.Narrow(tenon.Unknown(set), tenon.NotNull(),
 		tenon.Members(atLeast(5), atMostZero), tenon.LengthMax(2))
 	if got, want := held.String(),
-		"unknown(set(number), not null, length >= 1, length <= 2, members {unknown(number, not null, >= 5), unknown(number, not null, <= 0)})"; got != want {
+		"unknown(set(number), not null, length >= 1, length <= 2, members {unknown(not null, >= 5), unknown(not null, <= 0)})"; got != want {
 		t.Errorf("a full listing of distinct unknowns produced %s, want %s", got, want)
 	}
 	loose := tenon.Narrow(tenon.Unknown(set), tenon.NotNull(),
 		tenon.Members(atLeast(5), atLeast(6)), tenon.LengthMax(2))
 	if got, want := loose.String(),
-		"unknown(set(number), not null, length >= 1, length <= 2, members {unknown(number, not null, >= 5), unknown(number, not null, >= 6)})"; got != want {
+		"unknown(set(number), not null, length >= 1, length <= 2, members {unknown(not null, >= 5), unknown(not null, >= 6)})"; got != want {
 		t.Errorf("members that could be one render as %s, want %s", got, want)
 	}
 

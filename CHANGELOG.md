@@ -118,7 +118,7 @@
   could be them and by the values its element type holds, in ways the
   specification did not state and another implementation could not
   reproduce. Some narrowings it refused it now leaves the set as it was,
-  such as `Members` of 2 and 3 asked of `set(number)[1, unknown(number)]`,
+  such as `Members` of 2 and 3 asked of `set(number)[1, unknown]`,
   and none makes such a set known: narrowed to one member, it stays as it
   was. No set that satisfies the narrowings is ruled out, as before.
 - `Diff` gives a set's member changes their member as the set gives it when
@@ -134,6 +134,20 @@
   as that field alone: ``struct{ time.Time `tenon:"at"`; Name string }``
   encoded as a timestamp and dropped `Name`, and ``struct{ big.Int }`` as a
   string. Name the field, and the struct's methods are its own.
+- A value's display form shows a member without the type its container's
+  type states: a null member as `null`, an unknown one as `unknown` and its
+  facts, and a list, set or map within a collection as its brackets, as a
+  tuple always displayed. `list(number)[1, unknown(number), null(number)]`
+  now reads `list(number)[1, unknown, null]`, and
+  `list(list(number))[list(number)[1]]` reads `list(list(number))[[1]]`. The
+  members of a tuple or object within a collection, and the members an
+  unknown set's range lists, display the same way. Spelling the type for
+  every member made a display form grow with the members times their type:
+  a list of 4,000 nulls of a type 500 levels deep encodes in 5 KB and
+  displayed in 12 MB, and now displays in 27 KB. `String`, `LogValue`,
+  `MarshalText` and the messages that quote a value show the new form, and
+  the conformance vectors' display forms change with it. The specification
+  says so (`DI-010`).
 
 ## 0.10.0 (2026-09-28)
 

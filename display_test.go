@@ -49,10 +49,10 @@ func TestConformance_DI010_EveryValueHasADisplayForm(t *testing.T) {
 		{"a number", tenon.NumberFromText("-12.50e-1"), `-1.25`},
 		{"a large number", tenon.NumberFromText("1e21"), `1e21`},
 		{"a string", tenon.String(`say "hi"`), `"say \"hi\""`},
-		{"a list", tenon.List(num, one, tenon.Unknown(num)), `list(number)[1, unknown(number)]`},
+		{"a list", tenon.List(num, one, tenon.Unknown(num)), `list(number)[1, unknown]`},
 		{"an empty list", tenon.List(str), `list(string)[]`},
 		{"a set", tenon.Set(num, tenon.NumberFromInt(2), one), `set(number)[1, 2]`},
-		{"a map", tenon.Map(num, map[string]tenon.Value{"b": one, "a": tenon.Null(num)}), `map(number){"a": null(number), "b": 1}`},
+		{"a map", tenon.Map(num, map[string]tenon.Value{"b": one, "a": tenon.Null(num)}), `map(number){"a": null, "b": 1}`},
 		{"a tuple", tenon.Tuple(one, tenon.String("x"), tenon.Null(str)), `[1, "x", null(string)]`},
 		{"an empty tuple", tenon.Tuple(), `[]`},
 		{"an object", tenon.Object(map[string]tenon.Value{"name": tenon.String("x"), "list": tenon.List(num)}), `{"list": list(number)[], "name": "x"}`},
@@ -62,6 +62,89 @@ func TestConformance_DI010_EveryValueHasADisplayForm(t *testing.T) {
 		{"a redacted value", tenon.WithMarks(one, stamp{id: "s", redact: true}), `redacted("s")`},
 	} {
 		wantDisplay(t, tt.name, tt.v, tt.want)
+	}
+}
+
+// TestConformance_DI010_MembersDisplayWithoutTheirType holds a display form to
+// growing with the value it shows: a member displays without the type its
+// container's type states, so k members of a type k lists deep, and a nest of
+// k lists, display in text that grows with k, where spelling the type for each
+// member grew with its square. Four times k allocates under eight times as
+// much to display.
+func TestConformance_DI010_MembersDisplayWithoutTheirType(t *testing.T) {
+	conformance.Covers(t, "DI-010")
+	num := tenon.NumberType()
+	deep := func(k int) tenon.Type {
+		typ := num
+		for range k {
+			typ = tenon.ListType(typ)
+		}
+		return typ
+	}
+	times := func(k int, v tenon.Value) []tenon.Value {
+		vs := make([]tenon.Value, k)
+		for i := range vs {
+			vs[i] = v
+		}
+		return vs
+	}
+	for _, shape := range []struct {
+		name  string
+		build func(k int) tenon.Value
+		// want is the display form at k = 2.
+		want string
+	}{
+		{"null members", func(k int) tenon.Value { return tenon.List(deep(k), times(k, tenon.Null(deep(k)))...) },
+			`list(list(list(number)))[null, null]`},
+		{"unknown members", func(k int) tenon.Value {
+			return tenon.Set(deep(k), times(k, tenon.Narrow(tenon.Unknown(deep(k)), tenon.NotNull()))...)
+		}, `set(list(list(number)))[unknown(not null), unknown(not null)]`},
+		{"null entries", func(k int) tenon.Value {
+			entries := make(map[string]tenon.Value, k)
+			for i := range k {
+				entries[fmt.Sprintf("k%04d", i)] = tenon.Null(deep(k))
+			}
+			return tenon.Map(deep(k), entries)
+		}, `map(list(list(number))){"k0000": null, "k0001": null}`},
+		{"a nest of lists", func(k int) tenon.Value {
+			v, typ := tenon.NumberFromInt(1), num
+			for range k {
+				v, typ = tenon.List(typ, v), tenon.ListType(typ)
+			}
+			return v
+		}, `list(list(number))[[1]]`},
+		{"tuples within a list", func(k int) tenon.Value {
+			return tenon.List(tenon.TupleType(deep(k)), times(k, tenon.Tuple(tenon.Null(deep(k))))...)
+		}, `list(tuple([list(list(number))]))[[null], [null]]`},
+		{"objects within a map", func(k int) tenon.Value {
+			entries := make(map[string]tenon.Value, k)
+			for i := range k {
+				entries[fmt.Sprintf("k%04d", i)] = tenon.Object(map[string]tenon.Value{"a": tenon.Unknown(deep(k))})
+			}
+			return tenon.Map(tenon.ObjectType(map[string]tenon.Type{"a": deep(k)}), entries)
+		}, `map(object({"a": list(list(number))})){"k0000": {"a": unknown}, "k0001": {"a": unknown}}`},
+		{"members an unknown set's range lists", func(k int) tenon.Value {
+			members := make([]tenon.Value, k)
+			for i := range members {
+				members[i] = tenon.Narrow(tenon.Unknown(deep(k)), tenon.LengthMin(int64(i+1)))
+			}
+			return tenon.Narrow(tenon.Unknown(tenon.SetType(deep(k))), tenon.Members(members...))
+		}, `unknown(set(list(list(number))), length >= 1, members {unknown(length >= 1), unknown(length >= 2)})`},
+	} {
+		wantDisplay(t, shape.name, shape.build(2), shape.want)
+		var sizes [2]uint64
+		for i, k := range []int{100, 400} {
+			v := shape.build(k)
+			var before, after runtime.MemStats
+			runtime.GC()
+			runtime.ReadMemStats(&before)
+			_ = v.String()
+			runtime.ReadMemStats(&after)
+			sizes[i] = after.TotalAlloc - before.TotalAlloc
+		}
+		if grew := float64(sizes[1]) / float64(sizes[0]); grew > 8 {
+			t.Errorf("%s: four times k allocated %.1f times as much to display (%d bytes, then %d)", shape.name, grew, sizes[0], sizes[1])
+		}
 	}
 }
 
@@ -95,6 +178,8 @@ func TestConformance_DI011_DisplayTellsValuesApart(t *testing.T) {
 		{tenon.Tuple(), tenon.List(num)},
 		{tenon.List(num), tenon.List(str)},
 		{tenon.List(num, one), tenon.Set(num, one)},
+		{tenon.List(tenon.ListType(num), tenon.List(num)), tenon.List(tenon.SetType(num), tenon.Set(num))},
+		{tenon.List(num, tenon.Null(num)), tenon.List(num, tenon.Unknown(num))},
 		{tenon.Object(map[string]tenon.Value{"a": one}), tenon.Map(num, map[string]tenon.Value{"a": one})},
 		{tenon.Unknown(num), tenon.Narrow(tenon.Unknown(num), tenon.NotNull())},
 		{tenon.Pending(tenon.Any()), tenon.Narrow(tenon.Pending(tenon.Any()), tenon.NotNull())},
@@ -254,7 +339,7 @@ func TestConformance_DI015_MarksAndRedaction(t *testing.T) {
 		{"a deep mark beside a member's own", tenon.WithMarks(tenon.List(num, one, tenon.WithMarks(one, stamp{id: "m"})), deep),
 			`marked(list(number)[1, marked(1, "m")], "d")`},
 		{"deep marks at two levels", tenon.WithMarks(tenon.List(tenon.ListType(num), tenon.WithMarks(tenon.List(num, one), stamp{id: "e", deep: true})), deep),
-			`marked(list(list(number))[marked(list(number)[1], "e")], "d")`},
+			`marked(list(list(number))[marked([1], "e")], "d")`},
 		{"a deep mark on a set", tenon.WithMarks(tenon.Set(num, one), deep), `marked(set(number)[1], "d")`},
 		// A redacting mark withholds everything about the value but itself.
 		{"a redacted known value", tenon.WithMarks(one, secret), `redacted("s")`},
@@ -303,12 +388,12 @@ func TestConformance_DI017_OrderWithinADisplayForm(t *testing.T) {
 		{"map keys in string order", tenon.Map(num, map[string]tenon.Value{"b": n(1), "B": n(2), "\U000000E9": n(3), "a": n(4)}),
 			"map(number){\"B\": 2, \"a\": 4, \"b\": 1, \"\U000000E9\": 3}"},
 		{"attributes in string order", tenon.Object(map[string]tenon.Value{"z": n(1), "Z": n(2), "_": n(3)}), `{"Z": 2, "_": 3, "z": 1}`},
-		{"set members in iteration order", tenon.Set(num, tenon.Unknown(num), n(10), tenon.Null(num), n(2)), `set(number)[null(number), 2, 10, unknown(number)]`},
+		{"set members in iteration order", tenon.Set(num, tenon.Unknown(num), n(10), tenon.Null(num), n(2)), `set(number)[null, 2, 10, unknown]`},
 		{"number facts", tenon.Narrow(tenon.Unknown(num), tenon.NumberMax(n(9), true), tenon.NumberMin(n(1), false), tenon.NotNull()), `unknown(number, not null, > 1, <= 9)`},
 		{"string facts", tenon.Narrow(tenon.Unknown(str), tenon.LengthMax(5), tenon.StringPrefix("ab-"), tenon.NotNull(), tenon.LengthMin(3)),
 			`unknown(string, not null, prefix "ab-", length >= 3, length <= 5)`},
 		{"members last", tenon.Narrow(tenon.Unknown(tenon.SetType(num)), tenon.Members(n(2), tenon.Narrow(tenon.Unknown(num), tenon.NumberMin(n(5), true)), n(1)), tenon.LengthMax(4)),
-			`unknown(set(number), length >= 2, length <= 4, members {1, 2, unknown(number, >= 5)})`},
+			`unknown(set(number), length >= 2, length <= 4, members {1, 2, unknown(>= 5)})`},
 	} {
 		wantDisplay(t, tt.name, tt.v, tt.want)
 	}
@@ -316,11 +401,11 @@ func TestConformance_DI017_OrderWithinADisplayForm(t *testing.T) {
 
 // TestConformance_DI003_AMessageWritesNoMoreThanItShows holds a message that
 // quotes a value to the cost of what it shows, its first bytes, however large
-// the value's display form: a list of k nulls of an object type of k
-// attributes spells the type out k times, and a narrowing it contradicts
-// allocates as much at 4,000 as at 1,000, where writing the whole display to
-// keep 32 bytes of it allocated 90 MB at 1,000. The message shows what
-// shortening the whole display form shows.
+// the value's display form: a narrowing that a list of k nulls of an object
+// type of k attributes contradicts allocates under twice as much at 4,000 as
+// at 1,000, where writing the whole display form to keep 32 bytes of it
+// allocates 3.4 times as much. The message shows what shortening the whole
+// display form shows.
 func TestConformance_DI003_AMessageWritesNoMoreThanItShows(t *testing.T) {
 	conformance.Covers(t, "DI-003", "MK-011")
 	var sizes [2]uint64
