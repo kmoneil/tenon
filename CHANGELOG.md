@@ -37,6 +37,18 @@
   so, and that a collection's declared type is its own: a list of objects
   shows its element type beside a redacted member as beside any other.
 
+### Added
+
+- `Value.MarshalText`, which gives a value's display form, so that
+  `encoding/xml` and the YAML and TOML libraries write a value as itself,
+  where `encoding/xml` wrote every value as nothing. What a redacting mark
+  withholds stays withheld, and the zero Value fails rather than being
+  written. `encoding/json` still writes a value's JSON projection.
+- `Equal` on `Range`, `Narrowing`, `*Error` and `*CapsuleType`, the method
+  that go-cmp's `cmp.Equal` calls, so that a struct holding one compares by
+  what it says, where go-cmp panicked on their unexported fields. Every
+  exported type go-cmp would reach an unexported field in now has one.
+
 ### Changed
 
 - Under `Safe`, a container that converts only unsafely, a list or a tuple

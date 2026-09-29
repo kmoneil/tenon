@@ -3,6 +3,7 @@ package tenon_test
 import (
 	"bytes"
 	"encoding/json"
+	"encoding/xml"
 	"errors"
 	"log/slog"
 	"strings"
@@ -99,5 +100,24 @@ func TestConformance_DI018_HostForms(t *testing.T) {
 	}
 	if got := (tenon.Value{}).LogValue().String(); got != "<zero Value>" {
 		t.Errorf("the zero Value logs as %q", got)
+	}
+
+	// encoding/xml writes a value as the text MarshalText gives, its display
+	// form, as it writes a type: the secret shows in none of it, and the zero
+	// Value fails the marshaling rather than being written as nothing.
+	doc, err := xml.Marshal(struct {
+		XMLName   xml.Name `xml:"plan"`
+		V, Secret tenon.Value
+		T         tenon.Type
+	}{V: plain, Secret: v, T: typ})
+	var read struct{ V, Secret, T string }
+	if err != nil || xml.Unmarshal(doc, &read) != nil || read.V != plain.String() || read.Secret != v.String() || read.T != typ.String() {
+		t.Errorf("xml.Marshal gave %s, %v, which reads back as %+v, want the display forms", doc, err, read)
+	}
+	if strings.Contains(string(doc), "hunter2") {
+		t.Errorf("xml.Marshal gave %s, which shows the secret", doc)
+	}
+	if out, err := xml.Marshal(struct{ V tenon.Value }{}); err == nil {
+		t.Errorf("xml.Marshal of the zero Value gave %s", out)
 	}
 }

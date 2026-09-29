@@ -25,8 +25,9 @@ import (
 // held rather than what they say, and cannot be map keys. [Identical] and
 // [Value.Equal] compare them, and the bytes [Serialize] gives can key a map.
 //
-// The zero Value is not a value: every method except String, IsZero and Equal
-// panics when called on it.
+// The zero Value is not a value: every method panics when called on it but
+// String, IsZero and Equal, and LogValue, MarshalText and MarshalJSON, which
+// render it as no value or fail.
 type Value struct {
 	_ [0]func() // not comparable: == would compare pointers, not values
 	n *node

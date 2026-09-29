@@ -48,8 +48,9 @@ func (k ConstraintKind) String() string {
 // constraints are held rather than what they say, and cannot be map keys.
 // [Constraint.Equal] compares them.
 //
-// The zero Constraint is not a constraint: every method except String, IsZero
-// and Equal panics when called on it.
+// The zero Constraint is not a constraint: every method panics when called on
+// it but String, IsZero and Equal, and LogValue and MarshalText, which render
+// it as no constraint or fail.
 type Constraint struct {
 	_ [0]func() // not comparable: == would compare pointers, not constraints
 	c *constraintData

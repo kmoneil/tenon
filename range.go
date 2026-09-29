@@ -41,6 +41,13 @@ func (v Value) Range() Range {
 // Type returns the type of the values that r describes.
 func (r Range) Type() Type { return r.v.Type() }
 
+// Equal reports whether r and s are the ranges of identical values, as
+// Value.Equal says: the same type and the same narrowings, of values that
+// carry the same marks, which a range's display shows where its value's does.
+// The zero Range is equal only to itself. It is the method go-cmp's cmp.Equal
+// calls.
+func (r Range) Equal(s Range) bool { return r.v.Equal(s.v) }
+
 // AllowsNull reports whether null is one of the values that r describes.
 func (r Range) AllowsNull() bool {
 	n := r.v.data()
@@ -462,6 +469,17 @@ func lengthArg(fn string, n int64) int64 {
 		usagePanic("%s called with a negative length, %d", fn, n)
 	}
 	return n
+}
+
+// Equal reports whether nw and o are the same narrowing: of one kind, with the
+// same bound, and as inclusive, the same prefix or length, or the same members
+// in the same order, each identical, and taken from values carrying the same
+// marks. The zero Narrowing is equal only to itself. It is the method go-cmp's
+// cmp.Equal calls.
+func (nw Narrowing) Equal(o Narrowing) bool {
+	return nw.kind == o.kind && nw.incl == o.incl && nw.num.Equal(o.num) &&
+		nw.str == o.str && nw.n == o.n &&
+		slices.EqualFunc(nw.members, o.members, Value.Equal) && sameMarkSet(nw.marks, o.marks)
 }
 
 // String describes nw for messages, as in not null, >= 5 or prefix "v1-". It is

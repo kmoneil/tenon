@@ -54,8 +54,9 @@ func (k Kind) String() string {
 // type is distinct from every other type. Types are interned, so two types are
 // the same type exactly when they are ==, and a Type can be used as a map key.
 //
-// The zero Type is not a type: every method except String, IsZero and Equal
-// panics when called on it.
+// The zero Type is not a type: every method panics when called on it but
+// String, IsZero and Equal, and LogValue and MarshalText, which render it as no
+// type or fail.
 type Type struct {
 	t *typeData
 }
