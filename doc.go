@@ -69,7 +69,9 @@
 // known about it is its [Range]: whether it may be null, bounds on a number, a
 // prefix of a string, bounds on a length, the members a collection holds.
 // [Narrow] records more, through [NumberMin], [NumberMax], [StringPrefix],
-// [LengthMin], [LengthMax], [Members], [NullOnly] and [NotNull].
+// [LengthMin], [LengthMax], [Members], [NullOnly] and [NotNull], and the
+// range reads each fact back by the same name, as [Range.NumberMin] reads a
+// lower bound.
 //
 // Narrowing is monotone: the result says everything the value said and
 // everything the narrowing says. A narrowing that brings a range down to one

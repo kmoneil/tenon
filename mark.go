@@ -739,8 +739,12 @@ func settleDeep(n *node, a *attachment) *node {
 // retrievedMembers returns the members of a known set as a caller retrieves
 // them: in a new slice, each carrying the set's deep marks, which the set
 // keeps on itself because its members carry no marks in storage.
-func (n *node) retrievedMembers() []Value {
-	members := slices.Clone(n.data.([]Value))
+func (n *node) retrievedMembers() []Value { return n.retrieved(n.data.([]Value)) }
+
+// retrieved returns members of the set n, held or listed in its range, as
+// retrievedMembers returns a known set's.
+func (n *node) retrieved(members []Value) []Value {
+	members = slices.Clone(members)
 	if deep := deepMarks(n.markList()); deep != nil {
 		a := newAttachment(deep, nil)
 		for i, m := range members {
