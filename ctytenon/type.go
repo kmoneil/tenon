@@ -67,8 +67,8 @@ func typeFromCty(t, whole cty.Type) (tenon.Type, error) {
 			return tenon.Type{}, fmt.Errorf("ctytenon: %#v has an object type with optional attributes, and is a type constraint rather than a type", whole)
 		}
 		attrs := t.AttributeTypes()
-		if err := tenon.CheckAttributeNames(slices.Sorted(maps.Keys(attrs))...); err != nil {
-			return tenon.Type{}, fmt.Errorf("ctytenon: %#v has an object type whose attribute names tenon refuses: %w", whole, err)
+		if err := checkNames(attrs, whole); err != nil {
+			return tenon.Type{}, err
 		}
 		fields := make(map[string]tenon.Type, len(attrs))
 		for name, a := range attrs {
@@ -79,10 +79,19 @@ func typeFromCty(t, whole cty.Type) (tenon.Type, error) {
 			fields[name] = attr
 		}
 		return tenon.ObjectType(fields), nil
-	case t.IsCapsuleType():
-		return tenon.Type{}, fmt.Errorf("ctytenon: %#v holds the capsule type %s, which the Bridge pairs with no tenon type", whole, t.FriendlyName())
 	}
-	return tenon.Type{}, fmt.Errorf("ctytenon: %#v holds %#v, which is no type ctytenon knows", whole, t)
+	// What is left is a capsule type: cty has no other kind of type, and the
+	// callers have taken cty.DynamicPseudoType out.
+	return tenon.Type{}, &crossingError{code: CodeUnpairedCapsule, msg: fmt.Sprintf("%#v holds the capsule type %s, which the Bridge pairs with no tenon type", whole, t.FriendlyName())}
+}
+
+// checkNames returns the error of an object type of whole, with attributes
+// attrs, whose names tenon refuses, and nil where it takes them all.
+func checkNames(attrs map[string]cty.Type, whole cty.Type) error {
+	if err := tenon.CheckAttributeNames(slices.Sorted(maps.Keys(attrs))...); err != nil {
+		return &crossingError{msg: fmt.Sprintf("%#v has an object type whose attribute names tenon refuses", whole), cause: err}
+	}
+	return nil
 }
 
 // TypeToCty returns the cty type of the tenon type t, as TypeFromCty gives
@@ -139,5 +148,23 @@ func typeToCty(t tenon.Type, whole fmt.Stringer) (cty.Type, error) {
 		}
 		return cty.Object(attrs), nil
 	}
-	return cty.NilType, fmt.Errorf("ctytenon: %s holds the capsule type %q, which the Bridge pairs with no cty type", whole, t.CapsuleName())
+	return cty.NilType, &crossingError{code: CodeUnpairedCapsule, msg: fmt.Sprintf("%s holds the capsule type %q, which the Bridge pairs with no cty type", whole, t.CapsuleName())}
 }
+
+// crossingError is why a type or a constraint does not cross, where a value
+// of it can meet the same: what it says of the whole, and the code a value's
+// crossing reports it with, or the tenon error that says why.
+type crossingError struct {
+	code  tenon.Code
+	msg   string
+	cause error
+}
+
+func (e *crossingError) Error() string {
+	if e.cause != nil {
+		return "ctytenon: " + e.msg + ": " + e.cause.Error()
+	}
+	return "ctytenon: " + e.msg
+}
+
+func (e *crossingError) Unwrap() error { return e.cause }

@@ -15,7 +15,7 @@ import (
 // TestConformance_ER001_OnlyTheHelperPanics scans the module's Go source,
 // tests included, for calls to panic. Every usage error goes through the
 // helper in its package's usage.go, beside the one for an internal defect in
-// tenon's, which keeps each package's panic surface in one file.
+// tenon's and ctytenon's, which keeps each package's panic surface in one file.
 func TestConformance_ER001_OnlyTheHelperPanics(t *testing.T) {
 	conformance.Covers(t, "ER-001")
 	helpers := map[string]bool{
