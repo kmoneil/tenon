@@ -8,6 +8,7 @@ import (
 
 	"github.com/kmoneil/tenon"
 	"github.com/kmoneil/tenon/internal/conformance"
+	"github.com/kmoneil/tenon/internal/conformance/values"
 )
 
 // shapedLike returns a constraint of much the shape of t, which a value of t
@@ -150,7 +151,7 @@ func TestConformance_CV021_MembersAreBuiltOnce(t *testing.T) {
 	for range conformance.Iterations(t, 1500) {
 		p := policies[r.Intn(2)]
 		v := g.top()
-		check("a random value to a random constraint", v, randomConstraint(r, 3, degrees.Type()), p)
+		check("a random value to a random constraint", v, values.RandomConstraint(r, 3, degrees.Type()), p)
 		if v.IsResolved() {
 			check("a random value to a constraint of its shape", v, shapedLike(r, v.Type()), p)
 		}

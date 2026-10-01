@@ -1,8 +1,8 @@
 // Package values builds the values that conformance property tests run over:
-// one of every shape the value system can hold. A property asserted over these
-// is asserted over error values, pending values, unknown values, marked values
-// and the containers that hold them, rather than only over the values that are
-// easy to write down.
+// one of every shape the value system can hold, and constraints of every
+// kind. A property asserted over these is asserted over error values, pending
+// values, unknown values, marked values and the containers that hold them,
+// rather than only over the values that are easy to write down.
 //
 // It is a package beside conformance rather than part of it because it imports
 // tenon, and tenon's own internal tests import conformance.

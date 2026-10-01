@@ -179,7 +179,7 @@ func TestConformance_CV003_UnknownsConvertAsTheirTypesValuesDo(t *testing.T) {
 			continue
 		}
 		typ := v.Type()
-		for _, c := range []tenon.Constraint{randomConstraint(r, 3, degrees.Type()), shapedLike(r, typ)} {
+		for _, c := range []tenon.Constraint{values.RandomConstraint(r, 3, degrees.Type()), shapedLike(r, typ)} {
 			p := policies[r.Intn(2)]
 			unknown, known := tenon.Convert(tenon.Unknown(typ), c, p), tenon.Convert(v, c, p)
 			switch {
@@ -1249,7 +1249,7 @@ func TestConformance_CV026_EverySpellingConvertsAlike(t *testing.T) {
 	r := rand.New(rand.NewSource(20260919))
 	sole, failed := 0, 0
 	for range conformance.Iterations(t, 400) {
-		c := randomConstraint(r, 3, capsule.Type())
+		c := values.RandomConstraint(r, 3, capsule.Type())
 		one, ok := tenon.SoleType(c)
 		if !ok || c.Kind() == tenon.ConstraintExactly {
 			continue
@@ -1761,7 +1761,7 @@ func FuzzConvert(f *testing.F) {
 	var constraints [][]byte
 	cr := rand.New(rand.NewSource(20260924))
 	for range 8 {
-		if b, ok := constraintBytes(randomConstraint(cr, 3, degrees.Type())); ok {
+		if b, ok := constraintBytes(values.RandomConstraint(cr, 3, degrees.Type())); ok {
 			constraints = append(constraints, b)
 		}
 	}
