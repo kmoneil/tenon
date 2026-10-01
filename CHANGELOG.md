@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- A `Range` reads back what it says. `NumberMin` and `NumberMax` give a
+  bound and whether it is inclusive, `StringPrefix` the prefix, `LengthMin`
+  and `LengthMax` the lengths, and `Members` the members a set is known to
+  hold, each method named for the narrowing it reads and returning what
+  that narrowing takes. The range of a known value answers for the value,
+  so a known number is its own bound; lengths are the ones `Length` gives,
+  so a set of `bool` is no longer than 3 whatever its range records; a
+  bound carries the `Propagate` marks of its value, and a set's members its
+  deep marks, as `Elements` gives them.
+
 ## 0.11.0 (2026-09-29)
 
 The rest of the architecture review of 0.9.0: the fixes that waited on

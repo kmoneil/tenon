@@ -20,6 +20,12 @@ import (
 // produces an error value instead, because an empty range would describe a
 // value that cannot exist.
 //
+// The methods named for narrowings read back what a range says of them, each
+// returning what the narrowing of its name takes: NumberMin and NumberMax,
+// StringPrefix, LengthMin and LengthMax, and Members, beside AllowsNull for
+// NotNull. The range of a known value answers for that value, so a known
+// number is its own bound and a known string its own prefix.
+//
 // The zero Range is not a range.
 type Range struct {
 	v Value
@@ -58,6 +64,159 @@ func (r Range) AllowsNull() bool {
 		return n.data.(*rangeData).null != nullNo
 	}
 	return false
+}
+
+// NumberMin returns the lower bound of the numbers that r describes, whether
+// the bound is itself one of them, and true; or false where nothing bounds
+// them from below. The range of a known number is bounded by that number,
+// inclusively. A bound holds of the values other than null (UN-002), so the
+// range of the null value has none.
+//
+// The bound is a Number value carrying the Propagate marks of the value whose
+// range r is, as the result of an operation over that value would, since the
+// range holds what they protect. NumberMin(bound, inclusive) is the narrowing
+// that records it.
+//
+// NumberMin panics if r is not a range of Number values.
+func (r Range) NumberMin() (bound Value, inclusive, ok bool) {
+	return r.numberBound("NumberMin", true)
+}
+
+// NumberMax returns the upper bound of the numbers that r describes, whether
+// the bound is itself one of them, and true; or false where nothing bounds
+// them from above. It answers as NumberMin does, and its bound carries the
+// same marks.
+//
+// NumberMax panics if r is not a range of Number values.
+func (r Range) NumberMax() (bound Value, inclusive, ok bool) {
+	return r.numberBound("NumberMax", false)
+}
+
+// numberBound returns the lower bound of the numbers r describes where lower
+// is true, and the upper one otherwise. method names the caller.
+func (r Range) numberBound(method string, lower bool) (Value, bool, bool) {
+	n := r.of(method, "Number", KindNumber)
+	var b bound
+	switch n.state {
+	case stateKnown:
+		b = bound{v: n.data.(decimal.Dec), incl: true, set: true}
+	case stateUnknown:
+		if rd := n.data.(*rangeData); lower {
+			b = rd.lo
+		} else {
+			b = rd.hi
+		}
+	}
+	if !b.set {
+		return Value{}, false, false
+	}
+	v := numberValue(b.v)
+	if ms := propagateMarks(n); ms != nil {
+		v = WithMarks(v, ms...)
+	}
+	return v, b.incl, true
+}
+
+// StringPrefix returns the text that every string r describes begins with, or
+// "" where r requires none. The range of a known string begins with the whole
+// of it; an unknown string's records the prefix that the StringPrefix
+// narrowing kept, cut back as UN-006 says. Null begins with nothing (UN-002),
+// so the range of the null value requires no prefix.
+//
+// StringPrefix panics if r is not a range of String values.
+func (r Range) StringPrefix() string {
+	n := r.of("StringPrefix", "String", KindString)
+	switch n.state {
+	case stateKnown:
+		return n.data.(string)
+	case stateUnknown:
+		return n.data.(*rangeData).pfx
+	}
+	return ""
+}
+
+// LengthMin returns the least length of the strings, lists, sets or maps that
+// r describes, counted as Length counts them, or 0 where r requires none. The
+// range of a known value has that value's length, except a set holding
+// members that are not known, whose least length is the one Length gives it:
+// the count of its members that are provably distinct. Null has no length
+// (UN-002), so the range of the null value requires none.
+//
+// LengthMin panics if r is not a range of String, list, set or map values.
+func (r Range) LengthMin() int64 {
+	lo, _, _ := r.lengths("LengthMin")
+	return lo
+}
+
+// LengthMax returns the greatest length of the strings, lists, sets or maps
+// that r describes, and true; or false where nothing bounds it. It answers as
+// LengthMin does, and as Length bounds a length: a set is no longer than the
+// values its element type holds, null among them, where those are few enough
+// to count, whether or not r records a greatest length.
+//
+// LengthMax panics if r is not a range of String, list, set or map values.
+func (r Range) LengthMax() (length int64, ok bool) {
+	_, hi, ok := r.lengths("LengthMax")
+	return hi, ok
+}
+
+// lengths returns the least and the greatest length of the values r describes,
+// and whether there is a greatest, as Length bounds them. method names the
+// caller.
+func (r Range) lengths(method string) (lo, hi int64, bounded bool) {
+	n := r.of(method, "String, list, set or map", KindString, KindList, KindSet, KindMap)
+	switch n.state {
+	case stateKnown:
+		if n.typ.t.kind == KindSet {
+			low, high := setLengthBounds(n)
+			return int64(low), int64(high), true
+		}
+		l := n.length()
+		return l, l, true
+	case stateUnknown:
+		rd := n.data.(*rangeData)
+		h := setCeiling(n.typ).tighter(rd.lenHi)
+		return rd.lenLo, h.n, h.set
+	}
+	return 0, 0, false
+}
+
+// Members returns the values that every set r describes holds as members, in
+// a new slice, in the order a set iterates them: a known set's members, or the
+// listing that an unknown set's range records (UN-002), where a listed value
+// that is not known stands for a member that its range allows. A listing
+// holds each value once, and keeps a value whose range excludes nothing only
+// as a least length of one, which LengthMin reports. The range of the null
+// value requires no members.
+//
+// Each member carries the set's deep marks, as Elements returns a set's
+// members. Members(vs...) is the narrowing that lists them, once UnmarkDeep
+// has taken those off.
+//
+// Members panics if r is not a range of Set values.
+func (r Range) Members() []Value {
+	n := r.of("Members", "Set", KindSet)
+	switch n.state {
+	case stateKnown:
+		return n.retrievedMembers()
+	case stateUnknown:
+		return n.retrieved(n.data.(*rangeData).members)
+	}
+	return nil
+}
+
+// of returns the description of the value whose range r is, panicking unless
+// its type is of one of the given kinds, which what names for the message.
+// method names the caller.
+func (r Range) of(method, what string, kinds ...Kind) *node {
+	n := r.v.data()
+	if !slices.Contains(kinds, n.typ.t.kind) {
+		if n.withholds() {
+			usagePanic("%s cannot take the range of %s"+withheldReason, method, n.describe())
+		}
+		usagePanic("%s called on the range of %s, not a range of %s values", method, n.describe(), what)
+	}
+	return n
 }
 
 // String describes r for messages, as in 5, "text" or string, not null,

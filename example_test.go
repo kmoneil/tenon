@@ -87,6 +87,29 @@ func ExampleNarrow() {
 	// null(number)
 }
 
+// A range reads back what is known of a value that is not, each fact by the
+// name of the narrowing that records it: here, a port and a name that a plan
+// can check before either is known.
+func ExampleRange() {
+	port := tenon.Narrow(tenon.Unknown(tenon.NumberType()),
+		tenon.NumberMin(tenon.NumberFromInt(1024), true), tenon.NumberMax(tenon.NumberFromInt(49151), true))
+	low, _, _ := port.Range().NumberMin()
+	high, _, _ := port.Range().NumberMax()
+	fmt.Println("port from", low, "to", high)
+
+	name := tenon.Narrow(tenon.Unknown(tenon.StringType()), tenon.StringPrefix("web-"), tenon.LengthMax(63))
+	longest, _ := name.Range().LengthMax()
+	fmt.Printf("name %q..., %d to %d characters\n", name.Range().StringPrefix(), name.Range().LengthMin(), longest)
+
+	// The range of a known value answers for that value.
+	tags := tenon.Set(tenon.StringType(), tenon.String("b"), tenon.String("a"))
+	fmt.Println(tags.Range().Members(), tags.Range().LengthMin())
+	// Output:
+	// port from 1024 to 49151
+	// name "web-"..., 4 to 63 characters
+	// ["a" "b"] 2
+}
+
 // A pending value has no type yet, only a constraint on what its type will be,
 // which is how a program holds a value whose shape depends on data it has not
 // read yet.
