@@ -2,6 +2,7 @@ package tenon
 
 import (
 	"bytes"
+	"iter"
 	"maps"
 	"slices"
 	"strconv"
@@ -807,20 +808,60 @@ func (v Value) Index(i int) Value {
 // the set is attached to each member as Elements returns it, and a member
 // comes out as it would out of a list carrying the mark.
 func (v Value) Elements() []Value {
+	n := v.elementsOf("Elements")
+	if n.typ.t.kind == KindSet {
+		return n.retrievedMembers()
+	}
+	return slices.Clone(n.data.([]Value))
+}
+
+// ElementsSeq returns an iterator over the elements of a list, set or tuple,
+// in the order Elements returns them and as Elements returns them, a set's
+// members carrying its deep marks. It reads them where v holds them, where
+// Elements copies them into a new slice first, so ranging over a list or
+// tuple allocates nothing for its elements. Like Elements, it panics for
+// other values, as it is called rather than as the iterator runs.
+//
+// The iterator may run any number of times, and gives the same elements each
+// time.
+func (v Value) ElementsSeq() iter.Seq[Value] {
+	n := v.elementsOf("ElementsSeq")
+	elems := n.data.([]Value)
+	var deep []Mark
+	if n.typ.t.kind == KindSet {
+		deep = deepMarks(n.markList())
+	}
+	return func(yield func(Value) bool) {
+		var a *attachment
+		if deep != nil {
+			a = newAttachment(deep, nil)
+		}
+		for _, e := range elems {
+			if a != nil {
+				e = Value{n: a.attach(e.n)}
+			}
+			if !yield(e) {
+				return
+			}
+		}
+	}
+}
+
+// elementsOf returns the description of v, panicking unless v is a list, set
+// or tuple value with content. method names the caller.
+func (v Value) elementsOf(method string) *node {
 	n := v.data()
-	n.noContent("Elements")
+	n.noContent(method)
 	if n.state == stateKnown {
 		switch n.typ.t.kind {
-		case KindList, KindTuple:
-			return slices.Clone(n.data.([]Value))
-		case KindSet:
-			return n.retrievedMembers()
+		case KindList, KindSet, KindTuple:
+			return n
 		}
 	}
 	if n.withholds() {
-		usagePanic("Elements cannot take %s"+withheldReason, n.describe())
+		usagePanic("%s cannot take %s"+withheldReason, method, n.describe())
 	}
-	usagePanic("Elements called on %s, not a list, set or tuple value", n.describe())
+	usagePanic("%s called on %s, not a list, set or tuple value", method, n.describe())
 	return nil
 }
 
@@ -833,6 +874,22 @@ func (v Value) MapKeys() []string {
 		keys[i] = e.key
 	}
 	return keys
+}
+
+// MapEntries returns an iterator over the entries of a map value, each key
+// with its element, in the sorted order of MapKeys. It reads them where v
+// holds them, so ranging over a map allocates nothing for its entries. It
+// panics if v is not a map value, as it is called rather than as the
+// iterator runs.
+func (v Value) MapEntries() iter.Seq2[string, Value] {
+	entries := v.known(KindMap, "MapEntries").data.([]mapEntry)
+	return func(yield func(string, Value) bool) {
+		for _, e := range entries {
+			if !yield(e.key, e.val) {
+				return
+			}
+		}
+	}
 }
 
 // LookupMapElement returns the element of a map value with the given key,
@@ -864,6 +921,23 @@ func (v Value) Attribute(name string) Value {
 // panics if v is not an object value.
 func (v Value) LookupAttribute(name string) (Value, bool) {
 	return v.known(KindObject, "LookupAttribute").attribute(name)
+}
+
+// Attributes returns an iterator over the attributes of an object value, each
+// name with its value, in the sorted order of its type's AttributeNames. It
+// reads them where v holds them, so ranging over an object allocates nothing
+// for its attributes. It panics if v is not an object value, as it is called
+// rather than as the iterator runs.
+func (v Value) Attributes() iter.Seq2[string, Value] {
+	n := v.known(KindObject, "Attributes")
+	attrs, vals := n.typ.t.attrs, n.data.([]Value)
+	return func(yield func(string, Value) bool) {
+		for i, a := range attrs {
+			if !yield(a.name, vals[i]) {
+				return
+			}
+		}
+	}
 }
 
 // attribute returns the attribute of n, a known object value, with the given
