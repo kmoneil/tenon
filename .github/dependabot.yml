@@ -3,8 +3,13 @@
 # dependency still needs a decision of its own.
 version: 2
 updates:
+  # ctytenon, which programs import, is a module of its own: its updates
+  # reach them. A go-cty update there fails TestOneGoCty until the bench
+  # module, whose probes assert go-cty's behavior, moves with it.
   - package-ecosystem: gomod
-    directory: /
+    directories:
+      - /
+      - /ctytenon
     schedule:
       interval: weekly
   - package-ecosystem: github-actions

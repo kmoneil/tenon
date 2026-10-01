@@ -18,7 +18,11 @@ import (
 // tenon's, which keeps each package's panic surface in one file.
 func TestConformance_ER001_OnlyTheHelperPanics(t *testing.T) {
 	conformance.Covers(t, "ER-001")
-	helpers := map[string]bool{"usage.go": true, filepath.Join("gotenon", "usage.go"): true}
+	helpers := map[string]bool{
+		"usage.go":                            true,
+		filepath.Join("gotenon", "usage.go"):  true,
+		filepath.Join("ctytenon", "usage.go"): true,
+	}
 	fset := token.NewFileSet()
 	scanned := 0
 	err := filepath.WalkDir(".", func(path string, d fs.DirEntry, err error) error {

@@ -16,9 +16,9 @@ request: see `SECURITY.md`.
 tenon needs Go 1.26 or later, and nothing else to build and test.
 
 - `make check` is the gate: gofmt, `go vet`, the tests under the race
-  detector, in tenon's module and in `tools/unigen`'s, and a check that every
-  rule has a passing conformance test. A change is not done until it passes.
-  CI runs it on Go 1.26 and 1.27 for every pull request.
+  detector, in tenon's module and in `tools/unigen`'s and `ctytenon`'s, and a
+  check that every rule has a passing conformance test. A change is not done
+  until it passes. CI runs it on Go 1.26 and 1.27 for every pull request.
 - `make lint` runs staticcheck, which CI requires as well.
 - `make vuln` runs govulncheck.
 - `make check-slow` runs the property tests at twenty times their cases and
@@ -59,9 +59,9 @@ The other targets:
 - Nothing a caller can observe depends on the order Go iterates a map in.
 - Values are immutable: every operation returns a new value.
 - tenon requires no other module, and a dependency needs its reason given in
-  an issue first. `bench` and `tools/unigen` are modules of their own, so that
-  what they measure against and check with, go-cty and `golang.org/x/text`,
-  never enters tenon's `go.mod`.
+  an issue first. `bench`, `tools/unigen` and `ctytenon` are modules of their
+  own, so that what they measure against, check with and bridge to, go-cty and
+  `golang.org/x/text`, never enters tenon's `go.mod`; a test fails if it does.
 
 ## Pull requests
 
