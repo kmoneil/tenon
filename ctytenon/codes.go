@@ -6,8 +6,8 @@ import "github.com/kmoneil/tenon"
 // no code of its own for the failure. They are in the area cty, which belongs
 // to this package rather than to tenon's specification.
 const (
-	// CodeUnmappedMark is the code of a marked value, the Bridge mapping
-	// none of its marks to a mark of the other side.
+	// CodeUnmappedMark is the code of a value carrying a mark the Bridge
+	// maps to no mark of the other side.
 	CodeUnmappedMark tenon.Code = "cty.unmapped_mark"
 	// CodeUnpairedCapsule is the code of a value of a capsule type, or of a
 	// type holding one, that the Bridge pairs with no capsule type of the

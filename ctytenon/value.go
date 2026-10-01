@@ -31,35 +31,93 @@ import (
 // whose type holds cty.DynamicPseudoType, as a list holding cty.DynamicVal
 // does, is the pending value known not to be null.
 //
+// A mark crosses as b.MarkFromCty maps it. cty hands a container's marks to
+// every value read out of it, so they cross on the container and on every
+// value within it, but the members of a set, which carry none.
+//
 // FromCty fails with a [*tenon.Error] where a part of v cannot cross, each
 // diagnostic located by the part's path: a string or map key that is not
 // UTF-8 (tenon.CodeStringInvalidUTF8), an infinity
 // (tenon.CodeEncodeNotANumber), a number outside tenon's range
-// (tenon.CodeNumberOutOfRange), attribute names tenon refuses, a marked value
-// (CodeUnmappedMark), and a capsule type (CodeUnpairedCapsule). An element of
-// a set is located by its place in cty's order. It panics on cty.NilVal, which
-// is not a value.
+// (tenon.CodeNumberOutOfRange), attribute names tenon refuses, a mark the
+// Bridge does not map (CodeUnmappedMark), and a capsule type
+// (CodeUnpairedCapsule). An element of a set is located by its place in cty's
+// order. A failure within a value carrying a redacting mark is located at
+// that value instead, and names it by its placeholder, as tenon's own
+// diagnostics do, saying nothing of what it holds. It panics on cty.NilVal,
+// which is not a value.
 func (b Bridge) FromCty(v cty.Value) (tenon.Value, error) {
 	if v.Type() == cty.NilType {
 		usagePanic("FromCty called with cty.NilVal, which is not a value")
 	}
 	var f failures
-	t := b.fromCty(v, tenon.Path{}, &f)
-	if len(f) > 0 {
+	t := b.fromCty(v, tenon.Path{}, nil, &f)
+	if len(f.list) > 0 {
 		return tenon.Value{}, f.err()
 	}
 	return t, nil
 }
 
-// fromCty returns the tenon value of v, which lies at p, adding to f what does
-// not cross. Where something does, the value it returns stands for nothing.
-// A failure is located at the part that fails: a container's type is asked
-// of only where no part of it says the type, as of a null or an empty list.
-func (b Bridge) fromCty(v cty.Value, p tenon.Path, f *failures) tenon.Value {
+// fromCty returns the tenon value of v, which lies at p within containers
+// whose marks crossed as marks, adding to f what does not cross. cty hands
+// those marks to v as it is read out of them, so v carries them too, beside
+// its own. Where something does not cross, the value it returns stands for
+// nothing.
+func (b Bridge) fromCty(v cty.Value, p tenon.Path, marks []tenon.Mark, f *failures) tenon.Value {
 	if v.IsMarked() {
-		f.add(p, CodeUnmappedMark, "the value carries the cty marks "+ctyMarks(v.Marks())+", which the Bridge maps to no tenon mark")
-		return tenon.Value{}
+		var own cty.ValueMarks
+		v, own = v.Unmark()
+		mapped, ok := b.marksFromCty(own, p, f)
+		if !ok {
+			return tenon.Value{}
+		}
+		marks = append(slices.Clip(marks), mapped...)
+		defer f.redact(p, marks)()
 	}
+	t := b.unmarkedFromCty(v, p, marks, f)
+	if t.IsZero() {
+		return t
+	}
+	return tenon.WithMarks(t, marks...)
+}
+
+// marksFromCty returns the tenon marks of marks, cty's marks of the value at
+// p, adding to f the failure of those the Bridge does not map.
+func (b Bridge) marksFromCty(marks cty.ValueMarks, p tenon.Path, f *failures) ([]tenon.Mark, bool) {
+	var mapped []tenon.Mark
+	var unmapped []string
+	for _, m := range sortedMarks(marks) {
+		if b.MarkFromCty != nil {
+			if t, ok := b.MarkFromCty(m); ok {
+				mapped = append(mapped, t)
+				continue
+			}
+		}
+		unmapped = append(unmapped, fmt.Sprintf("%#v", m))
+	}
+	if len(unmapped) > 0 {
+		f.add(p, CodeUnmappedMark, "the value carries the cty marks "+strings.Join(unmapped, ", ")+", which the Bridge maps to no tenon mark")
+		return nil, false
+	}
+	return mapped, true
+}
+
+// sortedMarks returns cty's marks in the order of their Go syntax, so that
+// what crosses does not depend on a map's order.
+func sortedMarks(marks cty.ValueMarks) []any {
+	out := make([]any, 0, len(marks))
+	for m := range marks {
+		out = append(out, m)
+	}
+	slices.SortFunc(out, func(a, b any) int { return strings.Compare(fmt.Sprintf("%#v", a), fmt.Sprintf("%#v", b)) })
+	return out
+}
+
+// unmarkedFromCty returns the tenon value of v, which carries no mark of its
+// own, as fromCty does, the values within it carrying marks. A failure is
+// located at the part that fails: a container's type is asked of only where
+// no part of it says the type, as of a null or an empty list.
+func (b Bridge) unmarkedFromCty(v cty.Value, p tenon.Path, marks []tenon.Mark, f *failures) tenon.Value {
 	// Optional attributes are a conversion's: a value has every attribute
 	// its type names.
 	t := v.Type().WithoutOptionalAttributesDeep()
@@ -67,7 +125,7 @@ func (b Bridge) fromCty(v cty.Value, p tenon.Path, f *failures) tenon.Value {
 	if t.HasDynamicTypes() {
 		// What a known one holds is not carried, but it may fail to cross
 		// all the same.
-		if _, ok := b.parts(v, t, p, f); known && !ok {
+		if _, ok := b.parts(v, t, p, marks, f); known && !ok {
 			return tenon.Value{}
 		}
 		c, err := constraintFromCty(t, t, true)
@@ -101,7 +159,7 @@ func (b Bridge) fromCty(v cty.Value, p tenon.Path, f *failures) tenon.Value {
 	case t == cty.String:
 		return f.data(p, tenon.String(v.AsString()))
 	}
-	parts, ok := b.parts(v, t, p, f)
+	parts, ok := b.parts(v, t, p, marks, f)
 	switch {
 	case !ok:
 		return tenon.Value{}
@@ -130,21 +188,26 @@ type crossed struct {
 	entries map[string]tenon.Value
 }
 
-// parts returns the tenon values of what v, a value of type t lying at p,
-// holds, adding to f what does not cross, and false where something does. A
-// value that is not known, or null, holds nothing.
-func (b Bridge) parts(v cty.Value, t cty.Type, p tenon.Path, f *failures) (crossed, bool) {
+// parts returns the tenon values of what v, a value of type t lying at p and
+// read out with marks, holds, adding to f what does not cross, and false where
+// something does. A value that is not known, or null, holds nothing. The
+// members of a set carry no marks, the set carrying them.
+func (b Bridge) parts(v cty.Value, t cty.Type, p tenon.Path, marks []tenon.Mark, f *failures) (crossed, bool) {
 	var c crossed
 	if !v.IsKnown() || v.IsNull() {
 		return c, true
 	}
-	n := len(*f)
+	n := len(f.list)
 	switch {
 	case t.IsListType(), t.IsSetType(), t.IsTupleType():
+		within := marks
+		if t.IsSetType() {
+			within = nil
+		}
 		c.elems = make([]tenon.Value, 0, v.LengthInt())
 		for it := v.ElementIterator(); it.Next(); {
 			_, e := it.Element()
-			c.elems = append(c.elems, b.fromCty(e, p.Index(tenon.NumberFromInt(int64(len(c.elems)))), f))
+			c.elems = append(c.elems, b.fromCty(e, p.Index(tenon.NumberFromInt(int64(len(c.elems)))), within, f))
 		}
 	case t.IsObjectType():
 		// A name tenon refuses cannot step into the object.
@@ -155,7 +218,7 @@ func (b Bridge) parts(v cty.Value, t cty.Type, p tenon.Path, f *failures) (cross
 		c.entries = make(map[string]tenon.Value, v.LengthInt())
 		for it := v.ElementIterator(); it.Next(); {
 			k, e := it.Element()
-			c.entries[k.AsString()] = b.fromCty(e, p.Attribute(k.AsString()), f)
+			c.entries[k.AsString()] = b.fromCty(e, p.Attribute(k.AsString()), marks, f)
 		}
 	case t.IsMapType():
 		c.entries = make(map[string]tenon.Value, v.LengthInt())
@@ -166,20 +229,10 @@ func (b Bridge) parts(v cty.Value, t cty.Type, p tenon.Path, f *failures) (cross
 				f.add(p, tenon.CodeStringInvalidUTF8, "the map key "+strconv.Quote(key)+" is not valid UTF-8")
 				continue
 			}
-			c.entries[key] = b.fromCty(e, p.Index(tenon.String(key)), f)
+			c.entries[key] = b.fromCty(e, p.Index(tenon.String(key)), marks, f)
 		}
 	}
-	return c, len(*f) == n
-}
-
-// ctyMarks returns cty's marks as Go syntax, in order.
-func ctyMarks(marks cty.ValueMarks) string {
-	names := make([]string, 0, len(marks))
-	for m := range marks {
-		names = append(names, fmt.Sprintf("%#v", m))
-	}
-	slices.Sort(names)
-	return strings.Join(names, ", ")
+	return c, len(f.list) == n
 }
 
 // ToCty returns the cty value of the tenon value v: a value of the cty type of
@@ -199,11 +252,17 @@ func ctyMarks(marks cty.ValueMarks) string {
 // so is an ObjectWith that is open or has optional fields, which allows
 // objects of attributes no one cty object type names.
 //
+// A mark crosses as b.MarkToCty maps it. cty hands a container's marks to
+// every value read out of it, so a value within one carries in cty only the
+// marks its containers do not.
+//
 // An error value crosses as the [*tenon.Error] holding it. ToCty fails with a
 // [*tenon.Error] where a part of v cannot cross, each diagnostic located by
-// the part's path: a marked value (CodeUnmappedMark), a capsule type
-// (CodeUnpairedCapsule), and a pending value whose constraint holds a OneOf
-// (CodeOneOf). It panics on the zero Value, which is not a value.
+// the part's path: a mark the Bridge does not map (CodeUnmappedMark), a
+// capsule type (CodeUnpairedCapsule), and a pending value whose constraint
+// holds a OneOf (CodeOneOf). A failure within a value carrying a redacting
+// mark is located at that value, as FromCty's are. It panics on the zero
+// Value, which is not a value.
 func (b Bridge) ToCty(v tenon.Value) (cty.Value, error) {
 	if v.IsZero() {
 		usagePanic("ToCty called with the zero Value, which is not a value")
@@ -212,25 +271,81 @@ func (b Bridge) ToCty(v tenon.Value) (cty.Value, error) {
 		return cty.NilVal, tenon.NewError(v)
 	}
 	var f failures
-	c := b.toCty(v, tenon.Path{}, &f)
-	if len(f) > 0 {
+	c := b.toCty(v, tenon.Path{}, nil, &f)
+	if len(f.list) > 0 {
 		return cty.NilVal, f.err()
 	}
 	return c, nil
 }
 
-// toCty returns the cty value of v, which lies at p, adding to f what does not
-// cross. Where something does, the value it returns stands for nothing. A
-// failure is located at the part that fails, as fromCty's are.
-func (b Bridge) toCty(v tenon.Value, p tenon.Path, f *failures) cty.Value {
-	if _, marks := tenon.Unmark(v); len(marks) > 0 {
-		ids := make([]string, len(marks))
-		for i, m := range marks {
-			ids[i] = strconv.Quote(m.MarkID())
+// toCty returns the cty value of v, which lies at p within containers whose
+// marks crossed as marks, adding to f what does not cross. cty hands those
+// marks to v as it is read out of them, so v carries in cty only its marks
+// that they do not. Where something does not cross, the value it returns
+// stands for nothing.
+func (b Bridge) toCty(v tenon.Value, p tenon.Path, marks cty.ValueMarks, f *failures) cty.Value {
+	if v, tmarks := tenon.Unmark(v); len(tmarks) > 0 {
+		mapped, ok := b.marksToCty(tmarks, p, f)
+		if !ok {
+			return cty.NilVal
 		}
-		f.add(p, CodeUnmappedMark, "the value carries the marks "+strings.Join(ids, ", ")+", which the Bridge maps to no cty mark")
-		return cty.NilVal
+		defer f.redact(p, tmarks)()
+		n := len(f.list)
+		c := b.unmarkedToCty(v, p, union(marks, mapped), f)
+		if len(f.list) > n {
+			return cty.NilVal
+		}
+		own := make(cty.ValueMarks, len(mapped))
+		for m := range mapped {
+			if _, held := marks[m]; !held {
+				own[m] = struct{}{}
+			}
+		}
+		if len(own) == 0 {
+			return c
+		}
+		return c.WithMarks(own)
 	}
+	return b.unmarkedToCty(v, p, marks, f)
+}
+
+// union returns the marks of a and b together.
+func union(a, b cty.ValueMarks) cty.ValueMarks {
+	u := make(cty.ValueMarks, len(a)+len(b))
+	for m := range a {
+		u[m] = struct{}{}
+	}
+	for m := range b {
+		u[m] = struct{}{}
+	}
+	return u
+}
+
+// marksToCty returns the cty marks of marks, tenon's marks of the value at p,
+// adding to f the failure of those the Bridge does not map.
+func (b Bridge) marksToCty(marks []tenon.Mark, p tenon.Path, f *failures) (cty.ValueMarks, bool) {
+	mapped := make(cty.ValueMarks, len(marks))
+	var unmapped []string
+	for _, m := range marks {
+		if b.MarkToCty != nil {
+			if c, ok := b.MarkToCty(m); ok {
+				mapped[c] = struct{}{}
+				continue
+			}
+		}
+		unmapped = append(unmapped, strconv.Quote(m.MarkID()))
+	}
+	if len(unmapped) > 0 {
+		f.add(p, CodeUnmappedMark, "the value carries the marks "+strings.Join(unmapped, ", ")+", which the Bridge maps to no cty mark")
+		return nil, false
+	}
+	return mapped, true
+}
+
+// unmarkedToCty returns the cty value of v, which carries no mark of its own,
+// as toCty does, the values within it carrying marks. A failure is located at
+// the part that fails, as fromCty's are.
+func (b Bridge) unmarkedToCty(v tenon.Value, p tenon.Path, marks cty.ValueMarks, f *failures) cty.Value {
 	if v.IsPending() {
 		t, err := constraintToCty(v.Constraint(), v.Constraint(), true)
 		switch {
@@ -264,28 +379,28 @@ func (b Bridge) toCty(v tenon.Value, p tenon.Path, f *failures) cty.Value {
 	case tenon.KindString:
 		return cty.StringVal(v.AsString())
 	}
-	n := len(*f)
+	n := len(f.list)
 	var elems []cty.Value
 	var entries map[string]cty.Value
 	switch kind {
 	case tenon.KindList, tenon.KindSet, tenon.KindTuple:
 		elems = make([]cty.Value, 0, v.Len())
 		for e := range v.ElementsSeq() {
-			elems = append(elems, b.toCty(e, p.Index(tenon.NumberFromInt(int64(len(elems)))), f))
+			elems = append(elems, b.toCty(e, p.Index(tenon.NumberFromInt(int64(len(elems)))), marks, f))
 		}
 	case tenon.KindMap:
 		entries = make(map[string]cty.Value, v.Len())
 		for k, e := range v.MapEntries() {
-			entries[k] = b.toCty(e, p.Index(tenon.String(k)), f)
+			entries[k] = b.toCty(e, p.Index(tenon.String(k)), marks, f)
 		}
 	default:
 		entries = make(map[string]cty.Value, v.Len())
 		for name, e := range v.Attributes() {
-			entries[name] = b.toCty(e, p.Attribute(name), f)
+			entries[name] = b.toCty(e, p.Attribute(name), marks, f)
 		}
 	}
 	switch {
-	case len(*f) > n:
+	case len(f.list) > n:
 		return cty.NilVal
 	case kind == tenon.KindTuple:
 		return cty.TupleVal(elems)
@@ -312,14 +427,62 @@ func (b Bridge) toCty(v tenon.Value, p tenon.Path, f *failures) cty.Value {
 	return cty.MapValEmpty(elem)
 }
 
-// failures collects the diagnostics of a crossing, each located by its path.
-type failures []tenon.Diagnostic
+// failures collects the diagnostics of a crossing, each located by its path,
+// and each once.
+type failures struct {
+	list []tenon.Diagnostic
+	// hidden, where it is not nil, is the outermost value being walked that
+	// carries a redacting mark. A failure within it is located at it, and
+	// names it by its placeholder, saying nothing of what it holds (MK-011).
+	hidden *redaction
+}
+
+// redaction is the value failures are hidden within: where it lies, the
+// placeholder that names it, and the codes of its failures so far.
+type redaction struct {
+	path        tenon.Path
+	placeholder string
+	codes       map[tenon.Code]bool
+}
 
 // err returns the error the failures make.
-func (f failures) err() error { return tenon.NewError(tenon.ErrorVal(f...)) }
+func (f *failures) err() error { return tenon.NewError(tenon.ErrorVal(f.list...)) }
+
+// redact hides the failures within the value at p, where marks, its marks,
+// hold a redacting one and no value around it has hidden them already, and
+// returns what ends the hiding.
+func (f *failures) redact(p tenon.Path, marks []tenon.Mark) func() {
+	if f.hidden != nil {
+		return func() {}
+	}
+	var redacting []tenon.Mark
+	for _, m := range marks {
+		if m.Redacting() {
+			redacting = append(redacting, m)
+		}
+	}
+	if len(redacting) == 0 {
+		return func() {}
+	}
+	// tenon's display of a value under redacting marks is their placeholder.
+	f.hidden = &redaction{path: p, placeholder: tenon.WithMarks(tenon.Null(tenon.BoolType()), redacting...).String(), codes: map[tenon.Code]bool{}}
+	return func() { f.hidden = nil }
+}
 
 func (f *failures) add(p tenon.Path, code tenon.Code, message string) {
-	*f = append(*f, tenon.Diagnostic{Code: code, Message: message, Path: p})
+	f.append(tenon.Diagnostic{Code: code, Message: message, Path: p})
+}
+
+// append adds d, hidden where failures are, and once.
+func (f *failures) append(d tenon.Diagnostic) {
+	if h := f.hidden; h != nil {
+		if h.codes[d.Code] {
+			return
+		}
+		h.codes[d.Code] = true
+		d.Path, d.Message = h.path, h.placeholder+" holds a part that does not cross"
+	}
+	f.list = append(f.list, d)
 }
 
 // data returns v, a value made from cty's data, unless it is an error value,
@@ -344,7 +507,7 @@ func (f *failures) within(p tenon.Path, diags []tenon.Diagnostic) {
 			}
 		}
 		d.Path = at
-		*f = append(*f, d)
+		f.append(d)
 	}
 }
 

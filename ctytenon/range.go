@@ -101,12 +101,16 @@ func refineToCty(u cty.Value, t cty.Type, r tenon.Range) cty.Value {
 	}
 	switch {
 	case t == cty.Number:
+		// A bound carries the marks of the value it narrows, which cross
+		// on the value.
 		if min, _, ok := r.NumberMin(); ok {
+			min, _ = tenon.UnmarkDeep(min)
 			refine = append(refine, func(b *cty.RefinementBuilder) *cty.RefinementBuilder {
 				return b.NumberRangeLowerBound(numberToCty(min), true)
 			})
 		}
 		if max, _, ok := r.NumberMax(); ok {
+			max, _ = tenon.UnmarkDeep(max)
 			refine = append(refine, func(b *cty.RefinementBuilder) *cty.RefinementBuilder {
 				return b.NumberRangeUpperBound(numberToCty(max), true)
 			})
