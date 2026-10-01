@@ -54,5 +54,6 @@ jobs:
           cache-dependency-path: '**/go.sum'
       - run: make lint
       # The bench module has its own go.mod, so make lint does not reach it;
-      # this builds it, lints it and runs each benchmark once.
+      # this builds it, lints it, runs its tests, go-cty's open issues probed
+      # among them, and runs each benchmark once.
       - run: make bench-smoke

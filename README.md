@@ -238,6 +238,11 @@ moving a program across means rewriting the code that handles its values.
 | Unknown values | Refinements: not null, a string prefix, number bounds, collection lengths | Ranges: the same facts, and the members a set is known to hold |
 | Types | One `Type` serves as a type and as a constraint, `DynamicPseudoType` standing for any | Types and constraints are distinct, and a value whose type is not settled yet carries a constraint in its place |
 | Diffs | None: each program writes its own | `Diff`, which never looks inside what a redacting mark withholds |
+| Determinism | `Equals` on objects and maps holding an unknown answers by Go's map order, and keys that are one after normalization merge at random | The same answer every time, and such keys are refused, naming both spellings |
+
+The bench module holds a test for each of go-cty's open issues whose defect
+tenon could share, asserting what go-cty v1.19.0 does with the issue's case
+and what tenon does with its counterpart.
 
 ## Performance
 
