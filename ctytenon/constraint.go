@@ -25,25 +25,25 @@ import (
 // cty would drop.
 //
 // It fails where an object type's attribute names are names tenon refuses, as
-// [tenon.CheckAttributeNames] says, or where t holds a capsule type. It
-// panics on cty.NilType, which is not a type constraint.
+// [tenon.CheckAttributeNames] says, or where t holds a capsule type the Bridge
+// pairs with none. It panics on cty.NilType, which is not a type constraint.
 func (b Bridge) ConstraintFromCty(t cty.Type) (tenon.Constraint, error) {
 	if t == cty.NilType {
 		usagePanic("ConstraintFromCty called with cty.NilType, which is not a type constraint")
 	}
-	return constraintFromCty(t, t, false)
+	return b.constraintFromCty(t, t, false)
 }
 
 // constraintFromCty returns the tenon constraint of t, a part of whole, which
 // the error of a part that does not cross names. Where closed is true, t is
 // the type of a value rather than a conversion's target, and its object types
 // are closed: a value has exactly the attributes its type names.
-func constraintFromCty(t, whole cty.Type, closed bool) (tenon.Constraint, error) {
+func (b Bridge) constraintFromCty(t, whole cty.Type, closed bool) (tenon.Constraint, error) {
 	switch {
 	case t == cty.DynamicPseudoType:
 		return tenon.Any(), nil
 	case t.IsListType(), t.IsSetType(), t.IsMapType():
-		elem, err := constraintFromCty(t.ElementType(), whole, closed)
+		elem, err := b.constraintFromCty(t.ElementType(), whole, closed)
 		if err != nil {
 			return tenon.Constraint{}, err
 		}
@@ -67,7 +67,7 @@ func constraintFromCty(t, whole cty.Type, closed bool) (tenon.Constraint, error)
 		members := make([]tenon.Constraint, 0, len(t.TupleElementTypes()))
 		types := make([]tenon.Type, 0, len(t.TupleElementTypes()))
 		for _, e := range t.TupleElementTypes() {
-			member, err := constraintFromCty(e, whole, closed)
+			member, err := b.constraintFromCty(e, whole, closed)
 			if err != nil {
 				return tenon.Constraint{}, err
 			}
@@ -88,7 +88,7 @@ func constraintFromCty(t, whole cty.Type, closed bool) (tenon.Constraint, error)
 		fields := make(map[string]tenon.Field, len(attrs))
 		types := make(map[string]tenon.Type, len(attrs))
 		for name, a := range attrs {
-			attr, err := constraintFromCty(a, whole, closed)
+			attr, err := b.constraintFromCty(a, whole, closed)
 			if err != nil {
 				return tenon.Constraint{}, err
 			}
@@ -103,7 +103,7 @@ func constraintFromCty(t, whole cty.Type, closed bool) (tenon.Constraint, error)
 		}
 		return tenon.ObjectWith(fields, closed), nil
 	}
-	typ, err := typeFromCty(t, whole)
+	typ, err := b.typeFromCty(t, whole)
 	if err != nil {
 		return tenon.Constraint{}, err
 	}
@@ -125,12 +125,13 @@ func constraintFromCty(t, whole cty.Type, closed bool) (tenon.Constraint, error)
 // constraint accepts.
 //
 // It fails where c holds a OneOf, which no cty type constraint says, or a
-// capsule type. It panics on the zero Constraint, which is not a constraint.
+// capsule type the Bridge pairs with none. It panics on the zero Constraint,
+// which is not a constraint.
 func (b Bridge) ConstraintToCty(c tenon.Constraint) (cty.Type, error) {
 	if c.IsZero() {
 		usagePanic("ConstraintToCty called with the zero Constraint, which is not a constraint")
 	}
-	return constraintToCty(c, c, false)
+	return b.constraintToCty(c, c, false)
 }
 
 // constraintToCty returns the cty type constraint of c, a part of whole, which
@@ -139,14 +140,14 @@ func (b Bridge) ConstraintToCty(c tenon.Constraint) (cty.Type, error) {
 // exactly the attributes its object types name: an ObjectWith that is open,
 // or has optional fields, allows objects no one cty object type holds, and is
 // cty.DynamicPseudoType instead.
-func constraintToCty(c, whole tenon.Constraint, asType bool) (cty.Type, error) {
+func (b Bridge) constraintToCty(c, whole tenon.Constraint, asType bool) (cty.Type, error) {
 	switch c.Kind() {
 	case tenon.ConstraintAny:
 		return cty.DynamicPseudoType, nil
 	case tenon.ConstraintExactly:
-		return typeToCty(c.Type(), whole)
+		return b.typeToCty(c.Type(), whole)
 	case tenon.ConstraintListOf, tenon.ConstraintSetOf, tenon.ConstraintMapOf:
-		elem, err := constraintToCty(c.Element(), whole, asType)
+		elem, err := b.constraintToCty(c.Element(), whole, asType)
 		if err != nil {
 			return cty.NilType, err
 		}
@@ -161,7 +162,7 @@ func constraintToCty(c, whole tenon.Constraint, asType bool) (cty.Type, error) {
 		parts := c.Members()
 		elems := make([]cty.Type, 0, len(parts))
 		for _, m := range parts {
-			elem, err := constraintToCty(m, whole, asType)
+			elem, err := b.constraintToCty(m, whole, asType)
 			if err != nil {
 				return cty.NilType, err
 			}
@@ -180,7 +181,7 @@ func constraintToCty(c, whole tenon.Constraint, asType bool) (cty.Type, error) {
 			if asType && !f.Required {
 				return cty.DynamicPseudoType, nil
 			}
-			attr, err := constraintToCty(f.Constraint, whole, asType)
+			attr, err := b.constraintToCty(f.Constraint, whole, asType)
 			if err != nil {
 				return cty.NilType, err
 			}

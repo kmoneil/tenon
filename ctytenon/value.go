@@ -40,7 +40,8 @@ import (
 // UTF-8 (tenon.CodeStringInvalidUTF8), an infinity
 // (tenon.CodeEncodeNotANumber), a number outside tenon's range
 // (tenon.CodeNumberOutOfRange), attribute names tenon refuses, a mark the
-// Bridge does not map (CodeUnmappedMark), and a capsule type
+// Bridge does not map (CodeUnmappedMark), and a capsule type the Bridge pairs
+// with none, or a capsule value holding what its pair does not
 // (CodeUnpairedCapsule). An element of a set is located by its place in cty's
 // order. A failure within a value carrying a redacting mark is located at
 // that value instead, and names it by its placeholder, as tenon's own
@@ -128,7 +129,7 @@ func (b Bridge) unmarkedFromCty(v cty.Value, p tenon.Path, marks []tenon.Mark, f
 		if _, ok := b.parts(v, t, p, marks, f); known && !ok {
 			return tenon.Value{}
 		}
-		c, err := constraintFromCty(t, t, true)
+		c, err := b.constraintFromCty(t, t, true)
 		if err != nil {
 			f.crossing(p, err)
 			return tenon.Value{}
@@ -143,15 +144,17 @@ func (b Bridge) unmarkedFromCty(v cty.Value, p tenon.Path, marks []tenon.Mark, f
 	}
 	switch {
 	case !known || t.IsCapsuleType():
-		typ, err := typeFromCty(t, t)
+		typ, err := b.typeFromCty(t, t)
 		switch {
 		case err != nil:
 			f.crossing(p, err)
 			return tenon.Value{}
 		case !v.IsKnown():
 			return tenon.Narrow(tenon.Unknown(typ), narrowingsFromCty(v, t, false)...)
+		case v.IsNull():
+			return tenon.Null(typ)
 		}
-		return tenon.Null(typ)
+		return b.capsuleFromCty(v, t, p, f)
 	case t == cty.Bool:
 		return tenon.Bool(v.True())
 	case t == cty.Number:
@@ -168,7 +171,7 @@ func (b Bridge) unmarkedFromCty(v cty.Value, p tenon.Path, marks []tenon.Mark, f
 	case t.IsObjectType():
 		return f.data(p, tenon.Object(parts.entries))
 	}
-	elem, err := typeFromCty(t.ElementType(), t)
+	elem, err := b.typeFromCty(t.ElementType(), t)
 	switch {
 	case err != nil:
 		f.crossing(p, err)
@@ -259,7 +262,8 @@ func (b Bridge) parts(v cty.Value, t cty.Type, p tenon.Path, marks []tenon.Mark,
 // An error value crosses as the [*tenon.Error] holding it. ToCty fails with a
 // [*tenon.Error] where a part of v cannot cross, each diagnostic located by
 // the part's path: a mark the Bridge does not map (CodeUnmappedMark), a
-// capsule type (CodeUnpairedCapsule), and a pending value whose constraint
+// capsule type it pairs with none (CodeUnpairedCapsule), and a pending value
+// whose constraint
 // holds a OneOf (CodeOneOf). A failure within a value carrying a redacting
 // mark is located at that value, as FromCty's are. It panics on the zero
 // Value, which is not a value.
@@ -347,7 +351,7 @@ func (b Bridge) marksToCty(marks []tenon.Mark, p tenon.Path, f *failures) (cty.V
 // the part that fails, as fromCty's are.
 func (b Bridge) unmarkedToCty(v tenon.Value, p tenon.Path, marks cty.ValueMarks, f *failures) cty.Value {
 	if v.IsPending() {
-		t, err := constraintToCty(v.Constraint(), v.Constraint(), true)
+		t, err := b.constraintToCty(v.Constraint(), v.Constraint(), true)
 		switch {
 		case err != nil:
 			f.crossing(p, err)
@@ -361,15 +365,18 @@ func (b Bridge) unmarkedToCty(v tenon.Value, p tenon.Path, marks cty.ValueMarks,
 	}
 	kind := v.Type().Kind()
 	if !v.HasContent() || kind == tenon.KindCapsule {
-		t, err := typeToCty(v.Type(), v.Type())
+		t, err := b.typeToCty(v.Type(), v.Type())
 		switch {
 		case err != nil:
 			f.crossing(p, err)
 			return cty.NilVal
 		case v.IsNull():
 			return cty.NullVal(t)
+		case !v.HasContent():
+			return refineToCty(cty.UnknownVal(t), t, v.Range())
 		}
-		return refineToCty(cty.UnknownVal(t), t, v.Range())
+		pair, _ := b.pairOfTenon(v.Type())
+		return cty.CapsuleVal(t, pair.toCty(v))
 	}
 	switch kind {
 	case tenon.KindBool:
@@ -414,7 +421,7 @@ func (b Bridge) unmarkedToCty(v tenon.Value, p tenon.Path, marks cty.ValueMarks,
 		return cty.MapVal(entries)
 	}
 	// An empty list, set or map names its element type, which no part says.
-	elem, err := typeToCty(v.Type().ElementType(), v.Type())
+	elem, err := b.typeToCty(v.Type().ElementType(), v.Type())
 	switch {
 	case err != nil:
 		f.crossing(p, err)

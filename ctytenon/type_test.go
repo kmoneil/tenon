@@ -74,8 +74,8 @@ func TestTypesRoundTrip(t *testing.T) {
 }
 
 // TestCorpusTypes carries the type of every resolved value of tenon's corpus,
-// and of every value within one, across and back. A capsule type does not
-// cross.
+// and of every value within one, across and back. A capsule type, which the
+// zero Bridge pairs with none, does not cross.
 func TestCorpusTypes(t *testing.T) {
 	var b ctytenon.Bridge
 	crossed := 0
