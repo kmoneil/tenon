@@ -96,8 +96,9 @@ func TestConstraintsThatWiden(t *testing.T) {
 }
 
 // TestConstraintsRoundTripFromTenon carries the random constraints Unify's
-// and Convert's tests run over to cty and back. One holding a OneOf or a
-// capsule type does not cross. Any other comes back written as Unify writes
+// and Convert's tests run over to cty and back. One holding a OneOf, or a
+// capsule type, which the zero Bridge pairs with none, does not cross. Any
+// other comes back written as Unify writes
 // it, its object constraints opened, and accepts every type it accepted; and
 // cty can convert to its cty constraint from every such type.
 func TestConstraintsRoundTripFromTenon(t *testing.T) {

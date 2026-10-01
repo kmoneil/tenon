@@ -28,4 +28,11 @@ type Bridge struct {
 	// a mark on a list that tenon does not hand to its elements, one that is
 	// not deep, is on them once the list crosses back.
 	MarkToCty func(mark tenon.Mark) (any, bool)
+
+	// Capsules pairs cty capsule types with tenon ones, each crossing as the
+	// type it is paired with, and a value of either as a value of the other
+	// holding the same pointer. Where a type is paired more than once, the
+	// first pair holding it counts. A capsule type paired with none fails
+	// the crossing of a type or value holding it, with CodeUnpairedCapsule.
+	Capsules []CapsulePair
 }

@@ -19,7 +19,8 @@ import (
 // make it a type constraint rather than a type, as [Bridge.ConstraintFromCty]
 // carries one; where an object type's attribute names are names tenon
 // refuses, as [tenon.CheckAttributeNames] says; or where t holds a capsule
-// type. It panics on cty.NilType, which is not a type.
+// type the Bridge pairs with none: a paired one is its pair (Bridge.Capsules).
+// It panics on cty.NilType, which is not a type.
 func (b Bridge) TypeFromCty(t cty.Type) (tenon.Type, error) {
 	if t == cty.NilType {
 		usagePanic("TypeFromCty called with cty.NilType, which is not a type")
@@ -27,12 +28,12 @@ func (b Bridge) TypeFromCty(t cty.Type) (tenon.Type, error) {
 	if t.HasDynamicTypes() {
 		return tenon.Type{}, fmt.Errorf("ctytenon: %#v holds cty.DynamicPseudoType, and is a type constraint rather than a type", t)
 	}
-	return typeFromCty(t, t)
+	return b.typeFromCty(t, t)
 }
 
 // typeFromCty returns the tenon type of t, a part of whole, which the error
 // of a part that does not cross names.
-func typeFromCty(t, whole cty.Type) (tenon.Type, error) {
+func (b Bridge) typeFromCty(t, whole cty.Type) (tenon.Type, error) {
 	switch {
 	case t == cty.Bool:
 		return tenon.BoolType(), nil
@@ -41,7 +42,7 @@ func typeFromCty(t, whole cty.Type) (tenon.Type, error) {
 	case t == cty.String:
 		return tenon.StringType(), nil
 	case t.IsListType(), t.IsSetType(), t.IsMapType():
-		elem, err := typeFromCty(t.ElementType(), whole)
+		elem, err := b.typeFromCty(t.ElementType(), whole)
 		if err != nil {
 			return tenon.Type{}, err
 		}
@@ -55,7 +56,7 @@ func typeFromCty(t, whole cty.Type) (tenon.Type, error) {
 	case t.IsTupleType():
 		elems := make([]tenon.Type, 0, len(t.TupleElementTypes()))
 		for _, e := range t.TupleElementTypes() {
-			elem, err := typeFromCty(e, whole)
+			elem, err := b.typeFromCty(e, whole)
 			if err != nil {
 				return tenon.Type{}, err
 			}
@@ -72,7 +73,7 @@ func typeFromCty(t, whole cty.Type) (tenon.Type, error) {
 		}
 		fields := make(map[string]tenon.Type, len(attrs))
 		for name, a := range attrs {
-			attr, err := typeFromCty(a, whole)
+			attr, err := b.typeFromCty(a, whole)
 			if err != nil {
 				return tenon.Type{}, err
 			}
@@ -82,6 +83,9 @@ func typeFromCty(t, whole cty.Type) (tenon.Type, error) {
 	}
 	// What is left is a capsule type: cty has no other kind of type, and the
 	// callers have taken cty.DynamicPseudoType out.
+	if pair, ok := b.pairOfCty(t); ok {
+		return pair.tenon, nil
+	}
 	return tenon.Type{}, &crossingError{code: CodeUnpairedCapsule, msg: fmt.Sprintf("%#v holds the capsule type %s, which the Bridge pairs with no tenon type", whole, t.FriendlyName())}
 }
 
@@ -95,18 +99,18 @@ func checkNames(attrs map[string]cty.Type, whole cty.Type) error {
 }
 
 // TypeToCty returns the cty type of the tenon type t, as TypeFromCty gives
-// the tenon type of a cty one. It fails where t holds a capsule type, and
-// panics on the zero Type, which is not a type.
+// the tenon type of a cty one. It fails where t holds a capsule type the
+// Bridge pairs with none, and panics on the zero Type, which is not a type.
 func (b Bridge) TypeToCty(t tenon.Type) (cty.Type, error) {
 	if t.IsZero() {
 		usagePanic("TypeToCty called with the zero Type, which is not a type")
 	}
-	return typeToCty(t, t)
+	return b.typeToCty(t, t)
 }
 
 // typeToCty returns the cty type of t, a part of whole, a type or a
 // constraint, which the error of a part that does not cross names.
-func typeToCty(t tenon.Type, whole fmt.Stringer) (cty.Type, error) {
+func (b Bridge) typeToCty(t tenon.Type, whole fmt.Stringer) (cty.Type, error) {
 	switch t.Kind() {
 	case tenon.KindBool:
 		return cty.Bool, nil
@@ -115,7 +119,7 @@ func typeToCty(t tenon.Type, whole fmt.Stringer) (cty.Type, error) {
 	case tenon.KindString:
 		return cty.String, nil
 	case tenon.KindList, tenon.KindSet, tenon.KindMap:
-		elem, err := typeToCty(t.ElementType(), whole)
+		elem, err := b.typeToCty(t.ElementType(), whole)
 		if err != nil {
 			return cty.NilType, err
 		}
@@ -130,7 +134,7 @@ func typeToCty(t tenon.Type, whole fmt.Stringer) (cty.Type, error) {
 		parts := t.TupleElementTypes()
 		elems := make([]cty.Type, 0, len(parts))
 		for _, e := range parts {
-			elem, err := typeToCty(e, whole)
+			elem, err := b.typeToCty(e, whole)
 			if err != nil {
 				return cty.NilType, err
 			}
@@ -140,13 +144,16 @@ func typeToCty(t tenon.Type, whole fmt.Stringer) (cty.Type, error) {
 	case tenon.KindObject:
 		attrs := make(map[string]cty.Type, len(t.AttributeNames()))
 		for _, name := range t.AttributeNames() {
-			attr, err := typeToCty(t.AttributeType(name), whole)
+			attr, err := b.typeToCty(t.AttributeType(name), whole)
 			if err != nil {
 				return cty.NilType, err
 			}
 			attrs[name] = attr
 		}
 		return cty.Object(attrs), nil
+	}
+	if pair, ok := b.pairOfTenon(t); ok {
+		return pair.cty, nil
 	}
 	return cty.NilType, &crossingError{code: CodeUnpairedCapsule, msg: fmt.Sprintf("%s holds the capsule type %q, which the Bridge pairs with no cty type", whole, t.CapsuleName())}
 }

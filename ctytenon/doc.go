@@ -6,7 +6,9 @@
 // A [Bridge] does the carrying. [Bridge.FromCty] gives the tenon value of a cty
 // value, and [Bridge.ToCty] the cty value of a tenon value: a bool, string or
 // number is itself, and a list, set, map, tuple or object is made of the
-// values it holds, at any depth, nulls and unknown values among them. A number
+// values it holds, at any depth, nulls and unknown values among them; a value
+// of a capsule type is a value of the type the Bridge pairs it with, holding
+// the same pointer. A number
 // crosses to tenon as the decimal of the fewest digits that cty's parser reads
 // as it, so that HCL's 0.1 is 0.1, and back as what cty's parser reads from
 // its text. What a range says of an unknown value, in cty's refinements or
@@ -42,8 +44,9 @@
 // and whether they redact, which only the program that made them knows. A
 // mark the Bridge does not map fails the crossing rather than being left
 // behind, since a sensitive value without its mark would show in tenon's
-// display. The zero Bridge maps no marks, and pairs no capsule types, which
-// only the program that made them can pair with another.
+// display. Capsule types cross as a Bridge pairs them, in its Capsules, since
+// only the program that made them can pair one with another. The zero Bridge
+// maps no marks and pairs no capsule types.
 //
 // A value that does not cross fails with a [*tenon.Error] whose diagnostics
 // are located by the paths of the parts that fail, with the codes of tenon's

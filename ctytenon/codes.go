@@ -11,7 +11,8 @@ const (
 	CodeUnmappedMark tenon.Code = "cty.unmapped_mark"
 	// CodeUnpairedCapsule is the code of a value of a capsule type, or of a
 	// type holding one, that the Bridge pairs with no capsule type of the
-	// other side.
+	// other side, and of a cty capsule value holding what its pair does not:
+	// a pointer of another type, or a nil one.
 	CodeUnpairedCapsule tenon.Code = "cty.unpaired_capsule"
 	// CodeOneOf is the code of a pending value whose constraint holds a
 	// OneOf, which no cty type says.
