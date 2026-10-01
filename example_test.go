@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"hash/maphash"
+	"math/big"
 	"net/netip"
 
 	"github.com/kmoneil/tenon"
@@ -175,6 +176,29 @@ func ExampleValue_ElementsSeq() {
 	// tier = "web"
 	// name: "web-1"
 	// port: 443
+}
+
+// A rational is taken exactly, where a decimal holds it, and refused where
+// none does.
+func ExampleNumberFromBigRat() {
+	fmt.Println(tenon.NumberFromBigRat(big.NewRat(3, 8)))
+	third := tenon.NumberFromBigRat(big.NewRat(1, 3))
+	fmt.Println(third.Diagnostics()[0].Code)
+	// Output:
+	// 0.375
+	// encode.inexact
+}
+
+// Value.IsNull asks the program's question, which has a yes or a no; the
+// IsNull operation asks the language's, which may not be answered yet.
+func ExampleValue_IsNull() {
+	absent := tenon.Null(tenon.StringType())
+	fmt.Println(absent.IsNull(), tenon.IsNull(absent))
+	maybe := tenon.Unknown(tenon.StringType())
+	fmt.Println(maybe.IsNull(), tenon.IsNull(maybe))
+	// Output:
+	// true true
+	// false unknown(bool, not null)
 }
 
 // Equals answers what is known, and says it does not know where the values

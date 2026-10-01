@@ -1,4 +1,4 @@
-package gotenon
+package decimal
 
 import (
 	"math/big"

@@ -370,6 +370,7 @@ func TestConformance_TY001_EveryValueHasOneConcreteType(t *testing.T) {
 		"Bool":              tr,
 		"NumberFromInt":     one,
 		"NumberFromBigInt":  tenon.NumberFromBigInt(new(big.Int).Lsh(big.NewInt(1), 100)),
+		"NumberFromBigRat":  tenon.NumberFromBigRat(big.NewRat(1, 8)),
 		"NumberFromText":    tenon.NumberFromText("1.5"),
 		"String":            tenon.String("x"),
 		"CapsuleType.Value": held.Value(&thing{}),
@@ -401,7 +402,7 @@ func TestConformance_TY001_EveryValueHasOneConcreteType(t *testing.T) {
 		"UnmarkDeep":        unmarkedDeep(tenon.List(num, tenon.WithMarks(one, stamp{id: "m"}))),
 	}
 	want := map[string]tenon.Type{
-		"Bool": bl, "NumberFromInt": num, "NumberFromBigInt": num, "NumberFromText": num, "String": str,
+		"Bool": bl, "NumberFromInt": num, "NumberFromBigInt": num, "NumberFromBigRat": num, "NumberFromText": num, "String": str,
 		"CapsuleType.Value": held.Type(), "Null": str, "Unknown": str,
 		"List": tenon.ListType(str), "Set": tenon.SetType(str), "Map": tenon.MapType(str),
 		"Tuple": tenon.TupleType(num, bl), "Object": tenon.ObjectType(map[string]tenon.Type{"a": num}),

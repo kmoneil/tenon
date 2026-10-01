@@ -19,6 +19,16 @@
   does, `MapEntries` for a map's keys and elements and `Attributes` for an
   object's names and attributes, both in sorted order. Each panics where
   the read beside it does, as it is called.
+- `Value.IsNull`, whether a value is null, as a `bool` for the program:
+  true for the null value of a type and a pending value known to be null,
+  where the `IsNull` operation's answer is known true, and false for a
+  value that may yet turn out null.
+- `NumberFromBigRat`, a `big.Rat` as a Number, exactly. A rational that is
+  not a terminating decimal gives an error value with code
+  `encode.inexact`, and one outside the range of numbers
+  `number.out_of_range`, as encoding a `big.Rat` with gotenon does, which
+  now calls it. gotenon's message for a rational outside the range names
+  the rational.
 
 ## 0.11.0 (2026-09-29)
 

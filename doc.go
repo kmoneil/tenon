@@ -29,8 +29,9 @@
 // A [Value] is in exactly one of three states.
 //
 //   - A resolved value has a [Type]. It is known, built by [Bool], [String],
-//     [NumberFromInt], [NumberFromText], [List], [Set], [Map],
-//     [Tuple], [Object] or [CapsuleType.Value]; or it is null, the
+//     [NumberFromInt], [NumberFromBigInt], [NumberFromBigRat],
+//     [NumberFromText], [List], [Set], [Map], [Tuple], [Object] or
+//     [CapsuleType.Value]; or it is null, the
 //     absence of a value at a type, built by [Null]; or it is unknown, a
 //     value of a type whose content is not settled yet, built by [Unknown].
 //   - A pending value, built by [Pending], has no type yet, only a
@@ -41,8 +42,9 @@
 // [Value.IsResolved], [Value.IsKnown], [Value.IsPending] and [Value.IsError]
 // ask which state a value is in; [Value.Type] and [Value.Constraint] say what
 // the first two hold. [Value.HasContent] reports whether there is content to
-// read, which a null, an unknown, a pending value and an error value have not.
-// Content is read with [Value.Len], [Value.Index], [Value.Elements],
+// read, which a null, an unknown, a pending value and an error value have not,
+// and [Value.IsNull] whether a value is null, where the [IsNull] operation's
+// answer is known true. Content is read with [Value.Len], [Value.Index], [Value.Elements],
 // [Value.Attribute], [Value.MapKeys], [Value.LookupMapElement] and the
 // accessors [Value.AsBool], [Value.AsString], [Value.AsInt64], [Value.AsBigInt]
 // and [Value.AsBigRat], and ranged over, without copying, with

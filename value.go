@@ -168,6 +168,46 @@ func NumberFromBigInt(i *big.Int) Value {
 	return numberValue(d)
 }
 
+// NumberFromBigRat returns the Number value r, exactly, without rendering it
+// as text. A rational that is not a terminating decimal, one whose
+// denominator has a prime factor other than two and five, as 1/3 has, is no
+// number, and gives an error value with code CodeEncodeInexact, as encoding a
+// big.Rat does (GO-030); one with a digit outside the range of numbers gives
+// an error value with code CodeNumberOutOfRange. Whether r terminates is
+// decided first, and neither answer costs dividing a denominator too large
+// for the range. It does not retain r.
+//
+// NumberFromBigRat panics if r is nil.
+func NumberFromBigRat(r *big.Rat) Value {
+	if r == nil {
+		usagePanic("NumberFromBigRat called with a nil *big.Rat")
+	}
+	d, err := decimal.FromRat(r)
+	if err == nil {
+		return numberValue(d)
+	}
+	switch code := numberCode(err.(decimal.Error)); code {
+	case CodeEncodeInexact:
+		return errorValue(Diagnostic{Code: code, Message: "the rational" + ratText(r) + " is not a terminating decimal"})
+	case CodeNumberOutOfRange:
+		return errorValue(Diagnostic{Code: code, Message: "the rational" + ratText(r) + " is outside the range of numbers"})
+	}
+	internalPanic("FromRat reported %v, which it does not report", err)
+	return Value{}
+}
+
+// ratText returns r written for a message, with a leading space, or nothing
+// where writing r in decimal would cost more than the refusal it explains
+// may: turning a number's bits into digits is quadratic, and the number can
+// be megabytes.
+func ratText(r *big.Rat) string {
+	const limit = 256 // bits, a few dozen digits
+	if r.Num().BitLen() <= limit && r.Denom().BitLen() <= limit {
+		return " " + r.String()
+	}
+	return ""
+}
+
 // NumberFromText returns the Number value that s denotes. The syntax is an
 // optional "-", one or more ASCII digits, optionally a "." and one or more
 // digits, and optionally an exponent: "e" or "E", an optional sign, and one or
@@ -239,6 +279,8 @@ func numberCode(err decimal.Error) Code {
 		return CodeNumberModuloByZero
 	case decimal.ErrTooLong:
 		return CodeNumberTooLong
+	case decimal.ErrInexact:
+		return CodeEncodeInexact
 	}
 	internalPanic("no diagnostic code maps %v", err)
 	return ""
@@ -440,6 +482,18 @@ func (v Value) IsResolved() bool { return v.data().state.resolved() }
 // Its members can be read whether or not they are known, since they are there
 // to read; it is the range that a member leaves open, not the content.
 func (v Value) IsKnown() bool { return v.data().isKnown() }
+
+// IsNull reports whether v is null: the null value of a type, or a pending
+// value known to be null, whatever type it settles to. It is the question the
+// IsNull operation answers, asked by the program rather than the language: it
+// is true where that operation's answer is known true, and false otherwise.
+// So a value that may still turn out null, as an unknown value whose range
+// holds null may, is not null yet, and Range says whether it may be; and an
+// error value is not null.
+func (v Value) IsNull() bool {
+	n := v.data()
+	return n.state == stateNull || n.state == statePending && n.null == nullOnly
+}
 
 // HasContent reports whether v's content can be read: v is a known value other
 // than null, or a collection or structural value holding members that are not

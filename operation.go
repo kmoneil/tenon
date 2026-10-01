@@ -450,7 +450,9 @@ func decidedBy(args []Value, b bool) (Value, bool) {
 // value answers from the nullness fact it carries, which it has whether or not
 // its type is settled.
 //
-// IsNull returns an error value if v is one.
+// IsNull returns an error value if v is one. Value.IsNull asks the same
+// question of a value for the program, as a bool, true where this answer is
+// known true.
 func IsNull(v Value) Value { return isNullOp.apply(v) }
 
 var isNullOp = register(&op{
