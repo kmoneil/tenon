@@ -37,13 +37,18 @@
 // type of a value is not a conversion's target, and a value has exactly the
 // attributes its type names, so there an object type is a closed ObjectWith.
 //
-// The zero Bridge maps no marks and pairs no capsule types, which only the
-// program that made them can pair with another: a marked value, or a value of
-// a capsule type, does not cross. A value that does not cross fails with a
-// [*tenon.Error] whose diagnostics are located by the paths of the parts that
-// fail, with the codes of tenon's where tenon has one, and with this
-// package's, [CodeUnmappedMark], [CodeUnpairedCapsule] and [CodeOneOf],
-// where it does not.
+// Marks cross as a Bridge maps them, through its MarkFromCty and MarkToCty:
+// cty's marks are any comparable values, and tenon's say how they propagate
+// and whether they redact, which only the program that made them knows. A
+// mark the Bridge does not map fails the crossing rather than being left
+// behind, since a sensitive value without its mark would show in tenon's
+// display. The zero Bridge maps no marks, and pairs no capsule types, which
+// only the program that made them can pair with another.
+//
+// A value that does not cross fails with a [*tenon.Error] whose diagnostics
+// are located by the paths of the parts that fail, with the codes of tenon's
+// where tenon has one, and with this package's, [CodeUnmappedMark],
+// [CodeUnpairedCapsule] and [CodeOneOf], where it does not.
 //
 // The package is a module of its own, so that tenon never requires go-cty:
 // a program that imports tenon alone does not download it.
