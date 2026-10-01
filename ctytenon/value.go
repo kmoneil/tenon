@@ -17,9 +17,11 @@ import (
 // holds. A number crosses as the decimal of the fewest digits that cty's
 // parser reads as it, so that HCL's 0.1 is 0.1, or as its exact value where
 // it is held in more than the 512 bits cty's parser makes. A null is the null
-// of its type, and an unknown value the unknown value of its type; the
-// refinements cty keeps of an unknown value are left behind, which leaves the
-// tenon value allowing more than cty's, never less.
+// of its type, and an unknown value the unknown value of its type, narrowed
+// as cty's refinements of it say: not null, a number's bounds, a string's
+// prefix and a collection's length. A bound crosses so that every number cty
+// allows past it crosses as a number tenon allows, which can leave tenon's
+// range allowing more than cty's, never less.
 //
 // A value whose type holds cty.DynamicPseudoType is a pending value, whose
 // constraint is that type's: cty.DynamicPseudoType is [tenon.Any], and an
@@ -75,7 +77,7 @@ func (b Bridge) fromCty(v cty.Value, p tenon.Path, f *failures) tenon.Value {
 		}
 		switch {
 		case !v.IsKnown():
-			return tenon.Pending(c)
+			return tenon.Narrow(tenon.Pending(c), narrowingsFromCty(v, t, true)...)
 		case v.IsNull():
 			return tenon.Narrow(tenon.Pending(c), tenon.NullOnly())
 		}
@@ -89,7 +91,7 @@ func (b Bridge) fromCty(v cty.Value, p tenon.Path, f *failures) tenon.Value {
 			f.crossing(p, err)
 			return tenon.Value{}
 		case !v.IsKnown():
-			return tenon.Unknown(typ)
+			return tenon.Narrow(tenon.Unknown(typ), narrowingsFromCty(v, t, false)...)
 		}
 		return tenon.Null(typ)
 	case t == cty.Bool:
@@ -184,8 +186,12 @@ func ctyMarks(marks cty.ValueMarks) string {
 // v's type, as TypeToCty gives it, holding the cty values of what v holds.
 // A number crosses as the number cty's parser reads from its text, at 512
 // bits. A null is the null of its type, and an unknown value the unknown value
-// of its type; what tenon knows of the range of an unknown value is left
-// behind, which leaves the cty value allowing more than tenon's, never less.
+// of its type, refined as its range says where cty can say it: not null, a
+// number's bounds, a string's prefix and a collection's length. A bound that
+// excludes itself includes itself in cty, since a number just past it can
+// cross as the bound itself; a string's length, and a set's listed members,
+// have no refinement and are left behind. Either leaves cty's range allowing
+// more than tenon's, never less.
 //
 // A pending value is an unknown value, or a null where it is known to be null,
 // whose type is the cty type of its constraint where cty has one type for all
@@ -233,6 +239,8 @@ func (b Bridge) toCty(v tenon.Value, p tenon.Path, f *failures) cty.Value {
 			return cty.NilVal
 		case v.IsNull():
 			return cty.NullVal(t)
+		case t != cty.DynamicPseudoType && notNull(v):
+			return cty.UnknownVal(t).RefineNotNull()
 		}
 		return cty.UnknownVal(t)
 	}
@@ -246,7 +254,7 @@ func (b Bridge) toCty(v tenon.Value, p tenon.Path, f *failures) cty.Value {
 		case v.IsNull():
 			return cty.NullVal(t)
 		}
-		return cty.UnknownVal(t)
+		return refineToCty(cty.UnknownVal(t), t, v.Range())
 	}
 	switch kind {
 	case tenon.KindBool:
