@@ -144,6 +144,39 @@ func ExampleAdd() {
 	// unknown(number, not null, >= 42)
 }
 
+// The iterators range over a container where it holds its members, without
+// copying them first, and stop where the loop does.
+func ExampleValue_ElementsSeq() {
+	num := tenon.NumberType()
+	ports := tenon.List(num, tenon.NumberFromInt(80), tenon.NumberFromInt(443), tenon.Unknown(num), tenon.NumberFromInt(8080))
+	for port := range ports.ElementsSeq() {
+		if !port.IsKnown() {
+			fmt.Println("and one not known yet")
+			break
+		}
+		fmt.Println("port", port)
+	}
+
+	// A map's entries and an object's attributes come in the order of their
+	// names.
+	labels := tenon.Map(tenon.StringType(), map[string]tenon.Value{"tier": tenon.String("web"), "env": tenon.String("prod")})
+	for key, label := range labels.MapEntries() {
+		fmt.Println(key, "=", label)
+	}
+	server := tenon.Object(map[string]tenon.Value{"port": tenon.NumberFromInt(443), "name": tenon.String("web-1")})
+	for name, attr := range server.Attributes() {
+		fmt.Println(name+":", attr)
+	}
+	// Output:
+	// port 80
+	// port 443
+	// and one not known yet
+	// env = "prod"
+	// tier = "web"
+	// name: "web-1"
+	// port: 443
+}
+
 // Equals answers what is known, and says it does not know where the values
 // could still turn out either way.
 func ExampleEquals() {

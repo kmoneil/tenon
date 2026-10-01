@@ -45,7 +45,9 @@
 // Content is read with [Value.Len], [Value.Index], [Value.Elements],
 // [Value.Attribute], [Value.MapKeys], [Value.LookupMapElement] and the
 // accessors [Value.AsBool], [Value.AsString], [Value.AsInt64], [Value.AsBigInt]
-// and [Value.AsBigRat]. [Value.String] is the display form, meant for people.
+// and [Value.AsBigRat], and ranged over, without copying, with
+// [Value.ElementsSeq], [Value.MapEntries] and [Value.Attributes].
+// [Value.String] is the display form, meant for people.
 //
 // # Types and constraints
 //

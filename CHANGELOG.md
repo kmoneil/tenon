@@ -13,6 +13,12 @@
   so a set of `bool` is no longer than 3 whatever its range records; a
   bound carries the `Propagate` marks of its value, and a set's members its
   deep marks, as `Elements` gives them.
+- Iterators over a container's members, which read them where the value
+  holds them rather than copying them first: `ElementsSeq` beside
+  `Elements`, giving a set's members with its deep marks as `Elements`
+  does, `MapEntries` for a map's keys and elements and `Attributes` for an
+  object's names and attributes, both in sorted order. Each panics where
+  the read beside it does, as it is called.
 
 ## 0.11.0 (2026-09-29)
 
