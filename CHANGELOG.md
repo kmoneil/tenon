@@ -1,6 +1,35 @@
 # Changelog
 
-## Unreleased
+## 0.12.0 (2026-10-01)
+
+The 1.0 audit's additions to the API, each of them additive: a range reads
+back what it says, iterators range over a container without copying it, a
+program asks whether a value is null as a `bool` and makes a number of a
+`big.Rat`, and `%#v` prints the Go that builds a value, so that a failing
+test shows what it compared rather than tenon's internals. It implements
+version 0.10.0 of the tenon specification, as 0.11.0 did: 201 rules.
+
+Beside the library, the bench module now holds a test for each of
+go-cty's open issues whose defect tenon could share, asserting what go-cty
+v1.19.0 does with the issue's case and what tenon does with its
+counterpart. One of them found the message fixed below.
+
+The minor version moves for the additions. Values, their encodings and
+the results of every operation are as they were.
+
+**Upgrading from 0.11.0.** The compiler finds nothing. Three messages and
+texts change:
+
+- `%#v` prints a `Value`, `Type`, `Constraint`, `Path`, `Step`, `Range`,
+  `Narrowing`, `*Error` and `*CapsuleType` as Go syntax, and the kinds and
+  policies by their constants' names, where it printed internals or a
+  number. A test comparing `%#v`'s text needs the new text.
+- The panic of `ObjectType` and `ObjectWith` for two spellings of one name
+  names them in ASCII.
+- gotenon's message for a `big.Rat` outside the range of numbers names the
+  rational, as its message for an inexact one did.
+
+**What `CONFORMANCE.md` states.** 201 of 201, as before.
 
 ### Added
 
