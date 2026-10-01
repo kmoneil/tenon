@@ -95,8 +95,9 @@ func TestValues(t *testing.T) {
 }
 
 // TestValuesThatWiden holds the values that cross as one allowing more than
-// they do to doing so: what a range says, and what a known value whose type
-// holds cty.DynamicPseudoType holds, which tenon has no known value for.
+// they do to doing so: what a known value whose type holds
+// cty.DynamicPseudoType holds, which tenon has no known value for, and what
+// cty cannot say of a pending value.
 func TestValuesThatWiden(t *testing.T) {
 	var b ctytenon.Bridge
 	for _, c := range []struct {
@@ -104,7 +105,6 @@ func TestValuesThatWiden(t *testing.T) {
 		cty   cty.Value
 		tenon tenon.Value
 	}{
-		{"a refined unknown", cty.UnknownVal(cty.String).RefineNotNull(), tenon.Unknown(str)},
 		{"a list holding DynamicVal", cty.ListVal([]cty.Value{cty.DynamicVal}), tenon.Narrow(tenon.Pending(tenon.ListOf(tenon.Any())), tenon.NotNull())},
 		{
 			"a tuple holding DynamicVal and a number",
@@ -126,7 +126,6 @@ func TestValuesThatWiden(t *testing.T) {
 		tenon tenon.Value
 		cty   cty.Value
 	}{
-		{"a narrowed unknown", tenon.Narrow(tenon.Unknown(num), tenon.NumberMin(n(5), true)), cty.UnknownVal(cty.Number)},
 		{"a pending value not null", tenon.Narrow(tenon.Pending(tenon.Any()), tenon.NotNull()), cty.DynamicVal},
 		{"an open object", tenon.Pending(tenon.ObjectWith(map[string]tenon.Field{"a": tenon.Required(tenon.Any())}, false)), cty.DynamicVal},
 		{"an optional field", tenon.Pending(tenon.ObjectWith(map[string]tenon.Field{"a": tenon.Optional(tenon.Exactly(str))}, true)), cty.DynamicVal},
@@ -396,28 +395,15 @@ func TestValuesRoundTripFromCty(t *testing.T) {
 		if back.RawEquals(v) {
 			continue
 		}
-		// tenon settles that an unknown member of a set is a member the set
-		// holds already where its type allows no other, as the unknown
-		// empty object is {} or null, which cty keeps apart.
-		if again, err := b.FromCty(back); err != nil || !again.Equal(tv) || !holdsUnknownSetMember(v) {
+		// tenon can know more than cty said: that an unknown member of a set
+		// is one the set holds already, where its type allows no other, as
+		// the unknown empty object is {} or null; or the most members a set
+		// of a type of few values can have. What comes back says the same to
+		// tenon.
+		if again, err := b.FromCty(back); err != nil || !again.Equal(tv) {
 			t.Fatalf("%#v crossed as %v and back as %#v", v, tv, back)
 		}
 	}
-}
-
-// holdsUnknownSetMember reports whether v, at any depth, is a known set
-// holding a member that is not known.
-func holdsUnknownSetMember(v cty.Value) bool {
-	if !v.IsKnown() || v.IsNull() || !v.CanIterateElements() {
-		return false
-	}
-	for it := v.ElementIterator(); it.Next(); {
-		_, e := it.Element()
-		if v.Type().IsSetType() && !e.IsWhollyKnown() || holdsUnknownSetMember(e) {
-			return true
-		}
-	}
-	return false
 }
 
 // randomTenonValue returns a random value of type typ, nulls and unknown

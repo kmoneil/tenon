@@ -10,8 +10,9 @@
 // crosses to tenon as the decimal of the fewest digits that cty's parser reads
 // as it, so that HCL's 0.1 is 0.1, and back as what cty's parser reads from
 // its text. What a range says of an unknown value, in cty's refinements or
-// tenon's narrowings, is left behind, which leaves the value allowing more,
-// never less. A cty value whose type holds cty.DynamicPseudoType, as
+// tenon's narrowings, crosses with it where the other side can say it, so
+// that the value allows what it allowed, and more only where the other side
+// cannot say as much. A cty value whose type holds cty.DynamicPseudoType, as
 // cty.DynamicVal and the untyped null do, crosses as a pending value, which
 // crosses back as an unknown value or a null.
 //
