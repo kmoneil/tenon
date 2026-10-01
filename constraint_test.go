@@ -182,7 +182,7 @@ func TestConformance_TY032_ObjectWith(t *testing.T) {
 	mustPanicUsage(t, "must not be empty", func() {
 		tenon.ObjectWith(map[string]tenon.Field{"": tenon.Required(tenon.Any())}, true)
 	})
-	mustPanicUsage(t, "the same name after normalization", func() {
+	mustPanicUsage(t, `object field names "cafe\u0301" and "caf\u00e9" are the same name after normalization`, func() {
 		tenon.ObjectWith(map[string]tenon.Field{"caf\u00e9": tenon.Required(tenon.Any()), "cafe\u0301": tenon.Optional(tenon.Any())}, false)
 	})
 }
