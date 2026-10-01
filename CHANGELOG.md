@@ -43,6 +43,14 @@
   type in full would make the syntax grow with the members times their
   type, it names each type once, in a function literal called in place.
 
+### Fixed
+
+- `ObjectType` and `ObjectWith`, given two names that are one name after
+  normalization, panic naming the two spellings in ASCII, as
+  `CheckAttributeNames` and the error values of `Object` and `Map` name
+  them. The panic quoted them as they are, so an `e` with a combining
+  acute and a precomposed `é` printed as the same name twice.
+
 ## 0.11.0 (2026-09-29)
 
 The rest of the architecture review of 0.9.0: the fixes that waited on

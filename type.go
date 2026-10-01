@@ -197,7 +197,10 @@ func attributeEntries[V any](m map[string]V, what string) []nameEntry[V] {
 	slices.SortStableFunc(entries, func(a, b nameEntry[V]) int { return strings.Compare(a.name, b.name) })
 	for i := 1; i < len(entries); i++ {
 		if entries[i].name == entries[i-1].name {
-			usagePanic("%s names %q and %q are the same name after normalization", what, entries[i-1].original, entries[i].original)
+			// In ASCII, as the diagnostics name them (sharedName): the two
+			// spellings normalize alike, and %q would print both as one.
+			usagePanic("%s names %s and %s are the same name after normalization",
+				what, quotedASCII(entries[i-1].original), quotedASCII(entries[i].original))
 		}
 	}
 	return entries

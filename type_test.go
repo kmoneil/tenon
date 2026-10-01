@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -152,9 +153,16 @@ func TestConformance_TY013_AttributeNames(t *testing.T) {
 	mustPanicUsage(t, "must not be empty", func() { tenon.ObjectType(map[string]tenon.Type{"": num}) })
 	mustPanicUsage(t, "not valid UTF-8", func() { tenon.ObjectType(map[string]tenon.Type{"a\xff": num}) })
 	mustPanicUsage(t, "not valid UTF-8", func() { tenon.ObjectType(map[string]tenon.Type{"\xed\xa0\x80": num}) }) // a surrogate
-	mustPanicUsage(t, "the same name after normalization", func() {
+	// The two spellings are named in ASCII, as CheckAttributeNames names
+	// them, since quoted as they are they print as one.
+	twice := "object attribute names " + strconv.QuoteToASCII(decomposed) + " and " +
+		strconv.QuoteToASCII(composed) + " are the same name after normalization"
+	mustPanicUsage(t, twice, func() {
 		tenon.ObjectType(map[string]tenon.Type{composed: num, decomposed: tenon.StringType()})
 	})
+	if err := tenon.CheckAttributeNames(composed, decomposed); err == nil || !strings.Contains(err.Error(), strconv.QuoteToASCII(decomposed)) {
+		t.Errorf("CheckAttributeNames gave %v, not the spellings the panic names", err)
+	}
 }
 
 func TestConformance_TY022_TypesImmutable(t *testing.T) {
