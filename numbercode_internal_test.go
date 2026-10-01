@@ -26,6 +26,7 @@ func TestDecimalErrorsMapToOneCode(t *testing.T) {
 		"ErrDivideByZero": CodeNumberDivideByZero,
 		"ErrModuloByZero": CodeNumberModuloByZero,
 		"ErrTooLong":      CodeNumberTooLong,
+		"ErrInexact":      CodeEncodeInexact,
 	}
 	for i, name := range constants {
 		err := decimal.Error(i + 1) // the constants count from one, in order

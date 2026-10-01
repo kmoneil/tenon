@@ -32,6 +32,9 @@ const (
 	ErrModuloByZero
 	// ErrTooLong reports text longer than Parse reads.
 	ErrTooLong
+	// ErrInexact reports a rational number that is not a terminating
+	// decimal, which no number is.
+	ErrInexact
 )
 
 func (e Error) Error() string {
@@ -46,6 +49,8 @@ func (e Error) Error() string {
 		return "decimal: modulo by zero"
 	case ErrTooLong:
 		return "decimal: number text too long"
+	case ErrInexact:
+		return "decimal: rational not a terminating decimal"
 	}
 	return "decimal: error " + strconv.Itoa(int(e))
 }
