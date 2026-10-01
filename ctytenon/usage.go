@@ -8,3 +8,10 @@ import "fmt"
 func usagePanic(format string, args ...any) {
 	panic("tenon: usage: " + fmt.Sprintf(format, args...))
 }
+
+// internalPanic reports a defect in this package rather than in the calling
+// program, as tenon does: an invariant that the implementation keeps and did
+// not, with a message that begins "ctytenon: internal: ".
+func internalPanic(format string, args ...any) {
+	panic("ctytenon: internal: " + fmt.Sprintf(format, args...))
+}
