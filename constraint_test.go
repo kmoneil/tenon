@@ -9,6 +9,7 @@ import (
 
 	"github.com/kmoneil/tenon"
 	"github.com/kmoneil/tenon/internal/conformance"
+	"github.com/kmoneil/tenon/internal/conformance/values"
 )
 
 // sampleTypes returns distinct types of every kind, nested ones included.
@@ -407,7 +408,7 @@ func TestConformance_UN023_SharedTypeDecidesEveryConstraint(t *testing.T) {
 
 	r := rand.New(rand.NewSource(20260918))
 	for range conformance.Iterations(t, 800) {
-		base := randomConstraint(r, 3, capsule)
+		base := values.RandomConstraint(r, 3, capsule)
 		// The examples are what the search for a missed shared type rests on,
 		// so they must satisfy their constraint, and one that admits a type
 		// must have some.
@@ -437,7 +438,7 @@ func TestConformance_UN023_SharedTypeDecidesEveryConstraint(t *testing.T) {
 		}
 		check(base)
 		check(base, related(r, base, capsule))
-		check(base, randomConstraint(r, 3, capsule))
+		check(base, values.RandomConstraint(r, 3, capsule))
 		check(base, related(r, base, capsule), related(r, base, capsule))
 	}
 	// A run that found one answer nearly always would say little of the other.

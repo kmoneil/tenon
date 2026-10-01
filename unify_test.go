@@ -9,6 +9,7 @@ import (
 
 	"github.com/kmoneil/tenon"
 	"github.com/kmoneil/tenon/internal/conformance"
+	"github.com/kmoneil/tenon/internal/conformance/values"
 )
 
 // unifyOK unifies cs under p, failing t if unification fails.
@@ -224,44 +225,6 @@ func TestConformance_UN020_PendingValuesCarryAConstraint(t *testing.T) {
 	}
 }
 
-// randomConstraint returns a constraint of every kind, nested up to depth.
-func randomConstraint(r *rand.Rand, depth int, capsule tenon.Type) tenon.Constraint {
-	leaves := []tenon.Constraint{
-		tenon.Any(), is(num), is(str), is(boo), is(tenon.ListType(num)), is(tenon.TupleType(num, str)),
-		is(tenon.ObjectType(map[string]tenon.Type{"a": num})), is(tenon.MapType(str)), is(capsule), tenon.OneOf(),
-	}
-	if depth == 0 || r.Intn(3) == 0 {
-		return leaves[r.Intn(len(leaves))]
-	}
-	child := func() tenon.Constraint { return randomConstraint(r, depth-1, capsule) }
-	children := func(max int) []tenon.Constraint {
-		out := make([]tenon.Constraint, r.Intn(max+1))
-		for i := range out {
-			out[i] = child()
-		}
-		return out
-	}
-	switch r.Intn(6) {
-	case 0:
-		return tenon.ListOf(child())
-	case 1:
-		return tenon.SetOf(child())
-	case 2:
-		return tenon.MapOf(child())
-	case 3:
-		return tenon.TupleOf(children(2)...)
-	case 4:
-		m := map[string]tenon.Field{}
-		for _, name := range []string{"a", "b"} {
-			if r.Intn(2) == 0 {
-				m[name] = tenon.Field{Constraint: child(), Required: r.Intn(2) == 0}
-			}
-		}
-		return tenon.ObjectWith(m, r.Intn(2) == 0)
-	}
-	return tenon.OneOf(children(3)...)
-}
-
 // related returns a constraint of much the same shape as c, so that the two
 // often unify: parts of it left open, primitive types swapped, a list for a
 // set, a tuple for a list, fields made optional, dropped or added, and closed
@@ -409,10 +372,10 @@ func TestConformance_CV041_UnificationIsOrderIndependent(t *testing.T) {
 	capsule := tenon.NewCapsule("cap", tenon.CapsuleOps[celsius]{}).Type()
 	succeeded, failed := 0, 0
 	for i := range conformance.Iterations(t, 1500) {
-		base := randomConstraint(r, 3, capsule)
+		base := values.RandomConstraint(r, 3, capsule)
 		cs := []tenon.Constraint{base, related(r, base, capsule), related(r, base, capsule)}
 		if i%4 == 0 {
-			cs[2] = randomConstraint(r, 3, capsule)
+			cs[2] = values.RandomConstraint(r, 3, capsule)
 		}
 		for _, p := range []tenon.Policy{safe, uns} {
 			what := fmt.Sprintf("Unify(%s, %v)", p, cs)

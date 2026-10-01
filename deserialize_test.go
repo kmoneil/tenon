@@ -180,7 +180,7 @@ func (g generator) top() tenon.Value {
 	var v tenon.Value
 	switch g.r.Intn(12) {
 	case 0:
-		v = tenon.Pending(randomConstraint(g.r, 2, degrees.Type()))
+		v = tenon.Pending(values.RandomConstraint(g.r, 2, degrees.Type()))
 		v = tenon.Narrow(v, []tenon.Narrowing{tenon.NotNull(), tenon.NullOnly(), tenon.NotNull()}[g.r.Intn(3)])
 	case 1:
 		p := tenon.Path{}.Attribute("a").Index(g.number()).Index(s("k"))

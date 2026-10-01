@@ -16,10 +16,10 @@ import (
 //
 // It fails where t is not a type tenon can hold: where t holds
 // cty.DynamicPseudoType or is an object type with optional attributes, which
-// make it a type constraint rather than a type; where an object type's
-// attribute names are names tenon refuses, as [tenon.CheckAttributeNames]
-// says; or where t holds a capsule type. It panics on cty.NilType, which is
-// not a type.
+// make it a type constraint rather than a type, as [Bridge.ConstraintFromCty]
+// carries one; where an object type's attribute names are names tenon
+// refuses, as [tenon.CheckAttributeNames] says; or where t holds a capsule
+// type. It panics on cty.NilType, which is not a type.
 func (b Bridge) TypeFromCty(t cty.Type) (tenon.Type, error) {
 	if t == cty.NilType {
 		usagePanic("TypeFromCty called with cty.NilType, which is not a type")
@@ -95,9 +95,9 @@ func (b Bridge) TypeToCty(t tenon.Type) (cty.Type, error) {
 	return typeToCty(t, t)
 }
 
-// typeToCty returns the cty type of t, a part of whole, which the error of a
-// part that does not cross names.
-func typeToCty(t, whole tenon.Type) (cty.Type, error) {
+// typeToCty returns the cty type of t, a part of whole, a type or a
+// constraint, which the error of a part that does not cross names.
+func typeToCty(t tenon.Type, whole fmt.Stringer) (cty.Type, error) {
 	switch t.Kind() {
 	case tenon.KindBool:
 		return cty.Bool, nil

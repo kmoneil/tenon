@@ -166,9 +166,9 @@ func TestWhatIsNotAType(t *testing.T) {
 	}
 }
 
-// TestTypeUsageErrors holds the zero types of either side, which are not
-// types, to usage panics.
-func TestTypeUsageErrors(t *testing.T) {
+// TestUsageErrors holds the zero types and constraints of either side, which
+// are neither, to usage panics.
+func TestUsageErrors(t *testing.T) {
 	var b ctytenon.Bridge
 	for _, c := range []struct {
 		want string
@@ -176,6 +176,8 @@ func TestTypeUsageErrors(t *testing.T) {
 	}{
 		{"tenon: usage: TypeFromCty called with cty.NilType, which is not a type", func() { b.TypeFromCty(cty.NilType) }},
 		{"tenon: usage: TypeToCty called with the zero Type, which is not a type", func() { b.TypeToCty(tenon.Type{}) }},
+		{"tenon: usage: ConstraintFromCty called with cty.NilType, which is not a type constraint", func() { b.ConstraintFromCty(cty.NilType) }},
+		{"tenon: usage: ConstraintToCty called with the zero Constraint, which is not a constraint", func() { b.ConstraintToCty(tenon.Constraint{}) }},
 	} {
 		func() {
 			defer func() {
