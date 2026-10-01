@@ -26,12 +26,22 @@ func (k StepKind) String() string {
 	return "StepKind(" + strconv.Itoa(int(k)) + ")"
 }
 
+// GoString returns the Go syntax of the kind, tenon.StepAttribute or
+// tenon.StepIndex, which the %#v verb prints.
+func (k StepKind) GoString() string {
+	switch k {
+	case StepAttribute, StepIndex:
+		return "tenon.Step" + k.String()
+	}
+	return "tenon.StepKind(" + strconv.Itoa(int(k)) + ")"
+}
+
 // Step is one step of a path: an attribute of an object, or an index into a
 // list, tuple, map or set. Steps cannot be compared with ==, since an index
 // holds a [Value]; [Step.Equal] compares them.
 //
-// The zero Step is not a step: every method except String, IsZero and Equal
-// panics when called on it.
+// The zero Step is not a step: every method except String, GoString, IsZero
+// and Equal panics when called on it.
 type Step struct {
 	kind StepKind
 	name string // the attribute name, normalized
@@ -69,6 +79,20 @@ func (s Step) String() string {
 	var b textWriter
 	s.write(&b)
 	return b.String()
+}
+
+// GoString returns Go syntax that returns s, which the %#v verb prints, as in
+// tenon.Path{}.Attribute("name").Steps()[0]: the one step of a path, since no
+// function makes a step alone.
+func (s Step) GoString() string {
+	if s.kind == 0 {
+		return "tenon.Step{}"
+	}
+	return goSyntax("tenon.Step", func(w *goWriter) {
+		w.WriteString("tenon.Path{}")
+		w.writeStep(s)
+		w.WriteString(".Steps()[0]")
+	})
 }
 
 func (s Step) write(b *textWriter) {
@@ -244,6 +268,12 @@ func (p Path) String() string {
 	var b textWriter
 	p.write(&b)
 	return b.String()
+}
+
+// GoString returns Go syntax that returns p, which the %#v verb prints, as in
+// tenon.Path{}.Attribute("name").Index(tenon.NumberFromInt(0)).
+func (p Path) GoString() string {
+	return goSyntax("tenon.Path", func(w *goWriter) { w.writePath(p) })
 }
 
 func (p Path) write(b *textWriter) {

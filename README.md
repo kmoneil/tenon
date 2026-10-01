@@ -86,10 +86,10 @@ See `ExampleUnknown` and `ExampleNarrow`.
 ## What must not be shown
 
 A mark is a label that travels with a value. A redacting mark keeps the value's
-contents, its keys and attribute names among them, out of display forms,
-diagnostics and JSON projections, and follows into whatever is derived from
-it, so a secret cannot reach a log by a route nobody thought about. A mark is
-any comparable Go type that says how it behaves:
+contents, its keys and attribute names among them, out of display forms, the Go
+syntax `%#v` prints, diagnostics and JSON projections, and follows into
+whatever is derived from it, so a secret cannot reach a log by a route nobody
+thought about. A mark is any comparable Go type that says how it behaves:
 
 ```go
 // secret marks a value whose contents must not be shown.
@@ -234,7 +234,7 @@ moving a program across means rewriting the code that handles its values.
 | Numbers | 512-bit binary floats: a 150-digit integer comes back with its last digits changed, and `1/0` is infinity | Exact decimals, never rounded; dividing by zero is an error value |
 | Number text | `Inf`, `+5` and `1p4` parse as numbers | Each is refused, with a diagnostic |
 | Strings | Text that is not UTF-8 passes through | An error value, where the string is made |
-| Secrets | A mark is any Go value, and nothing withholds what it marks: a marked value's Go syntax shows it | A redacting mark keeps the contents and structure of what it marks out of display forms, messages and projections, and follows whatever is derived from it |
+| Secrets | A mark is any Go value, and nothing withholds what it marks: a marked value's Go syntax shows it | A redacting mark keeps the contents and structure of what it marks out of display forms, Go syntax, messages and projections, and follows whatever is derived from it |
 | Unknown values | Refinements: not null, a string prefix, number bounds, collection lengths | Ranges: the same facts, and the members a set is known to hold |
 | Types | One `Type` serves as a type and as a constraint, `DynamicPseudoType` standing for any | Types and constraints are distinct, and a value whose type is not settled yet carries a constraint in its place |
 | Diffs | None: each program writes its own | `Diff`, which never looks inside what a redacting mark withholds |

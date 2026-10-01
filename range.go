@@ -232,6 +232,19 @@ func (r Range) String() string {
 	return b.String()
 }
 
+// GoString returns Go syntax that returns r, which the %#v verb prints: the
+// Go syntax of the value whose range r is, as Value.GoString writes it,
+// followed by .Range().
+func (r Range) GoString() string {
+	if r.v.n == nil {
+		return "tenon.Range{}"
+	}
+	return goSyntax("tenon.Range", func(w *goWriter) {
+		w.writeValue(r.v)
+		w.WriteString(".Range()")
+	})
+}
+
 func (r Range) write(b *textWriter) {
 	n := r.v.n
 	if n.state != stateUnknown {
@@ -685,6 +698,17 @@ func (nw Narrowing) String() string {
 		return b.String()
 	}
 	return "<zero Narrowing>"
+}
+
+// GoString returns Go syntax that returns nw, which the %#v verb prints, as in
+// tenon.NumberMin(tenon.NumberFromInt(5), true). A bound is written as the
+// value it was taken from, marks and all, and a prefix as Value.GoString
+// writes one.
+func (nw Narrowing) GoString() string {
+	if nw.kind == 0 {
+		return "tenon.Narrowing{}"
+	}
+	return goSyntax("tenon.Narrowing", func(w *goWriter) { w.writeNarrowing(nw) })
 }
 
 // writeBound writes a number narrowing, with a placeholder in place of the

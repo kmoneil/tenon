@@ -26,8 +26,8 @@ import (
 // [Value.Equal] compare them, and the bytes [Serialize] gives can key a map.
 //
 // The zero Value is not a value: every method panics when called on it but
-// String, IsZero and Equal, and LogValue, MarshalText and MarshalJSON, which
-// render it as no value or fail.
+// String, GoString, IsZero and Equal, and LogValue, MarshalText and
+// MarshalJSON, which render it as no value or fail.
 type Value struct {
 	_ [0]func() // not comparable: == would compare pointers, not values
 	n *node
@@ -607,6 +607,44 @@ func (v Value) String() string {
 	var b textWriter
 	v.write(&b)
 	return b.String()
+}
+
+// GoString returns Go syntax that builds v, which the %#v verb prints, and
+// so testify where an assertion fails, as in
+// tenon.List(tenon.NumberType(), tenon.NumberFromInt(1), tenon.Null(tenon.NumberType()))
+// or tenon.Narrow(tenon.Unknown(tenon.NumberType()), tenon.NumberMin(tenon.NumberFromInt(5), true)).
+// Pasted into a program, as the value a test expects, it builds a value
+// identical to v, but for three things it cannot write:
+//
+//   - A capsule type is written as the call that makes a new one of its name
+//     and Go type, declaring no operations, and a capsule value as that type's
+//     Value of the pointer %#v writes. The new type is another type than v's,
+//     as every capsule type is another's: put the CapsuleType the program
+//     holds in its place.
+//   - A mark is written as %#v writes it, which builds the mark where its
+//     type's syntax does: a mark that is a pointer is written as a new
+//     pointer, and one whose type is a string type as the string alone, unless
+//     the type has a GoString method of its own.
+//   - A value carrying a redacting mark is written as
+//     tenon.WithMarks(tenon.Value{} /* redacted */, m), with its redacting
+//     marks alone, wherever it appears: what it holds, what its range says,
+//     whether it is null, and its other marks are all withheld, as String
+//     withholds them.
+//
+// An unknown string's prefix that ends in a character a following one could
+// change is written with an x after it, as in tenon.StringPrefix("caf" + "x"),
+// since StringPrefix cuts such a character, and so cuts the x and keeps the
+// prefix whole.
+//
+// Go syntax writes a type wherever a value needs one, as tenon.Null(T) needs
+// T, so many members of one large type would have it grow with the members
+// times their type. Where writing each type in full comes to more than 4 KB,
+// and more than twice what naming each type once does, GoString names each
+// type in a variable instead, in a function literal called in place, as in
+// func() tenon.Value { t1 := tenon.ListType(tenon.NumberType()); return tenon.List(t1, tenon.Null(t1)) }().
+// So the syntax grows with the value, as its display form does.
+func (v Value) GoString() string {
+	return goSyntax("tenon.Value", func(w *goWriter) { w.writeValue(v) })
 }
 
 func (v Value) write(b *textWriter) {

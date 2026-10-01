@@ -40,6 +40,15 @@ func (k ConstraintKind) String() string {
 	return "ConstraintKind(" + strconv.Itoa(int(k)) + ")"
 }
 
+// GoString returns the Go syntax of the kind, such as tenon.ConstraintListOf,
+// which the %#v verb prints.
+func (k ConstraintKind) GoString() string {
+	if k >= ConstraintExactly && k <= ConstraintOneOf {
+		return "tenon.Constraint" + constraintKindNames[k]
+	}
+	return "tenon.ConstraintKind(" + strconv.Itoa(int(k)) + ")"
+}
+
 // Constraint describes which types are acceptable, as the target of a
 // conversion, a parameter declaration or a schema does. Unlike a type, a
 // constraint may leave parts unspecified. Constraints are immutable.
@@ -49,8 +58,8 @@ func (k ConstraintKind) String() string {
 // [Constraint.Equal] compares them.
 //
 // The zero Constraint is not a constraint: every method panics when called on
-// it but String, IsZero and Equal, and LogValue and MarshalText, which render
-// it as no constraint or fail.
+// it but String, GoString, IsZero and Equal, and LogValue and MarshalText,
+// which render it as no constraint or fail.
 type Constraint struct {
 	_ [0]func() // not comparable: == would compare pointers, not constraints
 	c *constraintData
@@ -437,6 +446,15 @@ func (c Constraint) String() string {
 	var b textWriter
 	c.write(&b)
 	return b.String()
+}
+
+// GoString returns Go syntax that returns c, which the %#v verb prints, as in
+// tenon.ListOf(tenon.Any()), writing types as Value.GoString does.
+func (c Constraint) GoString() string {
+	if c.c == nil {
+		return "tenon.Constraint{}"
+	}
+	return goSyntax("tenon.Constraint", func(w *goWriter) { w.writeConstraint(c) })
 }
 
 func (c Constraint) write(b *textWriter) {

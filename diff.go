@@ -2,6 +2,7 @@ package tenon
 
 import (
 	"slices"
+	"strconv"
 	"strings"
 )
 
@@ -44,6 +45,26 @@ func (k ChangeKind) String() string {
 		return "marks changed"
 	}
 	return "<zero ChangeKind>"
+}
+
+// GoString returns the Go syntax of the kind, such as tenon.ChangeAdded, which
+// the %#v verb prints, and so prints in a Change.
+func (k ChangeKind) GoString() string {
+	switch k {
+	case ChangeReplaced:
+		return "tenon.ChangeReplaced"
+	case ChangeAdded:
+		return "tenon.ChangeAdded"
+	case ChangeRemoved:
+		return "tenon.ChangeRemoved"
+	case ChangeMemberAdded:
+		return "tenon.ChangeMemberAdded"
+	case ChangeMemberRemoved:
+		return "tenon.ChangeMemberRemoved"
+	case ChangeMarks:
+		return "tenon.ChangeMarks"
+	}
+	return "tenon.ChangeKind(" + strconv.Itoa(int(k)) + ")"
 }
 
 // Change is one change in a diff: what happened at a path, and the parts or

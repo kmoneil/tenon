@@ -23,9 +23,9 @@ of them is a vulnerability:
   writes and panic on such a name; a program building them from names it did not
   write checks the names with `CheckAttributeNames` first.
 - A value carrying a redacting mark never shows its contents, the keys of a
-  map and the attribute names of an object among them, in a display form, a
-  diagnostic's message or path, a usage panic's message, or a JSON
-  projection, nor in anything derived from it. A panic names such a value by
+  map and the attribute names of an object among them, in a display form,
+  the Go syntax `%#v` prints, a diagnostic's message or path, a usage
+  panic's message, or a JSON projection, nor in anything derived from it. A panic names such a value by
   its marks alone, and withholds why the call could not take it where the
   reason would say what the marks withhold. A collection's declared type is
   the collection's own, not a member's: a list the program declared as a

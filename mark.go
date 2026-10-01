@@ -37,8 +37,8 @@ type Mark interface {
 	Propagation() Propagation
 	// Redacting reports whether the contents of a value carrying the mark
 	// are withheld wherever the value is described: in the messages of
-	// diagnostics and of usage panics, and in String, which puts a
-	// placeholder naming the mark in their place. Its contents include its
+	// diagnostics and of usage panics, and in String and GoString, which put
+	// a placeholder naming the mark in their place. Its contents include its
 	// type, whether it is null or known, and its structure, the keys of a map
 	// and an object's attribute names: a diagnostic arising within the value
 	// is located at it, and a collection whose element type takes attribute
@@ -108,6 +108,18 @@ func (p Propagation) String() string {
 		return "isolate"
 	}
 	return "Propagation(" + strconv.Itoa(int(p)) + ")"
+}
+
+// GoString returns the Go syntax of the policy, tenon.Propagate or
+// tenon.Isolate, which the %#v verb prints.
+func (p Propagation) GoString() string {
+	switch p {
+	case Propagate:
+		return "tenon.Propagate"
+	case Isolate:
+		return "tenon.Isolate"
+	}
+	return "tenon.Propagation(" + strconv.Itoa(int(p)) + ")"
 }
 
 // markSet is the immutable set of marks on a value. It is nil on an unmarked

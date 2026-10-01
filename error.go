@@ -2,6 +2,7 @@ package tenon
 
 import (
 	"errors"
+	"fmt"
 	"slices"
 	"strings"
 )
@@ -78,6 +79,31 @@ func (e *Error) Error() string {
 		}
 	}
 	return b.String()
+}
+
+// GoString returns Go syntax that builds e, which the %#v verb prints, as in
+// tenon.NewError(tenon.ErrorVal(tenon.Diagnostic{Code:"decode.null",
+// Message:"the value is null"}), cause): the error value as Value.GoString
+// writes it, and each cause as %#v writes it.
+func (e *Error) GoString() string {
+	switch {
+	case e == nil:
+		return "(*tenon.Error)(nil)"
+	case e.v.IsZero():
+		return "&tenon.Error{}"
+	}
+	return goSyntax("*tenon.Error", func(w *goWriter) {
+		w.WriteString("tenon.NewError(")
+		w.writeValue(e.v)
+		for _, c := range e.causes {
+			if w.full() {
+				return
+			}
+			w.WriteString(", ")
+			w.WriteString(fmt.Sprintf("%#v", c))
+		}
+		w.WriteByte(')')
+	})
 }
 
 // Diagnostics returns the diagnostics of the error value, in order, in a new
