@@ -49,7 +49,9 @@
 // accessors [Value.AsBool], [Value.AsString], [Value.AsInt64], [Value.AsBigInt]
 // and [Value.AsBigRat], and ranged over, without copying, with
 // [Value.ElementsSeq], [Value.MapEntries] and [Value.Attributes].
-// [Value.String] is the display form, meant for people.
+// [Value.String] is the display form, meant for people, and [Value.GoString]
+// the Go syntax that builds the value, which %#v prints and so a failing
+// test shows, to be pasted back into the test.
 //
 // # Types and constraints
 //
@@ -121,8 +123,8 @@
 // deliberately. A mark says how far it travels: [Propagate], the default,
 // reaches whatever is derived from the value, and [Isolate] stays where it was
 // put, unless it redacts. A mark whose Redacting method reports true withholds
-// the value's contents, its structure among them, from display forms,
-// diagnostics, the messages of usage panics and [ProjectJSON], and from
+// the value's contents, its structure among them, from display forms and Go
+// syntax, diagnostics, the messages of usage panics and [ProjectJSON], and from
 // anything derived from the value: the keys of a map and an object's attribute
 // names stay out of messages and paths, a diagnostic arising within the value
 // being located at it. A mark

@@ -201,6 +201,17 @@ func ExampleValue_IsNull() {
 	// false unknown(bool, not null)
 }
 
+// %#v prints the Go that builds a value, so the value a failing test shows
+// can be pasted into the test as the value it expects.
+func ExampleValue_GoString() {
+	num := tenon.NumberType()
+	fmt.Printf("%#v\n", tenon.List(num, tenon.NumberFromInt(1), tenon.Null(num)))
+	fmt.Printf("%#v\n", tenon.Narrow(tenon.Unknown(num), tenon.NumberMin(tenon.NumberFromInt(5), true)))
+	// Output:
+	// tenon.List(tenon.NumberType(), tenon.NumberFromInt(1), tenon.Null(tenon.NumberType()))
+	// tenon.Narrow(tenon.Unknown(tenon.NumberType()), tenon.NumberMin(tenon.NumberFromInt(5), true))
+}
+
 // Equals answers what is known, and says it does not know where the values
 // could still turn out either way.
 func ExampleEquals() {

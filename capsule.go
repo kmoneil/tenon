@@ -105,6 +105,7 @@ type CapsuleEncoding[E any] struct {
 // encapsulated values held as any.
 type capsuleData struct {
 	name    string
+	goType  string              // E as Go syntax names it, as in main.point
 	accepts func(v any) bool    // whether v is a pointer of the encapsulated type
 	equals  func(a, b any) bool // nil if not declared
 	hash    func(v any) uint64  // nil if not declared
@@ -157,7 +158,7 @@ func (d *capsuleData) encoded(v any) Value {
 // type is.
 //
 // A nil or zero CapsuleType handles no capsule type: every method but Equal
-// panics when called on it.
+// and GoString panics when called on it.
 type CapsuleType[E any] struct {
 	t Type
 }
@@ -167,6 +168,23 @@ type CapsuleType[E any] struct {
 // calls, so a struct holding handles compares by the types they handle.
 func (c *CapsuleType[E]) Equal(d *CapsuleType[E]) bool {
 	return c.handled() == d.handled()
+}
+
+// GoString returns Go syntax that makes a capsule type of c's name and E,
+// which the %#v verb prints, as in
+// tenon.NewCapsule[main.point]("point", tenon.CapsuleOps[main.point]{}). It
+// makes a new type, declaring no operations, which is another type than c's,
+// as every capsule type is: Value.GoString says more.
+func (c *CapsuleType[E]) GoString() string {
+	switch {
+	case c == nil:
+		return "(*tenon.CapsuleType[" + goTypeName[E]() + "])(nil)"
+	case c.t.t == nil:
+		return "&tenon.CapsuleType[" + goTypeName[E]() + "]{}"
+	}
+	var w goWriter
+	w.writeCapsule(c.t.t.capsule)
+	return w.String()
 }
 
 // handled returns the capsule type c handles, the zero Type where it handles
@@ -194,7 +212,7 @@ func NewCapsule[E any](name string, ops CapsuleOps[E]) *CapsuleType[E] {
 	if ops.Equal != nil && ops.Hash == nil {
 		usagePanic("capsule type %q declares Equal but not Hash", name)
 	}
-	d := &capsuleData{name: name}
+	d := &capsuleData{name: name, goType: goTypeName[E]()}
 	d.accepts = func(v any) bool {
 		_, ok := v.(*E)
 		return ok

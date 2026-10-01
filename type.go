@@ -47,6 +47,15 @@ func (k Kind) String() string {
 	return "Kind(" + strconv.Itoa(int(k)) + ")"
 }
 
+// GoString returns the Go syntax of the kind, such as tenon.KindList, which
+// the %#v verb prints.
+func (k Kind) GoString() string {
+	if k >= KindBool && k <= KindCapsule {
+		return "tenon.Kind" + kindNames[k]
+	}
+	return "tenon.Kind(" + strconv.Itoa(int(k)) + ")"
+}
+
 // Type describes what a value is. A type is always fully concrete, and it is
 // immutable.
 //
@@ -55,8 +64,8 @@ func (k Kind) String() string {
 // the same type exactly when they are ==, and a Type can be used as a map key.
 //
 // The zero Type is not a type: every method panics when called on it but
-// String, IsZero and Equal, and LogValue and MarshalText, which render it as no
-// type or fail.
+// String, GoString, IsZero and Equal, and LogValue and MarshalText, which
+// render it as no type or fail.
 type Type struct {
 	t *typeData
 }
@@ -356,6 +365,16 @@ func (t Type) String() string {
 	var b textWriter
 	t.write(&b)
 	return b.String()
+}
+
+// GoString returns Go syntax that returns t, which the %#v verb prints, as in
+// tenon.ListType(tenon.NumberType()), writing a capsule type and naming
+// types as Value.GoString does.
+func (t Type) GoString() string {
+	if t.t == nil {
+		return "tenon.Type{}"
+	}
+	return goSyntax("tenon.Type", func(w *goWriter) { w.writeType(t) })
 }
 
 func (t Type) write(b *textWriter) {

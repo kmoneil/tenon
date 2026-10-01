@@ -32,6 +32,18 @@ func (p Policy) String() string {
 	return "Policy(" + strconv.Itoa(int(p)) + ")"
 }
 
+// GoString returns the Go syntax of the policy, tenon.Safe or tenon.Unsafe,
+// which the %#v verb prints.
+func (p Policy) GoString() string {
+	switch p {
+	case Safe:
+		return "tenon.Safe"
+	case Unsafe:
+		return "tenon.Unsafe"
+	}
+	return "tenon.Policy(" + strconv.Itoa(int(p)) + ")"
+}
+
 // Convert returns v converted to a type that satisfies c under the policy p,
 // or an error value saying why it does not convert.
 //

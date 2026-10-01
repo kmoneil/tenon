@@ -29,6 +29,19 @@
   `number.out_of_range`, as encoding a `big.Rat` with gotenon does, which
   now calls it. gotenon's message for a rational outside the range names
   the rational.
+- `GoString`, the Go syntax that builds a value, which `%#v` prints in
+  place of the value's internals, and so testify where an assertion fails:
+  `tenon.List(tenon.NumberType(), tenon.NumberFromInt(1))`, which can be
+  pasted back into the test as the value it expects. `Type`, `Constraint`,
+  `Path`, `Step`, `Range`, `Narrowing`, `*Error` and `*CapsuleType` have
+  one too, and the kinds and policies print by their constants' names, as
+  in `tenon.KindList`, so a `Diagnostic`, a `Change` or a `Field` prints
+  as Go as well. The syntax builds an identical value, but that a capsule
+  type is written as a new one of its name, a mark as `%#v` writes it, and
+  a value carrying a redacting mark as `tenon.Value{}` with its redacting
+  marks, withholding all else as its display form does. Where writing each
+  type in full would make the syntax grow with the members times their
+  type, it names each type once, in a function literal called in place.
 
 ## 0.11.0 (2026-09-29)
 
