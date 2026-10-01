@@ -121,11 +121,12 @@ bench:
 	cd bench && go test -run '^$$' -bench . -benchmem -count '$(BENCHCOUNT)' -benchtime '$(BENCHTIME)' > ../.bench/raw.txt
 	cd bench && go run ./cmd/benchdoc -in ../.bench/raw.txt -doc ../BENCHMARKS.md -readme ../README.md
 
-# bench-smoke vets the bench module, runs staticcheck over it and runs each of
+# bench-smoke vets the bench module, runs staticcheck over it, runs its tests,
+# which probe tenon with the cases of go-cty's open issues, and runs each of
 # its benchmarks once, so that a change to tenon's API cannot leave the
 # benchmarks broken until a release measures them. CI runs it with lint.
 bench-smoke:
-	cd bench && go vet ./... && go run $(STATICCHECK) ./... && go test -run '^$$' -bench . -benchtime 1x ./...
+	cd bench && go vet ./... && go run $(STATICCHECK) ./... && go test -bench . -benchtime 1x ./...
 
 # lint runs staticcheck and vuln runs govulncheck, each at the version named
 # here through go run, so that neither enters go.mod as a dependency. CI runs
