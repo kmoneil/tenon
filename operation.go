@@ -187,7 +187,7 @@ func (o *op) applyValue(args []Value) Value {
 			known = false
 			// The operation can apply only if some type the operand's
 			// constraint admits is one it accepts.
-			c := n.data.(Constraint)
+			c := n.constraint()
 			if _, ok := sharedType(c, o.operands[i].constraint); !ok {
 				diags = append(diags, o.wrongType(i, len(args), n, c))
 				continue
@@ -361,7 +361,7 @@ func operandText(n *node) string {
 		return redactedText(ms)
 	}
 	if n.state == statePending {
-		return "pending with constraint " + n.data.(Constraint).String()
+		return "pending with constraint " + n.constraint().String()
 	}
 	return n.describe()
 }

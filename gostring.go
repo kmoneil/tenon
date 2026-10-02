@@ -238,22 +238,29 @@ func (w *goWriter) writeUnmarked(n *node) {
 		w.WriteByte(')')
 		return
 	case statePending:
-		var null string
+		var ns []string
 		switch n.null {
 		case nullNo:
-			null = "tenon.NotNull()"
+			ns = append(ns, "tenon.NotNull()")
 		case nullOnly:
-			null = "tenon.NullOnly()"
+			ns = append(ns, "tenon.NullOnly()")
 		}
-		if null != "" {
+		lo, hi := n.pendingLengths()
+		if lo > 0 {
+			ns = append(ns, "tenon.LengthMin("+strconv.FormatInt(lo, 10)+")")
+		}
+		if hi.set {
+			ns = append(ns, "tenon.LengthMax("+strconv.FormatInt(hi.n, 10)+")")
+		}
+		if ns != nil {
 			w.WriteString("tenon.Narrow(")
 		}
 		w.WriteString("tenon.Pending(")
-		w.writeConstraint(n.data.(Constraint))
+		w.writeConstraint(n.constraint())
 		w.WriteByte(')')
-		if null != "" {
+		if ns != nil {
 			w.WriteString(", ")
-			w.WriteString(null)
+			w.WriteString(strings.Join(ns, ", "))
 			w.WriteByte(')')
 		}
 		return

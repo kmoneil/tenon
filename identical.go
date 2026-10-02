@@ -30,8 +30,11 @@ func Identical(a, b Value) bool {
 		x, y := na.diagnostics(), nb.diagnostics()
 		return slices.EqualFunc(x, y, Diagnostic.Equal)
 	case statePending:
-		// A pending value is its constraint and what it says about null.
-		return na.null == nb.null && na.data.(Constraint).equal(nb.data.(Constraint))
+		// A pending value is its constraint and what it says about null and
+		// its length.
+		loA, hiA := na.pendingLengths()
+		loB, hiB := nb.pendingLengths()
+		return na.null == nb.null && loA == loB && hiA == hiB && na.constraint().equal(nb.constraint())
 	}
 	if na.typ != nb.typ {
 		return false

@@ -637,7 +637,7 @@ func lengthNarrowings(from, to Type, rd *rangeData) []Narrowing {
 // it, and the answer is an error value whatever the value turns out to be.
 func (x converter) pending(v Value, c Constraint) Value {
 	n := v.n
-	pc := n.data.(Constraint)
+	pc := n.constraint()
 	if s, ok := soleType(pc); ok {
 		k := keysUnknown
 		if n.null == nullOnly {

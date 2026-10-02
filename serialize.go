@@ -156,10 +156,19 @@ func (e *encoder) item(b []byte, v Value) []byte {
 	}
 	var inner []byte
 	if n.state == statePending {
-		inner = cbor.AppendArray(inner, 3)
+		lo, hi := n.pendingLengths()
+		parts := 3
+		if lo > 0 || hi.set {
+			parts = 4
+		}
+		inner = cbor.AppendArray(inner, parts)
 		inner = cbor.AppendUint(inner, itemPending)
-		inner = e.constraint(inner, n.data.(Constraint), 0)
+		inner = e.constraint(inner, n.constraint(), 0)
 		inner = cbor.AppendUint(inner, uint64(nullnessCode(n.null)))
+		if parts == 4 {
+			// The range of a pending value holds its lengths alone (SE-010).
+			inner = e.rng(inner, &rangeData{lenLo: lo, lenHi: hi}, 0)
+		}
 	} else {
 		diags := n.diagnostics()
 		inner = cbor.AppendArray(inner, 2)
