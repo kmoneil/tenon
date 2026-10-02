@@ -371,3 +371,33 @@ func markInnermost(v tenon.Value, m tenon.Mark) tenon.Value {
 	elems[0] = tenon.Object(map[string]tenon.Value{"x": tenon.WithMarks(elems[0].Attribute("x"), m)})
 	return tenon.Tuple(elems...)
 }
+
+// TestConformance_CV033_ARedactedValueWithholdsTheNamesItBrings holds the
+// collections that carry a redacted value's marks to those whose element type
+// takes attribute names from it: the names of its type as its own conversion
+// gives it. A redacted empty tuple beside a list of objects is fitted to a
+// list of objects, whose attribute names are the sibling's, so neither list
+// holding it carries its mark; a redacted list of objects brings its own, and
+// both do.
+func TestConformance_CV033_ARedactedValueWithholdsTheNamesItBrings(t *testing.T) {
+	conformance.Covers(t, "CV-033", "MK-011")
+	secret := stamp{id: "secret", redact: true}
+	lists := tenon.ListOf(tenon.ListOf(tenon.Any()))
+	sibling := tenon.Tuple(tenon.Object(map[string]tenon.Value{"a": n(1)}))
+
+	r := tenon.Convert(tenon.Tuple(tenon.Tuple(tenon.WithMarks(tenon.Tuple(), secret), sibling)), lists, safe)
+	switch {
+	case r.IsError():
+		t.Fatalf("an empty tuple: %v", r)
+	case tenon.HasMark(r, secret), tenon.HasMark(r.Elements()[0], secret):
+		t.Errorf("an empty tuple, which brings no names: %v, want neither list carrying %v", r, secret)
+	case !tenon.HasMark(r.Elements()[0].Elements()[0], secret):
+		t.Errorf("an empty tuple: %v, want the value itself still carrying %v", r, secret)
+	}
+
+	brings := tenon.WithMarks(tenon.Tuple(tenon.Object(map[string]tenon.Value{"b": n(2)})), secret)
+	r = tenon.Convert(tenon.Tuple(tenon.Tuple(brings, sibling)), lists, safe)
+	if r.IsError() || !tenon.HasMark(r, secret) || !tenon.HasMark(r.Elements()[0], secret) {
+		t.Errorf("a list of objects, which brings its names: %v, want both lists carrying %v", r, secret)
+	}
+}

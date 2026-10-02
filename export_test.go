@@ -83,7 +83,9 @@ func SameNode(a, b Value) bool { return a.n == b.n }
 // where, so the conversion's failure stands in for it, where it is one.
 func ConvertBothWays(v Value, c Constraint, p Policy) (converted, fitted Value) {
 	converted = converter{policy: p, carried: &carrying{}, memo: &convertMemo{}}.value(v, c)
-	fitted = converter{policy: p, carried: &carrying{}, memo: &convertMemo{}}.fittingValue(v, c)
+	memo := &convertMemo{}
+	fitted = converter{policy: p, carried: &carrying{}, memo: memo}.fittingValue(v, c)
+	forgetBrought(memo)
 	if t := fitted.n.typ.t; t != nil && t.open && converted.IsError() {
 		fitted = converted
 	}

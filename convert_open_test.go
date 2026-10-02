@@ -200,9 +200,10 @@ func TestConformance_CV044_AnOpenPartUnifiesAsAny(t *testing.T) {
 // shape below, often none; and objects of the same attributes. So the
 // members' empty tuples leave their element types open, and their siblings
 // settle them. Values within are null or unknown now and then, and carry
-// marks of every kind but a redacting one.
+// marks of every kind, a redacting one among them.
 func sparse(r *rand.Rand, depth int) tenon.Value {
-	marks := []tenon.Mark{markPlain, markDeep, markIsolated}
+	secret := stamp{id: "secret", redact: true}
+	marks := []tenon.Mark{markPlain, markDeep, markIsolated, secret}
 	vary := func(v tenon.Value) tenon.Value {
 		switch r.Intn(10) {
 		case 0:
