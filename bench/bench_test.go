@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/kmoneil/tenon"
+	"github.com/kmoneil/tenon/ctytenon"
 	"github.com/kmoneil/tenon/gotenon"
 	"github.com/zclconf/go-cty/cty"
 	"github.com/zclconf/go-cty/cty/convert"
@@ -17,7 +18,7 @@ import (
 
 // Each benchmark is named Workload/size=S/lib=L, which BENCHMARKS.md is
 // generated from: L is json for encoding/json with map[string]any, tenon, or
-// cty for go-cty.
+// cty for go-cty, and for crossing ctytenon's bridge, fromcty or tocty.
 
 // sink keeps what a benchmark computes from being optimized away.
 var sink any
@@ -249,6 +250,31 @@ func BenchmarkDiff(b *testing.B) {
 		for b.Loop() {
 			if d := tenon.Diff(before, after); len(d) != 1 {
 				b.Fatalf("the diff has %d changes, want 1", len(d))
+			}
+		}
+	})
+}
+
+// BenchmarkCross carries the converted document across ctytenon's bridge,
+// from go-cty to tenon and from tenon to go-cty, as a program moving from
+// one to the other a piece at a time does.
+func BenchmarkCross(b *testing.B) {
+	var bridge ctytenon.Bridge
+	sized(b, "fromcty", func(b *testing.B, doc []byte) {
+		v := typedCty(b, doc)
+		for b.Loop() {
+			var err error
+			if sink, err = bridge.FromCty(v); err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
+	sized(b, "tocty", func(b *testing.B, doc []byte) {
+		v := typedTenon(b, doc)
+		for b.Loop() {
+			var err error
+			if sink, err = bridge.ToCty(v); err != nil {
+				b.Fatal(err)
 			}
 		}
 	})

@@ -4,6 +4,7 @@ go 1.26.0
 
 require (
 	github.com/kmoneil/tenon v0.9.0
+	github.com/kmoneil/tenon/ctytenon v0.0.0-00010101000000-000000000000
 	github.com/zclconf/go-cty v1.19.0
 )
 
@@ -16,3 +17,5 @@ require (
 )
 
 replace github.com/kmoneil/tenon => ../
+
+replace github.com/kmoneil/tenon/ctytenon => ../ctytenon

@@ -228,9 +228,13 @@ var (
 		{"Equal", "Compare two copies", "Compares two copies of the converted value, each built on its own, with the library's equality."},
 		{"Lookup", "Read a nested value", "Reads one environment variable of the middle service."},
 		{"Diff", "Diff one change", "Reports what changed between two versions of the converted value that differ in one replica count."},
+		{"Cross", "Cross between go-cty and tenon", "Carries the converted value across ctytenon's bridge, from go-cty to tenon and from tenon to go-cty, as a program moving from one to the other a piece at a time does."},
 	}
-	libs  = []struct{ name, title string }{{"json", "encoding/json"}, {"tenon", "tenon"}, {"cty", "go-cty"}}
-	sizes = []struct{ name, title string }{{"1KB", "1 KB"}, {"32KB", "32 KB"}, {"1MB", "1 MB"}}
+	// The libraries the summary compares come first; the rest are the
+	// directions of ctytenon's bridge, which the Cross workload measures.
+	libs     = []struct{ name, title string }{{"json", "encoding/json"}, {"tenon", "tenon"}, {"cty", "go-cty"}, {"fromcty", "go-cty to tenon"}, {"tocty", "tenon to go-cty"}}
+	compared = 3
+	sizes    = []struct{ name, title string }{{"1KB", "1 KB"}, {"32KB", "32 KB"}, {"1MB", "1 MB"}}
 )
 
 // cell writes one benchmark's figures for a table.
@@ -395,16 +399,22 @@ func summary(r *results) string {
 	fmt.Fprintf(&b, "For a configuration of 32 KB, measured on %s with %s:\n\n", r.cpu, r.goVersion)
 	b.WriteString("| | encoding/json | tenon | go-cty |\n| --- | --- | --- | --- |\n")
 	for _, w := range workloads {
-		fmt.Fprintf(&b, "| %s |", w.title)
-		for _, l := range libs {
+		var row strings.Builder
+		some := false
+		for _, l := range libs[:compared] {
 			f := r.figure(w.name, "32KB", l.name)
 			if f.ok {
-				fmt.Fprintf(&b, " %s |", duration(f.ns))
+				fmt.Fprintf(&row, " %s |", duration(f.ns))
+				some = true
 			} else {
-				b.WriteString(" – |")
+				row.WriteString(" – |")
 			}
 		}
-		b.WriteString("\n")
+		// A workload none of the three does, as crossing the bridge, is
+		// not theirs to compare.
+		if some {
+			fmt.Fprintf(&b, "| %s |%s\n", w.title, row.String())
+		}
 	}
 	return b.String()
 }
