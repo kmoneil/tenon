@@ -72,7 +72,7 @@ determinism:
 	rm -rf '$(EMIT)'
 	TENON_EMIT_DIR='$(EMIT)/first' go test -count=1 -shuffle=on ./...
 	TENON_EMIT_DIR='$(EMIT)/second' GOMAXPROCS=1 go test -count=1 -shuffle=on ./...
-	@n="$$(find '$(EMIT)/first' -type f | wc -l | tr -d ' ')"; test "$$n" -eq 11 || { echo "determinism: the tests emitted $$n outputs, not the 11 they emit; a silenced emitter would otherwise pass"; exit 1; }
+	@n="$$(find '$(EMIT)/first' -type f | wc -l | tr -d ' ')"; test "$$n" -eq 12 || { echo "determinism: the tests emitted $$n outputs, not the 12 they emit; a silenced emitter would otherwise pass"; exit 1; }
 	diff -r '$(EMIT)/first' '$(EMIT)/second'
 	@echo "determinism: $$(find '$(EMIT)/first' -type f | wc -l | tr -d ' ') outputs came out the same in both runs"
 
