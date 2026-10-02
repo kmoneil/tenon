@@ -21,6 +21,8 @@
     call that makes it.
   - It encodes as an item of its own kind, its members each a whole item,
     which earlier versions refuse as `serialize.malformed`.
+  - `Equals`, and `Contains` through it, compare it member by member, and
+    a deep mark on it reaches its members.
 
   A list, set or map of a pending member still panics, its element type
   being given. The specification says so (`UN-025`), a new rule: 202 rules,

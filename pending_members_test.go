@@ -193,3 +193,86 @@ func TestConformance_SE010_APendingTupleOrObjectEncodesItsMembers(t *testing.T) 
 		wantDecodeFailure(t, tt.name, document+tt.item, tt.code)
 	}
 }
+
+// TestConformance_UN023_EqualsComparesAPendingTuplesMembers holds Equals with a
+// pending tuple or object holding members, and Contains through it, to its
+// members: known false where a pair of members is known unequal or the shapes
+// differ, known true where every pair is known equal, unknown otherwise.
+func TestConformance_UN023_EqualsComparesAPendingTuplesMembers(t *testing.T) {
+	conformance.Covers(t, "UN-023", "UN-025", "EQ-003")
+	p := tenon.Pending(tenon.Any())
+	tup := tenon.Tuple(p, n(1))
+	nullStr := tenon.Narrow(tenon.Pending(is(str)), tenon.NullOnly())
+	for _, tt := range []struct {
+		name string
+		a, b tenon.Value
+		want string
+	}{
+		{"a member known unequal", tup, tenon.Tuple(s("x"), n(2)), "false"},
+		{"the rest left open", tup, tenon.Tuple(s("x"), n(1)), "unknown(bool, not null)"},
+		{"two alike", tup, tenon.Tuple(p, n(1)), "unknown(bool, not null)"},
+		{"every pair known equal", tenon.Tuple(nullStr, n(1)), tenon.Tuple(tenon.Null(str), n(1)), "true"},
+		{"another length", tup, tenon.Tuple(s("x")), "false"},
+		{"an object", tup, tenon.Object(map[string]tenon.Value{"a": n(1)}), "false"},
+		{"objects of other names", tenon.Object(map[string]tenon.Value{"a": p}), tenon.Object(map[string]tenon.Value{"b": n(1)}), "false"},
+		{"an object's member known unequal", tenon.Object(map[string]tenon.Value{"a": p, "b": n(1)}),
+			tenon.Object(map[string]tenon.Value{"a": s("x"), "b": n(2)}), "false"},
+		{"an unknown tuple", tup, tenon.Unknown(tenon.TupleType(str, num)), "unknown(bool, not null)"},
+		{"null", tup, tenon.Null(tenon.TupleType(str, num)), "false"},
+	} {
+		if got := tenon.Equals(tt.a, tt.b).String(); got != tt.want {
+			t.Errorf("%s: Equals(%v, %v) = %s, want %s", tt.name, tt.a, tt.b, got, tt.want)
+		}
+		if got := tenon.Equals(tt.b, tt.a).String(); got != tt.want {
+			t.Errorf("%s, the other way: Equals(%v, %v) = %s, want %s", tt.name, tt.b, tt.a, got, tt.want)
+		}
+	}
+	pairs := tenon.TupleType(str, num)
+	if got := tenon.Contains(tenon.Set(pairs, tenon.Tuple(s("x"), n(2))), tup).String(); got != "false" {
+		t.Errorf("a set of no member that could be %v contains it: %s", tup, got)
+	}
+	if got := tenon.Contains(tenon.Set(pairs, tenon.Tuple(s("x"), n(1))), tup).String(); got != "unknown(bool, not null)" {
+		t.Errorf("a set of a member that could be %v contains it: %s, want unknown", tup, got)
+	}
+}
+
+// heldMembers returns the members of a tuple or object v, a pending one
+// holding them among them, in order or in name order.
+func heldMembers(v tenon.Value) []tenon.Value {
+	if v.Constraint().Kind() == tenon.ConstraintTupleOf {
+		return v.Elements()
+	}
+	var members []tenon.Value
+	for _, m := range v.Attributes() {
+		members = append(members, m)
+	}
+	return members
+}
+
+// TestConformance_MK008_ADeepMarkReachesAPendingTuplesMembers holds a deep mark
+// on a pending tuple or object holding members to every member, as on a
+// tuple, and UnmarkDeep to taking the marks from them all.
+func TestConformance_MK008_ADeepMarkReachesAPendingTuplesMembers(t *testing.T) {
+	conformance.Covers(t, "MK-008", "UN-025")
+	deep := stamp{id: "d", deep: true}
+	p := tenon.Pending(tenon.Any())
+	for _, v := range []tenon.Value{tenon.Tuple(p, n(1)), tenon.Object(map[string]tenon.Value{"a": p, "b": n(1)})} {
+		marked := tenon.WithMarks(v, deep)
+		for _, m := range heldMembers(marked) {
+			if !tenon.HasMark(m, deep) {
+				t.Errorf("a member of %v does not carry the deep mark: %v", marked, m)
+			}
+		}
+		plain, marks := tenon.UnmarkDeep(marked)
+		if !tenon.Identical(plain, v) || !slices.ContainsFunc(marks, func(m tenon.Mark) bool { return m == deep }) {
+			t.Errorf("UnmarkDeep(%v) = %v, %v; want %v and the deep mark", marked, plain, marks, v)
+		}
+		// Read back from its encoding, the deep mark reaches the members
+		// again.
+		withDeep := tenon.WithMarks(v, markDeep)
+		b, _, ok := trySerialize(withDeep)
+		if got, failure, back := tryDeserialize(b, decoders); !ok || !back || !tenon.Identical(got, withDeep) {
+			t.Errorf("%v came back as %v, %v", withDeep, got, failure)
+		}
+	}
+}

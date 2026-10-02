@@ -71,6 +71,9 @@ func equality(a, b *node) (eq, settled bool) {
 	if nullA && !mayBeNull(b) || nullB && !mayBeNull(a) {
 		return false, true
 	}
+	if eq, settled, ok := heldEquality(a, b); ok {
+		return eq, settled
+	}
 	ta, oka := settledType(a)
 	tb, okb := settledType(b)
 	switch {
@@ -97,6 +100,62 @@ func equality(a, b *node) (eq, settled bool) {
 		return false, true
 	}
 	return false, false
+}
+
+// heldEquality compares a and b member by member where one of them is a pending
+// tuple or object holding its members (UN-025) and the other holds members of
+// that shape, as a tuple or object does: known false where a pair of members
+// is known unequal, known true where every pair is known equal, and unsettled
+// otherwise. Members of another shape, as a tuple of another length or an
+// object of other names, are never equal. ok is false where neither holds
+// members so, and the constraints decide.
+func heldEquality(a, b *node) (eq, settled, ok bool) {
+	_, heldA := a.held()
+	_, heldB := b.held()
+	if !heldA && !heldB {
+		return false, false, false
+	}
+	va, na, okA := structuralMembers(a)
+	vb, nb, okB := structuralMembers(b)
+	switch {
+	case !okA || !okB:
+		return false, false, false
+	case len(va) != len(vb) || (na == nil) != (nb == nil) || !slices.Equal(na, nb):
+		return false, true, true
+	}
+	settled = true
+	for i := range va {
+		switch eq, ok := equality(va[i].n, vb[i].n); {
+		case ok && !eq:
+			return false, true, true
+		case !ok:
+			settled = false
+		}
+	}
+	return settled, settled, true
+}
+
+// structuralMembers returns the members of n where it holds a tuple's or an
+// object's, a known one or a pending one holding them, with an object's names
+// in name order (nil for a tuple), and whether it does.
+func structuralMembers(n *node) ([]Value, []string, bool) {
+	if p, ok := n.held(); ok {
+		return p.vals, p.names, true
+	}
+	if n.state != stateKnown {
+		return nil, nil, false
+	}
+	switch n.typ.t.kind {
+	case KindTuple:
+		return n.data.([]Value), nil, true
+	case KindObject:
+		names := make([]string, len(n.typ.t.attrs))
+		for i, a := range n.typ.t.attrs {
+			names[i] = a.name
+		}
+		return n.data.([]Value), names, true
+	}
+	return nil, nil, false
 }
 
 // knownNull reports whether n is known to be null: the null value of a type,

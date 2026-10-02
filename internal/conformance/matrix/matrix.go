@@ -257,7 +257,9 @@ func candidates(o Operand, typ *tenon.Type) []tenon.Value {
 	}
 	known = append(known, nulls...)
 	any := tenon.Pending(tenon.Any())
-	pending := []tenon.Value{any, tenon.Narrow(any, tenon.NullOnly()), tenon.Narrow(any, tenon.NotNull())}
+	pending := []tenon.Value{any, tenon.Narrow(any, tenon.NullOnly()), tenon.Narrow(any, tenon.NotNull()),
+		// A pending tuple and object holding members, one of them pending.
+		tenon.Tuple(any, tenon.NumberFromInt(1)), tenon.Object(map[string]tenon.Value{"a": any})}
 	for _, t := range candidateTypes() {
 		if tenon.Satisfies(o.Constraint, t) && (typ == nil || t == *typ) {
 			pending = append(pending, tenon.Pending(tenon.Exactly(t)))
