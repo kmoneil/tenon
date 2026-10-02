@@ -359,10 +359,10 @@ const fairness = `## Reading the figures
 
 - **The same input, each library's usual way.** Every library reads the
   same bytes. encoding/json decodes into ` + "`any`" + ` with ` + "`UseNumber`" + `, so
-  numbers keep their text. tenon decodes the same way and hands the result to
-  ` + "`gotenon.Encode`" + `, which is how a program without Go types for its data
-  takes it in. go-cty infers the document's type with ` + "`ImpliedType`" + ` and
-  unmarshals with it.
+  numbers keep their text. tenon reads the bytes with ` + "`ParseJSON`" + ` into
+  what JSON implies, in one pass, refusing what JSON does not allow, as a
+  name given twice. go-cty infers the document's type with ` + "`ImpliedType`" + `
+  and unmarshals with it.
 - **What tenon does per value.** It parses every number into an exact
   decimal, checks every string is UTF-8 and normalizes it to Normalization
   Form C, interns every type, and records what is known of each value so

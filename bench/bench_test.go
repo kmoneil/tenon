@@ -9,7 +9,6 @@ import (
 
 	"github.com/kmoneil/tenon"
 	"github.com/kmoneil/tenon/ctytenon"
-	"github.com/kmoneil/tenon/gotenon"
 	"github.com/zclconf/go-cty/cty"
 	"github.com/zclconf/go-cty/cty/convert"
 	ctyjson "github.com/zclconf/go-cty/cty/json"
@@ -36,8 +35,9 @@ func decodeJSON(b *testing.B, doc []byte) any {
 	return x
 }
 
+// parseTenon reads a document with ParseJSON, into what JSON implies.
 func parseTenon(b *testing.B, doc []byte) tenon.Value {
-	v, err := gotenon.Encode(decodeJSON(b, doc))
+	v, err := tenon.ParseJSON(doc, tenon.Any(), tenon.Safe)
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -57,11 +57,12 @@ func parseCty(b *testing.B, doc []byte) cty.Value {
 }
 
 // typedTenon and typedCty give a document parsed and converted to its schema,
-// the value a program holds once it has checked what it read.
+// the value a program holds once it has checked what it read: ParseJSON reads
+// it into the schema in one call.
 func typedTenon(b *testing.B, doc []byte) tenon.Value {
-	v := tenon.Convert(parseTenon(b, doc), TenonSchema(), tenon.Safe)
-	if v.IsError() {
-		b.Fatal(v)
+	v, err := tenon.ParseJSON(doc, TenonSchema(), tenon.Safe)
+	if err != nil {
+		b.Fatal(err)
 	}
 	return v
 }

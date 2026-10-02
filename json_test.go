@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -416,4 +417,62 @@ func FuzzParseJSON(f *testing.F) {
 			}
 		}
 	})
+}
+
+// BenchmarkParseJSON measures reading text of each shape that
+// TestConformance_JS004_ReadingGrowsWithTheText holds, and reading a list of
+// objects into a schema, each at a size and four times it, for the growth job
+// to read: the growth from one to the other is the reading, not the wall
+// clock.
+func BenchmarkParseJSON(b *testing.B) {
+	schema := tenon.ListOf(tenon.ObjectWith(map[string]tenon.Field{
+		"name": tenon.Required(tenon.Exactly(tenon.StringType())),
+		"tags": tenon.Required(tenon.SetOf(tenon.Exactly(tenon.StringType()))),
+		"port": tenon.Optional(tenon.Exactly(tenon.NumberType())),
+	}, true))
+	shapes := []struct {
+		name string
+		doc  func(n int) string
+		c    tenon.Constraint
+	}{
+		{"wide", func(n int) string {
+			return "[" + strings.TrimSuffix(strings.Repeat(`1.25,"x",true,null,`, n), ",") + "]"
+		}, tenon.Any()},
+		{"deep", func(n int) string {
+			n /= 32
+			return strings.Repeat(`{"a":[1,`, n) + "2" + strings.Repeat("]}", n)
+		}, tenon.Any()},
+		{"strings", func(n int) string { return `["` + strings.Repeat(jsonEsc(`e^u0301\n`), n) + `"]` }, tenon.Any()},
+		{"names", func(n int) string {
+			var b strings.Builder
+			b.WriteString("{")
+			for i := range n {
+				if i > 0 {
+					b.WriteString(",")
+				}
+				b.WriteString(`"n`)
+				b.WriteString(strconv.Itoa(i))
+				b.WriteString(`":1`)
+			}
+			b.WriteString("}")
+			return b.String()
+		}, tenon.Any()},
+		{"failures", func(n int) string {
+			return "[" + strings.TrimSuffix(strings.Repeat(`1e1000000,`, n), ",") + "]"
+		}, tenon.Any()},
+		{"schema", func(n int) string {
+			return "[" + strings.TrimSuffix(strings.Repeat(`{"name":"web","tags":["a","b","a"],"port":null},`, n/4), ",") + "]"
+		}, schema},
+	}
+	for _, shape := range shapes {
+		for _, n := range []int{2000, 8000} {
+			doc := []byte(shape.doc(n))
+			b.Run(shape.name+"/"+strconv.Itoa(n), func(b *testing.B) {
+				b.ReportAllocs()
+				for b.Loop() {
+					_, _ = tenon.ParseJSON(doc, shape.c, tenon.Unsafe)
+				}
+			})
+		}
+	}
 }
