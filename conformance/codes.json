@@ -54,6 +54,12 @@
       "code": "encode.untyped_nil"
     },
     {
+      "code": "function.arity"
+    },
+    {
+      "code": "function.failed"
+    },
+    {
       "code": "json.invalid_syntax"
     },
     {

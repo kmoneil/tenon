@@ -17,6 +17,9 @@ EQ
 GO
 JS
 ER
+FN
+defer FN-020 the result derivation hook arrives with the card after the call's
+defer FN-022 declared volatility arrives with the card after the call's
 MK
 NU
 SE
