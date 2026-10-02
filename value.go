@@ -329,17 +329,70 @@ func shortened(s string, quote func(string) string) string {
 
 // Pending returns a pending value: a value whose type is not yet determined,
 // and will satisfy c. Whether it will be null is not determined either;
-// Narrow with NullOnly or NotNull says so when the caller knows.
+// Narrow with NullOnly or NotNull says so when the caller knows, and where c
+// admits lists, sets and maps alone, LengthMin and LengthMax say how many
+// members it will have.
 func Pending(c Constraint) Value {
 	c.data()
 	return Value{n: &node{state: statePending, data: c}}
 }
 
+// pendingRange is what a pending value holds where it records a length beside
+// its constraint (UN-024): the least and the greatest. A pending value that
+// records none holds its constraint alone, as most do.
+type pendingRange struct {
+	c     Constraint
+	lenLo int64
+	lenHi lengthBound
+}
+
+// constraint returns the constraint that the pending value n carries.
+func (n *node) constraint() Constraint {
+	if p, ok := n.data.(*pendingRange); ok {
+		return p.c
+	}
+	return n.data.(Constraint)
+}
+
+// pendingLengths returns the least and the greatest length that the pending
+// value n records: zero and no bound where it records none.
+func (n *node) pendingLengths() (int64, lengthBound) {
+	if p, ok := n.data.(*pendingRange); ok {
+		return p.lenLo, p.lenHi
+	}
+	return 0, lengthBound{}
+}
+
+// pendingData returns what a pending value of c holds that records these
+// lengths: the constraint alone where it records none.
+func pendingData(c Constraint, lo int64, hi lengthBound) any {
+	if lo == 0 && !hi.set {
+		return c
+	}
+	return &pendingRange{c: c, lenLo: lo, lenHi: hi}
+}
+
+// countsMembers reports whether every type that c admits is a list, a set or a
+// map, whose lengths all count members, so that a pending value of c takes a
+// length narrowing (UN-024).
+func countsMembers(c Constraint) bool {
+	switch d := c.c; d.kind {
+	case ConstraintListOf, ConstraintSetOf, ConstraintMapOf:
+		return true
+	case ConstraintExactly:
+		k := d.typ.t.kind
+		return k == KindList || k == KindSet || k == KindMap
+	case ConstraintOneOf:
+		return len(d.members) > 0 && !slices.ContainsFunc(d.members, func(m Constraint) bool { return !countsMembers(m) })
+	}
+	return false
+}
+
 // Resolve returns the value that a pending value takes once its type turns out
 // to be t: an unknown value of t, narrowed by what the pending value already
-// said. A pending value known to be null resolves to the null value of t, which
-// is how a null read before its type is known keeps the one thing that was said
-// about it.
+// said, whether it can be null and the lengths it records. A pending value
+// known to be null resolves to the null value of t, which is how a null read
+// before its type is known keeps the one thing that was said about it.
 //
 // Resolving refines the value it is given, so the result carries every mark
 // of v, the Isolate ones included.
@@ -358,20 +411,28 @@ func Resolve(v Value, t Type) Value {
 		}
 		usagePanic("Resolve called on %s, which is not a pending value", n.describe())
 	}
-	c := n.data.(Constraint)
+	c := n.constraint()
 	if !Satisfies(c, t) {
 		if n.withholds() {
 			usagePanic("Resolve cannot take %s with type %s"+withheldReason, n.describe(), t)
 		}
 		usagePanic("Resolve called with type %s, which does not satisfy the constraint %s of the pending value", t, c)
 	}
-	switch n.null {
-	case nullOnly:
+	if n.null == nullOnly {
 		return carryMarks(v, Null(t))
-	case nullNo:
-		return carryMarks(v, Narrow(Unknown(t), NotNull()))
 	}
-	return carryMarks(v, Unknown(t))
+	var ns []Narrowing
+	if n.null == nullNo {
+		ns = append(ns, NotNull())
+	}
+	lo, hi := n.pendingLengths()
+	if lo > 0 {
+		ns = append(ns, LengthMin(lo))
+	}
+	if hi.set {
+		ns = append(ns, LengthMax(hi.n))
+	}
+	return carryMarks(v, Narrow(Unknown(t), ns...))
 }
 
 // Unknown returns the unknown value of type t: the value that could still be
@@ -530,7 +591,7 @@ func (v Value) Constraint() Constraint {
 		}
 		usagePanic("Constraint called on %s, which is not a pending value", n.describe())
 	}
-	return n.data.(Constraint)
+	return n.constraint()
 }
 
 // Diagnostics returns the diagnostics of an error value, in order, in a new
@@ -710,12 +771,19 @@ func (v Value) writeUnmarked(b *textWriter) {
 		// is recorded, marks and all, in a message too.
 		defer b.keepPlain(false)()
 		b.WriteString("pending(")
-		n.data.(Constraint).write(b)
+		n.constraint().write(b)
 		switch n.null {
 		case nullNo:
 			b.WriteString(", not null")
 		case nullOnly:
 			b.WriteString(", null")
+		}
+		lo, hi := n.pendingLengths()
+		if lo > 0 {
+			b.WriteString(", length >= " + strconv.FormatInt(lo, 10))
+		}
+		if hi.set {
+			b.WriteString(", length <= " + strconv.FormatInt(hi.n, 10))
 		}
 		b.WriteByte(')')
 		return

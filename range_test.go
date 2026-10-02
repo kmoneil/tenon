@@ -803,8 +803,11 @@ func TestConformance_UN006_PrefixTruncation(t *testing.T) {
 
 func TestNarrowUsageErrors(t *testing.T) {
 	str, num := tenon.StringType(), tenon.NumberType()
-	mustPanicUsage(t, "does not apply to a pending value, whose type is not determined", func() {
+	mustPanicUsage(t, "applies to a pending value only where every type its constraint admits is a list, a set or a map, and any admits another", func() {
 		tenon.Narrow(tenon.Pending(tenon.Any()), tenon.LengthMax(3))
+	})
+	mustPanicUsage(t, "does not apply to a pending value, whose type is not determined", func() {
+		tenon.Narrow(tenon.Pending(tenon.ListOf(tenon.Any())), tenon.StringPrefix("x"))
 	})
 	mustPanicUsage(t, "Narrow called with the zero Narrowing", func() {
 		tenon.Narrow(tenon.Unknown(str), tenon.Narrowing{})

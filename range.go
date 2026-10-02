@@ -837,9 +837,15 @@ func (n *node) length() int64 {
 // NumberMax are, adds that value's Propagate marks, as an operand adds its
 // marks to the result of an operation.
 //
-// Narrow panics on a pending value, which has no type to narrow against, and
-// if a narrowing does not apply to the type of v, such as a length bound on a
-// Number value.
+// A pending value has no type to narrow against, so it takes NotNull and
+// NullOnly alone, and LengthMin and LengthMax where every type its constraint
+// admits is a list, a set or a map, whose lengths all count members: it
+// records the least and greatest length, which Resolve and Length read.
+// Bounds that leave no length leave it null where it may be null, and give a
+// contradiction where it cannot be.
+//
+// Narrow panics on any other narrowing of a pending value, and if a narrowing
+// does not apply to the type of v, such as a length bound on a Number value.
 func Narrow(v Value, ns ...Narrowing) Value {
 	r := carryMarks(v, narrowValue(v, ns))
 	if ms := boundMarks(ns); ms != nil {
@@ -1126,14 +1132,26 @@ func soleValue(t Type) (Value, bool) {
 }
 
 // narrowPending returns the pending value v narrowed by ns. A pending value has
-// no type, so the only narrowings it can take are the two that say nothing
-// about one: whether it will be null.
+// no type, so the narrowings it can take are the two that say nothing about
+// one, whether it will be null, and, where every type its constraint admits
+// counts members, the two that bound how many (UN-024).
 func narrowPending(v Value, n *node, ns []Narrowing) Value {
 	// Every narrowing is judged for usage before any is answered, so the
 	// one that could never apply panics wherever it stands, ahead of a
 	// contradiction among the others.
+	c := n.constraint()
 	for _, nw := range ns {
-		if nw.kind != narrowNotNull && nw.kind != narrowNull {
+		switch {
+		case nw.kind == narrowNotNull, nw.kind == narrowNull:
+		case nw.kind == narrowLengthMin, nw.kind == narrowLengthMax:
+			if countsMembers(c) {
+				continue
+			}
+			if n.withholds() {
+				usagePanic("Narrow cannot take %s with %s"+withheldReason, n.describe(), nw)
+			}
+			usagePanic("Narrow called with %s, which applies to a pending value only where every type its constraint admits is a list, a set or a map, and %s admits another", nw, c)
+		default:
 			if n.withholds() {
 				usagePanic("Narrow cannot take %s with %s"+withheldReason, n.describe(), nw)
 			}
@@ -1141,6 +1159,8 @@ func narrowPending(v Value, n *node, ns []Narrowing) Value {
 		}
 	}
 	null := n.null
+	wasLo, wasHi := n.pendingLengths()
+	lo, hi := wasLo, wasHi
 	for _, nw := range ns {
 		switch nw.kind {
 		case narrowNotNull:
@@ -1153,12 +1173,26 @@ func narrowPending(v Value, n *node, ns []Narrowing) Value {
 				return contradiction("no pending value satisfies both " + NotNull().String() + " and " + nw.String())
 			}
 			null = nullOnly
+		case narrowLengthMin:
+			lo = max(lo, nw.n)
+		case narrowLengthMax:
+			hi = hi.tighter(lengthBound{n: nw.n, set: true})
 		}
 	}
-	if null == n.null {
+	if hi.set && lo > hi.n {
+		// No length is left, and only null has none.
+		if null == nullNo {
+			return contradiction("no pending value satisfies both " + LengthMin(lo).String() + " and " + LengthMax(hi.n).String() + " and is not null")
+		}
+		null = nullOnly
+	}
+	if null == nullOnly {
+		lo, hi = 0, lengthBound{}
+	}
+	if null == n.null && lo == wasLo && hi == wasHi {
 		return v
 	}
-	return Value{n: &node{state: statePending, null: null, data: n.data}}
+	return Value{n: &node{state: statePending, null: null, data: pendingData(c, lo, hi)}}
 }
 
 // contradiction returns the error value for a narrowing that leaves no value

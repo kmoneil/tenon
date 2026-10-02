@@ -18,7 +18,9 @@ import (
 // already says. One known to be null never equals a value that cannot be
 // null, and equals the null of the one type its constraint admits. Two
 // operands that can never have one type between them, as a pending list and a
-// pending set cannot, are never equal. An error operand gives an error value.
+// pending set cannot, are never equal, and nor are two that can have no
+// length in common, as the lengths a pending list records may say, where both
+// cannot still be null. An error operand gives an error value.
 //
 // Equals compares what values are rather than how they are held: a number
 // written two ways is one number, and a string is compared in the normalized
@@ -74,9 +76,11 @@ func equality(a, b *node) (eq, settled bool) {
 	switch {
 	case !oka || !okb:
 		// A type that is not settled could still turn out to be the other's,
-		// unless no type satisfies what both say of theirs.
+		// unless no type satisfies what both say of theirs, or the lengths a
+		// pending value records rule out the other's, where they cannot both
+		// still be null.
 		_, share := sharedType(constraintOf(a), constraintOf(b))
-		return false, !share
+		return false, !share || !(mayBeNull(a) && mayBeNull(b)) && lengthsDisjoint(a, b)
 	case ta != tb:
 		return false, true
 	case nullA && nullB:
@@ -110,7 +114,7 @@ func settledType(n *node) (Type, bool) {
 		// An error value has no type and never will have one.
 		return Type{}, false
 	case statePending:
-		return soleType(n.data.(Constraint))
+		return soleType(n.constraint())
 	}
 	return n.typ, true
 }
@@ -120,9 +124,46 @@ func settledType(n *node) (Type, bool) {
 // error value, which has no type and is never asked about.
 func constraintOf(n *node) Constraint {
 	if n.state == statePending {
-		return n.data.(Constraint)
+		return n.constraint()
 	}
 	return Exactly(n.typ)
+}
+
+// lengthsDisjoint reports whether a and b, neither of them null, can have no
+// length in common: what a known container holds, or a set of members not all
+// known could come to hold, and the least and greatest length an unknown
+// container's range or a pending value records. A value of no length, a
+// scalar, a tuple or an object, has nothing here to compare.
+func lengthsDisjoint(a, b *node) bool {
+	loA, hiA, okA := lengthsOf(a)
+	loB, hiB, okB := lengthsOf(b)
+	return okA && okB && (hiB.set && loA > hiB.n || hiA.set && loB > hiA.n)
+}
+
+// lengthsOf returns the least and the greatest length that n could have, and
+// whether n is a list, a set or a map, or a pending value that records a
+// length, which would be one.
+func lengthsOf(n *node) (int64, lengthBound, bool) {
+	switch n.state {
+	case statePending:
+		lo, hi := n.pendingLengths()
+		return lo, hi, lo > 0 || hi.set
+	case stateKnown, stateUnknown:
+		if k := n.typ.t.kind; k != KindList && k != KindSet && k != KindMap {
+			return 0, lengthBound{}, false
+		}
+	default:
+		return 0, lengthBound{}, false
+	}
+	switch {
+	case n.state == stateUnknown:
+		rd := n.data.(*rangeData)
+		return rd.lenLo, setCeiling(n.typ).tighter(rd.lenHi), true
+	case n.typ.t.kind == KindSet:
+		low, high := setLengthBounds(n)
+		return int64(low), lengthBound{n: int64(high), set: true}, true
+	}
+	return n.length(), lengthBound{n: n.length(), set: true}, true
 }
 
 // sameValue reports whether two known values of one type are the same value.
@@ -221,7 +262,7 @@ func disjoint(a, b *node) bool {
 	case okb:
 		return a.state == stateKnown && rb.excludesPartial(a)
 	}
-	return membersDisjoint(a, b)
+	return lengthsDisjoint(a, b) || membersDisjoint(a, b)
 }
 
 // unknownRange returns the range of an unknown value, and whether it has one.

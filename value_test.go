@@ -441,12 +441,13 @@ func TestConformance_UN024_PendingNullness(t *testing.T) {
 		t.Errorf("resolving an undetermined pending gave %s, want %s", got, want)
 	}
 	// Facts that conflict leave nothing possible, and narrowings that speak of
-	// a structure have no type here to speak of.
+	// a structure have no type here to speak of, a length included where the
+	// constraint admits a type that has no members to count.
 	got := tenon.Narrow(null, tenon.NotNull())
 	if !got.IsError() || got.Diagnostics()[0].Code != tenon.CodeRangeContradiction {
 		t.Errorf("narrowing a pending null to not null gave %v, want a contradiction", got)
 	}
-	mustPanicUsage(t, "does not apply to a pending value", func() { tenon.Narrow(p, tenon.LengthMax(1)) })
+	mustPanicUsage(t, "applies to a pending value only where every type its constraint admits is a list, a set or a map", func() { tenon.Narrow(p, tenon.LengthMax(1)) })
 	// A narrowing that says nothing new leaves the value as it was.
 	if again := tenon.Narrow(null, tenon.NullOnly()); !tenon.SameNode(again, null) {
 		t.Errorf("narrowing a pending null to null again produced a new value")

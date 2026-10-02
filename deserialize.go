@@ -422,28 +422,72 @@ func (d *decoder) bareItem(marked bool) (Value, *decodeError) {
 		// Each part was given the marks listed on it and no more; one pass
 		// gives every value the deep marks of the values above it.
 		return Value{n: settleDeep(v.n, nil)}, nil
-	case k == itemPending && n == 3:
+	case k == itemPending && (n == 3 || n == 4):
 		c, err := d.constraint()
 		if err != nil {
 			return Value{}, err
 		}
 		nat := d.r.Offset()
 		null, rerr := d.r.ReadUint()
+		var v Value
 		switch {
 		case rerr != nil:
 			return Value{}, d.cborError(rerr)
 		case null == 0:
-			return Pending(c), nil
+			v = Pending(c)
 		case null == 1:
-			return Narrow(Pending(c), NotNull()), nil
+			v = Narrow(Pending(c), NotNull())
 		case null == 2:
-			return Narrow(Pending(c), NullOnly()), nil
+			v = Narrow(Pending(c), NullOnly())
+		default:
+			return Value{}, d.malformed(nat, "nullness %d is not 0, 1 or 2", null)
 		}
-		return Value{}, d.malformed(nat, "nullness %d is not 0, 1 or 2", null)
+		if n == 4 {
+			return d.pendingLengths(v, c, null == 2)
+		}
+		return v, nil
 	case k == itemError && n == 2:
 		return d.errorValue()
 	}
 	return Value{}, d.malformed(kat, "an item of kind %d with %d parts", k, n)
+}
+
+// pendingLengths reads the range of the pending value v, of constraint c,
+// which holds the lengths it records (SE-010): the two length keys alone, on a
+// value whose constraint admits lists, sets and maps alone and that is not
+// known to be null, bounds that leave some length.
+func (d *decoder) pendingLengths(v Value, c Constraint, null bool) (Value, *decodeError) {
+	at := d.r.Offset()
+	if null || !countsMembers(c) {
+		return Value{}, d.malformed(at, "lengths on a pending value of %s that cannot take them", c)
+	}
+	n, err := d.r.ReadMap()
+	if err != nil {
+		return Value{}, d.cborError(err)
+	}
+	var ns []Narrowing
+	for range n {
+		kat := d.r.Offset()
+		key, err := d.r.ReadUint()
+		if err != nil {
+			return Value{}, d.cborError(err)
+		}
+		if key != 4 && key != 5 {
+			return Value{}, d.malformed(kat, "range key %d on a pending value, which records lengths alone", key)
+		}
+		// The keys are length keys, which apply to a list of any element
+		// type, and what they record is read as a list's range reads it.
+		nw, derr := d.narrowing(ListType(Type{numberType}), key, kat)
+		if derr != nil {
+			return Value{}, derr
+		}
+		ns = append(ns, nw)
+	}
+	r := Narrow(v, ns...)
+	if r.n.state == stateError || r.n.null == nullOnly && v.n.null != nullOnly {
+		return Value{}, d.malformed(at, "a least length above the greatest")
+	}
+	return r, nil
 }
 
 // errorValue reads the diagnostics of an error value.

@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+### Added
+
+- A pending value whose constraint admits only lists, sets and maps can be
+  narrowed by its length. `Narrow(Pending(ListOf(Any())), LengthMin(2))` is
+  a pending list of at least two members: a configuration language can know
+  how many items a list holds before it knows their type, as go-cty does
+  for a `list(any)` whose elements are not known yet.
+  - `Length` of such a value is the unknown number within those lengths.
+  - `Resolve` narrows the unknown value by them.
+  - `Equals` is known `false` against a value whose length they exclude.
+  - The display form, `%#v` and the encoding carry them.
+
+  A pending value whose constraint admits a string, a tuple or an object
+  still takes no length, since a string counts characters and the others'
+  lengths are in their types. Bounds that leave no length leave a value that
+  may be null as the pending null, and are a contradiction where it cannot
+  be null. A document holding such a value has a pending item with a fourth
+  element, its lengths, which earlier versions refuse as
+  `serialize.malformed`. The specification says so (`UN-024`, `SE-010`).
+
 ### Changed
 
 - A member that settles no element type of its own takes, in that part, the

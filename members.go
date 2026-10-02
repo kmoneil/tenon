@@ -13,6 +13,7 @@ package tenon
 // value once; and as few as the members counted in iteration order (see
 // Elements), each provably distinct from every member counted before it. Every
 // other container has the length it has, whether or not its members are known.
+// A pending list, set or map has the lengths it records (see Narrow).
 //
 // A null operand gives an error value, since null has no members, and an error
 // operand carries forward.
@@ -73,6 +74,13 @@ var lengthOp = register(&op{
 			ns = append(ns,
 				NumberMin(NumberFromInt(int64(low)), true),
 				NumberMax(NumberFromInt(int64(high)), true))
+		case n.state == statePending:
+			// The lengths a pending list, set or map records (UN-024).
+			lo, hi := n.pendingLengths()
+			ns = append(ns, NumberMin(NumberFromInt(lo), true))
+			if hi.set {
+				ns = append(ns, NumberMax(NumberFromInt(hi.n), true))
+			}
 		case n.state == stateUnknown:
 			rd := n.data.(*rangeData)
 			if rd.lenLo > 0 {

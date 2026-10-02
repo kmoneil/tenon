@@ -89,6 +89,8 @@ func All() []tenon.Value {
 		tenon.Pending(tenon.ListOf(tenon.Exactly(num))),
 		tenon.Narrow(tenon.Pending(tenon.Any()), tenon.NullOnly()),
 		tenon.Narrow(tenon.Pending(tenon.Any()), tenon.NotNull()),
+		tenon.Narrow(tenon.Pending(tenon.ListOf(tenon.Any())), tenon.LengthMin(2)),
+		tenon.Narrow(tenon.Pending(tenon.OneOf(tenon.SetOf(tenon.Exactly(num)), tenon.MapOf(tenon.Any()))), tenon.NotNull(), tenon.LengthMax(1)),
 
 		// Null values, one per kind of type they belong to.
 		tenon.Null(bl),
