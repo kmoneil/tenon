@@ -534,9 +534,10 @@ func newAttachment(deep []Mark, outer *markSet) *attachment {
 // than the members of a set. n is a copy that nothing shares yet, and within
 // replaces its content when a member changes.
 func (a *attachment) within(n *node) {
-	if n.state != stateKnown || n.typ.t.kind == KindSet {
+	if _, held := n.held(); !held && (n.state != stateKnown || n.typ.t.kind == KindSet) {
 		// A set's marks stay on the set, and Elements attaches them to each
-		// member it returns.
+		// member it returns. A pending tuple or object holding members is
+		// structural here, as a tuple or object is (MK-008).
 		return
 	}
 	if data := a.replacedMembers(n, false); data != nil {
@@ -571,6 +572,22 @@ func (a *attachment) replacedMembers(n *node, settling bool) any {
 		}
 		if members != nil {
 			return members
+		}
+	case *pendingMembers:
+		// A pending tuple or object is structural here: its members take the
+		// deep marks (MK-008), its constraint, which marks do not change,
+		// staying as it is.
+		var members []Value
+		for i, m := range data.vals {
+			if r := replace(m.n); r != m.n {
+				if members == nil {
+					members = slices.Clone(data.vals)
+				}
+				members[i] = Value{n: r}
+			}
+		}
+		if members != nil {
+			return &pendingMembers{c: data.c, vals: members, names: data.names}
 		}
 	case []mapEntry:
 		var entries []mapEntry
@@ -755,7 +772,7 @@ func settleDeep(n *node, a *attachment) *node {
 		}
 		below = newAttachment(deep, outer)
 	}
-	if n.state != stateKnown || n.typ.t.kind == KindSet || below == nil && !n.markedWithin {
+	if _, held := n.held(); !held && (n.state != stateKnown || n.typ.t.kind == KindSet) || below == nil && !n.markedWithin {
 		// A set keeps its deep marks, and Elements gives them to a member as
 		// it returns it. With no deep mark to give, only a value holding a
 		// marked value can hold one that has deep marks of its own to give.
@@ -883,6 +900,12 @@ func (n *node) unmarkDeep(t *taking) *node {
 				members[i] = Value{n: m.n.unmarkDeep(t)}
 			}
 			nn.data = members
+		case *pendingMembers:
+			members := make([]Value, len(data.vals))
+			for i, m := range data.vals {
+				members[i] = Value{n: m.n.unmarkDeep(t)}
+			}
+			nn.data = &pendingMembers{c: data.c, vals: members, names: data.names}
 		case []mapEntry:
 			entries := make([]mapEntry, len(data))
 			for i, e := range data {
