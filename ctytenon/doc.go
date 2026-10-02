@@ -26,7 +26,10 @@
 //     and the untyped null do, crosses as a pending value, whose constraint is
 //     that type's, and back as an unknown value or a null. A list, set or map
 //     of such a type keeps its length both ways: an unknown one's refinements,
-//     a known one's count, and a pending one's lengths.
+//     a known one's count, and a pending one's lengths. A known tuple or
+//     object of such a type, as one holding cty.DynamicVal beside a number,
+//     crosses as the pending tuple or object holding its members, each
+//     crossing as itself, and back as the tuple or object of them.
 //   - A type constraint crosses as a constraint: cty.DynamicPseudoType is
 //     [tenon.Any], a list, set, map or tuple type is ListOf, SetOf, MapOf or
 //     TupleOf the constraints of its parts, and an object type an open
@@ -75,10 +78,10 @@
 //     object type. A value's type is not a conversion's target, and a value
 //     has exactly the attributes its type names, so there an object type is a
 //     closed ObjectWith.
-//   - A known cty value whose type holds cty.DynamicPseudoType, as a list
-//     holding cty.DynamicVal does, crosses as a pending value known not to be
-//     null, and what it holds is left behind, its length aside: tenon's
-//     containers hold only values whose types are settled.
+//   - A known cty list, set or map whose type holds cty.DynamicPseudoType, as
+//     a list holding cty.DynamicVal is, crosses as a pending value known not
+//     to be null, and what it holds is left behind, its length aside: tenon's
+//     lists, sets and maps hold only values whose types are settled.
 //   - What one side's range says that the other's cannot is left behind: a
 //     string's length and a set's listed members going to cty. A number bound
 //     that excludes itself includes itself in cty, since a number just past

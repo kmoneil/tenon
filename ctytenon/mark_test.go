@@ -94,6 +94,13 @@ func TestMarks(t *testing.T) {
 		{"a marked unknown", cty.UnknownVal(cty.Number).Mark("x"), tenon.WithMarks(tenon.Unknown(num), w("x"))},
 		{"a marked null", cty.NullVal(cty.String).Mark("sensitive"), tenon.WithMarks(tenon.Null(str), secret{})},
 		{"a marked pending value", cty.DynamicVal.Mark("x"), tenon.WithMarks(tenon.Pending(tenon.Any()), w("x"))},
+		{"a marked pending member", cty.TupleVal([]cty.Value{cty.DynamicVal.Mark("x"), cty.NumberIntVal(1)}), tenon.Tuple(tenon.WithMarks(tenon.Pending(tenon.Any()), w("x")), n(1))},
+		{
+			"a marked object holding DynamicVal, which hands its mark to its members",
+			cty.ObjectVal(map[string]cty.Value{"a": cty.DynamicVal, "b": cty.StringVal("b")}).Mark("x"),
+			tenon.WithMarks(tenon.Object(map[string]tenon.Value{"a": tenon.WithMarks(tenon.Pending(tenon.Any()), w("x")), "b": tenon.WithMarks(bb, w("x"))}), w("x")),
+		},
+		{"a deep mark on a tuple holding DynamicVal", cty.TupleVal([]cty.Value{cty.DynamicVal, cty.StringVal("a")}).Mark("deep"), tenon.WithMarks(tenon.Tuple(tenon.Pending(tenon.Any()), a), deep{})},
 		{
 			"a marked bound",
 			cty.UnknownVal(cty.Number).Refine().NumberRangeLowerBound(cty.NumberIntVal(5), true).NewValue().Mark("x"),

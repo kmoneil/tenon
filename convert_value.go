@@ -282,22 +282,23 @@ func (x converter) heldDraft(v Value, c Constraint) draft {
 
 // heldStructure returns the structure that a pending tuple or object holding
 // its members (UN-025) converts to member by member, as the tuple or object it
-// will be does (CV-032): c where it is ListOf, SetOf, MapOf, TupleOf or
-// ObjectWith, and the structure of the one type c admits where that is a
-// list, set, map, tuple or object type. It reports false otherwise, as for Any
-// or a OneOf, where the pending value converts by its constraint.
+// will be does (CV-032): the structure of the one type c admits where that is
+// a list, set, map, tuple or object type, since a constraint that admits one
+// type converts as Exactly of it, however it is written (CV-026), and
+// otherwise c where it is ListOf, SetOf, MapOf, TupleOf or ObjectWith. It
+// reports false otherwise, as for Any or a OneOf, where the pending value
+// converts by its constraint.
 func (x converter) heldStructure(c Constraint) (Constraint, bool) {
+	if s, ok := x.memo.soleType(c); ok {
+		switch s.t.kind {
+		case KindList, KindSet, KindMap, KindTuple, KindObject:
+			return structural(s), true
+		}
+		return Constraint{}, false
+	}
 	switch c.c.kind {
 	case ConstraintListOf, ConstraintSetOf, ConstraintMapOf, ConstraintTupleOf, ConstraintObjectWith:
 		return c, true
-	}
-	s, ok := x.memo.soleType(c)
-	if !ok {
-		return Constraint{}, false
-	}
-	switch s.t.kind {
-	case KindList, KindSet, KindMap, KindTuple, KindObject:
-		return structural(s), true
 	}
 	return Constraint{}, false
 }
@@ -1367,8 +1368,10 @@ func (x converter) object(v Value, c Constraint) draft {
 				errs.add(h.step(i), errorValue(f.diagnostic()))
 				continue
 			}
-			// Carried across unchanged, marks and all.
+			// Carried across unchanged, marks and all, and pending where it is
+			// a pending object's member (UN-025).
 			attrs[name] = memberDraft{draft: finished(m)}
+			pending = pending || m.n.state == statePending
 		default:
 			md := memberDraft{draft: x.draft(m, fields[0].Constraint), from: m.n}
 			switch r := md.done; {

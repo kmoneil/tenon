@@ -143,11 +143,13 @@ func (e *encoder) fail(at int, code Code, message string) {
 }
 
 // item appends the item of v.
-func (e *encoder) item(b []byte, v Value) []byte { return e.itemAt(b, v, 0) }
+func (e *encoder) item(b []byte, v Value) []byte { return e.itemAt(b, v, 0, nil) }
 
 // itemAt appends the item of v, which at locates: the value Serialize is
-// given, or a member of a pending tuple or object (SE-010).
-func (e *encoder) itemAt(b []byte, v Value, at int) []byte {
+// given, or a member of a pending tuple or object (SE-010), which implies on
+// it the deep marks it carries, and which are therefore not listed on v
+// (SE-031).
+func (e *encoder) itemAt(b []byte, v Value, at int, implied *impliedMarks) []byte {
 	defer e.leave()
 	if !e.enter(at) {
 		return b
@@ -157,11 +159,11 @@ func (e *encoder) itemAt(b []byte, v Value, at int) []byte {
 		b = cbor.AppendArray(b, 3)
 		b = cbor.AppendUint(b, itemResolved)
 		b = e.typ(b, n.typ, at)
-		return e.content(b, v, at, nil)
+		return e.content(b, v, at, implied)
 	}
 	var inner []byte
 	if p, ok := n.held(); ok {
-		inner = e.held(inner, p, at)
+		inner = e.held(inner, p, at, e.implies(n.marks))
 	} else if n.state == statePending {
 		lo, hi := n.pendingLengths()
 		parts := 3
@@ -185,20 +187,29 @@ func (e *encoder) itemAt(b []byte, v Value, at int) []byte {
 			inner = appendDiagnostic(inner, d)
 		}
 	}
-	if n.marks == nil {
+	var own []Mark
+	switch {
+	case n.marks == nil:
+	case implied != nil:
+		own = implied.listed(n.marks)
+	default:
+		own = n.markList()
+	}
+	if len(own) == 0 {
 		return append(b, inner...)
 	}
 	b = cbor.AppendTag(b, tagMarked)
 	b = cbor.AppendArray(b, 2)
 	b = append(b, inner...)
-	return e.marks(b, n.markList(), at)
+	return e.marks(b, own, at)
 }
 
 // held appends the item of a pending tuple or object holding the members p,
 // which at locates (SE-010): [3, 0, items] of a tuple's members in order, or
 // [3, 1, [name, item] pairs] of an object's in name order, each member a
-// whole item, located by its step.
-func (e *encoder) held(b []byte, p *pendingMembers, at int) []byte {
+// whole item, located by its step, without the deep marks the pending value
+// implies on it.
+func (e *encoder) held(b []byte, p *pendingMembers, at int, implied *impliedMarks) []byte {
 	b = cbor.AppendArray(b, 3)
 	b = cbor.AppendUint(b, itemHeld)
 	if p.names == nil {
@@ -209,12 +220,12 @@ func (e *encoder) held(b []byte, p *pendingMembers, at int) []byte {
 	b = cbor.AppendArray(b, len(p.vals))
 	for i, m := range p.vals {
 		if p.names == nil {
-			b = e.itemAt(b, m, e.trail.down(at, element(i)))
+			b = e.itemAt(b, m, e.trail.down(at, element(i)), implied)
 			continue
 		}
 		b = cbor.AppendArray(b, 2)
 		b = cbor.AppendText(b, p.names[i])
-		b = e.itemAt(b, m, e.trail.down(at, attributeNamed(p.names[i])))
+		b = e.itemAt(b, m, e.trail.down(at, attributeNamed(p.names[i])), implied)
 	}
 	return b
 }

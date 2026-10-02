@@ -130,6 +130,10 @@ var goStringCases = []struct {
 		`tenon.WithMarks(tenon.List(tenon.ListType(tenon.NumberType()), tenon.List(tenon.NumberType(), tenon.WithMarks(tenon.NumberFromInt(1), tag("audited")), tenon.NumberFromInt(2))), sealing("sealed"))`,
 	},
 	{tenon.WithMarks(tenon.Set(tenon.StringType(), tenon.String("a")), sealing("sealed")), `tenon.WithMarks(tenon.Set(tenon.StringType(), tenon.String("a")), sealing("sealed"))`},
+	{
+		tenon.WithMarks(tenon.Tuple(tenon.WithMarks(tenon.Pending(tenon.Any()), tag("audited")), tenon.NumberFromInt(1)), sealing("sealed")),
+		`tenon.WithMarks(tenon.Tuple(tenon.WithMarks(tenon.Pending(tenon.Any()), tag("audited")), tenon.NumberFromInt(1)), sealing("sealed"))`,
+	},
 
 	// Types, constraints, paths, steps, ranges and narrowings.
 	{

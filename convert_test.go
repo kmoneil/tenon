@@ -1000,12 +1000,82 @@ func TestConformance_CV051_TheSafePolicyRefusesAContainerFirst(t *testing.T) {
 	}
 }
 
+// heldWithin reports whether v, a conversion's result to c or a member of
+// one, is within c as CV-032 converts to it: a resolved value of a type c
+// admits; a pending value of c as its constraint, or of its own converted to
+// Any; and a pending tuple or object holding its members, each within its
+// part of c, or of the structure of the one type c admits, an attribute an
+// open ObjectWith does not name being converted to Any.
+func heldWithin(v tenon.Value, c tenon.Constraint) bool {
+	switch {
+	case !v.IsPending():
+		return tenon.Satisfies(c, v.Type())
+	case c.Kind() == tenon.ConstraintAny:
+		return true
+	case !v.HasMembers():
+		return v.Constraint().Equal(c)
+	}
+	if c.Kind() == tenon.ConstraintExactly {
+		c = structureOf(c.Type())
+	}
+	switch c.Kind() {
+	case tenon.ConstraintTupleOf:
+		parts := c.Members()
+		if v.Len() != len(parts) {
+			return false
+		}
+		for i, m := range v.Elements() {
+			if !heldWithin(m, parts[i]) {
+				return false
+			}
+		}
+		return true
+	case tenon.ConstraintObjectWith:
+		for name, m := range v.Attributes() {
+			part := tenon.Any()
+			if f, ok := c.LookupField(name); ok {
+				part = f.Constraint
+			} else if c.Closed() {
+				return false
+			}
+			if !heldWithin(m, part) {
+				return false
+			}
+		}
+		return true
+	}
+	return false
+}
+
+// structureOf returns the TupleOf or closed ObjectWith that admits the tuple
+// or object type t alone, its parts exactly theirs, and Exactly(t) for any
+// other type.
+func structureOf(t tenon.Type) tenon.Constraint {
+	switch t.Kind() {
+	case tenon.KindTuple:
+		var parts []tenon.Constraint
+		for _, e := range t.TupleElementTypes() {
+			parts = append(parts, tenon.Exactly(e))
+		}
+		return tenon.TupleOf(parts...)
+	case tenon.KindObject:
+		fields := map[string]tenon.Field{}
+		for _, name := range t.AttributeNames() {
+			fields[name] = tenon.Required(tenon.Exactly(t.AttributeType(name)))
+		}
+		return tenon.ObjectWith(fields, true)
+	}
+	return tenon.Exactly(t)
+}
+
 // TestConformance_CV001_EveryResultSatisfiesItsTarget converts every value the
 // generator holds, unknown collections and containers holding unknowns
 // included, to constraints of every kind, and requires each result that is not
-// an error to satisfy its target: a resolved result by its type, and a pending
-// one by carrying the target as its constraint (go-cty #216). It requires the
-// same answer twice, and a known or error result for a known value.
+// an error to satisfy its target: a resolved result by its type, a pending
+// one by carrying the target as its constraint (go-cty #216), and a pending
+// tuple or object holding its members by holding each within its part of the
+// target. It requires the same answer twice, and a known or error result for
+// a known value.
 func TestConformance_CV001_EveryResultSatisfiesItsTarget(t *testing.T) {
 	conformance.Covers(t, "CV-001", "CV-003")
 	anyC := tenon.Any()
@@ -1058,8 +1128,14 @@ func TestConformance_CV001_EveryResultSatisfiesItsTarget(t *testing.T) {
 						t.Errorf("%s = %v, which converts again to %v", what, r, again)
 					}
 					// Converted to Any, a pending value keeps its own
-					// constraint (CV-032).
-					if got := r.Constraint(); !got.Equal(c) && !(c.Equal(tenon.Any()) && v.IsPending() && got.Equal(v.Constraint())) {
+					// constraint, and a pending tuple or object holding its
+					// members holds each converted to its part (CV-032).
+					switch got := r.Constraint(); {
+					case r.HasMembers():
+						if !heldWithin(r, c) {
+							t.Errorf("%s = %v, which holds a member not within its part of the target", what, r)
+						}
+					case !got.Equal(c) && !(c.Equal(tenon.Any()) && v.IsPending() && got.Equal(v.Constraint())):
 						t.Errorf("%s = %v, a pending value whose constraint is not the target", what, r)
 					}
 					if v.IsKnown() {

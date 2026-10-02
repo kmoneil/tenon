@@ -84,12 +84,19 @@ func changeOne(r *rand.Rand, v cty.Value) cty.Value {
 }
 
 // TestEqualsAgrees asks cty's Equals and tenon's of random pairs of values,
-// unknown and null parts among them.
+// unknown and null parts among them, and known values whose types hold
+// cty.DynamicPseudoType, which tenon compares member by member where they are
+// tuples or objects.
 func TestEqualsAgrees(t *testing.T) {
 	var b ctytenon.Bridge
 	r := rand.New(rand.NewSource(20261012))
+	held := 0
 	for range conformance.Iterations(t, 3000) {
-		v := randomCtyValue(r, randomCtyType(r, 3))
+		typ := randomCtyType(r, 3)
+		if r.Intn(4) == 0 {
+			typ = randomCtyConstraint(r, 3).WithoutOptionalAttributesDeep()
+		}
+		v := randomCtyValue(r, typ)
 		w := pairOf(r, v)
 		tv, err := b.FromCty(v)
 		if err != nil {
@@ -100,14 +107,41 @@ func TestEqualsAgrees(t *testing.T) {
 			t.Fatal(err)
 		}
 		ce, te := v.Equals(w), tenon.Equals(tv, tw)
+		if tv.IsPending() && tv.HasMembers() {
+			held++
+		}
 		// cty answers false of a set holding a member with an unknown part,
 		// even compared with itself (TestCtySetHoldingAnUnknownEqualsItself),
 		// so its answer says nothing there.
 		if ce.IsKnown() && ce.False() && (holdsPartlyUnknownMember(v) || holdsPartlyUnknownMember(w)) {
 			continue
 		}
+		// Two nulls whose types hold cty.DynamicPseudoType are equal to cty,
+		// and to tenon pending values that could still take different types,
+		// whose Equals is unknown (EQ-005's rationale); and of a known list,
+		// set or map whose type holds cty.DynamicPseudoType tenon has its
+		// length alone. cty's answer says nothing of what tenon can know there.
+		if ce.IsKnown() && (holdsLengthAlone(v) || holdsLengthAlone(w) || ce.True() && (holdsNullOfSomeType(v) || holdsNullOfSomeType(w))) {
+			continue
+		}
 		agreement(t, "Equals("+v.GoString()+", "+w.GoString()+")", ce, te)
 	}
+	if held < 20 {
+		t.Errorf("compared %d tuples or objects holding a member of no type yet; want many", held)
+	}
+}
+
+// holdsLengthAlone reports whether v is, or holds, a known list, set or map
+// whose type holds cty.DynamicPseudoType, which crosses to tenon as a pending
+// value of its length.
+func holdsLengthAlone(v cty.Value) bool {
+	found := false
+	cty.Walk(v, func(_ cty.Path, at cty.Value) (bool, error) {
+		t := at.Type()
+		found = found || at.IsKnown() && !at.IsNull() && t.IsCollectionType() && t.HasDynamicTypes()
+		return !found, nil
+	})
+	return found
 }
 
 // holdsPartlyUnknownMember reports whether v holds, at any depth, a known set

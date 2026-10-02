@@ -92,6 +92,12 @@ func All() []tenon.Value {
 		tenon.Narrow(tenon.Pending(tenon.ListOf(tenon.Any())), tenon.LengthMin(2)),
 		tenon.Narrow(tenon.Pending(tenon.OneOf(tenon.SetOf(tenon.Exactly(num)), tenon.MapOf(tenon.Any()))), tenon.NotNull(), tenon.LengthMax(1)),
 
+		// Pending tuples and objects holding their members, one of them at
+		// least pending, and one within another beside an unknown.
+		tenon.Tuple(tenon.Pending(tenon.Any()), n(1)),
+		tenon.Object(map[string]tenon.Value{"a": tenon.Pending(tenon.Exactly(str)), "b": s("x")}),
+		tenon.Object(map[string]tenon.Value{"a": tenon.Tuple(unknownNum, tenon.Narrow(tenon.Pending(tenon.Any()), tenon.NullOnly()))}),
+
 		// Null values, one per kind of type they belong to.
 		tenon.Null(bl),
 		tenon.Null(num),
@@ -208,6 +214,7 @@ func All() []tenon.Value {
 		tenon.WithMarks(tenon.Null(num), origin),
 		tenon.WithMarks(unknownNum, origin),
 		tenon.WithMarks(tenon.Pending(tenon.Any()), origin),
+		tenon.WithMarks(tenon.Tuple(tenon.Pending(tenon.Any()), s("a")), origin),
 		tenon.WithMarks(tenon.ErrorVal(tenon.Diagnostic{Code: "app.failed", Message: "it failed"}), origin),
 		tenon.WithMarks(tenon.List(str, s("a")), origin),
 		tenon.WithMarks(tenon.Set(str, s("a"), s("b")), origin),
@@ -230,6 +237,7 @@ func All() []tenon.Value {
 		tenon.WithMarks(tenon.List(tenon.ListType(num), tenon.List(num, tenon.WithMarks(n(1), sealed), n(2))), sealed),
 		tenon.WithMarks(tenon.Set(str, s("a"), s("b")), sealed),
 		tenon.WithMarks(tenon.Map(num, map[string]tenon.Value{"k": n(1)}), sealed),
+		tenon.WithMarks(tenon.Object(map[string]tenon.Value{"a": tenon.Pending(tenon.Any()), "b": n(1)}), sealed),
 		tenon.WithMarks(tenon.Object(map[string]tenon.Value{
 			"a": tenon.Set(str, s("a")),
 			"b": unknownNum,

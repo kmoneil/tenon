@@ -31,7 +31,9 @@ import (
 // whose type holds cty.DynamicPseudoType, as a list holding cty.DynamicVal
 // does, is the pending value known not to be null, and a known list, set or
 // map of such a type records the length it has (a set as from one to its
-// count, since its members that are not known may turn out to be one).
+// count, since its members that are not known may turn out to be one). A
+// known tuple or object of such a type is the pending tuple or object holding
+// its members, as [tenon.Tuple] and [tenon.Object] make it.
 //
 // A mark crosses as b.MarkFromCty maps it. cty hands a container's marks to
 // every value read out of it, so they cross on the container and on every
@@ -126,10 +128,17 @@ func (b Bridge) unmarkedFromCty(v cty.Value, p tenon.Path, marks []tenon.Mark, f
 	t := v.Type().WithoutOptionalAttributesDeep()
 	known := v.IsKnown() && !v.IsNull()
 	if t.HasDynamicTypes() {
-		// What a known one holds is not carried, but it may fail to cross
-		// all the same.
-		if _, ok := b.parts(v, t, p, marks, f); known && !ok {
+		// A known tuple or object holds its members, one of them at least
+		// pending. What a known list, set or map holds is not carried, but
+		// it may fail to cross all the same.
+		parts, ok := b.parts(v, t, p, marks, f)
+		switch {
+		case known && !ok:
 			return tenon.Value{}
+		case known && t.IsTupleType():
+			return tenon.Tuple(parts.elems...)
+		case known && t.IsObjectType():
+			return f.data(p, tenon.Object(parts.entries))
 		}
 		c, err := b.constraintFromCty(t, t, true)
 		if err != nil {
@@ -266,7 +275,8 @@ func (b Bridge) parts(v cty.Value, t cty.Type, p tenon.Path, marks []tenon.Mark,
 // the types the constraint allows: [tenon.Any] is cty.DynamicPseudoType, and
 // so is an ObjectWith that is open or has optional fields, which allows
 // objects of attributes no one cty object type names. A pending list, set or
-// map is refined by the lengths it records.
+// map is refined by the lengths it records. A pending tuple or object holding
+// its members is cty's tuple or object of them.
 //
 // A mark crosses as b.MarkToCty maps it. cty hands a container's marks to
 // every value read out of it, so a value within one carries in cty only the
@@ -363,7 +373,7 @@ func (b Bridge) marksToCty(marks []tenon.Mark, p tenon.Path, f *failures) (cty.V
 // as toCty does, the values within it carrying marks. A failure is located at
 // the part that fails, as fromCty's are.
 func (b Bridge) unmarkedToCty(v tenon.Value, p tenon.Path, marks cty.ValueMarks, f *failures) cty.Value {
-	if v.IsPending() {
+	if v.IsPending() && !v.HasMembers() {
 		t, err := b.constraintToCty(v.Constraint(), v.Constraint(), true)
 		switch {
 		case err != nil:
@@ -378,8 +388,8 @@ func (b Bridge) unmarkedToCty(v tenon.Value, p tenon.Path, marks cty.ValueMarks,
 		}
 		return cty.UnknownVal(t)
 	}
-	kind := v.Type().Kind()
-	if !v.HasContent() || kind == tenon.KindCapsule {
+	kind := kindOf(v)
+	if !v.IsPending() && (!v.HasContent() || kind == tenon.KindCapsule) {
 		t, err := b.typeToCty(v.Type(), v.Type())
 		switch {
 		case err != nil:
@@ -447,6 +457,18 @@ func (b Bridge) unmarkedToCty(v tenon.Value, p tenon.Path, marks cty.ValueMarks,
 		return cty.SetValEmpty(elem)
 	}
 	return cty.MapValEmpty(elem)
+}
+
+// kindOf returns the kind of v's type, and for a pending tuple or object
+// holding its members, which has no type, the kind it holds them as.
+func kindOf(v tenon.Value) tenon.Kind {
+	switch {
+	case !v.IsPending():
+		return v.Type().Kind()
+	case v.Constraint().Kind() == tenon.ConstraintObjectWith:
+		return tenon.KindObject
+	}
+	return tenon.KindTuple
 }
 
 // failures collects the diagnostics of a crossing, each located by its path,

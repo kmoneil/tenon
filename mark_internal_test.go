@@ -166,15 +166,18 @@ func TestMarkedWithinAgreesWithTheMembers(t *testing.T) {
 }
 
 // checkFlags fails t unless v, and every value within it, carries the flags
-// a full walk finds: partial exactly where a collection or structural value
-// holds a member that is not known, so that its range is not a singleton and
-// the value is not known (VA-003), and markedWithin exactly where it holds a
-// marked value. It checks the facts a value keeps once asked for them as
+// a full walk finds: partial exactly where a collection or structural value,
+// or a pending tuple or object holding its members, holds a member that is
+// not known, so that its range is not a singleton and the value is not known
+// (VA-003), and markedWithin exactly where it holds a marked value. It checks the facts a value keeps once asked for them as
 // well (checkKept). It returns how many values it checked, itself included.
 func checkFlags(t *testing.T, v Value) int {
 	t.Helper()
 	checked := 1
 	var members []Value
+	if p, ok := v.n.held(); ok {
+		members = p.vals
+	}
 	if v.n.state == stateKnown {
 		switch data := v.n.data.(type) {
 		case []Value:
