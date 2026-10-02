@@ -33,7 +33,9 @@
     the order of the text.
 
   The specification says so in a new section, §11 (`JS-001` to `JS-022`):
-  211 rules, each covered.
+  211 rules, each covered. The conformance vectors gain `json.json`, texts
+  read with their constraints and what each reads as or fails with, for
+  another implementation to test against.
 
 ### Changed
 

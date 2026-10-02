@@ -113,11 +113,20 @@ func nameFault(kind nameKind, fault Code, name string) Diagnostic {
 	return Diagnostic{Code: fault, Message: what + quotedASCII(name) + " is not well-formed UTF-8 at byte " + strconv.Itoa(invalidUTF8At(name))}
 }
 
-// sharedName returns the diagnostic of entries that share one name of kind.
+// sharedName returns the diagnostic of entries that share one name of kind:
+// one name given more than once as it is written, as a JSON object can give
+// it, or spellings that are one name after normalization.
 func sharedName[V any](kind nameKind, group []namedEntry[V]) Diagnostic {
 	spellings := make([]string, len(group))
 	for i, e := range group {
 		spellings[i] = quotedASCII(e.original)
+	}
+	if slices.IndexFunc(group, func(e namedEntry[V]) bool { return e.original != group[0].original }) < 0 {
+		code, what := CodeObjectDuplicateName, "attribute name "
+		if kind == mapKeys {
+			code, what = CodeMapDuplicateKey, "map key "
+		}
+		return Diagnostic{Code: code, Message: what + spellings[0] + " is given " + strconv.Itoa(len(group)) + " times"}
 	}
 	if kind == mapKeys {
 		return Diagnostic{

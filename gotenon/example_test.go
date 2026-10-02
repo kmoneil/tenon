@@ -100,7 +100,8 @@ func ExampleDecode_diagnostics() {
 
 // Data whose types are not known at compile time reaches a Go program as any.
 // Encode takes it by what each value holds, so a JSON document becomes a value
-// without a Go type written for it.
+// without a Go type written for it. JSON text itself is read faster, and more
+// strictly, by tenon.ParseJSON; Encode is for data that is already any.
 func Example_json() {
 	document := `{"name": "web", "port": 8080, "ratio": 0.1, "tags": ["edge", 2], "on": true}`
 
@@ -146,19 +147,10 @@ type Service struct {
 // A document a program reads, checked against the Go type it expects and
 // decoded into it, with every part that does not fit reported where it is.
 func Example_quickStart() {
-	// Read the document as encoding/json does, keeping its numbers as
-	// written rather than as the nearest float64.
-	decoder := json.NewDecoder(strings.NewReader(`{"name": "web", "port": 8080, "tags": ["edge"]}`))
-	decoder.UseNumber()
-	var document any
-	if err := decoder.Decode(&document); err != nil {
-		fmt.Println(err)
-		return
-	}
-
-	// Take it in as a value, whatever it holds, then decode the value into
-	// the Go type, converting it under the policy given.
-	value, err := gotenon.Encode(document)
+	// Read the document as a value, whatever it holds, its numbers exactly
+	// as written, then decode the value into the Go type, converting it
+	// under the policy given.
+	value, err := tenon.ParseJSON([]byte(`{"name": "web", "port": 8080, "tags": ["edge"]}`), tenon.Any(), tenon.Safe)
 	if err != nil {
 		fmt.Println(err)
 		return
@@ -167,7 +159,7 @@ func Example_quickStart() {
 	fmt.Printf("%+v %v\n", service, err)
 
 	// A document that does not fit says where, for each part.
-	wrong, _ := gotenon.Encode(map[string]any{"name": "web", "port": "http", "colour": "blue"})
+	wrong, _ := tenon.ParseJSON([]byte(`{"name": "web", "port": "http", "colour": "blue"}`), tenon.Any(), tenon.Safe)
 	_, err = gotenon.Decode[Service](wrong, tenon.Safe)
 	fmt.Println(err)
 	// Output:

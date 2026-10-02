@@ -159,10 +159,11 @@ into a value identical to the one that was sent.
 
 ## Go values
 
-Package `gotenon` maps Go values to tenon values and back. A program that
-reads data it did not declare takes it in by what each part holds, and one
-that has Go types for the data decodes into them, converting under the policy
-it chooses and failing with a diagnostic for each part that does not fit.
+Package `gotenon` maps Go values to tenon values and back. A program reads a
+JSON document with `ParseJSON`, in one pass and strictly, by what each part
+holds or into the constraint it gives, and one that has Go types for the data
+decodes into them, converting under the policy it chooses and failing with a
+diagnostic for each part that does not fit.
 
 ```go
 // Service is what a program expects a service's configuration to be.
@@ -175,19 +176,10 @@ type Service struct {
 ```
 
 ```go
-// Read the document as encoding/json does, keeping its numbers as
-// written rather than as the nearest float64.
-decoder := json.NewDecoder(strings.NewReader(`{"name": "web", "port": 8080, "tags": ["edge"]}`))
-decoder.UseNumber()
-var document any
-if err := decoder.Decode(&document); err != nil {
-	fmt.Println(err)
-	return
-}
-
-// Take it in as a value, whatever it holds, then decode the value into
-// the Go type, converting it under the policy given.
-value, err := gotenon.Encode(document)
+// Read the document as a value, whatever it holds, its numbers exactly
+// as written, then decode the value into the Go type, converting it
+// under the policy given.
+value, err := tenon.ParseJSON([]byte(`{"name": "web", "port": 8080, "tags": ["edge"]}`), tenon.Any(), tenon.Safe)
 if err != nil {
 	fmt.Println(err)
 	return
@@ -196,7 +188,7 @@ service, err := gotenon.Decode[Service](value, tenon.Safe)
 fmt.Printf("%+v %v\n", service, err)
 
 // A document that does not fit says where, for each part.
-wrong, _ := gotenon.Encode(map[string]any{"name": "web", "port": "http", "colour": "blue"})
+wrong, _ := tenon.ParseJSON([]byte(`{"name": "web", "port": "http", "colour": "blue"}`), tenon.Any(), tenon.Safe)
 _, err = gotenon.Decode[Service](wrong, tenon.Safe)
 fmt.Println(err)
 // Output:
@@ -262,6 +254,7 @@ two differ, and its own `CHANGELOG.md` what each release holds:
 | Types | One `Type` serves as a type and as a constraint, `DynamicPseudoType` standing for any | Types and constraints are distinct, and a value whose type is not settled yet carries a constraint in its place |
 | Diffs | None: each program writes its own | `Diff`, which never looks inside what a redacting mark withholds |
 | Determinism | `Equals` on objects and maps holding an unknown answers by Go's map order, and keys that are one after normalization merge at random | The same answer every time, and such keys are refused, naming both spellings |
+| Reading JSON | `ctyjson.Unmarshal` keeps the last of two members of one name, ignores text after the value, reads numbers as 512-bit floats and stops at the first failure | `ParseJSON` refuses a name given twice and anything after the value, reads numbers exactly, and reports every failure at its path |
 
 The bench module holds a test for each of go-cty's open issues whose defect
 tenon could share, asserting what go-cty v1.19.0 does with the issue's case

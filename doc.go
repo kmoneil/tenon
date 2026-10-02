@@ -175,9 +175,17 @@
 // encoding/json writes them; and a value marshals through encoding/json as its
 // JSON projection, failing where the projection fails.
 //
+// [ParseJSON] reads JSON text into a value that a given constraint admits, in
+// one pass: what the text says, read as JSON implies, converted to the
+// constraint under a policy as [Convert] converts it. It reads RFC 8259
+// strictly and refuses what encoding/json lets through, a name given twice
+// and text that is not well-formed UTF-8 among it, reporting each failure at
+// its path.
+//
 // [ProjectJSON] renders a value as JSON for a consumer that speaks JSON and
-// nothing else. The projection is one-way and lossy, and it refuses what JSON
-// cannot say: a value that is not known, or one a redacting mark withholds.
+// nothing else. The projection is lossy, and it refuses what JSON cannot say:
+// a value that is not known, or one a redacting mark withholds. ParseJSON
+// reads it back given the value's type.
 //
 // [Diff] reports what changed between two values as [Changes], each a [Change]
 // locating what happened by its path, which is what a plan engine shows.
@@ -192,7 +200,8 @@
 // Data whose types a program does not know is what this package is for, and in
 // Go that data arrives as any: the map[string]any that encoding/json gives
 // encodes by what each value holds, so a document becomes a value without a Go
-// type written for it.
+// type written for it. A JSON document read as text is read faster, and more
+// strictly, by [ParseJSON].
 //
 // A Go type that tenon should carry through unchanged, rather than map, is
 // encapsulated by a capsule type, which [NewCapsule] makes: its values keep

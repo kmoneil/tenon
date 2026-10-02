@@ -361,6 +361,31 @@ func ExampleProjectJSON() {
 	// serialize.not_known: an unknown value of type number has no content to project at .port
 }
 
+// ParseJSON reads a JSON document into the constraint a program expects of
+// it, in one pass: a string reads into a number where the policy allows it,
+// and a null is the null of the type its siblings settle. A document that is
+// not what it should be fails where it is not.
+func ExampleParseJSON() {
+	schema := tenon.ObjectWith(map[string]tenon.Field{
+		"name":  tenon.Required(tenon.Exactly(tenon.StringType())),
+		"ports": tenon.Required(tenon.ListOf(tenon.Exactly(tenon.NumberType()))),
+		"tags":  tenon.Optional(tenon.MapOf(tenon.Any())),
+	}, true)
+	v, err := tenon.ParseJSON([]byte(`{"name": "web", "ports": [80, "443"], "tags": {"tier": "front", "owner": null}}`), schema, tenon.Unsafe)
+	fmt.Println(v, err)
+
+	// A name given twice is refused, where encoding/json keeps the last of
+	// them, and so is text that is not JSON, at the byte where it stops.
+	_, err = tenon.ParseJSON([]byte(`{"name": "web", "name": "api"}`), schema, tenon.Unsafe)
+	fmt.Println(err)
+	_, err = tenon.ParseJSON([]byte(`{"name": "web",}`), schema, tenon.Unsafe)
+	fmt.Println(err)
+	// Output:
+	// {"name": "web", "ports": list(number)[80, 443], "tags": map(string){"owner": null, "tier": "front"}} <nil>
+	// object.duplicate_name: attribute name "name" is given 2 times
+	// json.invalid_syntax: the text is not JSON at byte 15: a name, which is a string, was expected, and '}' was found
+}
+
 // Diff reports what changed between two values, each change located by its
 // path, which is what a plan engine shows a person before it acts.
 func ExampleDiff() {
