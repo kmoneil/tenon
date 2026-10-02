@@ -54,6 +54,12 @@
       "code": "encode.untyped_nil"
     },
     {
+      "code": "json.invalid_syntax"
+    },
+    {
+      "code": "json.too_deep"
+    },
+    {
       "code": "map.duplicate_key"
     },
     {

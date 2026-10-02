@@ -393,12 +393,8 @@ func Object(attrs map[string]Value) Value {
 		given = append(given, namedEntry[Value]{original: name, value: v})
 	}
 	entries, shared := checkNames(given, attributeNames)
-	pending := false
 	for _, e := range entries {
-		// An attribute that is no error value is resolved or pending, and
-		// either can be an attribute, a pending one making the object the
-		// pending value holding its attributes (UN-025).
-		pending = pending || e.value.data().state == statePending
+		e.value.data()
 	}
 	var errs containerErrors
 	for _, e := range entries {
@@ -420,8 +416,18 @@ func Object(attrs map[string]Value) Value {
 	if v, ok := errs.value(); ok {
 		return v
 	}
-	if pending {
-		return pendingObject(entries)
+	return objectOfEntries(entries)
+}
+
+// objectOfEntries returns the object holding entries, whose names checkNames
+// found to be attribute names, one each, in its order, and whose values are
+// no error values: the pending object holding them where one is pending,
+// which has no type yet (UN-025).
+func objectOfEntries(entries []namedEntry[Value]) Value {
+	for _, e := range entries {
+		if e.value.n.state == statePending {
+			return pendingObject(entries)
+		}
 	}
 	types := make(map[string]Type, len(entries))
 	vals := make([]Value, len(entries))

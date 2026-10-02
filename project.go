@@ -10,7 +10,9 @@ import (
 // ProjectJSON returns v rendered as JSON text. The projection is
 // one-way and lossy: types do not survive it, and neither do marks, the
 // difference between a list, a set and a tuple, or that between a map and an
-// object. No function reads the JSON back into a value.
+// object. ParseJSON reads it back given the type: a known value that holds no
+// capsule and carries no mark reads back as itself with Exactly of its type,
+// under the Unsafe policy, and under Safe where it holds no set.
 //
 // Null is null, a Bool is true or false, and a Number is its canonical text,
 // exact to the last digit. A String is a JSON string escaping only what JSON

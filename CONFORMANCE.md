@@ -9,8 +9,8 @@ fails where it is stale.
 | --- | --- |
 | Specification version | 0.11.0 |
 | Unicode version (`ST-003`) | 15.0.0 |
-| Rules | 202 normative, 9 outline, 0 withdrawn |
-| Rules satisfied | 202 of 202 |
+| Rules | 211 normative, 0 outline, 0 withdrawn |
+| Rules satisfied | 211 of 211 |
 | Optional areas omitted | none |
 
 ## Rules not satisfied
@@ -46,3 +46,4 @@ implemented, and their conformance tests run.
 | `SE` | 24 | 24 |
 | `GO` | 24 | 24 |
 | `DI` | 20 | 20 |
+| `JS` | 9 | 9 |

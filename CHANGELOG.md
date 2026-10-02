@@ -2,6 +2,38 @@
 
 ## Unreleased
 
+### Added
+
+- `ParseJSON(data, c, p)` reads JSON text into a value that `c` admits, in
+  one pass over the text, where a program took two: `encoding/json` into
+  `any`, then gotenon. What the text says is read as JSON implies, a number
+  exactly from its text, a string normalized, an array as a tuple and an
+  object as an object, and then converted to `c` under `p` as `Convert`
+  converts it, so that `ParseJSON(data, ListOf(Exactly(NumberType())),
+  Unsafe)` reads `["8080"]` as a list of numbers, as go-cty does, and
+  `Safe` refuses it.
+  - A `null` is the null of the type `c` gives there, or of the type the
+    members beside it in a list, set or map settle, and otherwise the
+    pending null: `{"a": null, "b": 1}` read with `MapOf(Any())` is a map of
+    numbers holding a null.
+  - The text is RFC 8259's grammar, strictly: no byte order mark, comment,
+    trailing comma or leading zero, and nothing after the value. A failure
+    of the text stops the reading with `json.invalid_syntax`, naming the
+    byte offset, and arrays and objects nested more than 512 levels deep
+    with `json.too_deep`.
+  - What encoding/json lets through is refused: a string that is not
+    well-formed UTF-8, or an escaped surrogate no pair completes, fails as
+    `string.invalid_utf8` rather than becoming U+FFFD, and two members of
+    one object with one name, as written or after normalization, fail as
+    `object.duplicate_name` rather than the last winning, which lets two
+    readers of one document see two values. An empty name fails as
+    `object.empty_name`, whatever the object becomes.
+  - Every failure of reading the text is reported, each at its path, in
+    the order of the text.
+
+  The specification says so in a new section, §11 (`JS-001` to `JS-022`):
+  211 rules, each covered.
+
 ### Changed
 
 - A member that converts to a pending value known to be null, a null whose
