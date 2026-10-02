@@ -29,6 +29,10 @@
     it gave a bare pending value and lost them. A list, set or map
     converted so gives the pending collection with the number of members
     as its length.
+  - A pending tuple or object converts member by member as the tuple or
+    object it will be, to a tuple, object, list, set or map; as the
+    resolved value of its one type where its constraint admits one; and
+    whole to `Any`.
 
   A list, set or map of a pending member still panics, its element type
   being given. The specification says so (`UN-025`), a new rule: 202 rules,

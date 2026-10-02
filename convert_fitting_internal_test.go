@@ -48,6 +48,24 @@ func (x converter) fittingValueOf(v Value, c Constraint) Value {
 	n := v.n
 	switch n.state {
 	case statePending:
+		// A pending tuple or object holding its members converts as the
+		// resolved value of the one type its constraint admits, as the tuple
+		// or object it will be to a structure, and otherwise by its
+		// constraint, carrying its members' marks where the result holds
+		// none of them (CV-032, CV-033).
+		if _, ok := n.held(); ok {
+			if s, ok := x.memo.soleType(n.constraint()); ok {
+				return x.fittingKnown(Resolve(withoutMarks(v), s), c)
+			}
+			if s, ok := x.heldStructure(c); ok {
+				return x.fittingStructure(v, s)
+			}
+			r := x.pending(v, c)
+			if _, kept := r.n.held(); !kept && r.n.state != stateError {
+				r = WithMarks(r, heldMarks(n)...)
+			}
+			return r
+		}
 		return x.pending(v, c)
 	case stateNull, stateUnknown:
 		if x.memo.fits(c, n.typ) {
@@ -253,7 +271,7 @@ func (x converter) fittingMembers(h held, at func(i int) Constraint) ([]Value, V
 // SetOf or MapOf constraint.
 func (x converter) fittingCollection(v Value, c Constraint) Value {
 	n, d := v.n, c.c
-	from := n.typ.t.kind
+	from := sourceKind(n)
 	unsafe := false
 	switch {
 	case d.kind == ConstraintMapOf && (from == KindMap || from == KindObject):
@@ -277,9 +295,12 @@ func (x converter) fittingCollection(v Value, c Constraint) Value {
 		if r.n.state == statePending {
 			// As in collectionTypeConvert: a member whose no-keys conversion
 			// fails settles no element type, and is left out rather than
-			// contributing the zero Type.
-			if none := typeConvert(h.vals[i].n.typ, d.elem, x.policy, keysNone); none.fail == nil {
-				least = append(least, none.typ)
+			// contributing the zero Type; so is a member that is pending
+			// itself, which has no type to convert.
+			if src := h.vals[i].n; src.state != statePending {
+				if none := typeConvert(src.typ, d.elem, x.policy, keysNone); none.fail == nil {
+					least = append(least, none.typ)
+				}
 			}
 			continue
 		}
@@ -344,11 +365,12 @@ func (x converter) fittingCollection(v Value, c Constraint) Value {
 // fittingTuple converts a known tuple, list or set to a TupleOf constraint.
 func (x converter) fittingTuple(v Value, c Constraint) Value {
 	n, d := v.n, c.c
-	from := n.typ.t.kind
+	from := sourceKind(n)
 	switch from {
 	case KindTuple:
-		if len(n.typ.t.elems) != len(d.members) {
-			return errorValue(tupleTypeConvert(n.typ, c, x.policy, keysNone).fail.diagnostic())
+		if got, want := len(members(n).vals), len(d.members); got != want {
+			return errorValue(Diagnostic{Code: CodeConvertNoConversion,
+				Message: "a tuple of " + count(got, "element") + " does not convert to " + c.String() + ", which has " + count(want, "member")})
 		}
 	case KindList, KindSet:
 		want := len(d.members)
@@ -383,7 +405,7 @@ func (x converter) fittingTuple(v Value, c Constraint) Value {
 // fittingObject converts a known object or map to an ObjectWith constraint.
 func (x converter) fittingObject(v Value, c Constraint) Value {
 	n, d := v.n, c.c
-	from := n.typ.t.kind
+	from := sourceKind(n)
 	if from != KindObject && from != KindMap {
 		return errorValue(noConversion(x.typeName(n), c).diagnostic())
 	}
