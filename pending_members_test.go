@@ -311,3 +311,48 @@ func TestConformance_CV031_AMemberThatConvertsToPendingIsHeld(t *testing.T) {
 		tenon.Convert(tenon.Tuple(tenon.Tuple(), u), tenon.TupleOf(tenon.ListOf(tenon.Any()), open), uns),
 		wantDiag{tenon.CodeConvertNoCommonType, ".[0]"})
 }
+
+// TestConformance_CV032_APendingTupleOrObjectConvertsMemberByMember holds the
+// conversion of a pending tuple or object holding its members: to TupleOf,
+// ObjectWith or Exactly of a tuple or object type, member by member, the
+// result holding what they convert to, resolved where every member is; to
+// ListOf or MapOf, the pending collection of its length; to Any, whole; where
+// its constraint admits one type, as that type's resolved value; to a OneOf,
+// by its constraint, carrying its members' marks; and a member's failure at
+// its path.
+func TestConformance_CV032_APendingTupleOrObjectConvertsMemberByMember(t *testing.T) {
+	conformance.Covers(t, "CV-032", "CV-050", "UN-025")
+	p := tenon.Pending(tenon.Any())
+	tup := tenon.Tuple(p, n(1))
+	o := tenon.Object(map[string]tenon.Value{"a": p, "b": n(1)})
+	for _, tt := range []struct {
+		name string
+		v    tenon.Value
+		c    tenon.Constraint
+		want tenon.Value
+	}{
+		{"to a tuple", tup, tenon.TupleOf(tenon.Any(), is(str)), tenon.Tuple(p, s("1"))},
+		{"to an object", o, tenon.ObjectWith(map[string]tenon.Field{"a": tenon.Required(tenon.Any()), "b": tenon.Required(is(str))}, true),
+			tenon.Object(map[string]tenon.Value{"a": p, "b": s("1")})},
+		{"to a tuple type", tup, is(tenon.TupleType(str, num)), tenon.Tuple(tenon.Unknown(str), n(1))},
+		{"to a list", tup, tenon.ListOf(tenon.Any()),
+			tenon.Narrow(tenon.Pending(tenon.ListOf(tenon.Any())), tenon.NotNull(), tenon.LengthMin(2), tenon.LengthMax(2))},
+		{"to a map", o, tenon.MapOf(tenon.Any()),
+			tenon.Narrow(tenon.Pending(tenon.MapOf(tenon.Any())), tenon.NotNull(), tenon.LengthMin(2), tenon.LengthMax(2))},
+		{"to any", tup, tenon.Any(), tup},
+		{"of one type", tenon.Tuple(tenon.Pending(is(num)), s("a")), tenon.Any(), tenon.Tuple(tenon.Unknown(num), s("a"))},
+	} {
+		wantValue(t, tt.name, tenon.Convert(tt.v, tt.c, uns), tt.want)
+	}
+	wantErrors(t, "a member that fails", tenon.Convert(tenon.Tuple(p, s("x")), tenon.TupleOf(tenon.Any(), is(num)), uns),
+		wantDiag{tenon.CodeNumberInvalidSyntax, ".[1]"})
+	wantErrors(t, "another length", tenon.Convert(tup, tenon.TupleOf(tenon.Any()), uns),
+		wantDiag{tenon.CodeConvertNoConversion, "."})
+
+	prop := stamp{id: "prop"}
+	choice := tenon.OneOf(is(num), tenon.TupleOf(tenon.Any(), tenon.Any()))
+	r := tenon.Convert(tenon.Tuple(tenon.WithMarks(p, prop), n(1)), choice, uns)
+	if !r.IsPending() || !tenon.HasMark(r, prop) {
+		t.Errorf("a pending tuple of a marked member converted to %v = %v, want a pending value carrying %v", choice, r, prop)
+	}
+}

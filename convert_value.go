@@ -251,7 +251,68 @@ func (x converter) draftOf(v Value, c Constraint) draft {
 	if v.n.state == stateKnown {
 		return x.known(v, c)
 	}
+	if _, ok := v.n.held(); ok {
+		return x.heldDraft(v, c)
+	}
 	return x.unsettled(v, c)
+}
+
+// heldDraft works out the conversion of v, a pending tuple or object holding
+// its members (UN-025). Where its constraint admits one type, it is that
+// type's resolved value, member by member, which converts as a known value
+// does (UN-023); to a structure it converts member by member as the tuple or
+// object it will be (CV-032); and otherwise it converts by its constraint,
+// kept whole converted to Any, and carrying the Propagate marks of the members
+// where the result holds none of them (CV-033).
+func (x converter) heldDraft(v Value, c Constraint) draft {
+	if s, ok := x.memo.soleType(v.n.constraint()); ok {
+		return x.known(Resolve(withoutMarks(v), s), c)
+	}
+	if s, ok := x.heldStructure(c); ok {
+		return x.structure(v, s)
+	}
+	d := x.unsettled(v, c)
+	if r := d.done; r.n != nil && r.n.state != stateError {
+		if _, kept := r.n.held(); !kept {
+			d = finished(WithMarks(r, heldMarks(v.n)...))
+		}
+	}
+	return d
+}
+
+// heldStructure returns the structure that a pending tuple or object holding
+// its members (UN-025) converts to member by member, as the tuple or object it
+// will be does (CV-032): c where it is ListOf, SetOf, MapOf, TupleOf or
+// ObjectWith, and the structure of the one type c admits where that is a
+// list, set, map, tuple or object type. It reports false otherwise, as for Any
+// or a OneOf, where the pending value converts by its constraint.
+func (x converter) heldStructure(c Constraint) (Constraint, bool) {
+	switch c.c.kind {
+	case ConstraintListOf, ConstraintSetOf, ConstraintMapOf, ConstraintTupleOf, ConstraintObjectWith:
+		return c, true
+	}
+	s, ok := x.memo.soleType(c)
+	if !ok {
+		return Constraint{}, false
+	}
+	switch s.t.kind {
+	case KindList, KindSet, KindMap, KindTuple, KindObject:
+		return structural(s), true
+	}
+	return Constraint{}, false
+}
+
+// sourceKind returns the kind of the container n that a conversion reads: its
+// type's, or a tuple's or object's where n is a pending one holding its
+// members (UN-025).
+func sourceKind(n *node) Kind {
+	if p, ok := n.held(); ok {
+		if p.names == nil {
+			return KindTuple
+		}
+		return KindObject
+	}
+	return n.typ.t.kind
 }
 
 // unsettled works out the conversion of a pending, null or unknown value.
@@ -361,7 +422,7 @@ func (x converter) openFailure(d draft, n *node, t Type) Value {
 	if d.open != nil {
 		r = failedReading(n, d.open.diagnostic())
 	} else {
-		h := held{names: d.names, kind: n.typ.t.kind}
+		h := held{names: d.names, kind: sourceKind(n)}
 		var errs containerErrors
 		for i, md := range d.members {
 			name := ""
@@ -892,6 +953,9 @@ func (h held) step(i int) Step {
 // members returns what the known container n holds. A set's members come out
 // as Elements gives them, carrying the set's deep marks.
 func members(n *node) held {
+	if p, ok := n.held(); ok {
+		return held{vals: p.vals, names: p.names, kind: sourceKind(n)}
+	}
 	h := held{kind: n.typ.t.kind}
 	switch h.kind {
 	case KindMap:
@@ -942,7 +1006,7 @@ func (x converter) draftMembers(h held, at func(i int) Constraint) ([]memberDraf
 // object to a ListOf, SetOf or MapOf constraint.
 func (x converter) collection(v Value, c Constraint) draft {
 	n, d := v.n, c.c
-	from := n.typ.t.kind
+	from := sourceKind(n)
 	unsafe := false
 	switch {
 	case d.kind == ConstraintMapOf && (from == KindMap || from == KindObject):
@@ -969,9 +1033,13 @@ func (x converter) collection(v Value, c Constraint) draft {
 		if r := md.done; r.n != nil && r.n.state == statePending {
 			// As in collectionTypeConvert: a member whose no-keys conversion
 			// fails settles no element type, and is left out rather than
-			// contributing the zero Type.
-			if none := typeConvert(h.vals[i].n.typ, d.elem, x.policy, keysNone); none.fail == nil {
-				least = append(least, none.typ)
+			// contributing the zero Type; so is a member that is pending
+			// itself, a pending tuple's or object's (UN-025), which has no
+			// type to convert.
+			if src := h.vals[i].n; src.state != statePending {
+				if none := typeConvert(src.typ, d.elem, x.policy, keysNone); none.fail == nil {
+					least = append(least, none.typ)
+				}
 			}
 			continue
 		}
@@ -1158,11 +1226,12 @@ func setOf(st Type, members []Value) Value {
 // constraint.
 func (x converter) tuple(v Value, c Constraint) draft {
 	n, d := v.n, c.c
-	from := n.typ.t.kind
+	from := sourceKind(n)
 	switch from {
 	case KindTuple:
-		if len(n.typ.t.elems) != len(d.members) {
-			return finished(errorValue(tupleTypeConvert(n.typ, c, x.policy, keysNone).fail.diagnostic()))
+		if got, want := len(members(n).vals), len(d.members); got != want {
+			return finished(errorValue(Diagnostic{Code: CodeConvertNoConversion,
+				Message: "a tuple of " + count(got, "element") + " does not convert to " + c.String() + ", which has " + count(want, "member")}))
 		}
 	case KindList, KindSet:
 		want := len(d.members)
@@ -1255,7 +1324,7 @@ func kindNoun(k Kind) string {
 // constraint.
 func (x converter) object(v Value, c Constraint) draft {
 	n, d := v.n, c.c
-	from := n.typ.t.kind
+	from := sourceKind(n)
 	if from != KindObject && from != KindMap {
 		return finished(errorValue(noConversion(x.typeName(n), c).diagnostic()))
 	}
@@ -1469,7 +1538,7 @@ func (x converter) failsEverywhere(m Value, cs []Constraint) (Value, bool) {
 // are, names giving an object's attributes in name order. A member whose draft
 // leaves a part open fails as CV-021 says, located at it.
 func (x converter) holding(n *node, drafts []memberDraft, names []string) Value {
-	h := held{kind: n.typ.t.kind, names: names}
+	h := held{kind: sourceKind(n), names: names}
 	vals := make([]Value, len(drafts))
 	var errs containerErrors
 	for i, md := range drafts {
@@ -1506,8 +1575,9 @@ func (x converter) holding(n *node, drafts []memberDraft, names []string) Value 
 // merge, as its greatest and at least one. A set's own members may merge, so
 // its length is the range its members leave.
 func pendingCollection(c Constraint, n *node) Value {
-	low, high := int64(n.length()), int64(n.length())
-	if n.typ.t.kind == KindSet {
+	size := int64(len(members(n).vals))
+	low, high := size, size
+	if sourceKind(n) == KindSet {
 		l, h := setLengthBounds(n)
 		low, high = int64(l), int64(h)
 	}
@@ -1587,6 +1657,10 @@ func (x converter) typeName(n *node) string {
 	switch {
 	case n.redactingMarks() != nil:
 		return redactedText(n.redactingMarks())
+	case n.state == statePending:
+		// A pending tuple or object holding its members (UN-025), named as
+		// any pending value is, by its constraint.
+		return "pending with constraint " + n.constraint().String()
 	case !x.holdsRedacting(n):
 		return typeText(n.typ)
 	case n.typ.t.kind == KindObject:

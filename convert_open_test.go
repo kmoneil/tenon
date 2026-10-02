@@ -205,13 +205,20 @@ func sparse(r *rand.Rand, depth int) tenon.Value {
 	secret := stamp{id: "secret", redact: true}
 	marks := []tenon.Mark{markPlain, markDeep, markIsolated, secret}
 	vary := func(v tenon.Value) tenon.Value {
-		switch r.Intn(10) {
+		if v.IsPending() {
+			return v
+		}
+		switch r.Intn(12) {
 		case 0:
 			return tenon.Null(v.Type())
 		case 1:
 			return tenon.Unknown(v.Type())
 		case 2:
 			return tenon.WithMarks(v, marks[r.Intn(len(marks))])
+		case 3:
+			// A value whose type is not settled yet, which makes a tuple or
+			// object holding it the pending one holding its members.
+			return tenon.Pending(tenon.Exactly(v.Type()))
 		}
 		return v
 	}
@@ -309,7 +316,11 @@ func TestConformance_CV021_OpenPartsBuildAsTheReferenceFitsThem(t *testing.T) {
 	for range conformance.Iterations(t, 1500) {
 		v := sparse(r, 1+r.Intn(3))
 		p := policies[r.Intn(2)]
-		for _, c := range []tenon.Constraint{nestedCollections(r, 1+r.Intn(3)), openShaped(r, v.Type())} {
+		shaped := nestedCollections(r, 1+r.Intn(3))
+		if v.IsResolved() {
+			shaped = openShaped(r, v.Type())
+		}
+		for _, c := range []tenon.Constraint{nestedCollections(r, 1+r.Intn(3)), shaped} {
 			cases++
 			converted, fitted := tenon.ConvertBothWays(v, c, p)
 			if !tenon.Identical(converted, fitted) {
