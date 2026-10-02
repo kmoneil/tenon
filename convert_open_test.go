@@ -98,6 +98,51 @@ func TestConformance_CV021_AnEmptyMemberTakesItsSiblingsType(t *testing.T) {
 // settles, and not at one whose open part a sibling settles; at the value
 // itself where its type alone leaves the part open; and at a value carrying a
 // redacting mark, where the part is left open within it.
+// TestConformance_CV021_APendingNullTakesItsSiblingsType holds a member that
+// converts to a pending value known to be null, as JSON's null is read, to
+// taking the element type the other members of its collection settle, here or
+// a level above, and becoming its null; and to leaving the collection pending
+// where nothing settles one, as it did before (CV-031).
+func TestConformance_CV021_APendingNullTakesItsSiblingsType(t *testing.T) {
+	conformance.Covers(t, "CV-021", "CV-031", "CV-033")
+	prop := stamp{id: "prop"}
+	anyC, anyList := tenon.Any(), tenon.ListOf(tenon.Any())
+	pn := tenon.Narrow(tenon.Pending(anyC), tenon.NullOnly())
+	numbers := tenon.ListType(num)
+	for _, tt := range []struct {
+		name string
+		v    tenon.Value
+		c    tenon.Constraint
+		want tenon.Value
+	}{
+		// JSON's {"a": null, "b": 1} under map(any), as go-cty reads it.
+		{"beside a number in a map", obj(map[string]tenon.Value{"a": pn, "b": n(1)}), tenon.MapOf(anyC),
+			tenon.Map(num, map[string]tenon.Value{"a": tenon.Null(num), "b": n(1)})},
+		{"beside a number in a list", tenon.Tuple(pn, n(1)), anyList, tenon.List(num, tenon.Null(num), n(1))},
+		{"a level down, settled by a sibling's members", tenon.Tuple(tenon.Tuple(pn), tenon.Tuple(n(1))), tenon.ListOf(anyList),
+			tenon.List(numbers, tenon.List(num, tenon.Null(num)), tenon.List(num, n(1)))},
+		{"in a set", tenon.Tuple(pn, s("a")), tenon.SetOf(anyC), tenon.Set(str, tenon.Null(str), s("a"))},
+		{"keeping a Propagate mark", tenon.Tuple(tenon.WithMarks(pn, prop), n(1)), anyList,
+			tenon.List(num, tenon.WithMarks(tenon.Null(num), prop), n(1))},
+		// Where nothing settles a type, the collection is pending, as before.
+		{"alone", tenon.Tuple(pn, pn), anyList,
+			tenon.Narrow(tenon.Pending(anyList), tenon.NotNull(), tenon.LengthMin(2), tenon.LengthMax(2))},
+		{"alone a level down", tenon.Tuple(tenon.Tuple(pn)), tenon.ListOf(anyList),
+			tenon.Narrow(tenon.Pending(tenon.ListOf(anyList)), tenon.NotNull(), tenon.LengthMin(1), tenon.LengthMax(1))},
+		{"beside another pending value", tenon.Tuple(pn, tenon.Pending(anyC)), anyList,
+			tenon.Narrow(tenon.Pending(anyList), tenon.NotNull(), tenon.LengthMin(2), tenon.LengthMax(2))},
+		{"alone in a structure's part", obj(map[string]tenon.Value{"x": tenon.Tuple(pn)}),
+			tenon.ObjectWith(map[string]tenon.Field{"x": tenon.Required(anyList)}, true),
+			obj(map[string]tenon.Value{"x": tenon.Narrow(tenon.Pending(anyList), tenon.NotNull(), tenon.LengthMin(1), tenon.LengthMax(1))})},
+	} {
+		wantValue(t, tt.name, tenon.Convert(tt.v, tt.c, tenon.Unsafe), tt.want)
+	}
+	// What an empty member leaves open still fails where nothing settles it,
+	// and the null takes no blame.
+	wantErrors(t, "beside an empty tuple", tenon.Convert(tenon.Tuple(tenon.Tuple(pn), tenon.Tuple()), tenon.ListOf(anyList), tenon.Unsafe),
+		wantDiag{tenon.CodeConvertNoCommonType, ".[1]"})
+}
+
 func TestConformance_CV021_WhatNothingSettlesFailsWhereItIsLeftOpen(t *testing.T) {
 	conformance.Covers(t, "CV-021", "CV-050", "CV-032")
 	anyList := tenon.ListOf(tenon.Any())
@@ -208,7 +253,7 @@ func sparse(r *rand.Rand, depth int) tenon.Value {
 		if v.IsPending() {
 			return v
 		}
-		switch r.Intn(12) {
+		switch r.Intn(13) {
 		case 0:
 			return tenon.Null(v.Type())
 		case 1:
@@ -219,6 +264,14 @@ func sparse(r *rand.Rand, depth int) tenon.Value {
 			// A value whose type is not settled yet, which makes a tuple or
 			// object holding it the pending one holding its members.
 			return tenon.Pending(tenon.Exactly(v.Type()))
+		case 4:
+			// A null whose type nothing gives, as JSON's null is read, which
+			// takes the type its siblings settle in a collection (CV-021).
+			pn := tenon.Narrow(tenon.Pending(tenon.Any()), tenon.NullOnly())
+			if r.Intn(3) == 0 {
+				pn = tenon.WithMarks(pn, marks[r.Intn(len(marks))])
+			}
+			return pn
 		}
 		return v
 	}

@@ -121,9 +121,51 @@ func (x converter) value(v Value, c Constraint) Value {
 	case d.typ.t.open:
 		// Nothing is above the value to settle what its conversion leaves
 		// open (CV-021).
-		return x.openFailure(d, v.n, d.typ)
+		return x.unsettledOpen(d, v.n, d.typ)
 	}
 	return x.build(d, d.typ)
+}
+
+// unsettledOpen returns what the conversion d works out for the value n gives
+// where t, the type at n's place in the result, is still open and nothing is
+// above to settle it: the failure openFailure gives, or, where only members
+// converting to a pending value known to be null leave it open, what the
+// conversion gives as though they had not been deferred (CV-021, CV-031).
+func (x converter) unsettledOpen(d draft, n *node, t Type) Value {
+	if !openForNullsAlone(d, t) {
+		return x.openFailure(d, n, t)
+	}
+	if d.asPending != nil {
+		return d.asPending()
+	}
+	// A tuple or an object: it holds what each member gives, the pending
+	// values among them (UN-025).
+	return x.holding(n, d.members, d.names)
+}
+
+// openForNullsAlone reports whether every part that d, at its place of type
+// t, leaves open is left open by a member converting to a pending value known
+// to be null, which a collection defers (deferNulls), rather than by a value
+// whose conversion settles nothing, as an empty tuple's does.
+func openForNullsAlone(d draft, t Type) bool {
+	switch {
+	case d.open != nil:
+		return false
+	case d.members == nil:
+		// What holds no member: a deferred null, or a value made later at
+		// the type the levels above settle, as an unknown one is.
+		return d.later != nil && d.asPending != nil
+	}
+	for i, md := range d.members {
+		name := ""
+		if d.names != nil {
+			name = d.names[i]
+		}
+		if part := placeOf(t, i, name); leavesOpen(md) && part.t.open && !openForNullsAlone(md.draft, part) {
+			return false
+		}
+	}
+	return true
 }
 
 // draft is a conversion worked out and not yet built. A conversion to a
@@ -165,8 +207,9 @@ type parts struct {
 	// open is the failure it gives where nothing above settles that part, set
 	// where it left the part open itself, holding no member that did. later
 	// makes its value at the type the levels above settle, where it builds
-	// no container: a null or unknown value, or a set holding members that
-	// are not known.
+	// no container: a null or unknown value, the null a member converting to
+	// a pending value known to be null becomes (deferNulls), or a set holding
+	// members that are not known.
 	// redactedTo is the constraint that a value carrying a redacting mark
 	// was converted to, which a failure found within it names (MK-011).
 	open       *failure
@@ -175,6 +218,11 @@ type parts struct {
 	// src is the container a set is made of, which says whether it is made
 	// at its own type before a level above widens it (madeAtItsOwnType).
 	src *node
+	// asPending gives what the conversion gives where its type is left open
+	// by members converting to a pending value known to be null alone, and
+	// nothing settles it: such a member as it converted, or the pending
+	// collection a collection holding one is (CV-021, CV-031).
+	asPending func() Value
 }
 
 // deferred returns the draft of a conversion that builds no container and
@@ -430,7 +478,7 @@ func (x converter) openFailure(d draft, n *node, t Type) Value {
 			if d.names != nil {
 				name = d.names[i]
 			}
-			if part := placeOf(t, i, name); leavesOpen(md) && part.t.open {
+			if part := placeOf(t, i, name); leavesOpen(md) && part.t.open && !openForNullsAlone(md.draft, part) {
 				errs.add(h.step(i), x.carry(x.openFailure(md.draft, md.from, part), md.from))
 			}
 		}
@@ -1027,6 +1075,9 @@ func (x converter) collection(v Value, c Constraint) draft {
 	if failed {
 		return finished(e)
 	}
+	if pending {
+		pending = deferNulls(drafts)
+	}
 	withhold := x.typeWithheld(n)
 	types := make([]Type, 0, len(drafts)+2)
 	var least []Type
@@ -1065,7 +1116,7 @@ func (x converter) collection(v Value, c Constraint) draft {
 	if f != nil {
 		return finished(failedReading(n, f.diagnostic()))
 	}
-	r := draft{parts: &parts{members: drafts, names: h.names}}
+	r := draft{parts: &parts{members: drafts, names: h.names, asPending: func() Value { return pendingCollection(c, n) }}}
 	if elem.t.open && !slices.ContainsFunc(drafts, leavesOpen) {
 		// No member leaves the element type open, so the collection does
 		// itself: it has no members, and nothing else settles a type
@@ -1115,6 +1166,34 @@ func (x converter) collection(v Value, c Constraint) draft {
 		}
 	}
 	return r
+}
+
+// deferNulls replaces the drafts of the members that convert to a pending
+// value known to be null, which has no type to give, with drafts that leave
+// their whole type open, so that the type the other members settle, here or
+// at a level above, makes each the null of that type (CV-021). It reports
+// whether a member converts to any other pending value, which keeps the
+// collection pending (CV-031), and then replaces none.
+func deferNulls(drafts []memberDraft) bool {
+	if slices.ContainsFunc(drafts, func(md memberDraft) bool {
+		r := md.done.n
+		return r != nil && r.state == statePending && !pendingNull(r)
+	}) {
+		return true
+	}
+	for i, md := range drafts {
+		if r := md.done; r.n != nil && r.n.state == statePending {
+			drafts[i].draft = draft{typ: openType, parts: &parts{later: Null, asPending: func() Value { return r }}}
+		}
+	}
+	return false
+}
+
+// pendingNull reports whether n is a pending value known to be null, holding
+// no members (UN-024).
+func pendingNull(n *node) bool {
+	_, held := n.held()
+	return !held && n.null == nullOnly
 }
 
 // madeAtItsOwnType reports whether the set that d works out, whose element
@@ -1552,7 +1631,11 @@ func (x converter) holding(n *node, drafts []memberDraft, names []string) Value 
 				vals[i] = x.carry(md.done, md.from)
 			}
 		case leavesOpen(md):
-			errs.add(h.step(i), x.carry(x.openFailure(md.draft, md.from, md.typ), md.from))
+			r := x.carry(x.unsettledOpen(md.draft, md.from, md.typ), md.from)
+			if r.n.state == stateError {
+				errs.add(h.step(i), r)
+			}
+			vals[i] = r
 		default:
 			vals[i] = x.buildMember(md, md.typ)
 		}

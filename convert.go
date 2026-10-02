@@ -95,7 +95,11 @@ func (p Policy) GoString() string {
 // to a pending value, a container converted to a tuple or an object is the
 // pending tuple or object holding what its members convert to, and one
 // converted to a list, set or map is the pending collection of c, its length
-// the number of members, at least one for a set.
+// the number of members, at least one for a set. A member that converts to a
+// pending value known to be null, a null whose type nothing gives, has no type
+// to give and takes the one the others settle, as an empty one does: converting
+// {"a": null, "b": 1} to MapOf(Any()) gives a map of numbers holding a null,
+// and only where nothing settles a type is the collection pending.
 //
 // The result carries the Propagate marks of v. A member converted within v
 // carries its own Propagate marks, a member carried across unchanged keeps

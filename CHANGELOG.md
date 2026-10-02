@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- A member that converts to a pending value known to be null, a null whose
+  type nothing gives, now takes the type the other members of its list, set
+  or map settle, and becomes that type's null, as an empty member takes its
+  siblings' element type. Converting `{"a": null, "b": 1}`, its null the
+  pending null, to `MapOf(Any())` gave a pending map of two entries; it now
+  gives `map(number){"a": null, "b": 1}`, as go-cty and Terraform read it.
+  It holds a level down, `[[null], [1]]` to `ListOf(ListOf(Any()))` being a
+  list of lists of numbers, and a Propagate mark on the null stays on it.
+  Where nothing settles a type, or a member converts to another pending
+  value, the collection is pending, as before. The specification says so
+  (`CV-021`, `CV-031`).
+
 ## 0.13.0 (2026-10-02)
 
 A value can now hold what is known of it before its type is. A pending
