@@ -63,6 +63,7 @@ var equalTypes = map[string]reflect.Type{
 	"Narrowing":   reflect.TypeFor[tenon.Narrowing](),
 	"Error":       reflect.TypeFor[*tenon.Error](),
 	"CapsuleType": reflect.TypeFor[*tenon.CapsuleType[int]](),
+	"Function":    reflect.TypeFor[tenon.Function](),
 }
 
 // TestEqualMethods holds each type in equalTypes to having an Equal method of
