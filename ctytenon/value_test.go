@@ -2,9 +2,11 @@ package ctytenon_test
 
 import (
 	"errors"
+	"maps"
 	"math/big"
 	"math/rand"
 	"reflect"
+	"slices"
 	"strconv"
 	"testing"
 
@@ -504,8 +506,10 @@ func randomCtyValue(r *rand.Rand, typ cty.Type) cty.Value {
 		return cty.TupleVal(out)
 	}
 	attrs := map[string]cty.Value{}
-	for name, a := range typ.AttributeTypes() {
-		attrs[name] = randomCtyValue(r, a)
+	// In order of name, so that the values a seed gives do not depend on
+	// Go's map order.
+	for _, name := range slices.Sorted(maps.Keys(typ.AttributeTypes())) {
+		attrs[name] = randomCtyValue(r, typ.AttributeType(name))
 	}
 	return cty.ObjectVal(attrs)
 }

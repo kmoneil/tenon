@@ -1,8 +1,10 @@
 package ctytenon_test
 
 import (
+	"maps"
 	"math/rand"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -450,9 +452,9 @@ func ctyInstance(r *rand.Rand, c cty.Type) cty.Type {
 		return cty.Tuple(elems)
 	case c.IsObjectType():
 		attrs := map[string]cty.Type{}
-		for name, a := range c.AttributeTypes() {
+		for _, name := range slices.Sorted(maps.Keys(c.AttributeTypes())) {
 			if !c.AttributeOptional(name) || r.Intn(2) == 0 {
-				attrs[name] = ctyInstance(r, a)
+				attrs[name] = ctyInstance(r, c.AttributeType(name))
 			}
 		}
 		for range r.Intn(3) {

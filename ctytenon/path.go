@@ -110,7 +110,13 @@ func (b Bridge) placeInSet(set, member cty.Value) (int, error) {
 		}
 		place++
 	}
-	return 0, fmt.Errorf("the set does not hold %#v", member)
+	// tenon settles that a member not wholly known is one the set holds
+	// already, where its type allows no other, as the unknown empty object
+	// is {} or null; which one, the step does not say.
+	if member.IsWhollyKnown() || ts.Len() == set.LengthInt() {
+		return 0, fmt.Errorf("the set does not hold %#v", member)
+	}
+	return 0, fmt.Errorf("the member %#v is one tenon settles as a member the set holds already, and the step does not say which", member)
 }
 
 // next returns the value the step from at leads to, cty.NilVal where at does
