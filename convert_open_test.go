@@ -251,18 +251,24 @@ func sparse(r *rand.Rand, depth int) tenon.Value {
 }
 
 // openShaped returns a constraint of much the shape of t that converts its
-// tuples and objects to lists and maps of an element type left to the members
+// tuples and objects to collections of an element type left to the members
 // more often than not, so that an empty one leaves its element type open.
 func openShaped(r *rand.Rand, t tenon.Type) tenon.Constraint {
+	collection := func(elem tenon.Constraint) tenon.Constraint {
+		if r.Intn(3) == 0 {
+			return tenon.SetOf(elem)
+		}
+		return tenon.ListOf(elem)
+	}
 	switch t.Kind() {
 	case tenon.KindTuple:
 		elems := t.TupleElementTypes()
 		switch {
 		case len(elems) == 0 || r.Intn(3) > 0:
 			if len(elems) == 0 || r.Intn(2) == 0 {
-				return tenon.ListOf(tenon.Any())
+				return collection(tenon.Any())
 			}
-			return tenon.ListOf(openShaped(r, elems[r.Intn(len(elems))]))
+			return collection(openShaped(r, elems[r.Intn(len(elems))]))
 		}
 		members := make([]tenon.Constraint, len(elems))
 		for i, e := range elems {
@@ -282,14 +288,14 @@ func openShaped(r *rand.Rand, t tenon.Type) tenon.Constraint {
 		}
 		return tenon.ObjectWith(fields, false)
 	case tenon.KindList, tenon.KindSet:
-		return tenon.ListOf(openShaped(r, t.ElementType()))
+		return collection(openShaped(r, t.ElementType()))
 	}
 	return tenon.Any()
 }
 
 // TestConformance_CV021_OpenPartsBuildAsTheReferenceFitsThem holds the
 // conversion of values in which many members leave a part of their type
-// open, converted to lists of lists of Any or to constraints of much their
+// open, converted to lists and sets of Any or to constraints of much their
 // shape, to the reference that makes such a member as a value of a type left
 // open and fits it to what the levels above settle (CV-021, CV-044): the same
 // result, identical in its type, its contents, its marks and its failures,
@@ -302,11 +308,7 @@ func TestConformance_CV021_OpenPartsBuildAsTheReferenceFitsThem(t *testing.T) {
 	for range conformance.Iterations(t, 1500) {
 		v := sparse(r, 1+r.Intn(3))
 		p := policies[r.Intn(2)]
-		lists := tenon.Any()
-		for range 1 + r.Intn(3) {
-			lists = tenon.ListOf(lists)
-		}
-		for _, c := range []tenon.Constraint{lists, openShaped(r, v.Type())} {
+		for _, c := range []tenon.Constraint{nestedCollections(r, 1+r.Intn(3)), openShaped(r, v.Type())} {
 			cases++
 			converted, fitted := tenon.ConvertBothWays(v, c, p)
 			if !tenon.Identical(converted, fitted) {
