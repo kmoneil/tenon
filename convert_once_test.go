@@ -264,3 +264,110 @@ func BenchmarkGrowingUnions(b *testing.B) {
 		})
 	}
 }
+
+// TestConformance_CV033_ASetIsMadeAtItsOwnTypeAndThenWidened holds a set that
+// a conversion makes to what it is made at its own element type, whether or
+// not a level above widens that type: the marks it gathers from the values
+// within its members, an Isolate one on a value that the wider type rebuilds
+// among them (CV-033); the redacting marks it gathers, which a level above
+// whose element type takes attribute names from it carries, whether the set's
+// own type is settled or left open (CV-021); and the members it keeps, none of
+// them one that is not known and could only be a value it holds (EQ-041).
+func TestConformance_CV033_ASetIsMadeAtItsOwnTypeAndThenWidened(t *testing.T) {
+	conformance.Covers(t, "CV-033", "EQ-041", "CV-021")
+	iso := stamp{id: "iso", policy: tenon.Isolate}
+	secret := stamp{id: "secret", redact: true}
+	sets := tenon.ListOf(tenon.SetOf(tenon.Any()))
+
+	// An Isolate mark on an empty tuple within a member, which the set's own
+	// element type, list(tuple([])), keeps as it is, and a sibling's widening
+	// it to list(list(string)) would rebuild.
+	marked := tenon.Tuple(tenon.Tuple(tenon.WithMarks(tenon.Tuple(), iso)), tenon.Tuple())
+	widening := tenon.Tuple(tenon.Tuple(tenon.Tuple(s("x"))))
+	alone := tenon.Convert(tenon.Tuple(marked), sets, uns)
+	widened := tenon.Convert(tenon.Tuple(widening, marked), sets, uns)
+	if alone.IsError() || !tenon.HasMark(alone.Elements()[0], iso) {
+		t.Errorf("alone: %v, want the set carrying %v", alone, iso)
+	}
+	if widened.IsError() || !tenon.HasMark(widened.Elements()[1], iso) {
+		t.Errorf("widened: %v, want the second set carrying %v", widened, iso)
+	}
+
+	// A set that holds an unknown empty tuple beside the empty tuple and null
+	// holds every value its element type has, so the unknown member is no
+	// member, and the set is known, widened or not.
+	unknownBeside := tenon.Tuple(tenon.Unknown(tenon.TupleType()), tenon.Tuple(), tenon.Null(tenon.TupleType()))
+	nums := tenon.ListType(num)
+	wantValue(t, "a set holding every empty tuple, alone", tenon.Convert(tenon.Tuple(unknownBeside), sets, uns).Elements()[0],
+		tenon.Set(tenon.TupleType(), tenon.Tuple(), tenon.Null(tenon.TupleType())))
+	wantValue(t, "a set holding every empty tuple, widened", tenon.Convert(tenon.Tuple(unknownBeside, tenon.Tuple(tenon.Tuple(n(1)))), sets, uns).Elements()[0],
+		tenon.Set(nums, tenon.List(num), tenon.Null(nums)))
+
+	// A redacted string within a member's object: the set gathers its mark,
+	// and the list whose element type names the set's attributes carries it.
+	object := tenon.Object(map[string]tenon.Value{"a0": tenon.Tuple(tenon.WithMarks(s("x"), secret), tenon.Tuple())})
+	r := tenon.Convert(tenon.Tuple(tenon.Tuple(object)), tenon.ListOf(tenon.SetOf(tenon.ObjectWith(nil, false))), uns)
+	if r.IsError() || !tenon.HasMark(r, secret) {
+		t.Errorf("a redacted value within a set's member: %v, want the list carrying %v", r, secret)
+	}
+	// The same where the set's element type is left open until a sibling
+	// settles it.
+	field := tenon.ObjectWith(map[string]tenon.Field{"a": tenon.Required(tenon.ListOf(tenon.Any())), "b": tenon.Required(tenon.Any())}, true)
+	open := tenon.Tuple(tenon.Object(map[string]tenon.Value{"a": tenon.Tuple(), "b": tenon.WithMarks(s("y"), secret)}))
+	settling := tenon.Tuple(tenon.Object(map[string]tenon.Value{"a": tenon.Tuple(s("x")), "b": s("z")}))
+	r = tenon.Convert(tenon.Tuple(open, settling), tenon.ListOf(tenon.SetOf(field)), uns)
+	if r.IsError() || !tenon.HasMark(r, secret) {
+		t.Errorf("a redacted value within a member of a set whose type is left open: %v, want the list carrying %v", r, secret)
+	}
+}
+
+// TestConformance_CV021_SetsGrowWithTheResult holds a conversion to sets
+// nested as deep as the value, each level widening the element type of the
+// one below, to work in proportion to its result, as lists do
+// (TestConformance_CV021_ConversionGrowsWithTheResult): four times the levels
+// allocate under eight times as much, with no mark and with an Isolate mark
+// on a value within a member of the innermost set, which that set is made at
+// its own type for and widened. Made at its own type and widened at every
+// level, each set was made again for every set holding it.
+func TestConformance_CV021_SetsGrowWithTheResult(t *testing.T) {
+	conformance.Covers(t, "CV-021", "CV-033")
+	iso := stamp{id: "iso", policy: tenon.Isolate}
+	for _, mark := range []bool{false, true} {
+		var sizes [2]uint64
+		for i, depth := range []int{10, 40} {
+			v, _ := growingUnions(depth, 500)
+			if mark {
+				v = markInnermost(v, iso)
+			}
+			c := tenon.Any()
+			for range depth + 1 {
+				c = tenon.SetOf(c)
+			}
+			var before, after runtime.MemStats
+			runtime.GC()
+			runtime.ReadMemStats(&before)
+			r := tenon.Convert(v, c, tenon.Unsafe)
+			runtime.ReadMemStats(&after)
+			if r.IsError() {
+				t.Fatalf("%d levels did not convert: %.200v", depth, r)
+			}
+			sizes[i] = after.TotalAlloc - before.TotalAlloc
+		}
+		if sizes[1] > 8*sizes[0] {
+			t.Errorf("an Isolate mark %v: four times the levels allocated %d bytes, where the first allocated %d: more than eight times as much", mark, sizes[1], sizes[0])
+		}
+	}
+}
+
+// markInnermost returns v, as growingUnions makes it, with the attribute of
+// the first object of the innermost tuple carrying m.
+func markInnermost(v tenon.Value, m tenon.Mark) tenon.Value {
+	if inner := v.Index(0); inner.Type().Kind() == tenon.KindTuple {
+		elems := v.Elements()
+		elems[0] = markInnermost(inner, m)
+		return tenon.Tuple(elems...)
+	}
+	elems := v.Elements()
+	elems[0] = tenon.Object(map[string]tenon.Value{"x": tenon.WithMarks(elems[0].Attribute("x"), m)})
+	return tenon.Tuple(elems...)
+}

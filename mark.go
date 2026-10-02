@@ -142,8 +142,30 @@ type markSet struct {
 	layer bool
 	full  atomic.Pointer[[]Mark]
 	// redacting is a layer's redacting marks, kept as full is, since each
-	// value sharing the layer asks for them.
+	// value sharing the layer asks for them. isolating is whether a layer
+	// holds an Isolate mark, kept as well: zero while nothing has asked, 1
+	// where it holds none, and 2 where it holds one.
 	redacting atomic.Pointer[[]Mark]
+	isolating atomic.Int32
+}
+
+// holdsIsolating reports whether s holds an Isolate mark, in its own layer or
+// an outer one.
+func (s *markSet) holdsIsolating() bool {
+	if s.layer {
+		if kept := s.isolating.Load(); kept != 0 {
+			return kept == 2
+		}
+	}
+	holds := slices.ContainsFunc(s.list, isolates) || s.outer != nil && s.outer.holdsIsolating()
+	if s.layer {
+		kept := int32(1)
+		if holds {
+			kept = 2
+		}
+		s.isolating.Store(kept)
+	}
+	return holds
 }
 
 // all returns every mark s holds, each once, sorted by identifier: among marks

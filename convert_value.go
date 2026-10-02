@@ -40,6 +40,7 @@ type convertMemo struct {
 	canon     *canonMemo
 	given     map[*constraintData]soleResult
 	redacting map[*node]bool
+	isolating map[*node]bool
 }
 
 // typeAsked is a constraint and a type, as fits and Satisfies are asked of
@@ -171,6 +172,9 @@ type parts struct {
 	open       *failure
 	later      func(Type) Value
 	redactedTo Constraint
+	// src is the container a set is made of, which says whether it is made
+	// at its own type before a level above widens it (madeAtItsOwnType).
+	src *node
 }
 
 // deferred returns the draft of a conversion that builds no container and
@@ -293,6 +297,11 @@ func resolvedAs(n *node, t Type) Value {
 // holds it, so that nothing is built at a type a level above would widen, and
 // the result of any other conversion is fitted to t.
 func (x converter) build(d draft, t Type) Value {
+	if d.done.n == nil && d.src != nil && t.t.kind == KindSet {
+		if own := fillOpen(d.typ, t); own != t && x.madeAtItsOwnType(d, own.t.elem) {
+			return x.fit(x.build(d, own), t)
+		}
+	}
 	switch {
 	case d.done.n != nil:
 		return x.fit(d.done, t)
@@ -982,7 +991,53 @@ func (x converter) collection(v Value, c Constraint) draft {
 	if _, fixed := x.memo.resultType(d.elem); withhold && !fixed {
 		r.marks = r.withheld
 	}
+	if d.kind == ConstraintSetOf {
+		r.src = n
+		// A set gathers the marks of the values within its members, the
+		// redacting ones among them (CV-033). The levels above read what a
+		// member carries before it is built (withheldIn), so they are given
+		// those now.
+		if x.holdsRedacting(n) {
+			r.marks, _ = mergeMarks(r.marks, redactingWithin(n))
+		}
+	}
 	return r
+}
+
+// madeAtItsOwnType reports whether the set that d works out, whose element
+// type its members settle as elem, is made at that type before the level
+// above widens it, rather than at the wider type. A set is made of its members
+// at its element type and widened then, keeping the marks it gathered
+// (CV-033) and the members it kept (EQ-041), whatever its members would be at
+// the wider type. Made at the wider type, it differs only where a value within
+// what a member converts to carries an Isolate mark, which a value rebuilt at
+// a wider type does not carry, and where a member that is not known could be
+// one the set holds already, over an element type whose values can be
+// counted. Elsewhere it is made once, at the wider type: made at its own type
+// first, it would be made again for every set holding it that widens.
+func (x converter) madeAtItsOwnType(d draft, elem Type) bool {
+	if x.isolatingIn(d.members) {
+		return true
+	}
+	c, ok := memberCount(elem)
+	return d.src.partial && ok && c <= maxDomainSet
+}
+
+// isolatingIn reports whether a value within what these members convert to
+// carries an Isolate mark, short of a set, which keeps the marks it gathers
+// however it is widened, and of what builds no container, which holds no
+// value. A member's own Isolate marks its conversion does not carry (CV-033),
+// but a value carried across unchanged keeps every mark it has.
+func (x converter) isolatingIn(mds []memberDraft) bool {
+	return slices.ContainsFunc(mds, func(md memberDraft) bool {
+		switch r := md.done.n; {
+		case r != nil:
+			return r.marks != nil && r.marks.holdsIsolating() || x.holdsIsolating(r)
+		case md.later != nil || md.src != nil:
+			return false
+		}
+		return x.isolatingIn(md.members)
+	})
 }
 
 // redactedStructure returns the redacting marks of the values among members,
@@ -1370,8 +1425,16 @@ func pendingContainer(c Constraint, n *node) Value {
 // marks: a layer of deep marks that members share is read once, and a mark is
 // looked up in a set once there are many, so k members under k deep marks,
 // or k members each carrying a mark of its own, cost k and not k by k.
-func heldMarks(n *node) []Mark {
-	t := taking{keep: propagates}
+func heldMarks(n *node) []Mark { return marksWithin(n, propagates) }
+
+// redactingWithin returns the redacting marks that the values within n carry,
+// at any depth, each once: what a set made of n's members gathers of them.
+func redactingWithin(n *node) []Mark { return marksWithin(n, Mark.Redacting) }
+
+// marksWithin returns the marks for which keep is true that the values within
+// n carry, at any depth, each once, in the order met, as heldMarks says.
+func marksWithin(n *node, keep func(Mark) bool) []Mark {
+	t := taking{keep: keep}
 	var walk func(n *node)
 	walk = func(n *node) {
 		if !n.markedWithin {
@@ -1417,6 +1480,32 @@ func (x converter) typeName(n *node) string {
 		return "an object"
 	}
 	return "a " + kindNoun(n.typ.t.kind)
+}
+
+// holdsIsolating reports whether a value within n, at any depth, carries an
+// Isolate mark. Each set a conversion widens asks it of the values its members
+// keep (isolatingIn), so each value's answer is remembered for the
+// conversion.
+func (x converter) holdsIsolating(n *node) bool {
+	if !n.markedWithin {
+		return false
+	}
+	if r, ok := x.memo.isolating[n]; ok {
+		return r
+	}
+	holds := func(m *node) bool { return m.marks != nil && m.marks.holdsIsolating() || x.holdsIsolating(m) }
+	r := false
+	switch data := n.data.(type) {
+	case []Value:
+		r = slices.ContainsFunc(data, func(m Value) bool { return holds(m.n) })
+	case []mapEntry:
+		r = slices.ContainsFunc(data, func(e mapEntry) bool { return holds(e.val.n) })
+	}
+	if x.memo.isolating == nil {
+		x.memo.isolating = map[*node]bool{}
+	}
+	x.memo.isolating[n] = r
+	return r
 }
 
 // holdsRedacting reports whether a value within n, at any depth, carries a

@@ -20,6 +20,26 @@
   where it went on to a later one. The specification says so (`CV-021`,
   `CV-044`).
 
+### Fixed
+
+- A set that a conversion makes inside a collection whose element type
+  widens the set's own is now the set it is at its own element type,
+  widened. Made directly at the wider type, it could differ in three ways:
+  - It lost an `Isolate` mark on a value inside a member that the wider
+    type rebuilt.
+  - It kept a member that is not known and could only be a value the set
+    already held, so it was not known where on its own it was. Converting
+    `[[unknown, [], null], [[], [1]]]`, the first three of type
+    `tuple([])`, to `ListOf(SetOf(Any()))` gave a first set holding an
+    unknown list; it is now the known set of the empty list and null, as
+    converting the first member alone gives.
+  - A redacting mark it gathered from inside a member did not reach the
+    collection holding it, whose type shows the set's attribute names.
+
+  A set is made at its own type first only where that changes it, so the
+  conversion still works in proportion to its result. The specification
+  says so (`CV-021`, `CV-033`, `EQ-041`).
+
 ## 0.12.0 (2026-10-01)
 
 The 1.0 audit's additions to the API, each of them additive: a range reads
