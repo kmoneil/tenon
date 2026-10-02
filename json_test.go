@@ -82,15 +82,15 @@ func holdsSet(t tenon.Type) bool {
 }
 
 // TestConformance_JS001_AProjectionReadsBack holds every known value of the
-// generator that holds no capsule and carries no mark to reading back, with
-// its own type, as itself from its JSON projection: under the unsafe policy,
-// and under the safe one where it holds no set, which a JSON array becomes
-// only unsafely.
+// generator that holds no capsule, carries no mark and holds no map with an
+// empty key to reading back, with its own type, as itself from its JSON
+// projection: under the unsafe policy, and under the safe one where it holds
+// no set, which a JSON array becomes only unsafely.
 func TestConformance_JS001_AProjectionReadsBack(t *testing.T) {
 	conformance.Covers(t, "JS-001", "SE-060")
 	read := 0
 	for _, v := range values.All() {
-		if !v.IsKnown() || holdsCapsule(v.Type()) {
+		if !v.IsKnown() || holdsCapsule(v.Type()) || holdsEmptyKey(v) {
 			continue
 		}
 		if plain, _ := tenon.UnmarkDeep(v); !tenon.Identical(plain, v) {
@@ -114,6 +114,14 @@ func TestConformance_JS001_AProjectionReadsBack(t *testing.T) {
 	if read < 40 {
 		t.Errorf("read back %d values; want many", read)
 	}
+	// A map's empty key is projected as a name, which no object can have.
+	m := tenon.Map(tenon.NumberType(), map[string]tenon.Value{"": n(1)})
+	text, err := tenon.ProjectJSON(m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantErrors(t, "a map with an empty key", parsed(t, string(text), tenon.Exactly(m.Type()), tenon.Unsafe),
+		wantDiag{tenon.CodeObjectEmptyName, "."})
 }
 
 // TestConformance_JS002_TheTextIsJSONStrictly holds the reader to RFC 8259's
