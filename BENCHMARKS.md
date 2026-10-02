@@ -8,7 +8,7 @@ and [go-cty](https://github.com/zclconf/go-cty), the value system that
 Terraform and HCL use. Each does one thing a program does with a
 configuration document, at three sizes, in each library that does it.
 
-Measured on Apple M5 Max, darwin/arm64, with go1.26.4, tenon at 9368cc2 with
+Measured on Apple M5 Max, darwin/arm64, with go1.26.4, tenon at 2c79857 with
 changes and go-cty v1.19.0, on 2026-10-02. Each figure is the median of every
 run of its benchmark: the time one operation takes, the memory it allocates,
 and how many allocations that takes.
@@ -24,9 +24,9 @@ Reads the document's bytes into a value that holds the whole of it.
 
 | Size | encoding/json | tenon | go-cty |
 | --- | --- | --- | --- |
-| 1 KB | 8.20 µs · 10.6 KB · 283 allocs | 38.9 µs · 53.4 KB · 1.28k allocs | 128 µs · 314 KB · 3.22k allocs |
-| 32 KB | 264 µs · 390 KB · 9.02k allocs | 1.32 ms · 1.78 MB · 41.1k allocs | 4.81 ms · 10.2 MB · 105k allocs |
-| 1 MB | 8.32 ms · 12.6 MB · 288k allocs | 42.2 ms · 56.9 MB · 1.31M allocs | 136 ms · 328 MB · 3.37M allocs |
+| 1 KB | 8.22 µs · 10.6 KB · 283 allocs | 17.2 µs · 28.8 KB · 631 allocs | 123 µs · 314 KB · 3.22k allocs |
+| 32 KB | 270 µs · 390 KB · 9.02k allocs | 553 µs · 919 KB · 20.0k allocs | 5.10 ms · 10.2 MB · 105k allocs |
+| 1 MB | 8.31 ms · 12.6 MB · 288k allocs | 18.3 ms · 29.5 MB · 640k allocs | 140 ms · 328 MB · 3.37M allocs |
 
 ## Convert to a schema
 
@@ -35,9 +35,9 @@ each JSON array to a list, each object of environment variables to a map.
 
 | Size | tenon | go-cty |
 | --- | --- | --- |
-| 1 KB | 21.7 µs · 35.6 KB · 613 allocs | 29.5 µs · 39.0 KB · 807 allocs |
-| 32 KB | 590 µs · 923 KB · 14.6k allocs | 1.95 ms · 1.22 MB · 24.1k allocs |
-| 1 MB | 22.5 ms · 29.8 MB · 461k allocs | 924 ms · 39.0 MB · 768k allocs |
+| 1 KB | 22.4 µs · 36.5 KB · 613 allocs | 30.3 µs · 39.0 KB · 807 allocs |
+| 32 KB | 602 µs · 949 KB · 14.6k allocs | 1.97 ms · 1.22 MB · 24.1k allocs |
+| 1 MB | 20.5 ms · 30.6 MB · 461k allocs | 853 ms · 39.0 MB · 768k allocs |
 
 ## Encode and decode
 
@@ -45,9 +45,9 @@ Encodes the converted value for another process and decodes it back.
 
 | Size | encoding/json | tenon | go-cty |
 | --- | --- | --- | --- |
-| 1 KB | 14.1 µs · 16.2 KB · 419 allocs | 14.1 µs · 20.4 KB · 450 allocs | 104 µs · 55.2 KB · 1.07k allocs |
-| 32 KB | 465 µs · 579 KB · 13.4k allocs | 447 µs · 584 KB · 12.5k allocs | 3.61 ms · 1.80 MB · 35.1k allocs |
-| 1 MB | 14.3 ms · 19.4 MB · 429k allocs | 16.2 ms · 19.7 MB · 397k allocs | 121 ms · 57.5 MB · 1.12M allocs |
+| 1 KB | 14.3 µs · 16.2 KB · 419 allocs | 17.7 µs · 20.4 KB · 450 allocs | 101 µs · 55.2 KB · 1.07k allocs |
+| 32 KB | 473 µs · 579 KB · 13.4k allocs | 430 µs · 584 KB · 12.5k allocs | 3.52 ms · 1.80 MB · 35.1k allocs |
+| 1 MB | 14.3 ms · 19.7 MB · 429k allocs | 14.1 ms · 19.7 MB · 397k allocs | 112 ms · 57.5 MB · 1.12M allocs |
 
 The encoding's length:
 
@@ -64,9 +64,9 @@ library's equality.
 
 | Size | encoding/json | tenon | go-cty |
 | --- | --- | --- | --- |
-| 1 KB | 15.9 µs · 24.2 KB · 194 allocs | 335 ns · 32 B · 2 allocs | 266 µs · 164 KB · 4.05k allocs |
-| 32 KB | 515 µs · 877 KB · 6.05k allocs | 17.2 µs · 32 B · 2 allocs | 9.08 ms · 5.44 MB · 135k allocs |
-| 1 MB | 20.4 ms · 28.3 MB · 193k allocs | 1.38 ms · 32 B · 2 allocs | 277 ms · 174 MB · 4.31M allocs |
+| 1 KB | 14.0 µs · 24.2 KB · 194 allocs | 333 ns · 32 B · 2 allocs | 242 µs · 164 KB · 4.05k allocs |
+| 32 KB | 487 µs · 877 KB · 6.05k allocs | 10.5 µs · 32 B · 2 allocs | 8.22 ms · 5.44 MB · 135k allocs |
+| 1 MB | 19.5 ms · 28.3 MB · 193k allocs | 836 µs · 32 B · 2 allocs | 275 ms · 174 MB · 4.31M allocs |
 
 ## Read a nested value
 
@@ -74,9 +74,9 @@ Reads one environment variable of the middle service.
 
 | Size | encoding/json | tenon | go-cty |
 | --- | --- | --- | --- |
-| 1 KB | 16.1 ns · 0 B · 0 allocs | 58.5 ns · 0 B · 0 allocs | 95.8 ns · 32 B · 1 alloc |
-| 32 KB | 16.2 ns · 0 B · 0 allocs | 58.3 ns · 0 B · 0 allocs | 101 ns · 32 B · 1 alloc |
-| 1 MB | 16.0 ns · 0 B · 0 allocs | 58.8 ns · 0 B · 0 allocs | 96.2 ns · 32 B · 1 alloc |
+| 1 KB | 16.7 ns · 0 B · 0 allocs | 58.0 ns · 0 B · 0 allocs | 94.6 ns · 32 B · 1 alloc |
+| 32 KB | 16.0 ns · 0 B · 0 allocs | 58.6 ns · 0 B · 0 allocs | 94.0 ns · 32 B · 1 alloc |
+| 1 MB | 16.3 ns · 0 B · 0 allocs | 58.7 ns · 0 B · 0 allocs | 94.7 ns · 32 B · 1 alloc |
 
 ## Diff one change
 
@@ -85,9 +85,9 @@ in one replica count.
 
 | Size | tenon |
 | --- | --- |
-| 1 KB | 5.03 µs · 9.20 KB · 224 allocs |
-| 32 KB | 180 µs · 303 KB · 7.40k allocs |
-| 1 MB | 8.47 ms · 9.68 MB · 237k allocs |
+| 1 KB | 5.02 µs · 9.20 KB · 224 allocs |
+| 32 KB | 194 µs · 303 KB · 7.40k allocs |
+| 1 MB | 7.39 ms · 9.68 MB · 237k allocs |
 
 ## Cross between go-cty and tenon
 
@@ -97,18 +97,18 @@ time does.
 
 | Size | go-cty to tenon | tenon to go-cty |
 | --- | --- | --- |
-| 1 KB | 61.5 µs · 96.8 KB · 1.87k allocs | 19.0 µs · 37.2 KB · 737 allocs |
-| 32 KB | 2.26 ms · 3.08 MB · 59.7k allocs | 675 µs · 1.19 MB · 23.8k allocs |
-| 1 MB | 69.5 ms · 98.3 MB · 1.91M allocs | 23.2 ms · 37.8 MB · 762k allocs |
+| 1 KB | 60.3 µs · 96.8 KB · 1.87k allocs | 18.8 µs · 37.2 KB · 737 allocs |
+| 32 KB | 2.44 ms · 3.08 MB · 59.7k allocs | 668 µs · 1.19 MB · 23.8k allocs |
+| 1 MB | 67.9 ms · 98.3 MB · 1.91M allocs | 22.4 ms · 37.8 MB · 762k allocs |
 
 ## Reading the figures
 
 - **The same input, each library's usual way.** Every library reads the
   same bytes. encoding/json decodes into `any` with `UseNumber`, so
-  numbers keep their text. tenon decodes the same way and hands the result to
-  `gotenon.Encode`, which is how a program without Go types for its data
-  takes it in. go-cty infers the document's type with `ImpliedType` and
-  unmarshals with it.
+  numbers keep their text. tenon reads the bytes with `ParseJSON` into
+  what JSON implies, in one pass, refusing what JSON does not allow, as a
+  name given twice. go-cty infers the document's type with `ImpliedType`
+  and unmarshals with it.
 - **What tenon does per value.** It parses every number into an exact
   decimal, checks every string is UTF-8 and normalizes it to Normalization
   Form C, interns every type, and records what is known of each value so

@@ -1,6 +1,34 @@
 # Changelog
 
-## Unreleased
+## 0.14.0 (2026-10-02)
+
+A program reads JSON with tenon itself now. `ParseJSON` reads a document
+into a value of the constraint it gives, in one pass, in under half the time
+that encoding/json and gotenon took together, and refuses what encoding/json
+lets through: a name given twice, and text that is not well-formed UTF-8.
+With it, a null whose type nothing gives takes the type the members beside
+it settle, as go-cty and Terraform read `{"a": null, "b": 1}` for a
+`map(any)`. It implements version 0.12.0 of the tenon specification, which
+adds §11, reading JSON (`JS-001` to `JS-022`), and amends `CV-021`, `CV-031`
+and `SE-060`: 211 rules.
+
+The minor version moves for the addition, and because a conversion's result
+changes: a collection whose pending-null members the other members settle is
+now that collection, where it was a pending one.
+
+**Upgrading from 0.13.0.** Documents 0.13.0 wrote decode as they did, and
+values encode to the same bytes. The compiler finds nothing. These it does
+not find:
+
+- Converting a list, set or map one of whose members converts to a pending
+  value known to be null gives the collection of the type the other members
+  settle, holding that type's null, where it gave the pending collection of
+  its length.
+- A name given twice as it is written, as `CheckAttributeNames` can be
+  given it, is reported as `attribute name "a" is given 2 times`, where the
+  message called the two one name after normalization.
+
+**What `CONFORMANCE.md` states.** 211 of 211.
 
 ### Added
 
@@ -50,6 +78,11 @@
   Where nothing settles a type, or a member converts to another pending
   value, the collection is pending, as before. The specification says so
   (`CV-021`, `CV-031`).
+- A name given twice as it is written, which a JSON object can hold and
+  `CheckAttributeNames` can be given, is reported as given that many times,
+  `attribute name "a" is given 2 times`, and a map key as `map key "a" is
+  given 2 times`, where the message called the spellings one name after
+  normalization.
 
 ## 0.13.0 (2026-10-02)
 
