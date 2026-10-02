@@ -91,7 +91,11 @@ func (p Policy) GoString() string {
 // value converts to an unknown value where its type would settle the result
 // type, and to a pending value where it would not, keeping its own constraint
 // when c is Any; an unknown map converted to an object whose attributes its
-// keys would settle converts to a pending value too.
+// keys would settle converts to a pending value too. Where a member converts
+// to a pending value, a container converted to a tuple or an object is the
+// pending tuple or object holding what its members convert to, and one
+// converted to a list, set or map is the pending collection of c, its length
+// the number of members, at least one for a set.
 //
 // The result carries the Propagate marks of v. A member converted within v
 // carries its own Propagate marks, a member carried across unchanged keeps

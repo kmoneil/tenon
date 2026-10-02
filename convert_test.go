@@ -681,9 +681,10 @@ func TestConformance_CV031_UnknownsConvertToUnknowns(t *testing.T) {
 		tenon.Narrow(tenon.Pending(open), tenon.NotNull()))
 	listOfOpen := tenon.ListOf(open)
 	wantValue(t, "unknown list of maps", tenon.Convert(tenon.Unknown(tenon.ListType(tenon.MapType(num))), listOfOpen, uns), tenon.Pending(listOfOpen))
-	// Nor can a container hold the pending value such a member becomes.
+	// Nor can a list hold the pending value such a member becomes, so it
+	// converts to a pending list of its length.
 	wantValue(t, "list holding an unknown map", tenon.Convert(tenon.List(tenon.MapType(num), tenon.Unknown(tenon.MapType(num))), listOfOpen, uns),
-		tenon.Narrow(tenon.Pending(listOfOpen), tenon.NotNull()))
+		tenon.Narrow(tenon.Pending(listOfOpen), tenon.NotNull(), tenon.LengthMin(1), tenon.LengthMax(1)))
 }
 
 func TestConformance_CV032_PendingValuesConvert(t *testing.T) {
@@ -1084,26 +1085,23 @@ func TestConformance_CV001_EveryResultSatisfiesItsTarget(t *testing.T) {
 
 // TestConformance_CV033_ResultsThatHoldNoMembersCarryTheirMarks checks the
 // conversions whose result cannot hold the members they read: a pending value
-// in place of a container, and a capsule value made from one. Each carries the
+// in place of a list, and a capsule value made from one. Each carries the
 // Propagate marks of the members, and a member refitted to a shared element
-// type is converted, so it keeps only its Propagate marks.
+// type is converted, so it keeps only its Propagate marks. A tuple or object
+// whose member converts to a pending value holds it (CV-031), and the member
+// carries its own marks.
 func TestConformance_CV033_ResultsThatHoldNoMembersCarryTheirMarks(t *testing.T) {
 	conformance.Covers(t, "CV-033", "MK-003")
 	prop := stamp{id: "prop"}
 	iso := stamp{id: "iso", policy: tenon.Isolate}
 	open := tenon.ObjectWith(nil, false)
 	unknownMap := tenon.WithMarks(tenon.Unknown(tenon.MapType(num)), prop)
-	for _, tt := range []struct {
-		name string
-		v    tenon.Value
-		c    tenon.Constraint
-	}{
-		{"list", tenon.List(tenon.MapType(num), unknownMap), tenon.ListOf(open)},
-		{"tuple", tenon.Tuple(unknownMap), tenon.TupleOf(open)},
-		{"object", obj(map[string]tenon.Value{"m": unknownMap}), tenon.ObjectWith(map[string]tenon.Field{"m": tenon.Required(open)}, true)},
-	} {
-		wantValue(t, tt.name, tenon.Convert(tt.v, tt.c, uns), tenon.WithMarks(tenon.Narrow(tenon.Pending(tt.c), tenon.NotNull()), prop))
-	}
+	wantValue(t, "list", tenon.Convert(tenon.List(tenon.MapType(num), unknownMap), tenon.ListOf(open), uns),
+		tenon.WithMarks(tenon.Narrow(tenon.Pending(tenon.ListOf(open)), tenon.NotNull(), tenon.LengthMin(1), tenon.LengthMax(1)), prop))
+	member := tenon.WithMarks(tenon.Pending(open), prop)
+	wantValue(t, "tuple", tenon.Convert(tenon.Tuple(unknownMap), tenon.TupleOf(open), uns), tenon.Tuple(member))
+	wantValue(t, "object", tenon.Convert(obj(map[string]tenon.Value{"m": unknownMap}), tenon.ObjectWith(map[string]tenon.Field{"m": tenon.Required(open)}, true), uns),
+		obj(map[string]tenon.Value{"m": member}))
 
 	var capT *tenon.CapsuleType[celsius]
 	capT = tenon.NewCapsule("sum", tenon.CapsuleOps[celsius]{
@@ -1151,7 +1149,7 @@ func TestConformance_CV032_TypesHoldingMapsFailWhereEveryValueFails(t *testing.T
 	// Where some keys could succeed, the result is pending.
 	maps := tenon.Tuple(obj(map[string]tenon.Value{"a": n(1)}), tenon.Unknown(tenon.MapType(num)))
 	listOfOpen := tenon.ListOf(open)
-	wantValue(t, "objects and an unknown map", tenon.Convert(maps, listOfOpen, uns), tenon.Narrow(tenon.Pending(listOfOpen), tenon.NotNull()))
+	wantValue(t, "objects and an unknown map", tenon.Convert(maps, listOfOpen, uns), tenon.Narrow(tenon.Pending(listOfOpen), tenon.NotNull(), tenon.LengthMin(2), tenon.LengthMax(2)))
 
 	choice := tenon.OneOf(listOfOpen, is(num))
 	wantValue(t, "one_of, list holding an unknown map", tenon.Convert(tenon.List(tenon.MapType(num), tenon.Unknown(tenon.MapType(num))), choice, uns),

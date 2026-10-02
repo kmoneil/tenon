@@ -990,7 +990,7 @@ func (x converter) collection(v Value, c Constraint) draft {
 		if out := pendingElements(types, least, d.elem, x.policy, withhold); out.fail != nil {
 			return finished(failedReading(n, out.fail.diagnostic()))
 		}
-		return finished(pendingContainer(c, n))
+		return finished(pendingCollection(c, n))
 	}
 	elem, f := elementType(types, d.elem, x.policy, withhold, x.memo)
 	if f != nil {
@@ -1185,7 +1185,7 @@ func (x converter) tuple(v Value, c Constraint) draft {
 	case failed:
 		return finished(e)
 	case pending:
-		return finished(pendingContainer(c, n))
+		return finished(x.holding(n, drafts, nil))
 	}
 	types := make([]Type, len(drafts))
 	for i, md := range drafts {
@@ -1322,14 +1322,16 @@ func (x converter) object(v Value, c Constraint) draft {
 	if e, failed := errs.value(); failed {
 		return finished(e)
 	}
-	if pending {
-		return finished(pendingContainer(c, n))
-	}
 	r := draft{parts: &parts{names: slices.Sorted(maps.Keys(attrs))}}
 	r.members = make([]memberDraft, len(r.names))
-	types := make(map[string]Type, len(r.names))
 	for i, name := range r.names {
 		r.members[i] = attrs[name]
+	}
+	if pending {
+		return finished(x.holding(n, r.members, r.names))
+	}
+	types := make(map[string]Type, len(r.names))
+	for i, name := range r.names {
 		types[name] = r.members[i].typeOf()
 	}
 	r.typ = ObjectType(types)
@@ -1458,6 +1460,65 @@ func (x converter) failsEverywhere(m Value, cs []Constraint) (Value, bool) {
 		}
 	}
 	return first, first.n != nil
+}
+
+// holding returns what the known container n converts to where a member of it
+// converts to a pending value and the constraint is TupleOf or ObjectWith
+// (CV-031): the pending tuple or object holding what each member converts to,
+// each built at the type its draft gives, as a tuple's or object's members
+// are, names giving an object's attributes in name order. A member whose draft
+// leaves a part open fails as CV-021 says, located at it.
+func (x converter) holding(n *node, drafts []memberDraft, names []string) Value {
+	h := held{kind: n.typ.t.kind, names: names}
+	vals := make([]Value, len(drafts))
+	var errs containerErrors
+	for i, md := range drafts {
+		switch {
+		case md.done.n != nil:
+			vals[i] = md.done
+			if md.from != nil {
+				vals[i] = x.carry(md.done, md.from)
+			}
+		case leavesOpen(md):
+			errs.add(h.step(i), x.carry(x.openFailure(md.draft, md.from, md.typ), md.from))
+		default:
+			vals[i] = x.buildMember(md, md.typ)
+		}
+	}
+	if e, failed := errs.value(); failed {
+		return e
+	}
+	if names == nil {
+		return Tuple(vals...)
+	}
+	attrs := make(map[string]Value, len(names))
+	for i, name := range names {
+		attrs[name] = vals[i]
+	}
+	return Object(attrs)
+}
+
+// pendingCollection returns what the known container n converts to where a
+// member of it converts to a pending value and the constraint c is ListOf,
+// SetOf or MapOf, which hold no pending member (CV-031): the pending value of
+// c, not null, carrying what pendingContainer carries, with the number of
+// members n holds as its length, or, converted to a set, whose members may
+// merge, as its greatest and at least one. A set's own members may merge, so
+// its length is the range its members leave.
+func pendingCollection(c Constraint, n *node) Value {
+	low, high := int64(n.length()), int64(n.length())
+	if n.typ.t.kind == KindSet {
+		l, h := setLengthBounds(n)
+		low, high = int64(l), int64(h)
+	}
+	if c.c.kind == ConstraintSetOf {
+		low = min(low, 1)
+	}
+	ns := []Narrowing{LengthMax(high)}
+	if low > 0 {
+		ns = append(ns, LengthMin(low))
+	}
+	return Narrow(pendingContainer(c, n), ns...)
 }
 
 // pendingContainer returns the pending value that a known container converts

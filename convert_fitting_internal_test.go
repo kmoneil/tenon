@@ -296,7 +296,7 @@ func (x converter) fittingCollection(v Value, c Constraint) Value {
 		if out := pendingElements(types, least, d.elem, x.policy, withhold); out.fail != nil {
 			return failedReading(n, out.fail.diagnostic())
 		}
-		return pendingContainer(c, n)
+		return pendingCollection(c, n)
 	}
 	elem, f := elementType(types, d.elem, x.policy, withhold, x.memo)
 	if f != nil {
@@ -371,13 +371,12 @@ func (x converter) fittingTuple(v Value, c Constraint) Value {
 	if from != KindTuple && x.policy == Safe {
 		return errorValue(unsafeConversion(x.typeName(n), c).diagnostic())
 	}
-	converted, e, failed, pending := x.fittingMembers(members(n), func(i int) Constraint { return d.members[i] })
-	switch {
-	case failed:
+	converted, e, failed, _ := x.fittingMembers(members(n), func(i int) Constraint { return d.members[i] })
+	if failed {
 		return e
-	case pending:
-		return pendingContainer(c, n)
 	}
+	// A member converted to a pending value makes it the pending tuple
+	// holding them (CV-031).
 	return Tuple(converted...)
 }
 
@@ -394,7 +393,6 @@ func (x converter) fittingObject(v Value, c Constraint) Value {
 	h := members(n)
 	var errs containerErrors
 	attrs := make(map[string]Value, len(h.vals))
-	pending := false
 	fields := d.fields
 	missing := func(name string) {
 		errs.addDiagnostic(missingAttribute(name).diagnostic())
@@ -427,11 +425,8 @@ func (x converter) fittingObject(v Value, c Constraint) Value {
 			attrs[name] = m
 		default:
 			r := x.fittingMember(m, fields[0].Constraint)
-			switch r.n.state {
-			case stateError:
+			if r.n.state == stateError {
 				errs.add(h.step(i), r)
-			case statePending:
-				pending = true
 			}
 			attrs[name] = r
 			fields = fields[1:]
@@ -448,8 +443,7 @@ func (x converter) fittingObject(v Value, c Constraint) Value {
 	if e, failed := errs.value(); failed {
 		return e
 	}
-	if pending {
-		return pendingContainer(c, n)
-	}
+	// A member converted to a pending value makes it the pending object
+	// holding them (CV-031).
 	return Object(attrs)
 }

@@ -276,3 +276,38 @@ func TestConformance_MK008_ADeepMarkReachesAPendingTuplesMembers(t *testing.T) {
 		}
 	}
 }
+
+// TestConformance_CV031_AMemberThatConvertsToPendingIsHeld holds a conversion
+// where a member converts to a pending value, as an unknown map does to an
+// open ObjectWith: to TupleOf or ObjectWith, the pending tuple or object
+// holding what each member converts to; to ListOf, SetOf or MapOf, the pending
+// collection of the constraint with the container's number of members as its
+// length, a set's at least one; and a member whose conversion leaves a part
+// open still failing where it is.
+func TestConformance_CV031_AMemberThatConvertsToPendingIsHeld(t *testing.T) {
+	conformance.Covers(t, "CV-031", "UN-025", "UN-024")
+	open := tenon.ObjectWith(nil, false)
+	maps := tenon.MapType(num)
+	u := tenon.Unknown(maps)
+	for _, tt := range []struct {
+		name string
+		v    tenon.Value
+		c    tenon.Constraint
+		want tenon.Value
+	}{
+		{"a tuple", tenon.Tuple(u, n(1)), tenon.TupleOf(open, tenon.Any()), tenon.Tuple(tenon.Pending(open), n(1))},
+		{"an object, an attribute carried and one absent", obj(map[string]tenon.Value{"m": u, "x": n(2)}),
+			tenon.ObjectWith(map[string]tenon.Field{"m": tenon.Required(open), "z": tenon.Optional(is(str))}, false),
+			obj(map[string]tenon.Value{"m": tenon.Pending(open), "x": n(2), "z": tenon.Null(str)})},
+		{"a list to a tuple", tenon.List(maps, u), tenon.TupleOf(open), tenon.Tuple(tenon.Pending(open))},
+		{"a list to a set", tenon.List(maps, u, u), tenon.SetOf(open),
+			tenon.Narrow(tenon.Pending(tenon.SetOf(open)), tenon.NotNull(), tenon.LengthMin(1), tenon.LengthMax(2))},
+		{"an object to a map", obj(map[string]tenon.Value{"a": u, "b": u}), tenon.MapOf(open),
+			tenon.Narrow(tenon.Pending(tenon.MapOf(open)), tenon.NotNull(), tenon.LengthMin(2), tenon.LengthMax(2))},
+	} {
+		wantValue(t, tt.name, tenon.Convert(tt.v, tt.c, uns), tt.want)
+	}
+	wantErrors(t, "a member left open beside one pending",
+		tenon.Convert(tenon.Tuple(tenon.Tuple(), u), tenon.TupleOf(tenon.ListOf(tenon.Any()), open), uns),
+		wantDiag{tenon.CodeConvertNoCommonType, ".[0]"})
+}
