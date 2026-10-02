@@ -73,6 +73,22 @@ func TestPathsThatDoNotCross(t *testing.T) {
 			t.Errorf("%s: PathFromCty(%#v) = %v, %v; want an error containing %q", c.name, c.cty, got, err, c.want)
 		}
 	}
+	// The unknown empty object is {} or null, both of which the set holds,
+	// so tenon's set holds two members, and the step to the third cannot
+	// say which of them it is.
+	settled := cty.SetVal([]cty.Value{cty.EmptyObjectVal, cty.UnknownVal(cty.EmptyObject), cty.NullVal(cty.EmptyObject)})
+	for _, c := range []struct {
+		name string
+		cty  cty.Path
+		want string
+	}{
+		{"a member tenon settles as another", cty.Path{cty.IndexStep{Key: cty.UnknownVal(cty.EmptyObject)}}, "is one tenon settles as a member the set holds already"},
+	} {
+		got, err := b.PathFromCty(c.cty, settled)
+		if err == nil || !strings.Contains(err.Error(), c.want) {
+			t.Errorf("%s: PathFromCty(%#v) = %v, %v; want an error containing %q", c.name, c.cty, got, err, c.want)
+		}
+	}
 	tconfig, _ := b.FromCty(config)
 	got, err := b.PathToCty(pathOf("servers", 0, "tags", 2), tconfig)
 	if want := "ctytenon: step 3 of .servers[0].tags[2]: the set holds no member at 2"; err == nil || err.Error() != want {
@@ -100,6 +116,10 @@ func TestPathsRoundTrip(t *testing.T) {
 		}
 		tp, err := b.PathFromCty(p, v)
 		if err != nil {
+			// TestPathsThatDoNotCross: a member tenon settles as another.
+			if strings.Contains(err.Error(), "is one tenon settles as a member the set holds already") {
+				continue
+			}
 			t.Fatalf("PathFromCty(%#v) within %#v: %v", p, v, err)
 		}
 		back, err := b.PathToCty(tp, tv)
