@@ -65,4 +65,6 @@ such as `int64` or `float64`, whose cost is bounded.
 ## Supported versions
 
 Fixes go into the latest minor release. tenon is before 1.0, so a fix that
-changes behaviour may come as a new minor version rather than a patch.
+changes behaviour may come as a new minor version rather than a patch. The
+same holds for `ctytenon`, the bridge to go-cty, which is released on its
+own, tagged `ctytenon/vx.y.z`.

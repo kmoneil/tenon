@@ -1,14 +1,19 @@
 # The GitHub Release of each version tag, made when the tag is pushed, its notes
 # the version's section of CHANGELOG.md (make release-notes). A tag is pushed
 # by hand, on the release's merge commit, once its pull request has passed the
-# gate; the ruleset keeps v* tags from moving. A tag with a pre-release suffix,
-# as v1.0.0-rc.1, makes a pre-release. A version the changelog has no section
-# for fails the run, and no Release is made.
+# gate; the ruleset keeps version tags from moving. A tag with a pre-release
+# suffix, as v1.0.0-rc.1, makes a pre-release. A version the changelog has no
+# section for fails the run, and no Release is made.
+#
+# ctytenon, the bridge to go-cty, is a module of its own, tagged
+# ctytenon/vX.Y.Z as Go requires of a module in a subdirectory. Its Release
+# takes its notes from ctytenon/CHANGELOG.md, and is never marked latest, so
+# that the repository's latest Release stays tenon's.
 name: release
 
 on:
   push:
-    tags: ['v*']
+    tags: ['v*', 'ctytenon/v*']
 
 permissions:
   contents: read
@@ -28,7 +33,7 @@ jobs:
         with:
           go-version: '1.27.x'
           cache-dependency-path: '**/go.sum'
-      - name: Notes from CHANGELOG.md
+      - name: Notes from the changelog
         run: make release-notes VERSION="$GITHUB_REF_NAME" > "$RUNNER_TEMP/notes.md"
       - name: Create the release
         env:
@@ -37,5 +42,11 @@ jobs:
         run: |
           prerelease=()
           if [[ "$GITHUB_REF_NAME" == *-* ]]; then prerelease=(--prerelease); fi
-          gh release create "$GITHUB_REF_NAME" --verify-tag --title "tenon $GITHUB_REF_NAME" \
-            --notes-file "$RUNNER_TEMP/notes.md" "${prerelease[@]}"
+          title="tenon $GITHUB_REF_NAME"
+          latest=()
+          if [[ "$GITHUB_REF_NAME" == ctytenon/* ]]; then
+            title="ctytenon ${GITHUB_REF_NAME#ctytenon/}"
+            latest=(--latest=false)
+          fi
+          gh release create "$GITHUB_REF_NAME" --verify-tag --title "$title" \
+            --notes-file "$RUNNER_TEMP/notes.md" "${prerelease[@]}" "${latest[@]}"
