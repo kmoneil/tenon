@@ -24,15 +24,27 @@ func wantDiff(t *testing.T, what string, a, b tenon.Value, lines ...string) {
 	}
 }
 
-// partAt returns the part of v that p locates, and whether there is one.
+// partAt returns the part of v that p locates, and whether there is one, a
+// pending tuple's or object's members among them.
 func partAt(v tenon.Value, p tenon.Path) (tenon.Value, bool) {
 	for _, s := range p.Steps() {
-		if !v.HasContent() {
+		if !v.HasMembers() {
 			return tenon.Value{}, false
 		}
-		switch k := v.Type().Kind(); {
-		case s.Kind() == tenon.StepAttribute && k == tenon.KindObject && v.Type().HasAttribute(s.Name()):
-			v = v.Attribute(s.Name())
+		k := tenon.KindTuple
+		switch {
+		case !v.IsPending():
+			k = v.Type().Kind()
+		case v.Constraint().Kind() == tenon.ConstraintObjectWith:
+			k = tenon.KindObject
+		}
+		switch {
+		case s.Kind() == tenon.StepAttribute && k == tenon.KindObject:
+			a, ok := v.LookupAttribute(s.Name())
+			if !ok {
+				return tenon.Value{}, false
+			}
+			v = a
 		case s.Kind() == tenon.StepIndex && (k == tenon.KindList || k == tenon.KindTuple):
 			i, ok := s.Key().AsInt64()
 			if !ok || i < 0 || int(i) >= v.Len() {

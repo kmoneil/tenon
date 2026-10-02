@@ -239,7 +239,9 @@ func (w *goWriter) writeUnmarked(n *node) {
 		return
 	case statePending:
 		if p, ok := n.held(); ok {
-			// The Tuple or Object call that makes it, its members in place.
+			// The Tuple or Object call that makes it, its members in place,
+			// without the deep marks it implies on them.
+			defer w.within(n)()
 			if p.names == nil {
 				w.WriteString("tenon.Tuple(")
 			} else {

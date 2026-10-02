@@ -74,6 +74,21 @@ func TestValues(t *testing.T) {
 		{"DynamicVal", cty.DynamicVal, tenon.Pending(tenon.Any())},
 		{"the untyped null", cty.NullVal(cty.DynamicPseudoType), tenon.Narrow(tenon.Pending(tenon.Any()), tenon.NullOnly())},
 		{"an unknown list of some type", cty.UnknownVal(cty.List(cty.DynamicPseudoType)), tenon.Pending(tenon.ListOf(tenon.Any()))},
+		// A known tuple or object of such a type holds its members.
+		{"a tuple holding DynamicVal and a number", cty.TupleVal([]cty.Value{cty.DynamicVal, cty.NumberIntVal(1)}), tenon.Tuple(tenon.Pending(tenon.Any()), n(1))},
+		{
+			"an object holding the untyped null",
+			cty.ObjectVal(map[string]cty.Value{"a": cty.NullVal(cty.DynamicPseudoType), "b": cty.StringVal("x")}),
+			tenon.Object(map[string]tenon.Value{"a": tenon.Narrow(tenon.Pending(tenon.Any()), tenon.NullOnly()), "b": tenon.String("x")}),
+		},
+		{
+			"a tuple within an object, beside an unknown list of some type",
+			cty.ObjectVal(map[string]cty.Value{
+				"a": cty.TupleVal([]cty.Value{cty.StringVal("x"), cty.DynamicVal}),
+				"b": cty.UnknownVal(cty.List(cty.DynamicPseudoType)),
+			}),
+			tenon.Object(map[string]tenon.Value{"a": tenon.Tuple(tenon.String("x"), tenon.Pending(tenon.Any())), "b": tenon.Pending(tenon.ListOf(tenon.Any()))}),
+		},
 		{
 			"an unknown object of exactly its attributes",
 			cty.UnknownVal(cty.Object(map[string]cty.Type{"a": cty.DynamicPseudoType, "b": cty.String})),
@@ -97,7 +112,7 @@ func TestValues(t *testing.T) {
 }
 
 // TestValuesThatWiden holds the values that cross as one allowing more than
-// they do to doing so: what a known value whose type holds
+// they do to doing so: what a known list, set or map whose type holds
 // cty.DynamicPseudoType holds, which tenon has no known value for, and what
 // cty cannot say of a pending value.
 func TestValuesThatWiden(t *testing.T) {
@@ -109,11 +124,8 @@ func TestValuesThatWiden(t *testing.T) {
 	}{
 		{"a list holding DynamicVal, its length kept", cty.ListVal([]cty.Value{cty.DynamicVal}),
 			tenon.Narrow(tenon.Pending(tenon.ListOf(tenon.Any())), tenon.NotNull(), tenon.LengthMin(1), tenon.LengthMax(1))},
-		{
-			"a tuple holding DynamicVal and a number",
-			cty.TupleVal([]cty.Value{cty.DynamicVal, cty.NumberIntVal(1)}),
-			tenon.Narrow(tenon.Pending(tenon.TupleOf(tenon.Any(), tenon.Exactly(num))), tenon.NotNull()),
-		},
+		{"a map holding the untyped null", cty.MapVal(map[string]cty.Value{"a": cty.NullVal(cty.DynamicPseudoType)}),
+			tenon.Narrow(tenon.Pending(tenon.MapOf(tenon.Any())), tenon.NotNull(), tenon.LengthMin(1), tenon.LengthMax(1))},
 		{
 			"a null of an object type with optional attributes",
 			cty.NullVal(cty.ObjectWithOptionalAttrs(map[string]cty.Type{"a": cty.String}, []string{"a"})),
@@ -370,26 +382,34 @@ func TestValuesRoundTripFromTenon(t *testing.T) {
 }
 
 // TestValuesRoundTripFromCty carries random cty values, unknown and null
-// parts, and values whose type holds cty.DynamicPseudoType, among them, to
-// tenon and back, which gives each RawEquals, but where tenon is the more
-// decided of the two. cty numbers that its parser and its integer
-// constructors make compare by value.
+// parts, and values whose type holds cty.DynamicPseudoType, known ones among
+// them, to tenon and back, which gives each RawEquals, but where tenon is the
+// more decided of the two, or keeps a known list's, set's or map's length
+// alone. cty numbers that its parser and its integer constructors make
+// compare by value.
 func TestValuesRoundTripFromCty(t *testing.T) {
 	var b ctytenon.Bridge
 	r := rand.New(rand.NewSource(20261006))
+	held := 0
 	for range conformance.Iterations(t, 2000) {
 		var v cty.Value
-		if r.Intn(5) == 0 {
+		switch r.Intn(5) {
+		case 0:
 			// A value's type has no optional attributes, which are a
 			// conversion's.
 			ct := randomCtyConstraint(r, 3).WithoutOptionalAttributesDeep()
 			v = []cty.Value{cty.UnknownVal(ct), cty.NullVal(ct)}[r.Intn(2)]
-		} else {
+		case 1:
+			v = randomCtyValue(r, randomCtyConstraint(r, 3).WithoutOptionalAttributesDeep())
+		default:
 			v = randomCtyValue(r, randomCtyType(r, 3))
 		}
 		tv, err := b.FromCty(v)
 		if err != nil {
 			t.Fatalf("FromCty(%#v): %v", v, err)
+		}
+		if tv.IsPending() && tv.HasMembers() {
+			held++
 		}
 		back, err := b.ToCty(tv)
 		if err != nil {
@@ -406,6 +426,9 @@ func TestValuesRoundTripFromCty(t *testing.T) {
 		if again, err := b.FromCty(back); err != nil || !again.Equal(tv) {
 			t.Fatalf("%#v crossed as %v and back as %#v", v, tv, back)
 		}
+	}
+	if held < 20 {
+		t.Errorf("crossed %d tuples or objects holding a member of no type yet; want many", held)
 	}
 }
 
@@ -455,13 +478,17 @@ func randomTenonValue(r *rand.Rand, typ tenon.Type) tenon.Value {
 }
 
 // randomCtyValue returns a random cty value of type typ, nulls and unknown
-// values among its parts.
+// values among its parts. Where typ holds cty.DynamicPseudoType, the parts of
+// that type are cty.DynamicVal and the untyped null, which are all it has.
 func randomCtyValue(r *rand.Rand, typ cty.Type) cty.Value {
 	switch r.Intn(12) {
 	case 0:
 		return cty.NullVal(typ)
 	case 1:
 		return cty.UnknownVal(typ)
+	}
+	if typ == cty.DynamicPseudoType {
+		return []cty.Value{cty.DynamicVal, cty.NullVal(cty.DynamicPseudoType)}[r.Intn(2)]
 	}
 	elems := func(e cty.Type) []cty.Value {
 		out := make([]cty.Value, r.Intn(4))

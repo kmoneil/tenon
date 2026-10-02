@@ -252,6 +252,18 @@ var valid = []vector{
 			"b": tenon.Optional(tenon.OneOf(tenon.Exactly(str), tenon.Any())),
 		}, true))
 	}},
+	{"pending/lengths", func(r *rand.Rand) tenon.Value {
+		return tenon.Narrow(tenon.Pending(tenon.ListOf(tenon.Any())), shuffled(r, tenon.NotNull(), tenon.LengthMin(1), tenon.LengthMax(3))...)
+	}},
+	{"pending/tuple holding members", func(*rand.Rand) tenon.Value {
+		return tenon.Tuple(tenon.Pending(tenon.Any()), n(1), tenon.Narrow(tenon.Pending(tenon.Any()), tenon.NullOnly()))
+	}},
+	{"pending/object holding members", func(*rand.Rand) tenon.Value {
+		return tenon.Object(map[string]tenon.Value{
+			"b": tenon.Tuple(tenon.Unknown(num), tenon.Pending(tenon.Exactly(str))),
+			"a": s("x"),
+		})
+	}},
 	{"error/one", func(*rand.Rand) tenon.Value {
 		return tenon.ErrorVal(tenon.Diagnostic{Code: "vectors.failed", Message: "it failed"})
 	}},
@@ -278,6 +290,16 @@ var valid = []vector{
 		return tenon.Tuple(marked(r, tenon.Null(num), plain), marked(r, tenon.Unknown(str), note{"u"}))
 	}},
 	{"marks/pending", func(r *rand.Rand) tenon.Value { return marked(r, tenon.Pending(tenon.Any()), plain) }},
+	{"marks/pending member", func(r *rand.Rand) tenon.Value {
+		return tenon.Tuple(marked(r, tenon.Pending(tenon.Any()), plain, note{"x"}), n(2))
+	}},
+	{"marks/deep on a pending tuple", func(r *rand.Rand) tenon.Value {
+		first := tenon.Pending(tenon.Any())
+		if r.Intn(2) == 0 {
+			first = tenon.WithMarks(first, deep)
+		}
+		return tenon.WithMarks(tenon.Tuple(first, n(2)), deep)
+	}},
 	{"marks/error", func(r *rand.Rand) tenon.Value {
 		return marked(r, tenon.ErrorVal(tenon.Diagnostic{Code: "vectors.failed", Message: "it failed"}), note{"e"}, plain)
 	}},
@@ -352,6 +374,10 @@ var invalid = []invalidVector{
 	{"deep mark listed on a member", document + "8300820402da74656e028281da74656e02820181816164818161 64", "serialize.not_canonical"},
 	{"marks out of order", document + "830001da74656e0282f58283617003617681616d", "serialize.not_canonical"},
 	{"indefinite-length array", document + "83008204029f01ff", "serialize.not_canonical"},
+	{"pending tuple holding no pending member", document + "830300 81 83000201", "serialize.malformed"},
+	{"pending tuple holding an error value", document + "830300 82 8301810200 820281836561 70702e78616d80", "serialize.malformed"},
+	{"pending object names out of order", document + "830301 82 82616283000201 8261618301810200", "serialize.not_canonical"},
+	{"deep mark listed on a pending tuple's member", document + "da74656e0282 830300 82 da74656e0282830181020081816164 83000201 81816164", "serialize.not_canonical"},
 	// Input holding two faults fails with the first the reading meets: one
 	// the reading stops at, where it is written, and one found by comparing
 	// the input with the value's encoding only once it is read through.

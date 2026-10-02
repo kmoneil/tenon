@@ -146,9 +146,9 @@ func TestConformance_EQ010_APendingTupleOrObjectIsItsMembers(t *testing.T) {
 // on it and on its members included; a failure within a member located at
 // it; and the input that describes no such value refused.
 func TestConformance_SE010_APendingTupleOrObjectEncodesItsMembers(t *testing.T) {
-	conformance.Covers(t, "SE-010", "SE-002", "UN-025")
+	conformance.Covers(t, "SE-010", "SE-002", "UN-025", "SE-031")
 	p := tenon.Pending(tenon.Any())
-	const pendingAny, one = "83 01 81 02 00", "83 00 02 01"
+	const pendingAny, one, deep = "83 01 81 02 00", "83 00 02 01", "81 81 6164"
 	for _, tt := range []struct {
 		name string
 		v    tenon.Value
@@ -156,6 +156,9 @@ func TestConformance_SE010_APendingTupleOrObjectEncodesItsMembers(t *testing.T) 
 	}{
 		{"a tuple", tenon.Tuple(p, n(1)), "83 03 00 82 " + pendingAny + " " + one},
 		{"an object", tenon.Object(map[string]tenon.Value{"b": n(1), "a": p}), "83 03 01 82 82 6161 " + pendingAny + " 82 6162 " + one},
+		// A deep mark is listed on the pending tuple alone, as on a tuple:
+		// its members carry it because it does.
+		{"a deep mark", tenon.WithMarks(tenon.Tuple(p, n(1)), markDeep), "da74656e02 82 83 03 00 82 " + pendingAny + " " + one + " " + deep},
 	} {
 		wantEncoding(t, tt.name, tt.v, tt.item)
 	}
@@ -189,6 +192,7 @@ func TestConformance_SE010_APendingTupleOrObjectEncodesItsMembers(t *testing.T) 
 		{"an empty name", "83 03 01 81 82 60 " + pendingAny, tenon.CodeSerializeMalformed},
 		{"a shape that is neither", "83 03 02 81 " + pendingAny, tenon.CodeSerializeMalformed},
 		{"names out of order", "83 03 01 82 82 6162 " + one + " 82 6161 " + pendingAny, tenon.CodeSerializeNotCanonical},
+		{"a deep mark listed on a member", "da74656e02 82 83 03 00 82 da74656e02 82 " + pendingAny + " " + deep + " " + one + " " + deep, tenon.CodeSerializeNotCanonical},
 	} {
 		wantDecodeFailure(t, tt.name, document+tt.item, tt.code)
 	}
@@ -321,7 +325,7 @@ func TestConformance_CV031_AMemberThatConvertsToPendingIsHeld(t *testing.T) {
 // by its constraint, carrying its members' marks; and a member's failure at
 // its path.
 func TestConformance_CV032_APendingTupleOrObjectConvertsMemberByMember(t *testing.T) {
-	conformance.Covers(t, "CV-032", "CV-050", "UN-025")
+	conformance.Covers(t, "CV-032", "CV-050", "UN-025", "CV-026")
 	p := tenon.Pending(tenon.Any())
 	tup := tenon.Tuple(p, n(1))
 	o := tenon.Object(map[string]tenon.Value{"a": p, "b": n(1)})
@@ -333,6 +337,8 @@ func TestConformance_CV032_APendingTupleOrObjectConvertsMemberByMember(t *testin
 	}{
 		{"to a tuple", tup, tenon.TupleOf(tenon.Any(), is(str)), tenon.Tuple(p, s("1"))},
 		{"to an object", o, tenon.ObjectWith(map[string]tenon.Field{"a": tenon.Required(tenon.Any()), "b": tenon.Required(is(str))}, true),
+			tenon.Object(map[string]tenon.Value{"a": p, "b": s("1")})},
+		{"to an open object, which carries what it does not name", o, tenon.ObjectWith(map[string]tenon.Field{"b": tenon.Required(is(str))}, false),
 			tenon.Object(map[string]tenon.Value{"a": p, "b": s("1")})},
 		{"to a tuple type", tup, is(tenon.TupleType(str, num)), tenon.Tuple(tenon.Unknown(str), n(1))},
 		{"to a list", tup, tenon.ListOf(tenon.Any()),
@@ -348,6 +354,14 @@ func TestConformance_CV032_APendingTupleOrObjectConvertsMemberByMember(t *testin
 		wantDiag{tenon.CodeNumberInvalidSyntax, ".[1]"})
 	wantErrors(t, "another length", tenon.Convert(tup, tenon.TupleOf(tenon.Any()), uns),
 		wantDiag{tenon.CodeConvertNoConversion, "."})
+	// A target that admits one type converts as Exactly of it, however it is
+	// written, failures and all.
+	spelled, exact := tenon.SetOf(tenon.SetOf(tenon.TupleOf())), is(tenon.SetType(tenon.SetType(tenon.TupleType())))
+	for _, v := range []tenon.Value{tup, o} {
+		if got, want := tenon.Convert(v, spelled, uns), tenon.Convert(v, exact, uns); !tenon.Identical(got, want) {
+			t.Errorf("Convert(%v, %v) = %v, but to %v it is %v", v, spelled, got, exact, want)
+		}
+	}
 
 	prop := stamp{id: "prop"}
 	choice := tenon.OneOf(is(num), tenon.TupleOf(tenon.Any(), tenon.Any()))
