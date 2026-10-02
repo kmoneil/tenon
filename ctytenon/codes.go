@@ -17,4 +17,7 @@ const (
 	// CodeOneOf is the code of a pending value whose constraint holds a
 	// OneOf, which no cty type says.
 	CodeOneOf tenon.Code = "cty.one_of"
+	// CodeCtyError is the code of a diagnostic Bridge.ErrorFromCty makes of
+	// an error cty gave, which has no code of its own.
+	CodeCtyError tenon.Code = "cty.error"
 )
