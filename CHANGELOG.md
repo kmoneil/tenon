@@ -33,6 +33,9 @@
     object it will be, to a tuple, object, list, set or map; as the
     resolved value of its one type where its constraint admits one; and
     whole to `Any`.
+  - `Diff` walks into it as into the tuple or object it will be, and
+    gotenon, converting it member by member, decodes its resolved members
+    and refuses each pending one with `decode.not_known` where it is.
 
   A list, set or map of a pending member still panics, its element type
   being given. The specification says so (`UN-025`), a new rule: 202 rules,
