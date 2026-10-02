@@ -388,6 +388,20 @@ func countsMembers(c Constraint) bool {
 	return false
 }
 
+// admitsSet reports whether some type that c, which counts members
+// (countsMembers), admits is a set.
+func admitsSet(c Constraint) bool {
+	switch d := c.c; d.kind {
+	case ConstraintSetOf:
+		return true
+	case ConstraintExactly:
+		return d.typ.t.kind == KindSet
+	case ConstraintOneOf:
+		return slices.ContainsFunc(d.members, admitsSet)
+	}
+	return false
+}
+
 // Resolve returns the value that a pending value takes once its type turns out
 // to be t: an unknown value of t, narrowed by what the pending value already
 // said, whether it can be null and the lengths it records. A pending value

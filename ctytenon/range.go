@@ -12,10 +12,9 @@ import (
 
 // narrowingsFromCty returns the narrowings that say of a tenon value what the
 // refinements of v, an unknown cty value of type t, say of it: that it is not
-// null; a number's bounds; a string's prefix; and a collection's length,
-// unless the value is pending, which tenon does not narrow by a length its
-// type has not settled.
-func narrowingsFromCty(v cty.Value, t cty.Type, pending bool) []tenon.Narrowing {
+// null; a number's bounds; a string's prefix; and a collection's length, which
+// a pending list, set or map records as well.
+func narrowingsFromCty(v cty.Value, t cty.Type) []tenon.Narrowing {
 	r := v.Range()
 	var ns []tenon.Narrowing
 	if r.DefinitelyNotNull() {
@@ -37,7 +36,7 @@ func narrowingsFromCty(v cty.Value, t cty.Type, pending bool) []tenon.Narrowing 
 		if p := r.StringPrefix(); p != "" {
 			ns = append(ns, prefixFromCty(p))
 		}
-	case t.IsCollectionType() && !pending:
+	case t.IsCollectionType():
 		if min := r.LengthLowerBound(); min > 0 {
 			ns = append(ns, tenon.LengthMin(int64(min)))
 		}
@@ -143,4 +142,32 @@ func refineToCty(u cty.Value, t cty.Type, r tenon.Range) cty.Value {
 func notNull(v tenon.Value) bool {
 	n := tenon.IsNull(v)
 	return n.IsKnown() && !n.AsBool()
+}
+
+// pendingLengthsToCty returns u, cty's unknown collection of type t for the
+// pending value v, refined by the lengths v records, which Length of it
+// bounds, and by v's not being null where it is known not to be.
+func pendingLengthsToCty(u cty.Value, t cty.Type, v tenon.Value) cty.Value {
+	b, refined := u.Refine(), false
+	if notNull(v) {
+		b, refined = b.NotNull(), true
+	}
+	if l := tenon.Length(v); !l.IsError() {
+		r := l.Range()
+		if min, _, ok := r.NumberMin(); ok {
+			if n, ok := min.AsInt64(); ok && n > 0 {
+				b, refined = b.CollectionLengthLowerBound(int(n)), true
+			}
+		}
+		if max, _, ok := r.NumberMax(); ok {
+			if n, ok := max.AsInt64(); ok {
+				b, refined = b.CollectionLengthUpperBound(int(n)), true
+			}
+		}
+	}
+	// A value refined by nothing is not cty's unknown value of its type.
+	if !refined {
+		return u
+	}
+	return b.NewValue()
 }

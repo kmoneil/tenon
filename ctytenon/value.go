@@ -29,7 +29,9 @@ import (
 // attributes its type names. The untyped null, cty.NullVal of
 // cty.DynamicPseudoType, is the pending value known to be null; a known value
 // whose type holds cty.DynamicPseudoType, as a list holding cty.DynamicVal
-// does, is the pending value known not to be null.
+// does, is the pending value known not to be null, and a known list, set or
+// map of such a type records the length it has (a set as from one to its
+// count, since its members that are not known may turn out to be one).
 //
 // A mark crosses as b.MarkFromCty maps it. cty hands a container's marks to
 // every value read out of it, so they cross on the container and on every
@@ -136,9 +138,19 @@ func (b Bridge) unmarkedFromCty(v cty.Value, p tenon.Path, marks []tenon.Mark, f
 		}
 		switch {
 		case !v.IsKnown():
-			return tenon.Narrow(tenon.Pending(c), narrowingsFromCty(v, t, true)...)
+			return tenon.Narrow(tenon.Pending(c), narrowingsFromCty(v, t)...)
 		case v.IsNull():
 			return tenon.Narrow(tenon.Pending(c), tenon.NullOnly())
+		case t.IsListType() || t.IsMapType():
+			// A known list or map holds the members it holds, whatever their
+			// types turn out to be.
+			n := int64(v.LengthInt())
+			return tenon.Narrow(tenon.Pending(c), tenon.NotNull(), tenon.LengthMin(n), tenon.LengthMax(n))
+		case t.IsSetType():
+			// A set's members that are not known may turn out to be one
+			// member.
+			n := int64(v.LengthInt())
+			return tenon.Narrow(tenon.Pending(c), tenon.NotNull(), tenon.LengthMin(min(n, 1)), tenon.LengthMax(n))
 		}
 		return tenon.Narrow(tenon.Pending(c), tenon.NotNull())
 	}
@@ -150,7 +162,7 @@ func (b Bridge) unmarkedFromCty(v cty.Value, p tenon.Path, marks []tenon.Mark, f
 			f.crossing(p, err)
 			return tenon.Value{}
 		case !v.IsKnown():
-			return tenon.Narrow(tenon.Unknown(typ), narrowingsFromCty(v, t, false)...)
+			return tenon.Narrow(tenon.Unknown(typ), narrowingsFromCty(v, t)...)
 		case v.IsNull():
 			return tenon.Null(typ)
 		}
@@ -253,7 +265,8 @@ func (b Bridge) parts(v cty.Value, t cty.Type, p tenon.Path, marks []tenon.Mark,
 // whose type is the cty type of its constraint where cty has one type for all
 // the types the constraint allows: [tenon.Any] is cty.DynamicPseudoType, and
 // so is an ObjectWith that is open or has optional fields, which allows
-// objects of attributes no one cty object type names.
+// objects of attributes no one cty object type names. A pending list, set or
+// map is refined by the lengths it records.
 //
 // A mark crosses as b.MarkToCty maps it. cty hands a container's marks to
 // every value read out of it, so a value within one carries in cty only the
@@ -358,6 +371,8 @@ func (b Bridge) unmarkedToCty(v tenon.Value, p tenon.Path, marks cty.ValueMarks,
 			return cty.NilVal
 		case v.IsNull():
 			return cty.NullVal(t)
+		case t.IsCollectionType():
+			return pendingLengthsToCty(cty.UnknownVal(t), t, v)
 		case t != cty.DynamicPseudoType && notNull(v):
 			return cty.UnknownVal(t).RefineNotNull()
 		}

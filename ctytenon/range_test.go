@@ -86,8 +86,6 @@ func TestRangesThatWiden(t *testing.T) {
 			cty.UnknownVal(cty.Number).Refine().NumberRangeLowerBound(cty.NumberIntVal(5), false).NewValue(),
 			tenon.Narrow(tenon.Unknown(num), tenon.NumberMin(n(5), false)),
 		},
-		// tenon does not narrow a pending value by a length.
-		{"the length of a list of some type", cty.UnknownVal(cty.List(cty.DynamicPseudoType)).Refine().CollectionLengthLowerBound(2).NewValue(), tenon.Pending(tenon.ListOf(tenon.Any()))},
 	} {
 		if got, err := b.FromCty(c.cty); err != nil || !got.Equal(c.tenon) {
 			t.Errorf("%s: FromCty(%#v) = %v, %v; want %v", c.name, c.cty, got, err, c.tenon)
@@ -342,4 +340,73 @@ func tenonCollectionOf(typ tenon.Type, length int) tenon.Value {
 		entries[strconv.Itoa(i)] = tenon.Bool(true)
 	}
 	return tenon.Map(boo, entries)
+}
+
+// TestPendingCollectionLengthsCross holds the length of a list, set or map
+// whose element type cty has not settled to crossing both ways: an unknown
+// one's length refinements, a known one's length, a set's as a range since
+// its members that are not known may turn out to be one, and a pending
+// tenon collection's lengths back to cty's refinements, which cty's length
+// then reads.
+func TestPendingCollectionLengthsCross(t *testing.T) {
+	var b ctytenon.Bridge
+	dynList, dynSet, dynMap := cty.List(cty.DynamicPseudoType), cty.Set(cty.DynamicPseudoType), cty.Map(cty.DynamicPseudoType)
+	lists, sets, maps := tenon.ListOf(tenon.Any()), tenon.SetOf(tenon.Any()), tenon.MapOf(tenon.Any())
+	for _, c := range []struct {
+		name  string
+		cty   cty.Value
+		tenon tenon.Value
+	}{
+		{"an unknown list of at least two", cty.UnknownVal(dynList).Refine().CollectionLengthLowerBound(2).NewValue(),
+			tenon.Narrow(tenon.Pending(lists), tenon.LengthMin(2))},
+		{"an unknown set, not null, of at most three", cty.UnknownVal(dynSet).Refine().NotNull().CollectionLengthUpperBound(3).NewValue(),
+			tenon.Narrow(tenon.Pending(sets), tenon.NotNull(), tenon.LengthMax(3))},
+		{"an unknown map of one to four", cty.UnknownVal(dynMap).Refine().CollectionLengthLowerBound(1).CollectionLengthUpperBound(4).NewValue(),
+			tenon.Narrow(tenon.Pending(maps), tenon.LengthMin(1), tenon.LengthMax(4))},
+	} {
+		got, err := b.FromCty(c.cty)
+		if err != nil || !got.Equal(c.tenon) {
+			t.Errorf("%s: FromCty(%#v) = %v, %v; want %v", c.name, c.cty, got, err, c.tenon)
+			continue
+		}
+		if back, err := b.ToCty(got); err != nil || !back.RawEquals(c.cty) {
+			t.Errorf("%s: ToCty(%v) = %#v, %v; want %#v", c.name, got, back, err, c.cty)
+		}
+	}
+
+	for _, c := range []struct {
+		name   string
+		cty    cty.Value
+		lo, hi int64
+	}{
+		{"a known list of two", cty.ListVal([]cty.Value{cty.DynamicVal, cty.DynamicVal}), 2, 2},
+		{"a known map of one", cty.MapVal(map[string]cty.Value{"a": cty.DynamicVal}), 1, 1},
+		{"a known set of two", cty.SetVal([]cty.Value{cty.DynamicVal, cty.DynamicVal}), 1, 2},
+		{"a known empty list", cty.ListValEmpty(cty.DynamicPseudoType), 0, 0},
+	} {
+		got, err := b.FromCty(c.cty)
+		if err != nil {
+			t.Errorf("%s: FromCty: %v", c.name, err)
+			continue
+		}
+		l := tenon.Length(got)
+		lo, _, _ := l.Range().NumberMin()
+		hi, _, ok := l.Range().NumberMax()
+		if l.IsKnown() {
+			lo, hi, ok = l, l, true
+		}
+		gotLo, _ := lo.AsInt64()
+		gotHi, _ := hi.AsInt64()
+		if !ok || gotLo != c.lo || gotHi != c.hi {
+			t.Errorf("%s: FromCty(%#v) = %v, whose length is %v; want %d to %d", c.name, c.cty, got, l, c.lo, c.hi)
+		}
+		back, err := b.ToCty(got)
+		if err != nil {
+			t.Errorf("%s: ToCty(%v): %v", c.name, got, err)
+			continue
+		}
+		if r := back.Range(); r.LengthLowerBound() != int(c.lo) || r.LengthUpperBound() != int(c.hi) {
+			t.Errorf("%s: ToCty(%v) = %#v; want its length %d to %d", c.name, got, back, c.lo, c.hi)
+		}
+	}
 }
