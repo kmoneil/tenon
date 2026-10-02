@@ -226,8 +226,30 @@ has the whole mapping.
 
 tenon answers the problems that [go-cty](https://github.com/zclconf/go-cty)
 answers for HCL and Terraform, and differs where cty's answers leave a
-program exposed. It is not a drop-in replacement: its API is its own, and
-moving a program across means rewriting the code that handles its values.
+program exposed. Its API is its own, but a program need not move across all
+at once: [ctytenon](ctytenon), a module of its own in this repository,
+carries values, types, type constraints, paths and errors between the two,
+so that a program built on cty can hand what it has to tenon and take it
+back, one piece at a time. What is not known yet, and what is sensitive,
+crosses with it:
+
+```go
+config := cty.ObjectVal(map[string]cty.Value{
+	"name":     cty.StringVal("web"),
+	"replicas": cty.UnknownVal(cty.Number).Refine().NotNull().NumberRangeLowerBound(cty.NumberIntVal(1), true).NewValue(),
+	"token":    cty.StringVal("s3cr3t").Mark("sensitive"),
+})
+
+v, err := b.FromCty(config)
+```
+
+```
+{"name": "web", "replicas": unknown(number, not null, >= 1), "token": redacted("sensitive")}
+```
+
+The module's documentation says what crosses, what does not, and where the
+two differ. Its first release is still to come; until then it builds only
+within this repository, beside the tenon it requires.
 
 | | go-cty v1.19 | tenon |
 | --- | --- | --- |
