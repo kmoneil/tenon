@@ -2,7 +2,8 @@ package ctytenon
 
 import "github.com/kmoneil/tenon"
 
-// Bridge carries values, types and type constraints between go-cty and tenon.
+// Bridge carries values, types, type constraints, paths and errors between
+// go-cty and tenon.
 // The zero Bridge is ready to use; it maps no marks and pairs no capsule
 // types.
 type Bridge struct {

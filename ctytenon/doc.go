@@ -1,4 +1,5 @@
-// Package ctytenon carries values, types and type constraints between go-cty,
+// Package ctytenon carries values, types, type constraints, paths and errors
+// between go-cty,
 // the value system of HCL and Terraform, and tenon, so that a program built on
 // go-cty can move to tenon one piece at a time, handing what it has to tenon
 // and taking it back.
@@ -39,6 +40,13 @@
 // type of a value is not a conversion's target, and a value has exactly the
 // attributes its type names, so there an object type is a closed ObjectWith.
 //
+// [Bridge.PathFromCty] and [Bridge.PathToCty] carry a path, which locates a
+// value within another, given the value it lies within: cty steps into a set
+// by the member and tenon by the member's place in the set's order, which only
+// the set says. [Bridge.ErrorFromCty] gives the [*tenon.Error] that says what
+// an error cty gave says, located by its cty.PathError's path, so that cty's
+// conversion failures read as tenon's diagnostics do.
+//
 // Marks cross as a Bridge maps them, through its MarkFromCty and MarkToCty:
 // cty's marks are any comparable values, and tenon's say how they propagate
 // and whether they redact, which only the program that made them knows. A
@@ -51,7 +59,9 @@
 // A value that does not cross fails with a [*tenon.Error] whose diagnostics
 // are located by the paths of the parts that fail, with the codes of tenon's
 // where tenon has one, and with this package's, [CodeUnmappedMark],
-// [CodeUnpairedCapsule] and [CodeOneOf], where it does not.
+// [CodeUnpairedCapsule] and [CodeOneOf], where it does not. An error value
+// crossing to cty is the *tenon.Error holding it, its diagnostics keeping
+// their paths.
 //
 // The package is a module of its own, so that tenon never requires go-cty:
 // a program that imports tenon alone does not download it.
