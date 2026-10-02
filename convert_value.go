@@ -135,8 +135,11 @@ func (x converter) unsettledOpen(d draft, n *node, t Type) Value {
 	if !openForNullsAlone(d, t) {
 		return x.openFailure(d, n, t)
 	}
-	if d.asPending != nil {
-		return d.asPending()
+	switch {
+	case d.pendingNull.n != nil:
+		return d.pendingNull
+	case d.of != nil:
+		return pendingCollection(d.whole, d.of)
 	}
 	// A tuple or an object: it holds what each member gives, the pending
 	// values among them (UN-025).
@@ -154,7 +157,7 @@ func openForNullsAlone(d draft, t Type) bool {
 	case d.members == nil:
 		// What holds no member: a deferred null, or a value made later at
 		// the type the levels above settle, as an unknown one is.
-		return d.later != nil && d.asPending != nil
+		return d.later != nil && d.pendingNull.n != nil
 	}
 	for i, md := range d.members {
 		name := ""
@@ -218,11 +221,16 @@ type parts struct {
 	// src is the container a set is made of, which says whether it is made
 	// at its own type before a level above widens it (madeAtItsOwnType).
 	src *node
-	// asPending gives what the conversion gives where its type is left open
-	// by members converting to a pending value known to be null alone, and
-	// nothing settles it: such a member as it converted, or the pending
-	// collection a collection holding one is (CV-021, CV-031).
-	asPending func() Value
+	// What the conversion gives where its type is left open by members
+	// converting to a pending value known to be null alone, and nothing
+	// settles it (CV-021, CV-031): such a member as it converted
+	// (pendingNull), or, for a collection, the pending collection of the
+	// constraint it was converted to (whole) and the container converted
+	// (of). They are fields rather than a function, which would cost every
+	// collection's conversion an allocation.
+	pendingNull Value
+	whole       Constraint
+	of          *node
 }
 
 // deferred returns the draft of a conversion that builds no container and
@@ -1116,7 +1124,7 @@ func (x converter) collection(v Value, c Constraint) draft {
 	if f != nil {
 		return finished(failedReading(n, f.diagnostic()))
 	}
-	r := draft{parts: &parts{members: drafts, names: h.names, asPending: func() Value { return pendingCollection(c, n) }}}
+	r := draft{parts: &parts{members: drafts, names: h.names, whole: c, of: n}}
 	if elem.t.open && !slices.ContainsFunc(drafts, leavesOpen) {
 		// No member leaves the element type open, so the collection does
 		// itself: it has no members, and nothing else settles a type
@@ -1183,7 +1191,7 @@ func deferNulls(drafts []memberDraft) bool {
 	}
 	for i, md := range drafts {
 		if r := md.done; r.n != nil && r.n.state == statePending {
-			drafts[i].draft = draft{typ: openType, parts: &parts{later: Null, asPending: func() Value { return r }}}
+			drafts[i].draft = draft{typ: openType, parts: &parts{later: Null, pendingNull: r}}
 		}
 	}
 	return false
