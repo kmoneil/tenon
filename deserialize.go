@@ -448,8 +448,65 @@ func (d *decoder) bareItem(marked bool) (Value, *decodeError) {
 		return v, nil
 	case k == itemError && n == 2:
 		return d.errorValue()
+	case k == itemHeld && n == 3:
+		return d.held(at)
 	}
 	return Value{}, d.malformed(kat, "an item of kind %d with %d parts", k, n)
+}
+
+// held reads the members of a pending tuple or object holding them (SE-010),
+// whose item at locates: a tuple's in order, or an object's [name, item]
+// pairs. Members of which none is pending, and an error value among them,
+// describe no value: a tuple or object of resolved members is written as a
+// resolved value, and no container holds an error value.
+func (d *decoder) held(at int) (Value, *decodeError) {
+	sat := d.r.Offset()
+	shape, err := d.r.ReadUint()
+	if err != nil {
+		return Value{}, d.cborError(err)
+	}
+	if shape > 1 {
+		return Value{}, d.malformed(sat, "a pending tuple or object of shape %d, not 0 or 1", shape)
+	}
+	n, err := d.r.ReadArray()
+	if err != nil {
+		return Value{}, d.cborError(err)
+	}
+	vals := make([]Value, 0, n)
+	attrs := make(map[string]Value, n)
+	for range n {
+		mat := d.r.Offset()
+		var name string
+		if shape == 1 {
+			if derr := d.array(2, "an attribute of a pending object"); derr != nil {
+				return Value{}, derr
+			}
+			var derr *decodeError
+			if name, derr = readName(d, attrs); derr != nil {
+				return Value{}, derr
+			}
+		}
+		m, derr := d.item()
+		if derr != nil {
+			return Value{}, derr
+		}
+		if m.IsError() {
+			return Value{}, d.malformed(mat, "an error value as a member of a pending tuple or object")
+		}
+		if shape == 1 {
+			attrs[name] = m
+		} else {
+			vals = append(vals, m)
+		}
+	}
+	v := Tuple(vals...)
+	if shape == 1 {
+		v = Object(attrs)
+	}
+	if !v.IsPending() {
+		return Value{}, d.malformed(at, "a pending tuple or object of which no member is pending, which is written as a resolved value")
+	}
+	return v, nil
 }
 
 // pendingLengths reads the range of the pending value v, of constraint c,

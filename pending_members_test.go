@@ -139,3 +139,57 @@ func TestConformance_EQ010_APendingTupleOrObjectIsItsMembers(t *testing.T) {
 		t.Errorf("%%#v is %s, want %s", got, want)
 	}
 }
+
+// TestConformance_SE010_APendingTupleOrObjectEncodesItsMembers pins the item
+// of a pending tuple or object holding members, [3, 0, items] and [3, 1,
+// [name, item] pairs], each member a whole item, read back as itself, marks
+// on it and on its members included; a failure within a member located at
+// it; and the input that describes no such value refused.
+func TestConformance_SE010_APendingTupleOrObjectEncodesItsMembers(t *testing.T) {
+	conformance.Covers(t, "SE-010", "SE-002", "UN-025")
+	p := tenon.Pending(tenon.Any())
+	const pendingAny, one = "83 01 81 02 00", "83 00 02 01"
+	for _, tt := range []struct {
+		name string
+		v    tenon.Value
+		item string
+	}{
+		{"a tuple", tenon.Tuple(p, n(1)), "83 03 00 82 " + pendingAny + " " + one},
+		{"an object", tenon.Object(map[string]tenon.Value{"b": n(1), "a": p}), "83 03 01 82 82 6161 " + pendingAny + " 82 6162 " + one},
+	} {
+		wantEncoding(t, tt.name, tt.v, tt.item)
+	}
+	for _, v := range []tenon.Value{
+		tenon.Tuple(tenon.Tuple(p), s("x")),
+		tenon.WithMarks(tenon.Tuple(p, n(1)), markPlain),
+		tenon.Tuple(tenon.WithMarks(p, markPlain), tenon.WithMarks(n(1), markPlain)),
+		tenon.Object(map[string]tenon.Value{"a": tenon.Narrow(tenon.Pending(tenon.ListOf(tenon.Any())), tenon.LengthMin(2)), "b": tenon.Unknown(num)}),
+	} {
+		b, _, ok := trySerialize(v)
+		if !ok {
+			t.Errorf("%v did not serialize", v)
+			continue
+		}
+		if got, failure, ok := tryDeserialize(b, decoders); !ok || !tenon.Identical(got, v) {
+			t.Errorf("%v came back as %v, %v", v, got, failure)
+		}
+	}
+	wantSerializeFailure(t, "an unencodable mark on a member", tenon.Tuple(p, tenon.WithMarks(n(1), stamp{id: "x"})),
+		wantDiag{tenon.CodeSerializeUnencodableMark, ".[1]"})
+
+	failed := "82 02 81 83 65 6170702e78 61 6d 80"
+	for _, tt := range []struct {
+		name, item string
+		code       tenon.Code
+	}{
+		{"no member pending", "83 03 00 81 " + one, tenon.CodeSerializeMalformed},
+		{"no member at all", "83 03 00 80", tenon.CodeSerializeMalformed},
+		{"an error value as a member", "83 03 00 82 " + pendingAny + " " + failed, tenon.CodeSerializeMalformed},
+		{"a name twice", "83 03 01 82 82 6161 " + pendingAny + " 82 6161 " + one, tenon.CodeSerializeMalformed},
+		{"an empty name", "83 03 01 81 82 60 " + pendingAny, tenon.CodeSerializeMalformed},
+		{"a shape that is neither", "83 03 02 81 " + pendingAny, tenon.CodeSerializeMalformed},
+		{"names out of order", "83 03 01 82 82 6162 " + one + " 82 6161 " + pendingAny, tenon.CodeSerializeNotCanonical},
+	} {
+		wantDecodeFailure(t, tt.name, document+tt.item, tt.code)
+	}
+}

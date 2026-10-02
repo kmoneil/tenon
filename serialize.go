@@ -30,6 +30,7 @@ const (
 	itemResolved = 0
 	itemPending  = 1
 	itemError    = 2
+	itemHeld     = 3 // a pending tuple or object holding its members
 )
 
 // Serialize returns the encoding of v, a CBOR document. A value that has an
@@ -142,20 +143,26 @@ func (e *encoder) fail(at int, code Code, message string) {
 }
 
 // item appends the item of v.
-func (e *encoder) item(b []byte, v Value) []byte {
+func (e *encoder) item(b []byte, v Value) []byte { return e.itemAt(b, v, 0) }
+
+// itemAt appends the item of v, which at locates: the value Serialize is
+// given, or a member of a pending tuple or object (SE-010).
+func (e *encoder) itemAt(b []byte, v Value, at int) []byte {
 	defer e.leave()
-	if !e.enter(0) {
+	if !e.enter(at) {
 		return b
 	}
 	n := v.n
 	if n.state.resolved() {
 		b = cbor.AppendArray(b, 3)
 		b = cbor.AppendUint(b, itemResolved)
-		b = e.typ(b, n.typ, 0)
-		return e.content(b, v, 0, nil)
+		b = e.typ(b, n.typ, at)
+		return e.content(b, v, at, nil)
 	}
 	var inner []byte
-	if n.state == statePending {
+	if p, ok := n.held(); ok {
+		inner = e.held(inner, p, at)
+	} else if n.state == statePending {
 		lo, hi := n.pendingLengths()
 		parts := 3
 		if lo > 0 || hi.set {
@@ -163,11 +170,11 @@ func (e *encoder) item(b []byte, v Value) []byte {
 		}
 		inner = cbor.AppendArray(inner, parts)
 		inner = cbor.AppendUint(inner, itemPending)
-		inner = e.constraint(inner, n.constraint(), 0)
+		inner = e.constraint(inner, n.constraint(), at)
 		inner = cbor.AppendUint(inner, uint64(nullnessCode(n.null)))
 		if parts == 4 {
 			// The range of a pending value holds its lengths alone (SE-010).
-			inner = e.rng(inner, &rangeData{lenLo: lo, lenHi: hi}, 0)
+			inner = e.rng(inner, &rangeData{lenLo: lo, lenHi: hi}, at)
 		}
 	} else {
 		diags := n.diagnostics()
@@ -184,7 +191,32 @@ func (e *encoder) item(b []byte, v Value) []byte {
 	b = cbor.AppendTag(b, tagMarked)
 	b = cbor.AppendArray(b, 2)
 	b = append(b, inner...)
-	return e.marks(b, n.markList(), 0)
+	return e.marks(b, n.markList(), at)
+}
+
+// held appends the item of a pending tuple or object holding the members p,
+// which at locates (SE-010): [3, 0, items] of a tuple's members in order, or
+// [3, 1, [name, item] pairs] of an object's in name order, each member a
+// whole item, located by its step.
+func (e *encoder) held(b []byte, p *pendingMembers, at int) []byte {
+	b = cbor.AppendArray(b, 3)
+	b = cbor.AppendUint(b, itemHeld)
+	if p.names == nil {
+		b = cbor.AppendUint(b, 0)
+	} else {
+		b = cbor.AppendUint(b, 1)
+	}
+	b = cbor.AppendArray(b, len(p.vals))
+	for i, m := range p.vals {
+		if p.names == nil {
+			b = e.itemAt(b, m, e.trail.down(at, element(i)))
+			continue
+		}
+		b = cbor.AppendArray(b, 2)
+		b = cbor.AppendText(b, p.names[i])
+		b = e.itemAt(b, m, e.trail.down(at, attributeNamed(p.names[i])))
+	}
+	return b
 }
 
 // nullnessCode returns the code of a pending value's nullness fact.
