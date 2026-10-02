@@ -107,7 +107,8 @@ func TestValuesThatWiden(t *testing.T) {
 		cty   cty.Value
 		tenon tenon.Value
 	}{
-		{"a list holding DynamicVal", cty.ListVal([]cty.Value{cty.DynamicVal}), tenon.Narrow(tenon.Pending(tenon.ListOf(tenon.Any())), tenon.NotNull())},
+		{"a list holding DynamicVal, its length kept", cty.ListVal([]cty.Value{cty.DynamicVal}),
+			tenon.Narrow(tenon.Pending(tenon.ListOf(tenon.Any())), tenon.NotNull(), tenon.LengthMin(1), tenon.LengthMax(1))},
 		{
 			"a tuple holding DynamicVal and a number",
 			cty.TupleVal([]cty.Value{cty.DynamicVal, cty.NumberIntVal(1)}),

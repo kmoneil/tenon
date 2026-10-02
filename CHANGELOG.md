@@ -20,7 +20,10 @@
   may be null as the pending null, and are a contradiction where it cannot
   be null. A document holding such a value has a pending item with a fourth
   element, its lengths, which earlier versions refuse as
-  `serialize.malformed`. The specification says so (`UN-024`, `SE-010`).
+  `serialize.malformed`. Converting such a value keeps its lengths as
+  converting an unknown collection does: both into a list or a map, and
+  into a set the greatest, with a least of one. The specification says so
+  (`UN-024`, `SE-010`, `CV-032`).
 
 ### Changed
 

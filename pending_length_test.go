@@ -159,3 +159,36 @@ func TestConformance_SE010_APendingValueCarriesItsLengths(t *testing.T) {
 		wantDecodeFailure(t, tt.name, document+tt.item, tt.code)
 	}
 }
+
+// TestConformance_CV032_APendingCollectionKeepsItsLengths holds the
+// conversion of a pending list, set or map to the lengths it keeps, as an
+// unknown collection's are kept: both into a list or a map, and into a set
+// the greatest and a least of one, members that convert to one value merging;
+// in the unknown value a constraint that gives a type converts it to, in the
+// pending value of one that does not, and in the unknown value that a pending
+// value of one type converts to; and kept whole converted to Any.
+func TestConformance_CV032_APendingCollectionKeepsItsLengths(t *testing.T) {
+	conformance.Covers(t, "CV-032", "UN-024")
+	lists, sets := tenon.ListOf(tenon.Any()), tenon.SetOf(tenon.Any())
+	two := tenon.Narrow(tenon.Pending(lists), tenon.LengthMin(2), tenon.LengthMax(5))
+	nums := tenon.ListType(num)
+	for _, tt := range []struct {
+		name string
+		v    tenon.Value
+		c    tenon.Constraint
+		p    tenon.Policy
+		want tenon.Value
+	}{
+		{"to a list of one type", two, tenon.ListOf(is(num)), safe, tenon.Narrow(tenon.Unknown(nums), tenon.LengthMin(2), tenon.LengthMax(5))},
+		{"to a set of one type", two, tenon.SetOf(is(num)), uns, tenon.Narrow(tenon.Unknown(tenon.SetType(num)), tenon.LengthMin(1), tenon.LengthMax(5))},
+		{"to a pending set", two, sets, uns, tenon.Narrow(tenon.Pending(sets), tenon.LengthMin(1), tenon.LengthMax(5))},
+		{"to a pending list", two, tenon.ListOf(tenon.OneOf(is(num), is(str))), safe, tenon.Narrow(tenon.Pending(tenon.ListOf(tenon.OneOf(is(num), is(str)))), tenon.LengthMin(2), tenon.LengthMax(5))},
+		{"to any", two, tenon.Any(), safe, two},
+		{"a pending set to a list", tenon.Narrow(tenon.Pending(sets), tenon.NotNull(), tenon.LengthMin(3)), lists, safe,
+			tenon.Narrow(tenon.Pending(lists), tenon.NotNull(), tenon.LengthMin(3))},
+		{"a pending list of one type to strings", tenon.Narrow(tenon.Pending(is(nums)), tenon.LengthMax(1)), tenon.ListOf(is(str)), uns,
+			tenon.Narrow(tenon.Unknown(tenon.ListType(str)), tenon.LengthMax(1))},
+	} {
+		wantValue(t, tt.name, tenon.Convert(tt.v, tt.c, tt.p), tt.want)
+	}
+}

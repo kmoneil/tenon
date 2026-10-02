@@ -24,7 +24,9 @@
 //     collection's length.
 //   - A cty value whose type holds cty.DynamicPseudoType, as cty.DynamicVal
 //     and the untyped null do, crosses as a pending value, whose constraint is
-//     that type's, and back as an unknown value or a null.
+//     that type's, and back as an unknown value or a null. A list, set or map
+//     of such a type keeps its length both ways: an unknown one's refinements,
+//     a known one's count, and a pending one's lengths.
 //   - A type constraint crosses as a constraint: cty.DynamicPseudoType is
 //     [tenon.Any], a list, set, map or tuple type is ListOf, SetOf, MapOf or
 //     TupleOf the constraints of its parts, and an object type an open
@@ -75,13 +77,12 @@
 //     closed ObjectWith.
 //   - A known cty value whose type holds cty.DynamicPseudoType, as a list
 //     holding cty.DynamicVal does, crosses as a pending value known not to be
-//     null, and what it holds is left behind: tenon's containers hold only
-//     values whose types are settled.
+//     null, and what it holds is left behind, its length aside: tenon's
+//     containers hold only values whose types are settled.
 //   - What one side's range says that the other's cannot is left behind: a
-//     string's length and a set's listed members going to cty, and a pending
-//     value's length going to tenon. A number bound that excludes itself
-//     includes itself in cty, since a number just past it can cross as the
-//     bound.
+//     string's length and a set's listed members going to cty. A number bound
+//     that excludes itself includes itself in cty, since a number just past
+//     it can cross as the bound.
 //   - A tenon mark on a container that tenon does not hand to the values
 //     within, one that is not deep, comes back from cty on every one of them.
 //

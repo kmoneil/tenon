@@ -655,9 +655,9 @@ func (x converter) pending(v Value, c Constraint) Value {
 					", and the type it allows does not convert: " + out.fail.message,
 			})
 		case out.pending:
-			return pendingValue(c, n.null)
+			return pendingConverted(n, c)
 		}
-		return narrowedUnknown(out.typ, n.null, nil)
+		return narrowedUnknown(out.typ, n.null, lengthsTo(n, out.typ))
 	}
 	if admitsNone(c) {
 		// Nothing converts to a constraint that no type satisfies, so no type
@@ -669,7 +669,7 @@ func (x converter) pending(v Value, c Constraint) Value {
 		})
 	}
 	if t, ok := resultType(c); ok {
-		return narrowedUnknown(t, n.null, nil)
+		return narrowedUnknown(t, n.null, lengthsTo(n, t))
 	}
 	if c.c.kind == ConstraintAny {
 		// Whatever type the value takes satisfies Any, so its own constraint
@@ -677,7 +677,51 @@ func (x converter) pending(v Value, c Constraint) Value {
 		u := withoutMarks(v)
 		return u
 	}
-	return pendingValue(c, n.null)
+	return pendingConverted(n, c)
+}
+
+// pendingConverted returns the pending value of c that the pending value n
+// converts to, keeping its nullness and, where c takes them, its lengths.
+func pendingConverted(n *node, c Constraint) Value {
+	r := pendingValue(c, n.null)
+	if countsMembers(c) {
+		if ns := keptLengths(n, admitsSet(c)); ns != nil {
+			r = Narrow(r, ns...)
+		}
+	}
+	return r
+}
+
+// lengthsTo returns the lengths that the pending value n keeps converted to
+// the type t (keptLengths), none where t is no list, set or map.
+func lengthsTo(n *node, t Type) []Narrowing {
+	switch t.t.kind {
+	case KindList, KindMap:
+		return keptLengths(n, false)
+	case KindSet:
+		return keptLengths(n, true)
+	}
+	return nil
+}
+
+// keptLengths returns the length narrowings that converting the pending value
+// n keeps of the lengths it records, as lengthNarrowings keeps an unknown
+// collection's (CV-032): both bounds, and where what it converts to may be a
+// set, whose members merge where they convert to one value, the greatest and
+// a least length of one where its least is above zero.
+func keptLengths(n *node, toSet bool) []Narrowing {
+	lo, hi := n.pendingLengths()
+	var ns []Narrowing
+	if lo > 0 {
+		if toSet {
+			lo = 1
+		}
+		ns = append(ns, LengthMin(lo))
+	}
+	if hi.set {
+		ns = append(ns, LengthMax(hi.n))
+	}
+	return ns
 }
 
 // known works out the conversion of a known value, whose content is in hand
