@@ -1,6 +1,9 @@
 package tenon
 
-import "slices"
+import (
+	"slices"
+	"sync"
+)
 
 // The conversion as it was before a container's members were built once: a
 // container converts its members, unifies their types, and fits each member
@@ -75,7 +78,88 @@ func (x converter) fittingValueOf(v Value, c Constraint) Value {
 // conversion in its own right, so the result carries the member's Propagate
 // marks, as an error result does.
 func (x converter) fittingMember(m Value, c Constraint) Value {
-	return x.carry(x.fittingValue(m, c), m.n)
+	r := x.fittingValue(m, c)
+	carried := x.carry(r, m.n)
+	if marks, ok := x.brought(r.n); ok {
+		x.bring(carried.n, marks)
+	}
+	return carried
+}
+
+// brought holds, for each conversion the reference makes, what a collection
+// it made found within its members as it converted them, before fitting them
+// to its element type: the redacting marks of the values whose types, as
+// their own conversions gave them, name attributes, which a level above takes
+// from within that collection (CV-033) however the fitting widened the types
+// within it. It is kept apart, by the conversion's memo, since the reference
+// adds nothing to the conversion's types.
+var brought = struct {
+	sync.Mutex
+	of map[*convertMemo]map[*node][]Mark
+}{of: map[*convertMemo]map[*node][]Mark{}}
+
+// brought returns what the collection n found within its members, and
+// whether n is a collection the reference made.
+func (x converter) brought(n *node) ([]Mark, bool) {
+	brought.Lock()
+	defer brought.Unlock()
+	marks, ok := brought.of[x.memo][n]
+	return marks, ok
+}
+
+// bring records what the collection n found within its members.
+func (x converter) bring(n *node, marks []Mark) {
+	brought.Lock()
+	defer brought.Unlock()
+	if brought.of[x.memo] == nil {
+		brought.of[x.memo] = map[*node][]Mark{}
+	}
+	brought.of[x.memo][n] = marks
+}
+
+// forgetBrought drops what the conversion with memo m recorded.
+func forgetBrought(m *convertMemo) {
+	brought.Lock()
+	defer brought.Unlock()
+	delete(brought.of, m)
+}
+
+// broughtStructure is redactedStructure as the reference reads it: the
+// redacting marks of the values among members, at any depth, that carry one
+// and whose type names attributes, taking what a collection within found as
+// it made it in place of the types its fitting widened.
+func (x converter) broughtStructure(members []Value) []Mark {
+	var marks []Mark
+	var walk func(n *node)
+	walk = func(n *node) {
+		if ms := n.redactingMarks(); ms != nil && n.state != stateError {
+			if namesAttributes(n.typ) {
+				marks, _ = mergeMarks(marks, ms)
+			}
+			return
+		}
+		if within, ok := x.brought(n); ok {
+			marks, _ = mergeMarks(marks, within)
+			return
+		}
+		if !n.markedWithin {
+			return
+		}
+		switch data := n.data.(type) {
+		case []Value:
+			for _, m := range data {
+				walk(m.n)
+			}
+		case []mapEntry:
+			for _, e := range data {
+				walk(e.val.n)
+			}
+		}
+	}
+	for _, m := range members {
+		walk(m.n)
+	}
+	return marks
 }
 
 // fittingKnown converts a known value, whose content is in hand though a member of it
@@ -229,9 +313,10 @@ func (x converter) fittingCollection(v Value, c Constraint) Value {
 	// from a redacted member shows its structure in the result's type and
 	// in its siblings: the result carries that member's redacting marks
 	// (CV-033). A constraint that settles the type takes nothing from them.
+	within := x.broughtStructure(converted)
 	var derived []Mark
 	if _, fixed := x.memo.resultType(d.elem); withhold && !fixed {
-		derived = redactedStructure(converted)
+		derived = within
 	}
 	for i, r := range converted {
 		converted[i] = x.fit(r, elem)
@@ -252,6 +337,7 @@ func (x converter) fittingCollection(v Value, c Constraint) Value {
 	if derived != nil {
 		result = WithMarks(result, derived...)
 	}
+	x.bring(result.n, within)
 	return result
 }
 
