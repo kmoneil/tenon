@@ -39,9 +39,12 @@ const kindOpen = KindCapsule + 1
 // element type of a collection converted where there is nothing to unify, as
 // for an empty tuple converted to ListOf(Any). It unifies with any type to
 // that type (CV-044), so the members beside it settle it, and a member whose
-// type holds it is built at the type they settle (fillOpen). A conversion
-// whose type still holds it at the top fails (openFailure): no value is ever
-// made of it, and no type a program sees holds it.
+// type holds it is built at the type they settle (fillOpen). A member that
+// converts to a pending value known to be null leaves its whole type open so
+// (deferNulls). A conversion whose type still holds it at the top fails
+// (openFailure), or, where only such nulls leave it open, gives the pending
+// value they would have made it (unsettledOpen): no value is ever made of it,
+// and no type a program sees holds it.
 var openType = func() Type {
 	d := &typeData{id: newTypeID(), kind: kindOpen, open: true}
 	d.shape = shapeOf(d)

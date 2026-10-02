@@ -202,6 +202,15 @@
     {"id":"DI-034","area":"DI","withdrawn":false,"outline":false},
     {"id":"DI-035","area":"DI","withdrawn":false,"outline":false},
     {"id":"DI-036","area":"DI","withdrawn":false,"outline":false},
-    {"id":"DI-037","area":"DI","withdrawn":false,"outline":false}
+    {"id":"DI-037","area":"DI","withdrawn":false,"outline":false},
+    {"id":"JS-001","area":"JS","withdrawn":false,"outline":true},
+    {"id":"JS-002","area":"JS","withdrawn":false,"outline":true},
+    {"id":"JS-003","area":"JS","withdrawn":false,"outline":true},
+    {"id":"JS-004","area":"JS","withdrawn":false,"outline":true},
+    {"id":"JS-010","area":"JS","withdrawn":false,"outline":true},
+    {"id":"JS-011","area":"JS","withdrawn":false,"outline":true},
+    {"id":"JS-020","area":"JS","withdrawn":false,"outline":true},
+    {"id":"JS-021","area":"JS","withdrawn":false,"outline":true},
+    {"id":"JS-022","area":"JS","withdrawn":false,"outline":true}
   ]
 }

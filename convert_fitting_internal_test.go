@@ -104,6 +104,100 @@ func (x converter) fittingMember(m Value, c Constraint) Value {
 	return carried
 }
 
+// keptNulls holds the conversions the reference makes without deferring a
+// member converted to a pending value known to be null, as the conversion did
+// before CV-021 deferred it, which settled shows what a type such nulls alone
+// leave open gives. It is kept apart as brought is.
+var keptNulls = struct {
+	sync.Mutex
+	of map[*convertMemo]bool
+}{of: map[*convertMemo]bool{}}
+
+// keepNulls has the reference converting with memo m keep such members as
+// they converted, each making its collection pending (CV-031).
+func keepNulls(m *convertMemo) {
+	keptNulls.Lock()
+	defer keptNulls.Unlock()
+	keptNulls.of[m] = true
+}
+
+// fittingNullsDeferred makes each member converted to a pending value known
+// to be null the null of the type left open, carrying its marks, which the
+// levels above fit to the type they settle as they fit any member, as the
+// conversion defers such a member (deferNulls). It reports whether a member
+// converted to any other pending value, which keeps the collection pending,
+// and then makes none; it makes none either where the conversion keeps them
+// (keepNulls).
+func (x converter) fittingNullsDeferred(converted []Value) bool {
+	keptNulls.Lock()
+	kept := keptNulls.of[x.memo]
+	keptNulls.Unlock()
+	if kept || slices.ContainsFunc(converted, func(r Value) bool { return r.n.state == statePending && !pendingNull(r.n) }) {
+		return true
+	}
+	for i, r := range converted {
+		if r.n.state == statePending {
+			converted[i] = WithMarks(Null(openType), r.n.markList()...)
+		}
+	}
+	return false
+}
+
+// heldOrKnown returns the members of n: a known container's, or a pending
+// tuple's or object's.
+func heldOrKnown(n *node) []Value {
+	switch data := n.data.(type) {
+	case *pendingMembers:
+		return data.vals
+	case []Value:
+		if n.state == stateKnown {
+			return data
+		}
+	}
+	return nil
+}
+
+// settled returns a, what the reference made, where the nulls of
+// fittingNullsDeferred leave its type open and nothing above settles it, as
+// the conversion's unsettledOpen gives it: a collection is b, what the
+// reference makes of it keeping those nulls, which is pending as it was
+// before CV-021 deferred them (CV-031); a tuple or an object holds what each
+// member gives (UN-025).
+func settled(a, b Value) Value {
+	n := a.n
+	if !holdsOpen(n) {
+		return a
+	}
+	_, held := n.held()
+	if !held && (n.state != stateKnown || n.typ.t.kind != KindTuple && n.typ.t.kind != KindObject) {
+		return b
+	}
+	var names []string
+	switch {
+	case held:
+		names = n.data.(*pendingMembers).names
+	case n.typ.t.kind == KindObject:
+		for _, at := range n.typ.t.attrs {
+			names = append(names, at.name)
+		}
+	}
+	vals, before := slices.Clone(heldOrKnown(n)), heldOrKnown(b.n)
+	if len(before) != len(vals) {
+		return b
+	}
+	for i, m := range vals {
+		vals[i] = settled(m, before[i])
+	}
+	if names == nil {
+		return Tuple(vals...)
+	}
+	attrs := make(map[string]Value, len(names))
+	for i, name := range names {
+		attrs[name] = vals[i]
+	}
+	return Object(attrs)
+}
+
 // brought holds, for each conversion the reference makes, what a collection
 // it made found within its members as it converted them, before fitting them
 // to its element type: the redacting marks of the values whose types, as
@@ -135,11 +229,15 @@ func (x converter) bring(n *node, marks []Mark) {
 	brought.of[x.memo][n] = marks
 }
 
-// forgetBrought drops what the conversion with memo m recorded.
+// forgetBrought drops what the conversion with memo m recorded: what its
+// collections brought, and whether it keeps nulls (keepNulls).
 func forgetBrought(m *convertMemo) {
 	brought.Lock()
-	defer brought.Unlock()
 	delete(brought.of, m)
+	brought.Unlock()
+	keptNulls.Lock()
+	delete(keptNulls.of, m)
+	keptNulls.Unlock()
 }
 
 // broughtStructure is redactedStructure as the reference reads it: the
@@ -287,6 +385,9 @@ func (x converter) fittingCollection(v Value, c Constraint) Value {
 	converted, e, failed, pending := x.fittingMembers(h, func(int) Constraint { return d.elem })
 	if failed {
 		return e
+	}
+	if pending {
+		pending = x.fittingNullsDeferred(converted)
 	}
 	withhold := x.typeWithheld(n)
 	types := make([]Type, 0, len(converted)+2)

@@ -86,8 +86,19 @@ func ConvertBothWays(v Value, c Constraint, p Policy) (converted, fitted Value) 
 	memo := &convertMemo{}
 	fitted = converter{policy: p, carried: &carrying{}, memo: memo}.fittingValue(v, c)
 	forgetBrought(memo)
-	if holdsOpen(fitted.n) && converted.IsError() {
+	switch {
+	case !holdsOpen(fitted.n):
+	case converted.IsError():
 		fitted = converted
+	default:
+		// Only nulls whose type nothing gives can leave it open where the
+		// conversion settles a value; where nothing settles them, their
+		// collections are pending as before they were deferred (CV-021).
+		kept := &convertMemo{}
+		keepNulls(kept)
+		before := converter{policy: p, carried: &carrying{}, memo: kept}.fittingValue(v, c)
+		forgetBrought(kept)
+		fitted = settled(fitted, before)
 	}
 	return converted, fitted
 }
