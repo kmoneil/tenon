@@ -41,6 +41,8 @@ var specCodes = []string{
 	"encode.marshal_failed",
 	"encode.not_a_number",
 	"encode.untyped_nil",
+	"json.invalid_syntax",
+	"json.too_deep",
 	"map.duplicate_key",
 	"number.divide_by_zero",
 	"number.invalid_syntax",

@@ -8,7 +8,7 @@
 # The tests run with -count=1 because a cached result records nothing.
 RULECOV := $(CURDIR)/.rulecov
 
-.PHONY: check check-slow determinism fuzz fuzz-parse fuzz-string fuzz-string-xtext fuzz-deserialize fuzz-convert release-fuzz growth bench bench-smoke rules codes report lint vuln release-notes ctytenon-released
+.PHONY: check check-slow determinism fuzz fuzz-parse fuzz-string fuzz-string-xtext fuzz-deserialize fuzz-convert fuzz-json release-fuzz growth bench bench-smoke rules codes report lint vuln release-notes ctytenon-released
 
 # tools/unigen is a module of its own, which ./... does not reach, so that
 # tenon requires no other module: its tests hold internal/uni to Unicode's own
@@ -82,7 +82,7 @@ determinism:
 # that every test run replays. FuzzStringAgainstXText, in tools/unigen, holds
 # string construction to golang.org/x/text, and runs only below go1.27.
 FUZZTIME ?= 30m
-fuzz: fuzz-parse fuzz-string fuzz-string-xtext fuzz-deserialize fuzz-convert
+fuzz: fuzz-parse fuzz-string fuzz-string-xtext fuzz-deserialize fuzz-convert fuzz-json
 fuzz-parse:
 	go test -run='^$$' -fuzz='^FuzzParse$$' -fuzztime=$(FUZZTIME) ./internal/decimal
 fuzz-string:
@@ -93,12 +93,14 @@ fuzz-deserialize:
 	go test -run='^$$' -fuzz='^FuzzDeserialize$$' -fuzztime=$(FUZZTIME) .
 fuzz-convert:
 	go test -run='^$$' -fuzz='^FuzzConvert$$' -fuzztime=$(FUZZTIME) .
+fuzz-json:
+	go test -run='^$$' -fuzz='^FuzzParseJSON$$' -fuzztime=$(FUZZTIME) .
 
 # release-fuzz is the fuzzing a release asks for: every target at once for five
 # minutes. The depth is CI's, which fuzzes each for thirty minutes every night
 # (.github/workflows/fuzz.yml), and keeps what it found from night to night.
 release-fuzz:
-	$(MAKE) -j5 fuzz FUZZTIME=5m
+	$(MAKE) -j6 fuzz FUZZTIME=5m
 
 # growth runs every benchmark once and reads the pairs among them, each a
 # benchmark measured at a size and at four times that size: where the larger

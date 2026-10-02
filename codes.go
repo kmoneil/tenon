@@ -25,6 +25,8 @@ const (
 	CodeEncodeMarshalFailed         Code = "encode.marshal_failed"
 	CodeEncodeNotANumber            Code = "encode.not_a_number"
 	CodeEncodeUntypedNil            Code = "encode.untyped_nil"
+	CodeJSONInvalidSyntax           Code = "json.invalid_syntax"
+	CodeJSONTooDeep                 Code = "json.too_deep"
 	CodeMapDuplicateKey             Code = "map.duplicate_key"
 	CodeNumberDivideByZero          Code = "number.divide_by_zero"
 	CodeNumberInvalidSyntax         Code = "number.invalid_syntax"

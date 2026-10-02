@@ -405,6 +405,7 @@ func TestConformance_TY001_EveryValueHasOneConcreteType(t *testing.T) {
 		"Div":               tenon.Div(one, one),
 		"Mod":               tenon.Mod(one, one),
 		"Convert":           tenon.Convert(one, tenon.Exactly(str), tenon.Unsafe),
+		"ParseJSON":         parsed(t, `[1, true]`, tenon.Any(), tenon.Safe),
 		"WithMarks":         tenon.WithMarks(one, stamp{id: "m"}),
 		"Unmark":            unmarked(tenon.WithMarks(one, stamp{id: "m"})),
 		"UnmarkDeep":        unmarkedDeep(tenon.List(num, tenon.WithMarks(one, stamp{id: "m"}))),
@@ -416,7 +417,7 @@ func TestConformance_TY001_EveryValueHasOneConcreteType(t *testing.T) {
 		"Tuple": tenon.TupleType(num, bl), "Object": tenon.ObjectType(map[string]tenon.Type{"a": num}),
 		"Narrow": num, "Resolve": str, "And": bl, "Or": bl, "Not": bl, "IsNull": bl,
 		"Equals": bl, "LessThan": bl, "Length": num, "Contains": bl,
-		"Add": num, "Sub": num, "Mul": num, "Div": num, "Mod": num, "Convert": str,
+		"Add": num, "Sub": num, "Mul": num, "Div": num, "Mod": num, "Convert": str, "ParseJSON": tenon.TupleType(num, bl),
 		"WithMarks": num, "Unmark": num, "UnmarkDeep": tenon.ListType(num),
 	}
 	// A value with no type is the other half of the rule.

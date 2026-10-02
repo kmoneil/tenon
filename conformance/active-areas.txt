@@ -15,6 +15,7 @@ CV
 DI
 EQ
 GO
+JS
 ER
 MK
 NU
