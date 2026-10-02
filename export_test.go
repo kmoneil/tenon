@@ -86,10 +86,27 @@ func ConvertBothWays(v Value, c Constraint, p Policy) (converted, fitted Value) 
 	memo := &convertMemo{}
 	fitted = converter{policy: p, carried: &carrying{}, memo: memo}.fittingValue(v, c)
 	forgetBrought(memo)
-	if t := fitted.n.typ.t; t != nil && t.open && converted.IsError() {
+	if holdsOpen(fitted.n) && converted.IsError() {
 		fitted = converted
 	}
 	return converted, fitted
+}
+
+// holdsOpen reports whether n is of a type still open, or holds a value that
+// is, as a pending tuple the reference made around a member it left open may.
+func holdsOpen(n *node) bool {
+	if t := n.typ.t; t != nil && t.open {
+		return true
+	}
+	switch data := n.data.(type) {
+	case *pendingMembers:
+		return slices.ContainsFunc(data.vals, func(m Value) bool { return holdsOpen(m.n) })
+	case []Value:
+		if n.state == stateKnown {
+			return slices.ContainsFunc(data, func(m Value) bool { return holdsOpen(m.n) })
+		}
+	}
+	return false
 }
 
 // CarryBothWays gives each value of into, what the value at its index in from

@@ -23,6 +23,12 @@
     which earlier versions refuse as `serialize.malformed`.
   - `Equals`, and `Contains` through it, compare it member by member, and
     a deep mark on it reaches its members.
+  - Converting a tuple or object one of whose members converts to a
+    pending value, as an unknown map does to an open `ObjectWith`, gives
+    the pending tuple or object holding what the members convert to, where
+    it gave a bare pending value and lost them. A list, set or map
+    converted so gives the pending collection with the number of members
+    as its length.
 
   A list, set or map of a pending member still panics, its element type
   being given. The specification says so (`UN-025`), a new rule: 202 rules,
