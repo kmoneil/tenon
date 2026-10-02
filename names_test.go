@@ -72,8 +72,8 @@ func TestConformance_TY018_NamesFromDataFailAsData(t *testing.T) {
 	}
 	// A program's own mistake still panics, before any fault in the names is
 	// reported.
-	mustPanicUsage(t, "is a pending value", func() {
-		tenon.Object(map[string]tenon.Value{"": tenon.Pending(tenon.Any())})
+	mustPanicUsage(t, "use of the zero Value", func() {
+		tenon.Object(map[string]tenon.Value{"": {}})
 	})
 }
 

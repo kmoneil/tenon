@@ -1106,6 +1106,10 @@ func redactedStructure(members []Value) []Mark {
 			for _, m := range data {
 				walk(m.n)
 			}
+		case *pendingMembers:
+			for _, m := range data.vals {
+				walk(m.n)
+			}
 		case []mapEntry:
 			for _, e := range data {
 				walk(e.val.n)
@@ -1493,6 +1497,10 @@ func marksWithin(n *node, keep func(Mark) bool) []Mark {
 			for _, m := range data {
 				visit(m.n)
 			}
+		case *pendingMembers:
+			for _, m := range data.vals {
+				visit(m.n)
+			}
 		case []mapEntry:
 			for _, e := range data {
 				visit(e.val.n)
@@ -1542,6 +1550,8 @@ func (x converter) holdsIsolating(n *node) bool {
 	switch data := n.data.(type) {
 	case []Value:
 		r = slices.ContainsFunc(data, func(m Value) bool { return holds(m.n) })
+	case *pendingMembers:
+		r = slices.ContainsFunc(data.vals, func(m Value) bool { return holds(m.n) })
 	case []mapEntry:
 		r = slices.ContainsFunc(data, func(e mapEntry) bool { return holds(e.val.n) })
 	}
@@ -1567,6 +1577,8 @@ func (x converter) holdsRedacting(n *node) bool {
 	switch data := n.data.(type) {
 	case []Value:
 		r = slices.ContainsFunc(data, func(m Value) bool { return holds(m.n) })
+	case *pendingMembers:
+		r = slices.ContainsFunc(data.vals, func(m Value) bool { return holds(m.n) })
 	case []mapEntry:
 		r = slices.ContainsFunc(data, func(e mapEntry) bool { return holds(e.val.n) })
 	}

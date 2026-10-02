@@ -31,9 +31,17 @@ func Identical(a, b Value) bool {
 		return slices.EqualFunc(x, y, Diagnostic.Equal)
 	case statePending:
 		// A pending value is its constraint and what it says about null and
-		// its length.
+		// its length, and the members it holds, where it holds them.
 		loA, hiA := na.pendingLengths()
 		loB, hiB := nb.pendingLengths()
+		pa, heldA := na.held()
+		pb, heldB := nb.held()
+		switch {
+		case heldA != heldB:
+			return false
+		case heldA:
+			return slices.Equal(pa.names, pb.names) && slices.EqualFunc(pa.vals, pb.vals, Identical)
+		}
 		return na.null == nb.null && loA == loB && hiA == hiB && na.constraint().equal(nb.constraint())
 	}
 	if na.typ != nb.typ {
