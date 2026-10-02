@@ -1,6 +1,62 @@
 # Changelog
 
-## Unreleased
+## 0.13.0 (2026-10-02)
+
+A value can now hold what is known of it before its type is. A pending
+list, set or map can be narrowed by its length, and a tuple or object one of
+whose members is pending is the pending value holding its members, where
+`Tuple` and `Object` panicked: as go-cty's tuple of a dynamic value and a
+number holds the number, so does tenon's. A conversion keeps both where it
+meets them. A member that settles no element type, as an empty list beside
+lists of strings, takes the type its siblings settle, as go-cty does, where
+the conversion failed. And a set that a conversion makes inside a collection
+that widens it is the set at its own type, widened, which closes a leak of a
+redacted value's attribute names. It implements version 0.11.0 of the tenon
+specification, which adds `UN-025` and amends `VA-001`, `UN-023`, `UN-024`,
+`EQ-010`, `CV-021`, `CV-031`, `CV-032`, `CV-033`, `CV-044`, `SE-010`,
+`GO-041`, `DI-010`, `DI-032` and `MK-008`: 202 rules.
+
+**Upgrade if a redacting mark guards a value you convert into sets.** From
+0.10.0 to 0.12.0, converting a value that held a redacted value inside a
+member of a set, to a collection whose element type widens the set's, gave
+a collection without the redacting mark: its display form and `%#v` stated
+its type, and with it the attribute names and the shape of what the
+redacted value held. Converting `[[{"a0": [s, []]}]]`, where `s` is a
+string carrying a redacting mark `"secret"`, to
+`ListOf(SetOf(ObjectWith(nil, false)))` displayed as
+`list(set(object({"a0": tuple([string, tuple([])])})))[redacted("secret")]`.
+It is now `redacted("secret")` whole, as it was in 0.9.0.
+
+The minor version moves because results change: conversions that failed
+succeed, one that gave a bare pending value gives the pending tuple or
+object holding what its members convert to, two panics now give values,
+and documents can hold two things earlier versions cannot read.
+
+**Upgrading from 0.12.0.** Documents 0.12.0 wrote decode as they did, and
+values encode to the same bytes. The compiler finds nothing. These it does
+not find:
+
+- `Tuple` and `Object` given a pending member return the pending value
+  holding the members, and `Narrow` takes `LengthMin` and `LengthMax` on a
+  pending value whose constraint admits only lists, sets and maps, where
+  each panicked.
+- A pending value may hold members, which `Len`, `Index`, `Elements`,
+  `ElementsSeq`, `Attribute`, `LookupAttribute` and `Attributes` read. A
+  walker that steps into a value where `HasContent` is true does not reach
+  them; one that asks the new `HasMembers` does. `Type` still panics on
+  it, as on any pending value.
+- Converting a container one of whose members converts to a pending value
+  gives the pending tuple or object holding the converted members, or a
+  pending list, set or map of their number, where it gave a bare pending
+  value.
+- A conversion that failed with `convert.no_common_type` because a member,
+  as an empty list, settled no element type now succeeds where its
+  siblings settle one.
+- A document holding a pending value narrowed by its length, or a pending
+  tuple or object holding members, is refused by 0.12.0 and earlier as
+  `serialize.malformed`.
+
+**What `CONFORMANCE.md` states.** 202 of 202.
 
 ### Added
 
@@ -93,7 +149,9 @@
     unknown list; it is now the known set of the empty list and null, as
     converting the first member alone gives.
   - A redacting mark it gathered from inside a member did not reach the
-    collection holding it, whose type shows the set's attribute names.
+    collection holding it, whose type shows the set's attribute names, so
+    the collection's display form and `%#v` showed them, from 0.10.0 (see
+    above).
 
   A set is made at its own type first only where that changes it, so the
   conversion still works in proportion to its result. The specification
