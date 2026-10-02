@@ -34,7 +34,8 @@ The other targets:
 | `make determinism` | Runs the tests twice, in shuffled orders and on different numbers of processors, writing the canonical output they emit (encodings, display forms, diffs, conversions) to `.emit/`, and fails unless both runs wrote the same bytes. CI does this every night. |
 | `make fuzz` | Runs each fuzz target (the number parser, string construction, string construction against `golang.org/x/text`, decoding, and conversion) for `FUZZTIME`, 30 minutes by default; `make -j5 fuzz` runs them at once. An input that fails is saved under the package's `testdata/fuzz`, where it runs with the tests from then on. CI does this every night. |
 | `make release-fuzz` | Every fuzz target at once for five minutes: the fuzzing a release asks for, the depth coming from the nightly runs. |
-| `make release-notes VERSION=x.y.z` | Prints that version's section of `CHANGELOG.md`, which becomes the GitHub Release when its tag is pushed. |
+| `make release-notes VERSION=x.y.z` | Prints that version's section of `CHANGELOG.md`, or of `ctytenon/CHANGELOG.md` for `VERSION=ctytenon/vx.y.z`, which becomes the GitHub Release when its tag is pushed. |
+| `make ctytenon-released` | Runs `ctytenon`'s tests against the tenon its `go.mod` requires, as a program importing the bridge gets it, rather than against the tenon in the working tree, which its `replace` gives it here. Run it before releasing the bridge. |
 | `make growth` | Measures each benchmark at a size and at four times that size, and fails where the larger allocates more than five times what the smaller does: work growing faster than its input. CI does this every night. |
 | `make lint` | Runs staticcheck, at the version the Makefile names, over every package. CI requires it of every change. |
 | `make report` | Runs the tests, recording the rules they cover, and regenerates `CONFORMANCE.md`. |
@@ -67,7 +68,7 @@ The other targets:
 
 - One change per pull request, with the tests that hold it, and an entry in
   `CHANGELOG.md` under Unreleased for anything a user of the library would
-  notice.
+  notice, or in `ctytenon/CHANGELOG.md` for the bridge.
 - Doc comments and the README say what the code does after the change.
 - A commit message says what changed and why.
 - `main` takes only pull requests, merged by rebase or squash so that history

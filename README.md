@@ -248,8 +248,9 @@ v, err := b.FromCty(config)
 ```
 
 The module's documentation says what crosses, what does not, and where the
-two differ. Its first release is still to come; until then it builds only
-within this repository, beside the tenon it requires.
+two differ, and its own `CHANGELOG.md` what each release holds:
+
+    go get github.com/kmoneil/tenon/ctytenon@v0.1.0
 
 | | go-cty v1.19 | tenon |
 | --- | --- | --- |

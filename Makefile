@@ -8,7 +8,7 @@
 # The tests run with -count=1 because a cached result records nothing.
 RULECOV := $(CURDIR)/.rulecov
 
-.PHONY: check check-slow determinism fuzz fuzz-parse fuzz-string fuzz-string-xtext fuzz-deserialize fuzz-convert release-fuzz growth bench bench-smoke rules codes report lint vuln release-notes
+.PHONY: check check-slow determinism fuzz fuzz-parse fuzz-string fuzz-string-xtext fuzz-deserialize fuzz-convert release-fuzz growth bench bench-smoke rules codes report lint vuln release-notes ctytenon-released
 
 # tools/unigen is a module of its own, which ./... does not reach, so that
 # tenon requires no other module: its tests hold internal/uni to Unicode's own
@@ -153,10 +153,26 @@ vuln:
 	go run $(GOVULNCHECK) ./...
 	cd $(CTYTENON) && go run $(GOVULNCHECK) ./...
 
-# release-notes prints the notes of VERSION, its section of CHANGELOG.md,
-# which the release workflow (.github/workflows/release.yml) makes the GitHub
-# Release of a pushed tag from. Check them before tagging:
-# make release-notes VERSION=0.6.0.
+# release-notes prints the notes of VERSION, its section of CHANGELOG.md, or
+# of ctytenon/CHANGELOG.md for a version of the bridge, as in
+# VERSION=ctytenon/v0.1.0, which the release workflow
+# (.github/workflows/release.yml) makes the GitHub Release of a pushed tag
+# from. Check them before tagging: make release-notes VERSION=0.6.0.
 release-notes:
 	@test -n '$(VERSION)' || { echo 'release-notes: set VERSION, as in VERSION=0.6.0'; exit 1; }
-	@go run ./tools/relnotes '$(VERSION)'
+	@case '$(VERSION)' in \
+	  ctytenon/*) go run ./tools/relnotes -changelog $(CTYTENON)/CHANGELOG.md '$(patsubst ctytenon/%,%,$(VERSION))' ;; \
+	  *) go run ./tools/relnotes '$(VERSION)' ;; \
+	esac
+
+# ctytenon-released runs the bridge's tests against the tenon its go.mod
+# requires, as a program that imports the bridge gets it. In this repository
+# the bridge builds beside the tenon in the working tree (go.mod's replace,
+# which only this repository sees), so a release of the bridge runs this
+# first: a bridge that reaches for what the tenon it requires does not have
+# fails here rather than in a program that imports it.
+ctytenon-released:
+	@d=$$(mktemp -d) && trap 'rm -rf "$$d"' EXIT && cp -R $(CTYTENON)/. "$$d" && cd "$$d" && \
+	  go mod edit -dropreplace github.com/kmoneil/tenon && \
+	  GOFLAGS=-mod=mod go test -count=1 ./... && \
+	  echo 'ctytenon-released: the bridge passes against the tenon its go.mod requires'
