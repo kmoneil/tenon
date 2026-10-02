@@ -346,9 +346,53 @@ type pendingRange struct {
 	lenHi lengthBound
 }
 
+// pendingMembers is what a pending tuple or object holds (UN-025): its
+// members, at least one of them pending, in order or by name, an object's
+// names beside them in name order, and the constraint they give.
+type pendingMembers struct {
+	c     Constraint
+	vals  []Value
+	names []string // an object's attribute names; nil for a tuple
+}
+
+// held returns what the pending value n holds, where it is a pending tuple or
+// object holding members.
+func (n *node) held() (*pendingMembers, bool) {
+	p, ok := n.data.(*pendingMembers)
+	return p, ok
+}
+
+// heldObject is held for a pending object alone.
+func (n *node) heldObject() (*pendingMembers, bool) {
+	p, ok := n.held()
+	return p, ok && p.names != nil
+}
+
+// heldTuple is held for a pending tuple alone.
+func (n *node) heldTuple() (*pendingMembers, bool) {
+	p, ok := n.held()
+	return p, ok && p.names == nil
+}
+
+// attribute returns the member of the pending object p with the given name,
+// which is normalized before the lookup, and whether there is one.
+func (p *pendingMembers) attribute(name string) (Value, bool) {
+	if !utf8.ValidString(name) {
+		return Value{}, false
+	}
+	i, found := slices.BinarySearch(p.names, uni.NFC(name))
+	if !found {
+		return Value{}, false
+	}
+	return p.vals[i], true
+}
+
 // constraint returns the constraint that the pending value n carries.
 func (n *node) constraint() Constraint {
-	if p, ok := n.data.(*pendingRange); ok {
+	switch p := n.data.(type) {
+	case *pendingRange:
+		return p.c
+	case *pendingMembers:
 		return p.c
 	}
 	return n.data.(Constraint)
@@ -432,6 +476,23 @@ func Resolve(v Value, t Type) Value {
 		}
 		usagePanic("Resolve called with type %s, which does not satisfy the constraint %s of the pending value", t, c)
 	}
+	if p, ok := n.held(); ok {
+		// Each member resolves to its part of t, and the tuple or object of t
+		// holds them (UN-025): t satisfying the constraint the members give,
+		// a member already resolved has its part's type.
+		vals := make([]Value, len(p.vals))
+		for i, m := range p.vals {
+			if p.names != nil {
+				vals[i] = resolvedMember(m, t.t.attrs[i].typ)
+			} else {
+				vals[i] = resolvedMember(m, t.t.elems[i])
+			}
+		}
+		if p.names != nil {
+			return carryMarks(v, objectOf(t, vals))
+		}
+		return carryMarks(v, tupleOf(t, vals))
+	}
 	if n.null == nullOnly {
 		return carryMarks(v, Null(t))
 	}
@@ -447,6 +508,35 @@ func Resolve(v Value, t Type) Value {
 		ns = append(ns, LengthMax(hi.n))
 	}
 	return carryMarks(v, Narrow(Unknown(t), ns...))
+}
+
+// resolvedMember returns the member m of a pending tuple or object resolved to
+// t: resolved where it is pending, and as it is otherwise.
+func resolvedMember(m Value, t Type) Value {
+	if m.n.state == statePending {
+		return Resolve(m, t)
+	}
+	return m
+}
+
+// HasMembers reports whether v holds members to read: a known list, set, map,
+// tuple or object, whose members can be read whether or not they are known,
+// or a pending tuple or object holding its members, which Len, Index,
+// Elements, ElementsSeq, Attribute, LookupAttribute and Attributes read as
+// they read a tuple's or an object's.
+func (v Value) HasMembers() bool {
+	n := v.data()
+	if _, ok := n.held(); ok {
+		return true
+	}
+	if n.state != stateKnown {
+		return false
+	}
+	switch n.typ.t.kind {
+	case KindList, KindSet, KindMap, KindTuple, KindObject:
+		return true
+	}
+	return false
 }
 
 // Unknown returns the unknown value of type t: the value that could still be
@@ -781,6 +871,12 @@ func (v Value) writeUnmarked(b *textWriter) {
 		b.WriteByte(')')
 		return
 	case statePending:
+		if p, ok := n.held(); ok {
+			// It displays as the tuple or object it will be, its members in
+			// place (UN-025).
+			p.write(b, n)
+			return
+		}
 		// What a pending or unknown value says of itself is written as it
 		// is recorded, marks and all, in a message too.
 		defer b.keepPlain(false)()

@@ -238,6 +238,33 @@ func (w *goWriter) writeUnmarked(n *node) {
 		w.WriteByte(')')
 		return
 	case statePending:
+		if p, ok := n.held(); ok {
+			// The Tuple or Object call that makes it, its members in place.
+			if p.names == nil {
+				w.WriteString("tenon.Tuple(")
+			} else {
+				w.WriteString("tenon.Object(map[string]tenon.Value{")
+			}
+			for i, val := range p.vals {
+				if w.full() {
+					return
+				}
+				if i > 0 {
+					w.WriteString(", ")
+				}
+				if p.names != nil {
+					w.writeQuoted(p.names[i])
+					w.WriteByte(':')
+				}
+				w.writeValue(val)
+			}
+			if p.names == nil {
+				w.WriteByte(')')
+			} else {
+				w.WriteString("})")
+			}
+			return
+		}
 		var ns []string
 		switch n.null {
 		case nullNo:

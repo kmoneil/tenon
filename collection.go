@@ -279,22 +279,88 @@ const unmarkForSet = "unmark it with UnmarkDeep and reapply the marks to the set
 // Tuple returns the tuple with the given elements, in order, whose type is
 // the tuple type of the elements' types. Tuple does not retain the slice.
 //
+// Where an element is pending, which has no type yet, the result is the
+// pending tuple holding the elements: its constraint is TupleOf each
+// element's constraint, a resolved element's being Exactly its type, it is
+// not null, Len, Index, Elements and ElementsSeq read its elements as they
+// read a tuple's, and Resolve resolves each pending element to its part of a
+// tuple type.
+//
 // If an element is an error value the result is an error value, as in List.
-// Tuple panics if an element is neither an error value nor a resolved value.
 func Tuple(elems ...Value) Value {
 	var errs containerErrors
 	types := make([]Type, len(elems))
+	pending := false
 	for i, e := range elems {
-		if isError(e) {
+		switch {
+		case isError(e):
 			errs.add(indexStep(NumberFromInt(int64(i))), e)
-			continue
+		case e.data().state == statePending:
+			pending = true
+		default:
+			types[i] = memberType("Tuple", element(i), e)
 		}
-		types[i] = memberType("Tuple", element(i), e)
 	}
 	if v, ok := errs.value(); ok {
 		return v
 	}
+	if pending {
+		return pendingTuple(elems)
+	}
 	return Value{n: &node{state: stateKnown, partial: anyPartial(elems), markedWithin: anyMarked(elems), typ: TupleType(types...), data: slices.Clone(elems)}}
+}
+
+// pendingTuple returns the pending tuple holding elems, at least one of them
+// pending and none of them an error value (UN-025): its constraint is TupleOf
+// each element's constraint, and it is not null.
+func pendingTuple(elems []Value) Value {
+	vals := slices.Clone(elems)
+	cs := make([]Constraint, len(vals))
+	for i, e := range vals {
+		cs[i] = constraintOf(e.n)
+	}
+	return Value{n: &node{state: statePending, null: nullNo, partial: true, markedWithin: anyMarked(vals),
+		data: &pendingMembers{c: TupleOf(cs...), vals: vals}}}
+}
+
+// pendingObject returns the pending object holding the attributes entries, in
+// name order, at least one of them pending and none of them an error value
+// (UN-025): its constraint is the closed ObjectWith of a required field for
+// each attribute of that attribute's constraint, and it is not null.
+func pendingObject(entries []namedEntry[Value]) Value {
+	fields := make(map[string]Field, len(entries))
+	names := make([]string, len(entries))
+	vals := make([]Value, len(entries))
+	for i, e := range entries {
+		fields[e.key] = Required(constraintOf(e.value.n))
+		names[i], vals[i] = e.key, e.value
+	}
+	return Value{n: &node{state: statePending, null: nullNo, partial: true, markedWithin: anyMarked(vals),
+		data: &pendingMembers{c: ObjectWith(fields, true), vals: vals, names: names}}}
+}
+
+// write writes the pending tuple or object p, held by n, as the tuple or
+// object it will be, its members stating their own types.
+func (p *pendingMembers) write(b *textWriter, n *node) {
+	defer b.within(n)()
+	if p.names == nil {
+		writeElements(b, p.vals, false)
+		return
+	}
+	defer b.keepStated(false)()
+	b.WriteByte('{')
+	for i, val := range p.vals {
+		if b.full() {
+			return
+		}
+		if i > 0 {
+			b.WriteString(", ")
+		}
+		writeQuoted(b, p.names[i])
+		b.WriteString(": ")
+		val.write(b)
+	}
+	b.WriteByte('}')
 }
 
 // Object returns the object with the given attributes, whose type is the
@@ -312,18 +378,27 @@ func Tuple(elems ...Value) Value {
 // name where the name can be one, then code CodeObjectDuplicateName for each
 // name that attributes share, whatever their values are. The error value
 // carries the Propagate marks of the error attributes. CheckAttributeNames
-// reports the same of names alone. Object panics if an attribute is neither
-// an error value nor a resolved value.
+// reports the same of names alone.
+//
+// Where an attribute is pending, which has no type yet, the result is the
+// pending object holding the attributes: its constraint is the closed
+// ObjectWith of a required field for each attribute of that attribute's
+// constraint, a resolved attribute's being Exactly its type, it is not null,
+// Len, Attribute, LookupAttribute and Attributes read its attributes as they
+// read an object's, and Resolve resolves each pending attribute to its part of
+// an object type.
 func Object(attrs map[string]Value) Value {
 	given := make([]namedEntry[Value], 0, len(attrs))
 	for name, v := range attrs {
 		given = append(given, namedEntry[Value]{original: name, value: v})
 	}
 	entries, shared := checkNames(given, attributeNames)
+	pending := false
 	for _, e := range entries {
-		if !isError(e.value) {
-			memberType("Object", attributeNamed(e.original), e.value)
-		}
+		// An attribute that is no error value is resolved or pending, and
+		// either can be an attribute, a pending one making the object the
+		// pending value holding its attributes (UN-025).
+		pending = pending || e.value.data().state == statePending
 	}
 	var errs containerErrors
 	for _, e := range entries {
@@ -344,6 +419,9 @@ func Object(attrs map[string]Value) Value {
 	}
 	if v, ok := errs.value(); ok {
 		return v
+	}
+	if pending {
+		return pendingObject(entries)
 	}
 	types := make(map[string]Type, len(entries))
 	vals := make([]Value, len(entries))
@@ -758,10 +836,14 @@ func requireMember(fn string, what memberName, v Value, want Type) {
 }
 
 // Len returns the number of elements of a list, set or tuple, the number of
-// entries of a map, or the number of attributes of an object. It panics for
-// other values.
+// entries of a map, or the number of attributes of an object, a pending tuple
+// or object holding its members among them (see Tuple and Object). It panics
+// for other values.
 func (v Value) Len() int {
 	n := v.data()
+	if p, ok := n.held(); ok {
+		return len(p.vals)
+	}
 	n.noContent("Len")
 	if n.state == stateKnown {
 		switch n.typ.t.kind {
@@ -778,18 +860,24 @@ func (v Value) Len() int {
 	return 0
 }
 
-// Index returns element i of a list or tuple. It panics if v is neither, or i
-// is out of range.
+// Index returns element i of a list or tuple, a pending tuple holding its
+// elements among them (see Tuple). It panics if v is neither, or i is out of
+// range.
 func (v Value) Index(i int) Value {
 	n := v.data()
-	n.noContent("Index")
-	if n.state != stateKnown || (n.typ.t.kind != KindList && n.typ.t.kind != KindTuple) {
-		if n.withholds() {
-			usagePanic("Index cannot take %s"+withheldReason, n.describe())
+	var elems []Value
+	if p, ok := n.heldTuple(); ok {
+		elems = p.vals
+	} else {
+		n.noContent("Index")
+		if n.state != stateKnown || (n.typ.t.kind != KindList && n.typ.t.kind != KindTuple) {
+			if n.withholds() {
+				usagePanic("Index cannot take %s"+withheldReason, n.describe())
+			}
+			usagePanic("Index called on %s, not a list or tuple value", n.describe())
 		}
-		usagePanic("Index called on %s, not a list or tuple value", n.describe())
+		elems = n.data.([]Value)
 	}
-	elems := n.data.([]Value)
 	if i < 0 || i >= len(elems) {
 		if n.withholds() {
 			usagePanic("Index(%d) cannot take %s"+withheldReason, i, n.describe())
@@ -801,13 +889,17 @@ func (v Value) Index(i int) Value {
 
 // Elements returns the elements of a list, set or tuple in order, in a new
 // slice: a set's in the order it iterates, its known members first, in the
-// canonical order, and then the rest, in the order of their encodings. It
+// canonical order, and then the rest, in the order of their encodings. A
+// pending tuple holding its elements (see Tuple) gives them in order. It
 // panics for other values.
 //
 // A set's members carry no marks where the set holds them, so a deep mark on
 // the set is attached to each member as Elements returns it, and a member
 // comes out as it would out of a list carrying the mark.
 func (v Value) Elements() []Value {
+	if p, ok := v.data().heldTuple(); ok {
+		return slices.Clone(p.vals)
+	}
 	n := v.elementsOf("Elements")
 	if n.typ.t.kind == KindSet {
 		return n.retrievedMembers()
@@ -825,6 +917,9 @@ func (v Value) Elements() []Value {
 // The iterator may run any number of times, and gives the same elements each
 // time.
 func (v Value) ElementsSeq() iter.Seq[Value] {
+	if p, ok := v.data().heldTuple(); ok {
+		return slices.Values(p.vals)
+	}
 	n := v.elementsOf("ElementsSeq")
 	elems := n.data.([]Value)
 	var deep []Mark
@@ -902,9 +997,20 @@ func (v Value) LookupMapElement(key string) (Value, bool) {
 }
 
 // Attribute returns the attribute of an object value with the given name, which
-// is normalized before the lookup. It panics if v is not an object value or has
-// no such attribute; LookupAttribute is for a name that may be absent.
+// is normalized before the lookup, a pending object holding its attributes
+// among them (see Object). It panics if v is not an object value or has no
+// such attribute; LookupAttribute is for a name that may be absent.
 func (v Value) Attribute(name string) Value {
+	if p, ok := v.data().heldObject(); ok {
+		if a, ok := p.attribute(name); ok {
+			return a
+		}
+		n := v.data()
+		if n.withholds() {
+			usagePanic("Attribute cannot take %s"+withheldReason, n.describe())
+		}
+		usagePanic("Attribute called on %s, which has no attribute %s", n.describe(), quoted(name))
+	}
 	n := v.known(KindObject, "Attribute")
 	if a, ok := n.attribute(name); ok {
 		return a
@@ -917,18 +1023,32 @@ func (v Value) Attribute(name string) Value {
 }
 
 // LookupAttribute returns the attribute of an object value with the given
-// name, which is normalized before the lookup, and whether there is one. It
-// panics if v is not an object value.
+// name, which is normalized before the lookup, and whether there is one, a
+// pending object holding its attributes among them (see Object). It panics if
+// v is not an object value.
 func (v Value) LookupAttribute(name string) (Value, bool) {
+	if p, ok := v.data().heldObject(); ok {
+		return p.attribute(name)
+	}
 	return v.known(KindObject, "LookupAttribute").attribute(name)
 }
 
 // Attributes returns an iterator over the attributes of an object value, each
-// name with its value, in the sorted order of its type's AttributeNames. It
+// name with its value, in the sorted order of its type's AttributeNames, or of
+// a pending object holding its attributes (see Object), in name order. It
 // reads them where v holds them, so ranging over an object allocates nothing
 // for its attributes. It panics if v is not an object value, as it is called
 // rather than as the iterator runs.
 func (v Value) Attributes() iter.Seq2[string, Value] {
+	if p, ok := v.data().heldObject(); ok {
+		return func(yield func(string, Value) bool) {
+			for i, name := range p.names {
+				if !yield(name, p.vals[i]) {
+					return
+				}
+			}
+		}
+	}
 	n := v.known(KindObject, "Attributes")
 	attrs, vals := n.typ.t.attrs, n.data.([]Value)
 	return func(yield func(string, Value) bool) {

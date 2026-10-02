@@ -4,6 +4,25 @@
 
 ### Added
 
+- A tuple or an object one of whose members is pending is now the pending
+  value holding its members, where `Tuple` and `Object` panicked.
+  `Tuple(Pending(Any()), NumberFromInt(1))` is a pending tuple whose second
+  element reads as `1`, as go-cty's tuple of a dynamic value and a number
+  does.
+  - Its constraint is `TupleOf`, or a closed `ObjectWith` of required fields,
+    of each member's constraint, and it is not null.
+  - `Len`, `Index`, `Elements`, `ElementsSeq`, `Attribute`,
+    `LookupAttribute` and `Attributes` read its members as they read a
+    tuple's or an object's, and the new `HasMembers` says whether a value
+    has members to read.
+  - `Resolve` resolves each pending member to its part of a tuple or object
+    type.
+  - It displays as the tuple or object it will be, and `%#v` writes the
+    call that makes it.
+
+  A list, set or map of a pending member still panics, its element type
+  being given. The specification says so (`UN-025`), a new rule: 202 rules,
+  each covered.
 - A pending value whose constraint admits only lists, sets and maps can be
   narrowed by its length. `Narrow(Pending(ListOf(Any())), LengthMin(2))` is
   a pending list of at least two members: a configuration language can know

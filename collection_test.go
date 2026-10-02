@@ -368,11 +368,6 @@ func TestConformance_ER001_ContainerConstructorsNameTheMemberAtFault(t *testing.
 		{"List: element 2" + noType, func() { tenon.List(str, a, a, pending) }},
 		{"Set: element 1 has type number, not string", func() { tenon.Set(str, a, one) }},
 		{"Set: element 0" + noType, func() { tenon.Set(str, pending) }},
-		{"Tuple: element 1" + noType, func() { tenon.Tuple(a, pending) }},
-		{`Object: attribute "name"` + noType, func() { tenon.Object(map[string]tenon.Value{"name": pending}) }},
-		{`Object: attribute "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxyz"...` + noType, func() { tenon.Object(map[string]tenon.Value{long: pending}) }},
-		{`Object: attribute "a\"b\tc"` + noType, func() { tenon.Object(map[string]tenon.Value{"a\"b\tc": pending}) }},
-		{"Object: attribute \"caf\xc3\xa9\"" + noType, func() { tenon.Object(map[string]tenon.Value{"caf\xc3\xa9": pending}) }},
 		{`Map: the element of key "k" has type string, not number`, func() { tenon.Map(num, map[string]tenon.Value{"k": a}) }},
 		{`Map: the element of key "\xff" has type string, not number`, func() { tenon.Map(num, map[string]tenon.Value{"\xff": a}) }},
 		{`Map: the element of key "k"` + noType, func() { tenon.Map(num, map[string]tenon.Value{"k": pending}) }},
@@ -387,6 +382,13 @@ func TestConformance_ER001_ContainerConstructorsNameTheMemberAtFault(t *testing.
 	} {
 		if got, want := usagePanicMessage(tt.f), "tenon: usage: "+tt.want; got != want {
 			t.Errorf("got the panic %q, want %q", got, want)
+		}
+	}
+	// A tuple or an object of a pending member is the pending value holding
+	// it (UN-025), and no mistake.
+	for _, v := range []tenon.Value{tenon.Tuple(a, pending), tenon.Object(map[string]tenon.Value{long: pending, "caf\xc3\xa9": one})} {
+		if !v.IsPending() || !v.HasMembers() {
+			t.Errorf("%v is not a pending value holding its members", v)
 		}
 	}
 }

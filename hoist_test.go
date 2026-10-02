@@ -154,7 +154,7 @@ func TestConformance_ER008_ContainersHoistErrors(t *testing.T) {
 	// Members that are not error values are still checked, and a host's own
 	// mistake still panics.
 	mustPanicUsage(t, "has type number, not string", func() { tenon.List(str, first, tenon.NumberFromInt(1)) })
-	mustPanicUsage(t, "is a pending value", func() { tenon.Tuple(first, tenon.Pending(tenon.Any())) })
+	mustPanicUsage(t, "is a pending value", func() { tenon.List(str, first, tenon.Pending(tenon.Any())) })
 }
 
 // TestConformance_ER008_DeepFailuresAreLocatedOnce holds hoisting to work in

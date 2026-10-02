@@ -924,6 +924,16 @@ func (n *node) markPath() Path {
 // that locates it. n must hold one.
 func (n *node) markedMember() (Step, *node) {
 	switch data := n.data.(type) {
+	case *pendingMembers:
+		for i, m := range data.vals {
+			if !m.n.isMarked() {
+				continue
+			}
+			if data.names != nil {
+				return attributeStep(data.names[i]), m.n
+			}
+			return indexStep(NumberFromInt(int64(i))), m.n
+		}
 	case []mapEntry:
 		for _, e := range data {
 			if e.val.n.isMarked() {
@@ -1025,6 +1035,10 @@ func (g *propagating) gather(n *node, within bool) {
 	switch data := n.data.(type) {
 	case []Value:
 		for _, member := range data {
+			g.gather(member.n, true)
+		}
+	case *pendingMembers:
+		for _, member := range data.vals {
 			g.gather(member.n, true)
 		}
 	case []mapEntry:
