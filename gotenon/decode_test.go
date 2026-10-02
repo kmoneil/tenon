@@ -514,3 +514,28 @@ func TestConformance_DI003_DecodeNamesATypeInFewBytes(t *testing.T) {
 		}
 	}
 }
+
+// TestConformance_GO041_APendingTupleOrObjectDecodesMemberByMember holds the
+// decoding of a pending tuple or object holding its members to its members:
+// those that are resolved decode, and each that is pending fails with
+// decode.not_known where it is, not the whole. The conversion to the Go
+// type's constraint does it, member by member, a pending member becoming the
+// unknown value of its field's type.
+func TestConformance_GO041_APendingTupleOrObjectDecodesMemberByMember(t *testing.T) {
+	conformance.Covers(t, "GO-041", "UN-025")
+	type pair struct {
+		A int `tenon:"a"`
+		B int `tenon:"b"`
+	}
+	type outer struct {
+		A struct {
+			X int `tenon:"x"`
+		} `tenon:"a"`
+		B int `tenon:"b"`
+	}
+	p := tenon.Pending(tenon.Any())
+	wantDecodeFailures[pair](t, "a pending object", obj(map[string]tenon.Value{"a": p, "b": n(1)}), uns,
+		wantDiag{tenon.CodeDecodeNotKnown, ".a"})
+	wantDecodeFailures[outer](t, "one within an object", obj(map[string]tenon.Value{"a": obj(map[string]tenon.Value{"x": p}), "b": n(1)}), uns,
+		wantDiag{tenon.CodeDecodeNotKnown, ".a.x"})
+}

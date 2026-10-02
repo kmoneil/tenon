@@ -356,3 +356,27 @@ func TestConformance_CV032_APendingTupleOrObjectConvertsMemberByMember(t *testin
 		t.Errorf("a pending tuple of a marked member converted to %v = %v, want a pending value carrying %v", choice, r, prop)
 	}
 }
+
+// TestConformance_DI032_ADiffWalksIntoAPendingTupleOrObject holds a diff of a
+// pending tuple or object holding its members to its members, as the tuple or
+// object it will be: a change is located at the member that changed, against
+// a pending one or a known one alike.
+func TestConformance_DI032_ADiffWalksIntoAPendingTupleOrObject(t *testing.T) {
+	conformance.Covers(t, "DI-032", "UN-025")
+	p := tenon.Pending(tenon.Any())
+	for _, tt := range []struct {
+		name string
+		a, b tenon.Value
+		path string
+	}{
+		{"two pending tuples", tenon.Tuple(p, n(1)), tenon.Tuple(p, n(2)), ".[1]"},
+		{"a pending tuple and a known one", tenon.Tuple(p, n(1)), tenon.Tuple(s("x"), n(1)), ".[0]"},
+		{"two pending objects", tenon.Object(map[string]tenon.Value{"a": p, "b": n(1)}), tenon.Object(map[string]tenon.Value{"a": p, "b": n(2)}), ".b"},
+		{"a pending object and a known one", tenon.Object(map[string]tenon.Value{"a": p, "b": n(1)}), tenon.Object(map[string]tenon.Value{"a": s("x"), "b": n(1)}), ".a"},
+	} {
+		cs := tenon.Diff(tt.a, tt.b)
+		if len(cs) != 1 || cs[0].Kind != tenon.ChangeReplaced || cs[0].Path.String() != tt.path {
+			t.Errorf("%s: Diff(%v, %v) = %v, want one replacement at %s", tt.name, tt.a, tt.b, cs, tt.path)
+		}
+	}
+}

@@ -224,12 +224,19 @@ func (d *differ) compare(a, b Value, p Path, asideA, asideB []Mark, in bool) {
 		d.add(marksChanged(p, ownA, ownB, in))
 	}
 	innerA, innerB := deepOf(na.markList()), deepOf(nb.markList())
-	switch na.typ.t.kind {
+	kind, _ := diffKind(na)
+	switch kind {
 	case KindList, KindTuple:
 		// A list's elements are of its element type in both values; a tuple's
 		// are fixed only where the tuple's own type is.
-		within := in || na.typ.t.kind == KindList
-		x, y := na.data.([]Value), nb.data.([]Value)
+		within := in || kind == KindList
+		var x, y []Value
+		if kind == KindTuple {
+			x, _, _ = structuralMembers(na)
+			y, _, _ = structuralMembers(nb)
+		} else {
+			x, y = na.data.([]Value), nb.data.([]Value)
+		}
 		for i := range max(len(x), len(y)) {
 			at := p.extend(indexStep(NumberFromInt(int64(i))))
 			switch {
@@ -256,10 +263,29 @@ func (d *differ) compare(a, b Value, p Path, asideA, asideB []Mark, in bool) {
 			}
 		})
 	case KindObject:
+		at := func(name string) Path { return p.extend(attributeStep(name)) }
+		_, heldA := na.held()
+		_, heldB := nb.held()
+		if heldA || heldB {
+			// A pending object holding its attributes has their names apart
+			// from any type (UN-025), so both are read by name.
+			vx, x, _ := structuralMembers(na)
+			vy, y, _ := structuralMembers(nb)
+			mergeByName(x, y, func(s string) string { return s }, func(i, j int) {
+				switch {
+				case j < 0:
+					d.add(Change{Kind: ChangeRemoved, Path: at(x[i]), Old: vx[i], InCollection: in})
+				case i < 0:
+					d.add(Change{Kind: ChangeAdded, Path: at(y[j]), New: vy[j], InCollection: in})
+				default:
+					d.compare(vx[i], vy[j], at(x[i]), innerA, innerB, in)
+				}
+			})
+			return
+		}
 		x, y := na.typ.t.attrs, nb.typ.t.attrs
 		vx, vy := na.data.([]Value), nb.data.([]Value)
 		name := func(at attribute) string { return at.name }
-		at := func(name string) Path { return p.extend(attributeStep(name)) }
 		mergeByName(x, y, name, func(i, j int) {
 			switch {
 			case j < 0:
@@ -467,19 +493,35 @@ func mergeByName[T any](x, y []T, name func(T) string, each func(i, j int)) {
 // of one kind, and of one type where the kind is a collection, neither
 // carrying a redacting mark.
 func enterable(a, b *node) bool {
-	if a.state != stateKnown || b.state != stateKnown || a.typ.t.kind != b.typ.t.kind {
+	ka, okA := diffKind(a)
+	kb, okB := diffKind(b)
+	if !okA || !okB || ka != kb {
 		return false
 	}
 	if a.redactingMarks() != nil || b.redactingMarks() != nil {
 		return false
 	}
-	switch a.typ.t.kind {
+	switch ka {
 	case KindList, KindSet, KindMap:
 		return a.typ == b.typ
 	case KindTuple, KindObject:
 		return true
 	}
 	return false
+}
+
+// diffKind returns the kind of the container n whose members a diff compares:
+// a known value's kind, and a tuple's or object's for a pending one holding
+// its members, which counts as the tuple or object it will be (UN-025). It
+// reports false for anything else.
+func diffKind(n *node) (Kind, bool) {
+	if _, ok := n.held(); ok {
+		return sourceKind(n), true
+	}
+	if n.state != stateKnown {
+		return 0, false
+	}
+	return n.typ.t.kind, true
 }
 
 // restIdenticalAside reports whether a and b are identical but for the marks
