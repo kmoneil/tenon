@@ -66,14 +66,21 @@ func (p Policy) GoString() string {
 // them, and each member gains the others' attributes as null: n objects of
 // distinct attributes give n objects of n attributes each, which is what the
 // conversion means. A program converting a collection it did not write bounds
-// its length. A conversion that fails for what v holds, as the string "x"
-// converted to a number does, gives an error value, never a value of another
-// type. A failure within a container is reported where it happens: a
-// diagnostic for each member that fails, located by its path within v, with
-// the member's own code. A failure within a value carrying a redacting mark
-// is reported at that value instead, once for each code, its message naming
-// the value by the placeholder, since a path within it or a message about
-// what it holds would show its keys or attribute names.
+// its length. A member that settles no element type of its own, as an empty
+// tuple converted to ListOf(Any()) does, takes in that part the type the
+// members beside it settle: [["a"], []] converted to ListOf(ListOf(Any()))
+// is a list of two lists of strings, the second empty. Where nothing settles
+// it, the conversion fails with CodeConvertNoCommonType, located at the value
+// that left it open.
+//
+// A conversion that fails for what v holds, as the string "x" converted to a
+// number does, gives an error value, never a value of another type. A failure
+// within a container is reported where it happens: a diagnostic for each
+// member that fails, located by its path within v, with the member's own
+// code. A failure within a value carrying a redacting mark is reported at
+// that value instead, once for each code, its message naming the value by the
+// placeholder, since a path within it or a message about what it holds would
+// show its keys or attribute names.
 //
 // A null value converts to the null of the result type, and an unknown value
 // to the unknown of it. A container converts member by member, so members that

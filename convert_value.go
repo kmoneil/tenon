@@ -1,6 +1,7 @@
 package tenon
 
 import (
+	"cmp"
 	"maps"
 	"slices"
 	"strconv"
@@ -113,8 +114,13 @@ func (m *convertMemo) resultType(c Constraint) (Type, bool) {
 // own marks: whoever asked for the conversion puts on the marks it calls for.
 func (x converter) value(v Value, c Constraint) Value {
 	d := x.draft(v, c)
-	if d.done.n != nil {
+	switch {
+	case d.done.n != nil:
 		return d.done
+	case d.typ.t.open:
+		// Nothing is above the value to settle what its conversion leaves
+		// open (CV-021).
+		return x.openFailure(d, v.n, d.typ)
 	}
 	return x.build(d, d.typ)
 }
@@ -133,8 +139,9 @@ type draft struct {
 	// fails, or is pending.
 	done Value
 	// typ is the type a container's conversion gives, where done is zero,
-	// and parts are what it is built from. Most drafts are of members that
-	// build no container, so what only a container has is held apart.
+	// and parts are what it is built from, or the type a deferred one gives
+	// (parts.later). Most drafts are of members that build no container, so
+	// what only a container has is held apart.
 	typ Type
 	*parts
 }
@@ -152,6 +159,26 @@ type parts struct {
 	// built: the redacting marks of the values within it whose types name
 	// attributes.
 	withheld []Mark
+
+	// What a conversion whose type leaves a part open (CV-021) has besides.
+	// open is the failure it gives where nothing above settles that part, set
+	// where it left the part open itself, holding no member that did. later
+	// makes its value at the type the levels above settle, where it builds
+	// no container: a null or unknown value, or a set holding members that
+	// are not known.
+	// redactedTo is the constraint that a value carrying a redacting mark
+	// was converted to, which a failure found within it names (MK-011).
+	open       *failure
+	later      func(Type) Value
+	redactedTo Constraint
+}
+
+// deferred returns the draft of a conversion that builds no container and
+// leaves a part of its type t open: later makes its value at t once the
+// levels above have settled that part, and open is its failure where they do
+// not.
+func deferred(t Type, open *failure, later func(Type) Value) draft {
+	return draft{typ: t, parts: &parts{open: open, later: later}}
 }
 
 // memberDraft is the draft of a member's conversion, with the member, whose
@@ -183,10 +210,26 @@ func (d draft) typeOf() Type {
 func (x converter) draft(v Value, c Constraint) draft {
 	ms := v.n.redactingMarks()
 	d := x.draftOf(v, c)
-	if ms == nil || d.done.n == nil || d.done.n.state != stateError {
+	switch {
+	case ms == nil:
+		return d
+	case d.done.n == nil:
+		if d.typ.t.open {
+			// What its conversion leaves open fails within it, where nothing
+			// settles it, and is moved to it then (openFailure).
+			d.redactedTo = c
+		}
+		return d
+	case d.done.n.state != stateError:
 		return d
 	}
-	r := d.done
+	return finished(redactedFailure(d.done, ms, c))
+}
+
+// redactedFailure returns the failure r of a value carrying the redacting
+// marks ms, converted to c, as draft moves it to that value: each code r has,
+// once, with a message naming the value by the placeholder and c.
+func redactedFailure(r Value, ms []Mark, c Constraint) Value {
 	message := redactedText(ms) + " does not convert to " + c.String()
 	var diags []Diagnostic
 	for _, dg := range r.n.diagnostics() {
@@ -196,7 +239,7 @@ func (x converter) draft(v Value, c Constraint) draft {
 	}
 	e := errorValue(diags...)
 	e.n.marks = r.n.marks
-	return finished(e)
+	return e
 }
 
 // draftOf is draft for a value whose failures need not be moved.
@@ -204,18 +247,18 @@ func (x converter) draftOf(v Value, c Constraint) draft {
 	if v.n.state == stateKnown {
 		return x.known(v, c)
 	}
-	return finished(x.unsettled(v, c))
+	return x.unsettled(v, c)
 }
 
-// unsettled converts a pending, null or unknown value.
-func (x converter) unsettled(v Value, c Constraint) Value {
+// unsettled works out the conversion of a pending, null or unknown value.
+func (x converter) unsettled(v Value, c Constraint) draft {
 	n := v.n
 	if n.state == statePending {
-		return x.pending(v, c)
+		return finished(x.pending(v, c))
 	}
 	if x.memo.fits(c, n.typ) {
 		u := withoutMarks(v)
-		return u
+		return finished(u)
 	}
 	k := keysUnknown
 	if n.state == stateNull {
@@ -224,15 +267,24 @@ func (x converter) unsettled(v Value, c Constraint) Value {
 	out := typeConvert(n.typ, c, x.policy, k)
 	switch {
 	case out.fail != nil:
-		return errorValue(out.fail.diagnostic())
-	case n.state == stateNull:
-		return Null(out.typ)
+		return finished(errorValue(out.fail.diagnostic()))
+	case out.pending:
+		return finished(pendingValue(c, n.data.(*rangeData).null))
+	case out.open != nil:
+		return deferred(out.typ, out.open, func(t Type) Value { return resolvedAs(n, t) })
+	}
+	return finished(resolvedAs(n, out.typ))
+}
+
+// resolvedAs returns the null or unknown value of type t that the null or
+// unknown value n converts to, an unknown value keeping its nullness and the
+// lengths it is narrowed to.
+func resolvedAs(n *node, t Type) Value {
+	if n.state == stateNull {
+		return Null(t)
 	}
 	rd := n.data.(*rangeData)
-	if out.pending {
-		return pendingValue(c, rd.null)
-	}
-	return narrowedUnknown(out.typ, rd.null, lengthNarrowings(n.typ, out.typ, rd))
+	return narrowedUnknown(t, rd.null, lengthNarrowings(n.typ, t, rd))
 }
 
 // build builds what d works out as a value of type t: the type d gives, or
@@ -244,10 +296,13 @@ func (x converter) build(d draft, t Type) Value {
 	switch {
 	case d.done.n != nil:
 		return x.fit(d.done, t)
+	case d.later != nil:
+		return x.fit(d.later(fillOpen(d.typ, t)), t)
 	case t.t.kind != d.typ.t.kind, t.t.kind == KindTuple && len(t.t.elems) != len(d.members):
 		// A union of another shape, as a list is of a tuple: built at the
-		// type the conversion gives, then fitted.
-		return x.fit(x.build(d, d.typ), t)
+		// type the conversion gives, its open parts taking what t has in
+		// their places, then fitted.
+		return x.fit(x.build(d, fillOpen(d.typ, t)), t)
 	case t.t.kind == KindObject:
 		return x.buildObject(d, t)
 	}
@@ -278,6 +333,43 @@ func (x converter) build(d draft, t Type) Value {
 	}
 	if d.marks != nil {
 		r = WithMarks(r, d.marks...)
+	}
+	return r
+}
+
+// leavesOpen reports whether what md works out leaves a part of its type open
+// (CV-021), for the levels above it to settle.
+func leavesOpen(md memberDraft) bool { return md.done.n == nil && md.typ.t.open }
+
+// openFailure returns the error value of the conversion that d works out for
+// the value n, where t, the type at n's place in the result, is still open and
+// nothing is above to settle it (CV-021): a diagnostic located at each
+// innermost value within n whose conversion leaves a part of t open, as the
+// failure of a member is located (CV-050), and moved to a value carrying a
+// redacting mark where it is within one.
+func (x converter) openFailure(d draft, n *node, t Type) Value {
+	var r Value
+	if d.open != nil {
+		r = failedReading(n, d.open.diagnostic())
+	} else {
+		h := held{names: d.names, kind: n.typ.t.kind}
+		var errs containerErrors
+		for i, md := range d.members {
+			name := ""
+			if d.names != nil {
+				name = d.names[i]
+			}
+			if part := placeOf(t, i, name); leavesOpen(md) && part.t.open {
+				errs.add(h.step(i), x.carry(x.openFailure(md.draft, md.from, part), md.from))
+			}
+		}
+		var found bool
+		if r, found = errs.value(); !found {
+			internalPanic("openFailure found nothing open within %s", n.describe())
+		}
+	}
+	if ms := n.redactingMarks(); ms != nil {
+		r = redactedFailure(r, ms, d.redactedTo)
 	}
 	return r
 }
@@ -543,6 +635,9 @@ func (x converter) pending(v Value, c Constraint) Value {
 			k = keysNone
 		}
 		out := typeConvert(s, c, x.policy, k)
+		// A pending value is held by no container, so nothing settles what
+		// its conversion leaves open.
+		out.fail = cmp.Or(out.fail, out.open)
 		switch {
 		case out.fail != nil:
 			return errorValue(Diagnostic{
@@ -829,12 +924,14 @@ func (x converter) collection(v Value, c Constraint) draft {
 		}
 		types = append(types, md.typeOf())
 	}
+	var nullOpen *failure
 	if from == KindList || from == KindSet || from == KindMap {
 		out := typeConvert(n.typ.t.elem, d.elem, x.policy, keysNone)
 		if out.fail != nil {
 			return finished(failedReading(n, out.fail.diagnostic()))
 		}
 		types = append(types, out.typ)
+		nullOpen = out.open
 	}
 	if pending {
 		if out := pendingElements(types, least, d.elem, x.policy, withhold); out.fail != nil {
@@ -846,13 +943,26 @@ func (x converter) collection(v Value, c Constraint) draft {
 	if f != nil {
 		return finished(failedReading(n, f.diagnostic()))
 	}
+	r := draft{parts: &parts{members: drafts, names: h.names}}
+	if elem.t.open && !slices.ContainsFunc(drafts, leavesOpen) {
+		// No member leaves the element type open, so the collection does
+		// itself: it has no members, and nothing else settles a type
+		// (CV-021).
+		r.open = cmp.Or(nullOpen, unsettledElement(d.elem))
+	}
 	if from == KindSet && n.partial && d.kind == ConstraintListOf {
 		// A set holding members that are not known has no settled order and
 		// no settled count, so the list it becomes is not known either.
 		low, high := setLengthBounds(n)
-		return finished(Narrow(Unknown(ListType(elem)), NotNull(), LengthMin(int64(low)), LengthMax(int64(high))))
+		unknownList := func(t Type) Value {
+			return Narrow(Unknown(t), NotNull(), LengthMin(int64(low)), LengthMax(int64(high)))
+		}
+		if !elem.t.open {
+			return finished(unknownList(ListType(elem)))
+		}
+		r.typ, r.later = ListType(elem), unknownList
+		return r
 	}
-	r := draft{parts: &parts{members: drafts, names: h.names}}
 	switch d.kind {
 	case ConstraintListOf:
 		r.typ = ListType(elem)
@@ -954,7 +1064,7 @@ func (x converter) tuple(v Value, c Constraint) draft {
 	case KindList, KindSet:
 		want := len(d.members)
 		if from == KindSet && n.partial {
-			return finished(x.partialSetTuple(v, c))
+			return x.partialSetTuple(v, c)
 		}
 		if got := len(n.data.([]Value)); got != want {
 			return finished(errorValue(Diagnostic{Code: CodeConvertLengthMismatch,
@@ -992,19 +1102,19 @@ func (x converter) tuple(v Value, c Constraint) draft {
 // same, to whichever position they take, which the members not known leave
 // open: one that fails at every position alike fails every outcome, and so
 // fails now (CV-031, UN-011), as it does converted to a list.
-func (x converter) partialSetTuple(v Value, c Constraint) Value {
+func (x converter) partialSetTuple(v Value, c Constraint) draft {
 	n, d := v.n, c.c
 	low, high := setLengthBounds(n)
 	if want := len(d.members); want < low || want > high {
-		return errorValue(Diagnostic{Code: CodeConvertLengthMismatch,
-			Message: "a set of " + strconv.Itoa(low) + " to " + count(high, "member") + " does not convert to " + c.String() + ", which has " + count(want, "member")})
+		return finished(errorValue(Diagnostic{Code: CodeConvertLengthMismatch,
+			Message: "a set of " + strconv.Itoa(low) + " to " + count(high, "member") + " does not convert to " + c.String() + ", which has " + count(want, "member")}))
 	}
 	out := typeConvert(n.typ, c, x.policy, keysUnknown)
 	switch {
 	case out.fail != nil:
-		return errorValue(out.fail.diagnostic())
+		return finished(errorValue(out.fail.diagnostic()))
 	case out.pending:
-		return Narrow(Pending(c), NotNull())
+		return finished(Narrow(Pending(c), NotNull()))
 	}
 	h := members(n)
 	var errs containerErrors
@@ -1014,9 +1124,13 @@ func (x converter) partialSetTuple(v Value, c Constraint) Value {
 		}
 	}
 	if e, failed := errs.value(); failed {
-		return e
+		return finished(e)
 	}
-	return Narrow(Unknown(out.typ), NotNull())
+	unknownTuple := func(t Type) Value { return Narrow(Unknown(t), NotNull()) }
+	if out.open != nil {
+		return deferred(out.typ, out.open, unknownTuple)
+	}
+	return finished(unknownTuple(out.typ))
 }
 
 // kindNoun names a kind of container in a message, as in "list".

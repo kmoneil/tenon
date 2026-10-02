@@ -9,6 +9,13 @@ import "slices"
 // reference the conversion is held to (ConvertBothWays): the same result,
 // whatever the value, the constraint and the policy. It shares everything
 // but the containers' conversions, which are its own copies.
+//
+// It makes what a conversion leaves open (CV-021) as values of the types that
+// leave it open, which the levels above fit to the type they settle, as they
+// fit any member: the conversion instead defers such a member and builds it
+// once at that type. A value whose type is still open at the top is no
+// result, and where nothing settles it the reference stops there, without
+// locating the failure (ConvertBothWays).
 
 // fittingValue converts v, in whatever state, to c. The result carries none of v's
 // own marks: whoever asked for the conversion puts on the marks it calls for.
@@ -260,7 +267,13 @@ func (x converter) fittingTuple(v Value, c Constraint) Value {
 	case KindList, KindSet:
 		want := len(d.members)
 		if from == KindSet && n.partial {
-			return x.partialSetTuple(v, c)
+			d := x.partialSetTuple(v, c)
+			if d.done.n != nil {
+				return d.done
+			}
+			// The unknown tuple of the type it leaves open, which a level
+			// above fits to the type it settles.
+			return d.later(d.typ)
 		}
 		if got := len(n.data.([]Value)); got != want {
 			return errorValue(Diagnostic{Code: CodeConvertLengthMismatch,

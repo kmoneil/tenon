@@ -75,6 +75,7 @@ type typeData struct {
 	id      uint64       // unique among the types in the process (see intern)
 	shape   uint64       // a hash of the structure (see shapeOf)
 	kind    Kind         // the kind of the type
+	open    bool         // a part is left open, as only within a conversion (openType)
 	elem    Type         // the element type of a List, Set or Map
 	attrs   []attribute  // the attributes of an Object, sorted by name
 	elems   []Type       // the element types of a Tuple
@@ -143,7 +144,7 @@ func collection(kind Kind, elem Type) Type {
 	if elem.t == nil {
 		usagePanic("the element type of a %s type is the zero Type", kind)
 	}
-	return intern(&typeData{kind: kind, elem: elem})
+	return intern(&typeData{kind: kind, elem: elem, open: elem.t.open})
 }
 
 // ObjectType returns the object type with the given attributes. Attribute names
@@ -158,24 +159,28 @@ func collection(kind Kind, elem Type) Type {
 func ObjectType(attrs map[string]Type) Type {
 	entries := attributeEntries(attrs, "object attribute")
 	list := make([]attribute, len(entries))
+	open := false
 	for i, e := range entries {
 		if e.value.t == nil {
 			usagePanic("the type of object attribute %q is the zero Type", e.original)
 		}
 		list[i] = attribute{e.name, e.value}
+		open = open || e.value.t.open
 	}
-	return intern(&typeData{kind: KindObject, attrs: list})
+	return intern(&typeData{kind: KindObject, attrs: list, open: open})
 }
 
 // TupleType returns the tuple type whose elements have the given types, in
 // order. TupleType does not retain the slice.
 func TupleType(elems ...Type) Type {
+	open := false
 	for i, e := range elems {
 		if e.t == nil {
 			usagePanic("the type of tuple element %d is the zero Type", i)
 		}
+		open = open || e.t.open
 	}
-	return intern(&typeData{kind: KindTuple, elems: slices.Clone(elems)})
+	return intern(&typeData{kind: KindTuple, elems: slices.Clone(elems), open: open})
 }
 
 // nameEntry is an entry of a map keyed by attribute names.
@@ -420,5 +425,9 @@ func (t Type) write(b *textWriter) {
 		b.WriteString("capsule(")
 		writeQuoted(b, d.capsule.name)
 		b.WriteByte(')')
+	case kindOpen:
+		// Only a conversion's message names a type with a part left open,
+		// which any type can still take.
+		b.WriteString("any")
 	}
 }

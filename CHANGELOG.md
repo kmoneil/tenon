@@ -1,5 +1,25 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- A member that settles no element type of its own takes, in that part, the
+  type the members beside it settle. Converting `[["a"], []]` to
+  `ListOf(ListOf(Any()))`, as HCL writes a value for a Terraform variable
+  of type `list(list(any))`, failed with `convert.no_common_type` at `[1]`,
+  since each member's type was settled alone and the empty tuple settles
+  none. It now gives a list of two lists of strings, the second empty, as
+  go-cty does. The same holds at any depth, for null and unknown members,
+  within tuples and objects, and converting to sets and maps: the part a
+  member leaves open unifies as `Any` does, so an empty member converts as
+  a member of the same type with members in it would. Where nothing
+  settles the part, the conversion still fails with
+  `convert.no_common_type`, at each empty value that left it open. A
+  `OneOf` whose first member leaves a part open now takes that member,
+  where it went on to a later one. The specification says so (`CV-021`,
+  `CV-044`).
+
 ## 0.12.0 (2026-10-01)
 
 The 1.0 audit's additions to the API, each of them additive: a range reads

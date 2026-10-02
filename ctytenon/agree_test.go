@@ -453,9 +453,9 @@ func related(r *rand.Rand, t cty.Type, elem bool) cty.Type {
 // TestConversionsDiffer pins where cty's conversion and tenon's differ by
 // rule, so that a change on either side is seen: the rules each has for
 // unifying the types of a collection's members, tenon's (CV-042, CV-044)
-// commutative and associative and cty's not, tenon settling each member's
-// type before unifying them where cty unifies first; the conversions tenon
-// has that cty does not; and the text a number converts to.
+// commutative and associative and cty's not; a collection with no member to
+// settle its element type, which cty makes and tenon has no value of; the
+// conversions tenon has that cty does not; and the text a number converts to.
 func TestConversionsDiffer(t *testing.T) {
 	var b ctytenon.Bridge
 	tup := func(vs ...cty.Value) cty.Value { return cty.TupleVal(vs) }
@@ -486,19 +486,13 @@ func TestConversionsDiffer(t *testing.T) {
 			`list(object({"a": string, "b": string}))[{"a": "a", "b": null}, {"a": null, "b": "a"}]`,
 		},
 		{
-			"an empty tuple settles no element type beside one that does, in tenon (CV-044)",
-			tup(tup(str), cty.EmptyTupleVal), cty.List(cty.List(cty.DynamicPseudoType)),
-			`cty.ListVal([]cty.Value{cty.ListVal([]cty.Value{cty.StringVal("a")}), cty.ListValEmpty(cty.String)})`,
-			`error(convert.no_common_type: "nothing settles an element type for any: there are no members, and the constraint admits more than one type" at .[1])`,
-		},
-		{
 			"a number converts to a string as its canonical text in tenon (NU-020), every digit in cty",
 			cty.MustParseNumberVal("1e30"), cty.String,
 			`cty.StringVal("1000000000000000000000000000000")`,
 			`"1e30"`,
 		},
 		{
-			"an empty tuple settles no element type, in tenon (CV-044)",
+			"an empty tuple with nothing beside it settles no element type, in tenon (CV-021), where cty makes a list of an element type not yet known, which tenon has no value of",
 			cty.EmptyTupleVal, cty.List(cty.DynamicPseudoType),
 			`cty.ListValEmpty(cty.DynamicPseudoType)`,
 			`error(convert.no_common_type: "nothing settles an element type for any: there are no members, and the constraint admits more than one type")`,
@@ -524,6 +518,60 @@ func TestConversionsDiffer(t *testing.T) {
 		}
 		if got := tenon.Convert(tv, k, tenon.Unsafe).String(); got != c.tenon {
 			t.Errorf("%s: tenon converts %v to %v as %s; want %s", c.name, tv, k, got, c.tenon)
+		}
+	}
+}
+
+// TestEmptyMembersAgree converts collections in which an empty member
+// settles no element type of its own and its siblings do, as HCL writes
+// values for Terraform's variables of types such as list(list(any)): the
+// empty member takes the type the others settle in its place, as cty's
+// does (CV-021), at any depth, within objects and maps, null and beside
+// members that unify only under the Unsafe policy.
+func TestEmptyMembersAgree(t *testing.T) {
+	var b ctytenon.Bridge
+	tup := func(vs ...cty.Value) cty.Value { return cty.TupleVal(vs) }
+	obj := func(attrs map[string]cty.Value) cty.Value { return cty.ObjectVal(attrs) }
+	str, num, empty := cty.StringVal("a"), cty.NumberIntVal(1), cty.EmptyTupleVal
+	anyList := cty.List(cty.DynamicPseudoType)
+	for _, c := range []struct {
+		name   string
+		v      cty.Value
+		target cty.Type
+	}{
+		{"an empty tuple beside a tuple of strings", tup(tup(str), empty), cty.List(anyList)},
+		{"an empty tuple first", tup(empty, tup(str)), cty.List(anyList)},
+		{"empty tuples beside members that unify as strings", tup(empty, tup(str), tup(num), empty), cty.List(anyList)},
+		{"an empty tuple a level down", tup(tup(empty), tup(tup(str))), cty.List(cty.List(anyList))},
+		{"an empty tuple as an attribute", obj(map[string]cty.Value{"a": tup(str), "b": empty}), cty.Map(anyList)},
+		{"an empty object beside an object", tup(obj(map[string]cty.Value{"k": str}), cty.EmptyObjectVal), cty.List(cty.Map(cty.DynamicPseudoType))},
+		{"a null empty tuple", tup(tup(str), cty.NullVal(cty.EmptyTuple)), cty.List(anyList)},
+		{
+			"an empty tuple within objects",
+			tup(obj(map[string]cty.Value{"a": empty, "n": num}), obj(map[string]cty.Value{"a": tup(str), "n": num})),
+			cty.List(cty.Object(map[string]cty.Type{"a": anyList, "n": cty.Number})),
+		},
+	} {
+		cv, err := convert.Convert(c.v, c.target)
+		if err != nil {
+			t.Fatalf("%s: cty fails: %v", c.name, err)
+		}
+		tv, err := b.FromCty(c.v)
+		if err != nil {
+			t.Fatal(err)
+		}
+		k, err := b.ConstraintFromCty(c.target)
+		if err != nil {
+			t.Fatal(err)
+		}
+		tr := tenon.Convert(tv, k, tenon.Unsafe)
+		back, err := b.ToCty(tr)
+		if err != nil {
+			t.Errorf("%s: tenon converts %v to %v as %v, which does not cross: %v", c.name, tv, k, tr, err)
+			continue
+		}
+		if !back.RawEquals(cv) {
+			t.Errorf("%s: cty converts %#v to %#v as %#v, and tenon as %v", c.name, c.v, c.target, cv, tr)
 		}
 	}
 }
