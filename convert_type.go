@@ -1,6 +1,7 @@
 package tenon
 
 import (
+	"cmp"
 	"slices"
 	"strconv"
 )
@@ -22,10 +23,94 @@ const (
 // typeOutcome is what converting a type to a constraint gives, whatever value
 // of the type is converted: the type of the result; or pending, where the
 // result's type would follow from keys that are not in hand; or a failure.
+// Where the type leaves a part open (CV-021), open is the failure that the
+// conversion gives if nothing above it settles that part.
 type typeOutcome struct {
 	typ     Type
 	pending bool
 	fail    *failure
+	open    *failure
+}
+
+// kindOpen is the kind of openType, which no type outside a conversion has.
+const kindOpen = KindCapsule + 1
+
+// openType is the part of a type that a conversion leaves open (CV-021): the
+// element type of a collection converted where there is nothing to unify, as
+// for an empty tuple converted to ListOf(Any). It unifies with any type to
+// that type (CV-044), so the members beside it settle it, and a member whose
+// type holds it is built at the type they settle (fillOpen). A conversion
+// whose type still holds it at the top fails (openFailure): no value is ever
+// made of it, and no type a program sees holds it.
+var openType = func() Type {
+	d := &typeData{id: newTypeID(), kind: kindOpen, open: true}
+	d.shape = shapeOf(d)
+	return Type{d}
+}()
+
+// unsettledElement returns the failure of a conversion to a collection whose
+// element type nothing settles: it has no members, or none that settle a type,
+// and c gives none.
+func unsettledElement(c Constraint) *failure {
+	return &failure{CodeConvertNoCommonType,
+		"nothing settles an element type for " + c.String() + ": there are no members, and the constraint admits more than one type"}
+}
+
+// fillOpen returns p, the type a conversion gave, with each part it leaves
+// open taking the type that t has in its place, t being a type that
+// unification made from p and others (CV-021). A type with no part open is
+// returned as it is.
+func fillOpen(p, t Type) Type {
+	switch {
+	case !p.t.open:
+		return p
+	case p == openType:
+		return t
+	}
+	from := p.t
+	switch from.kind {
+	case KindList, KindSet, KindMap:
+		return collection(from.kind, fillOpen(from.elem, t.t.elem))
+	case KindTuple:
+		elems := make([]Type, len(from.elems))
+		for i, e := range from.elems {
+			elems[i] = fillOpen(e, placeOf(t, i, ""))
+		}
+		return TupleType(elems...)
+	}
+	attrs := make(map[string]Type, len(from.attrs))
+	for _, a := range from.attrs {
+		attrs[a.name] = fillOpen(a.typ, placeOf(t, 0, a.name))
+	}
+	return ObjectType(attrs)
+}
+
+// placeOf returns the part of t that holds the member at i of a container
+// whose type unification made t from, or the attribute name, where the
+// container is an object or a map: the element type at i of a tuple, the type
+// of the attribute name of an object, and the element type of anything else.
+func placeOf(t Type, i int, name string) Type {
+	switch d := t.t; d.kind {
+	case KindTuple:
+		return d.elems[i]
+	case KindObject:
+		a, _ := d.attribute(name)
+		return a
+	}
+	return t.t.elem
+}
+
+// firstOpen returns the open failure of the first of outs whose type leaves
+// open a part that elem, their unification, leaves open too, and otherwise the
+// failure of the conversion to c whose element type is elem, which nothing
+// settled at all.
+func firstOpen(outs []typeOutcome, elem Type, c Constraint) *failure {
+	for _, o := range outs {
+		if o.typ.t != nil && o.typ.t.open && fillOpen(o.typ, elem).t.open {
+			return o.open
+		}
+	}
+	return unsettledElement(c)
 }
 
 // failure says why a conversion fails: a diagnostic code and a message.
@@ -216,12 +301,16 @@ func collectionTypeConvert(t Type, c Constraint, p Policy, k keys) typeOutcome {
 	}
 	results := make([]Type, 0, len(members)+1)
 	var least []Type
+	var opens []typeOutcome
 	pending := false
 	for _, m := range members {
 		out := typeConvert(m, d.elem, p, k)
 		switch {
 		case out.fail != nil:
 			return out
+		case out.open != nil:
+			opens = append(opens, out)
+			results = append(results, out.typ)
 		case out.pending:
 			pending = true
 			// The type the member would have with no keys in hand is the
@@ -246,28 +335,37 @@ func collectionTypeConvert(t Type, c Constraint, p Policy, k keys) typeOutcome {
 	if f != nil {
 		return failed(f)
 	}
+	var out typeOutcome
 	switch d.kind {
 	case ConstraintListOf:
-		return typeOutcome{typ: ListType(elem)}
+		out.typ = ListType(elem)
 	case ConstraintSetOf:
-		return typeOutcome{typ: SetType(elem)}
+		out.typ = SetType(elem)
+	default:
+		out.typ = MapType(elem)
 	}
-	return typeOutcome{typ: MapType(elem)}
+	if elem.t.open {
+		out.open = firstOpen(opens, elem, d.elem)
+	}
+	return out
 }
 
 // elementType returns the element type of a collection whose members convert
 // to these types under the element constraint c: their unification, with the
-// type c names where it names one, which must satisfy c. withhold leaves the
-// types out of a message, where a map's keys that a redacting mark withholds
-// may have named their attributes. memo remembers what a conversion of values
-// asks, and is nil for a conversion of types.
+// type c names where it names one, which must satisfy c. Where there is
+// nothing to unify, the element type is left open (openType), and where every
+// type that has a part leaves it open, the element type leaves it open too:
+// the levels above settle it, and judge what they settle by their own
+// constraints, which hold c in its place. withhold leaves the types out of a
+// message, where a map's keys that a redacting mark withholds may have named
+// their attributes. memo remembers what a conversion of values asks, and is
+// nil for a conversion of types.
 func elementType(types []Type, c Constraint, p Policy, withhold bool, memo *convertMemo) (Type, *failure) {
 	if s, ok := memo.resultType(c); ok {
 		types = append(types[:len(types):len(types)], s)
 	}
 	if len(types) == 0 {
-		return Type{}, &failure{CodeConvertNoCommonType,
-			"nothing settles an element type for " + c.String() + ": there are no members, and the constraint admits more than one type"}
+		return openType, nil
 	}
 	elem, ok := unifyTypes(types, p)
 	switch {
@@ -275,6 +373,8 @@ func elementType(types []Type, c Constraint, p Policy, withhold bool, memo *conv
 		return Type{}, &failure{CodeConvertNoCommonType, "the members have no common type"}
 	case !ok:
 		return Type{}, &failure{CodeConvertNoCommonType, "the members have no common type: " + typeList(types)}
+	case elem.t.open:
+		return elem, nil
 	case !memo.satisfies(c, elem) && withhold:
 		return Type{}, &failure{CodeConvertNoCommonType, "the members' common type does not satisfy " + c.String()}
 	case !memo.satisfies(c, elem):
@@ -348,6 +448,7 @@ func tupleTypeConvert(t Type, c Constraint, p Policy, k keys) typeOutcome {
 	}
 	elems := make([]Type, len(d.members))
 	pending := false
+	var open *failure
 	for i, m := range d.members {
 		member := from.elem
 		if from.kind == KindTuple {
@@ -361,6 +462,7 @@ func tupleTypeConvert(t Type, c Constraint, p Policy, k keys) typeOutcome {
 			pending = true
 		default:
 			elems[i] = out.typ
+			open = cmp.Or(open, out.open)
 		}
 	}
 	if unsafe && p == Safe {
@@ -369,7 +471,7 @@ func tupleTypeConvert(t Type, c Constraint, p Policy, k keys) typeOutcome {
 	if pending {
 		return typeOutcome{pending: true}
 	}
-	return typeOutcome{typ: TupleType(elems...)}
+	return typeOutcome{typ: TupleType(elems...), open: open}
 }
 
 // objectTypeConvert converts t to an ObjectWith constraint.
@@ -384,6 +486,7 @@ func objectTypeConvert(t Type, c Constraint, p Policy, k keys) typeOutcome {
 	}
 	attrs := map[string]Type{}
 	pending := false
+	var open *failure
 	fields := d.fields
 	for _, a := range from.attrs {
 		for len(fields) > 0 && fields[0].name < a.name {
@@ -408,6 +511,7 @@ func objectTypeConvert(t Type, c Constraint, p Policy, k keys) typeOutcome {
 			pending = true
 		default:
 			attrs[a.name] = out.typ
+			open = cmp.Or(open, out.open)
 		}
 		fields = fields[1:]
 	}
@@ -420,7 +524,7 @@ func objectTypeConvert(t Type, c Constraint, p Policy, k keys) typeOutcome {
 	if pending {
 		return typeOutcome{pending: true}
 	}
-	return typeOutcome{typ: ObjectType(attrs)}
+	return typeOutcome{typ: ObjectType(attrs), open: open}
 }
 
 // addNull adds to attrs the attribute that an absent optional field f adds,
@@ -441,6 +545,7 @@ func mapObjectTypeConvert(t Type, c Constraint, p Policy, k keys) typeOutcome {
 	d := c.c
 	attrs := map[string]Type{}
 	pending := k == keysUnknown && !d.closed
+	var open *failure
 	for _, f := range d.fields {
 		if !f.Required {
 			if _, ok := resultType(f.Constraint); !ok && k == keysUnknown && !admitsNone(f.Constraint) {
@@ -457,6 +562,7 @@ func mapObjectTypeConvert(t Type, c Constraint, p Policy, k keys) typeOutcome {
 			pending = true
 		default:
 			attrs[f.name] = out.typ
+			open = cmp.Or(open, out.open)
 		}
 	}
 	if p == Safe {
@@ -465,7 +571,7 @@ func mapObjectTypeConvert(t Type, c Constraint, p Policy, k keys) typeOutcome {
 	if pending {
 		return typeOutcome{pending: true}
 	}
-	return typeOutcome{typ: ObjectType(attrs)}
+	return typeOutcome{typ: ObjectType(attrs), open: open}
 }
 
 // typeConvertOneOf converts t to the first member of a OneOf constraint to
@@ -617,10 +723,14 @@ func unifyObjectTypes(types []Type, p Policy) (Type, bool) {
 	return ObjectType(attrs), true
 }
 
-// unifyTwo unifies two types.
+// unifyTwo unifies two types. A part left open unifies as Any does, with
+// anything to that thing (CV-044).
 func unifyTwo(a, b Type, p Policy) (Type, bool) {
-	if a == b {
+	switch {
+	case a == b, b == openType:
 		return a, true
+	case a == openType:
+		return b, true
 	}
 	if a.t.kind > b.t.kind {
 		a, b = b, a

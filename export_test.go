@@ -77,9 +77,16 @@ func SameNode(a, b Value) bool { return a.n == b.n }
 // fits them to its element type at every level does, for the property test
 // that holds the two to one result. Neither goes through the operation
 // framework, which they would share.
+//
+// Where the reference's result is of a type still open, nothing settled what
+// it left open, and the conversion fails (CV-021). The reference does not say
+// where, so the conversion's failure stands in for it, where it is one.
 func ConvertBothWays(v Value, c Constraint, p Policy) (converted, fitted Value) {
 	converted = converter{policy: p, carried: &carrying{}, memo: &convertMemo{}}.value(v, c)
 	fitted = converter{policy: p, carried: &carrying{}, memo: &convertMemo{}}.fittingValue(v, c)
+	if t := fitted.n.typ.t; t != nil && t.open && converted.IsError() {
+		fitted = converted
+	}
 	return converted, fitted
 }
 
