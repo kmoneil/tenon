@@ -229,6 +229,7 @@ var (
 		{"Lookup", "Read a nested value", "Reads one environment variable of the middle service."},
 		{"Diff", "Diff one change", "Reports what changed between two versions of the converted value that differ in one replica count."},
 		{"Cross", "Cross between go-cty and tenon", "Carries the converted value across ctytenon's bridge, from go-cty to tenon and from tenon to go-cty, as a program moving from one to the other a piece at a time does."},
+		{"Call", "Call a function", "Calls a two-number function once per service, through each library's own convention: tenon converts the arguments to the parameters' constraints inside the call, where go-cty leaves converting to the caller."},
 	}
 	// The libraries the summary compares come first; the rest are the
 	// directions of ctytenon's bridge, which the Cross workload measures.
@@ -384,6 +385,12 @@ const fairness = `## Reading the figures
   reused from one iteration to the next, which keeps them in the processor's
   caches for every library alike; neither value system keeps anything
   between comparisons.
+- **Function calls.** The two-number function multiplies a service's
+  replica count, once per service of the document. tenon's ` + "`Call`" + ` converts
+  each argument to its parameter's constraint under the call's policy and
+  answers every argument state itself; go-cty's ` + "`Call`" + ` checks conformance
+  only, each host converting beforehand, so each measures the whole of its
+  own convention.
 - **Growth.** The sizes are 32 times apart, so work growing faster than the
   document shows as a step of more than 32 between rows. tenon keeps its work
   in proportion to its input (` + "`SECURITY.md`" + ` says where it bounds it), and

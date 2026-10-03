@@ -255,6 +255,7 @@ two differ, and its own `CHANGELOG.md` what each release holds:
 | Diffs | None: each program writes its own | `Diff`, which never looks inside what a redacting mark withholds |
 | Determinism | `Equals` on objects and maps holding an unknown answers by Go's map order, and keys that are one after normalization merge at random | The same answer every time, and such keys are refused, naming both spellings |
 | Reading JSON | `ctyjson.Unmarshal` keeps the last of two members of one name, ignores text after the value, reads numbers as 512-bit floats and stops at the first failure | `ParseJSON` refuses a name given twice and anything after the value, reads numbers exactly, and reports every failure at its path |
+| Functions | A parameter is a type and four flags that change what a state means at the call; arguments are never converted, a refused argument is a Go error naming only the first failure, and a failing variadic argument is reported at the wrong index | A parameter is a constraint; arguments convert under the call's policy, every failing argument reports as a diagnostic located by its index, and known arguments give a known result unless volatility is declared |
 
 The bench module holds a test for each of go-cty's open issues whose defect
 tenon could share, asserting what go-cty v1.19.0 does with the issue's case

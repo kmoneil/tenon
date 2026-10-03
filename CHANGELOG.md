@@ -1,5 +1,31 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- Functions: a `Function` is an operation a caller defines once, from a
+  `FunctionSpec`, and a host assembles into the table an expression
+  language evaluates with. Each parameter is a `Constraint`, and
+  `Call(f, args, policy)` converts every argument to its parameter's
+  constraint under the policy before the implementation sees it. The call
+  boundary answers what the implementation does not admit, by the rules
+  operations already follow: an error argument fails the call with every
+  failing argument's diagnostics, each located by its zero-based index
+  (`function.arity`, `function.failed`, `operation.null_operand` and the
+  conversion's own codes); an unknown or pending argument answers with the
+  unknown of the function's result; marked arguments are unmarked and the
+  result carries the marks that propagate. The admissions `AllowNull`,
+  `AllowUnknown`, `AllowPending` and `AllowMarked` widen what the
+  implementation sees without changing what any state means. A result is a
+  constraint or derives from the arguments (`ResultOf`), a host asks it
+  before evaluating with `ResultConstraint`, and a specification that
+  declares `Volatile`, or a function declared so with
+  `Function.AsVolatile`, answers known arguments with the unknown, as a
+  timestamp must. The specification gains section 12, Functions (`FN-001`
+  to `FN-030`), and the operand matrix calls a function in every state and
+  every position.
+
 ## 0.14.0 (2026-10-02)
 
 A program reads JSON with tenon itself now. `ParseJSON` reads a document

@@ -116,6 +116,28 @@
 // Passing a value of the wrong type to an operation is not a diagnostic but a
 // panic: it is a mistake in the program, not in the data.
 //
+// # Functions
+//
+// A [Function] is an operation a caller defines once, from a [FunctionSpec],
+// and a host assembles into the table an expression language evaluates with.
+// Each [Param] is a [Constraint], and [Call] converts every argument to its
+// parameter's constraint under the call's [Policy] before the implementation
+// sees it. The boundary answers what the implementation does not admit: an
+// error argument fails the call with every failing argument's diagnostics,
+// each located by its zero-based index; a null is refused unless the
+// parameter admits it; an unknown or pending argument answers with the
+// unknown of the function's result, which [ResultConstraint] gives a host
+// before it evaluates; and marked arguments are unmarked, the result
+// carrying the marks that propagate. The admissions, AllowNull,
+// AllowUnknown, AllowPending and AllowMarked, widen what the implementation
+// sees without changing what any state means. A result is a constraint or
+// derives from the arguments, and a specification that declares Volatile,
+// or a function declared so after the fact with [Function.AsVolatile],
+// answers even known arguments with the unknown, as a timestamp must. What the implementation
+// returns is held to the result constraint, and to answering known
+// arguments with a known value or an error: breaking either is the
+// function author's defect, a panic, never an answer.
+//
 // # Marks and secrets
 //
 // A [Mark] is a label attached to a value that travels with it. [WithMarks]

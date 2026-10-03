@@ -113,7 +113,7 @@ release-fuzz:
 # that a pair dropped, or no longer run with its package, fails the run rather
 # than passing on the pairs left; a narrowed run reads what it selects.
 BENCH ?= .
-PAIRS ?= 38
+PAIRS ?= 40
 growth:
 	go run ./tools/growth -bench='$(BENCH)' -pairs=$(if $(filter .,$(BENCH)),$(PAIRS),1) ./...
 

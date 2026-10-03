@@ -5,6 +5,23 @@ module of its own (`github.com/kmoneil/tenon/ctytenon`) whose versions are
 tagged `ctytenon/vX.Y.Z`. tenon's own changes are in the repository's
 `CHANGELOG.md`.
 
+## Unreleased
+
+### Added
+
+- Functions cross the bridge both ways. `Bridge.FunctionToCty(f, policy)`
+  wraps a tenon function for a host still evaluating with cty, HCL's
+  evaluator among them: the cty parameters carry the crossed constraints
+  and grant cty's every allowance, so tenon's call boundary answers every
+  argument state, a `cty.DynamicVal` crossing as a pending value; failures
+  return as the `*tenon.Error` cty callers expect, and a defect of the
+  function's author reaches a cty caller as cty's own `PanicError`
+  convention. `Bridge.FunctionFromCty(f)` carries a cty function the other
+  way, each allowance becoming the admission it means and the result
+  deriving through the function's own `ReturnTypeForValues`; a function
+  cty's `Unpredictable` wraps is crossed beneath the wrapper and declared
+  with `tenon.Function.AsVolatile`.
+
 ## 0.1.0 (2026-10-02)
 
 The first release. A program built on go-cty, the value system of HCL and
