@@ -44,6 +44,10 @@
 //     only the set says.
 //   - An error cty gave crosses as diagnostics located by its paths, and a
 //     tenon error value as the [*tenon.Error] holding it.
+//   - A function crosses both ways: [Bridge.FunctionToCty] wraps a tenon
+//     function for a host still evaluating with cty, tenon's call boundary
+//     answering every argument state, and [Bridge.FunctionFromCty] a cty
+//     function for a host calling what it has through tenon.
 //
 // # What does not cross
 //
