@@ -10,15 +10,12 @@ fails where it is stale.
 | Specification version | 0.12.0 |
 | Unicode version (`ST-003`) | 15.0.0 |
 | Rules | 227 normative, 0 outline, 0 withdrawn |
-| Rules satisfied | 225 of 227 |
+| Rules satisfied | 227 of 227 |
 | Optional areas omitted | none |
 
 ## Rules not satisfied
 
-| Rule | Why |
-| ---- | --- |
-| `FN-020` | deferred: the result derivation hook arrives with the card after the call's |
-| `FN-022` | deferred: declared volatility arrives with the card after the call's |
+None. Every normative rule is enforced, and a passing conformance test covers it.
 
 ## Implementation-defined orderings
 
@@ -50,4 +47,4 @@ implemented, and their conformance tests run.
 | `GO` | 24 | 24 |
 | `DI` | 20 | 20 |
 | `JS` | 9 | 9 |
-| `FN` | 16 | 14 |
+| `FN` | 16 | 16 |

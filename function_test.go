@@ -51,7 +51,7 @@ func TestConformance_FN001_TheSpecificationMakesTheFunction(t *testing.T) {
 	mustPanicUsage(t, "the specification of Broken has no implementation", func() {
 		tenon.NewFunction(tenon.FunctionSpec{Name: "Broken", Result: num})
 	})
-	mustPanicUsage(t, "the specification of Broken has no result constraint", func() {
+	mustPanicUsage(t, "the specification of Broken has no result", func() {
 		tenon.NewFunction(tenon.FunctionSpec{Name: "Broken", Impl: impl})
 	})
 	mustPanicUsage(t, "parameter 2 (b) of Broken has no constraint", func() {
@@ -127,8 +127,8 @@ func TestConformance_FN002_Introspection(t *testing.T) {
 	if vp := f.VarParam(); vp == nil || vp.Name != "parts" {
 		t.Errorf("VarParam() = %+v", vp)
 	}
-	if !f.Result().Equal(num) {
-		t.Errorf("Result() = %v, want %v", f.Result(), num)
+	if rc, static := f.Result(); !static || !rc.Equal(num) {
+		t.Errorf("Result() = %v, %t, want %v and static", rc, static, num)
 	}
 
 	// What introspection returns is a copy.
@@ -739,5 +739,154 @@ func TestFunctionCallIsAnExample(t *testing.T) {
 	}
 	if s := fmt.Sprint(got); s != "5" {
 		t.Errorf("the result displays as %q", s)
+	}
+}
+
+func TestConformance_FN020_TheResultDerives(t *testing.T) {
+	conformance.Covers(t, "FN-020")
+	num := tenon.Exactly(tenon.NumberType())
+	impl := func(args []tenon.Value, _ tenon.Constraint) (tenon.Value, error) { return args[0], nil }
+
+	// Exactly one of the constraint and the derivation.
+	mustPanicUsage(t, "the specification of Both has both a result constraint and a derivation", func() {
+		tenon.NewFunction(tenon.FunctionSpec{
+			Name:     "Both",
+			Result:   num,
+			ResultOf: func([]tenon.Value) (tenon.Constraint, error) { return num, nil },
+			Impl:     impl,
+		})
+	})
+
+	// The derivation sees the converted arguments in the states they stand,
+	// and what it returns is the constraint the call promises.
+	var derived, ran int
+	ident := tenon.NewFunction(tenon.FunctionSpec{
+		Name:   "Ident",
+		Params: []tenon.Param{{Name: "v", Constraint: tenon.Any()}},
+		ResultOf: func(args []tenon.Value) (tenon.Constraint, error) {
+			derived++
+			if args[0].IsPending() {
+				return tenon.Any(), nil
+			}
+			return tenon.Exactly(args[0].Type()), nil
+		},
+		Impl: func(args []tenon.Value, _ tenon.Constraint) (tenon.Value, error) {
+			ran++
+			return args[0], nil
+		},
+	})
+	if got := tenon.Call(ident, []tenon.Value{tenon.String("x")}, tenon.Safe); !got.Equal(tenon.String("x")) {
+		t.Errorf("Ident(\"x\") = %v", got)
+	}
+	got := tenon.Call(ident, []tenon.Value{tenon.Unknown(tenon.BoolType())}, tenon.Safe)
+	if got.IsKnown() || got.IsError() || got.IsPending() || !got.Type().Equal(tenon.BoolType()) {
+		t.Errorf("Ident(unknown bool) = %v, want the unknown Bool the derivation promised", got)
+	}
+	got = tenon.Call(ident, []tenon.Value{tenon.Pending(tenon.Any())}, tenon.Safe)
+	if !got.IsPending() || !got.Constraint().Equal(tenon.Any()) {
+		t.Errorf("Ident(pending) = %v, want pending with any", got)
+	}
+	if derived != 3 || ran != 1 {
+		t.Errorf("the derivation ran %d times and the implementation %d, want 3 and 1", derived, ran)
+	}
+
+	// Its refusal is a data failure, as the implementation's failures are.
+	refusing := tenon.NewFunction(tenon.FunctionSpec{
+		Name:     "Refusing",
+		Params:   []tenon.Param{{Name: "v", Constraint: tenon.Any()}},
+		ResultOf: func([]tenon.Value) (tenon.Constraint, error) { return tenon.Constraint{}, errors.New("no shape fits") },
+		Impl:     impl,
+	})
+	got = tenon.Call(refusing, []tenon.Value{tenon.Bool(true)}, tenon.Safe)
+	want := []tenon.Diagnostic{{Code: tenon.CodeFunctionFailed, Message: "no shape fits"}}
+	if !got.IsError() || !equalDiagnostics(got.Diagnostics(), want) {
+		t.Errorf("a refusing derivation gave %v, want the diagnostic %+v", got, want[0])
+	}
+
+	// A derivation that answers nothing is the author's defect.
+	empty := tenon.NewFunction(tenon.FunctionSpec{
+		Name:     "Empty",
+		Params:   []tenon.Param{{Name: "v", Constraint: tenon.Any()}},
+		ResultOf: func([]tenon.Value) (tenon.Constraint, error) { return tenon.Constraint{}, nil },
+		Impl:     impl,
+	})
+	mustPanicUsage(t, "Empty: the derivation returned the zero Constraint and no error", func() {
+		tenon.Call(empty, []tenon.Value{tenon.Bool(true)}, tenon.Safe)
+	})
+
+	// A host asks the result constraint before it evaluates, unknowns
+	// standing for what it lacks, and the implementation does not run.
+	ran = 0
+	rc, errv := tenon.ResultConstraint(ident, []tenon.Value{tenon.Unknown(tenon.BoolType())}, tenon.Safe)
+	if errv != nil || !rc.Equal(tenon.Exactly(tenon.BoolType())) || ran != 0 {
+		t.Errorf("ResultConstraint gave %v, %v (implementation ran %d times)", rc, errv, ran)
+	}
+	f := fnAdd("Add", nil)
+	if rc, errv := tenon.ResultConstraint(f, []tenon.Value{tenon.Unknown(tenon.NumberType()), tenon.NumberFromInt(1)}, tenon.Safe); errv != nil || !rc.Equal(num) {
+		t.Errorf("ResultConstraint of a static result gave %v, %v", rc, errv)
+	}
+	if _, errv := tenon.ResultConstraint(f, []tenon.Value{tenon.NumberFromInt(1)}, tenon.Safe); errv == nil || errv.Diagnostics()[0].Code != tenon.CodeFunctionArity {
+		t.Errorf("ResultConstraint with the wrong arity gave %v, want the arity failure", errv)
+	}
+	if _, errv := tenon.ResultConstraint(f, []tenon.Value{tenon.Bool(true), tenon.NumberFromInt(1)}, tenon.Safe); errv == nil ||
+		!errv.Diagnostics()[0].Path.Equal(tenon.Path{}.Index(tenon.NumberFromInt(0))) {
+		t.Errorf("ResultConstraint with a failing argument gave %v, want its located failure", errv)
+	}
+}
+
+func TestConformance_FN022_DeclaredVolatility(t *testing.T) {
+	conformance.Covers(t, "FN-022", "UN-008")
+	num := tenon.Exactly(tenon.NumberType())
+	var ran bool
+	fresh := tenon.NewFunction(tenon.FunctionSpec{
+		Name:     "Fresh",
+		Params:   []tenon.Param{{Name: "seed", Constraint: num}},
+		Result:   num,
+		Volatile: true,
+		Impl: func(args []tenon.Value, _ tenon.Constraint) (tenon.Value, error) {
+			ran = true
+			return tenon.NumberFromInt(4), nil
+		},
+	})
+	if !fresh.Volatile() {
+		t.Errorf("Volatile() = false for a volatile specification")
+	}
+
+	// Known arguments settle nothing: the result is the unknown of the
+	// result constraint, the declared exception to known in, known out.
+	got := tenon.Call(fresh, []tenon.Value{tenon.NumberFromInt(1)}, tenon.Safe)
+	if ran || got.IsKnown() || got.IsError() || got.IsPending() || !got.Type().Equal(tenon.NumberType()) {
+		t.Errorf("a volatile call gave %v (implementation ran: %t), want the unknown Number", got, ran)
+	}
+
+	// The boundary still comes first: failures fail, and marks carry.
+	boom := tenon.ErrorVal(tenon.Diagnostic{Code: "app.boom", Message: "boom"})
+	if got := tenon.Call(fresh, []tenon.Value{boom}, tenon.Safe); !got.IsError() {
+		t.Errorf("a volatile call with an error argument gave %v", got)
+	}
+	origin := stamp{id: "origin"}
+	got = tenon.Call(fresh, []tenon.Value{tenon.WithMarks(tenon.NumberFromInt(1), origin)}, tenon.Safe)
+	if got.IsKnown() || !tenon.HasMark(got, origin) {
+		t.Errorf("a volatile call's answer %v does not carry the argument's mark", got)
+	}
+
+	// Volatility and a derived result compose: the unknown is of what the
+	// derivation says.
+	volatileIdent := tenon.NewFunction(tenon.FunctionSpec{
+		Name:     "FreshIdent",
+		Params:   []tenon.Param{{Name: "v", Constraint: tenon.Any()}},
+		Volatile: true,
+		ResultOf: func(args []tenon.Value) (tenon.Constraint, error) { return tenon.Exactly(args[0].Type()), nil },
+		Impl:     func(args []tenon.Value, _ tenon.Constraint) (tenon.Value, error) { return args[0], nil },
+	})
+	got = tenon.Call(volatileIdent, []tenon.Value{tenon.Bool(true)}, tenon.Safe)
+	if got.IsKnown() || got.IsError() || !got.Type().Equal(tenon.BoolType()) {
+		t.Errorf("a volatile derived call gave %v, want the unknown Bool", got)
+	}
+
+	// ResultConstraint answers for a volatile function as for any other:
+	// the promise is the constraint, volatility is about the value.
+	if rc, errv := tenon.ResultConstraint(fresh, []tenon.Value{tenon.NumberFromInt(1)}, tenon.Safe); errv != nil || !rc.Equal(num) {
+		t.Errorf("ResultConstraint of a volatile function gave %v, %v", rc, errv)
 	}
 }

@@ -23,9 +23,46 @@ func registered() []matrix.Operation {
 	return ops
 }
 
+// functionOperations returns caller-defined functions as the matrix sees
+// them, so every state crosses a real call (FN rules) in every argument
+// position: one function on the default terms, and one whose first
+// parameter admits null.
+func functionOperations() []matrix.Operation {
+	num := tenon.Exactly(tenon.NumberType())
+	add := tenon.NewFunction(tenon.FunctionSpec{
+		Name:   "MatrixAdd",
+		Params: []tenon.Param{{Name: "a", Constraint: num}, {Name: "b", Constraint: num}},
+		Result: num,
+		Impl: func(args []tenon.Value, _ tenon.Constraint) (tenon.Value, error) {
+			return tenon.Add(args[0], args[1]), nil
+		},
+	})
+	orZero := tenon.NewFunction(tenon.FunctionSpec{
+		Name:   "MatrixAddOrZero",
+		Params: []tenon.Param{{Name: "a", Constraint: num, AllowNull: true}, {Name: "b", Constraint: num}},
+		Result: num,
+		Impl: func(args []tenon.Value, _ tenon.Constraint) (tenon.Value, error) {
+			if args[0].IsNull() {
+				return args[1], nil
+			}
+			return tenon.Add(args[0], args[1]), nil
+		},
+	})
+	within := func(nulls bool) matrix.Operand {
+		return matrix.Operand{Constraint: num, Nulls: nulls, Within: true}
+	}
+	call := func(f tenon.Function) func(...tenon.Value) tenon.Value {
+		return func(args ...tenon.Value) tenon.Value { return tenon.Call(f, args, tenon.Safe) }
+	}
+	return []matrix.Operation{
+		{Name: "Call(MatrixAdd)", Operands: []matrix.Operand{within(false), within(false)}, Fixed: true, Collects: true, Call: call(add)},
+		{Name: "Call(MatrixAddOrZero)", Operands: []matrix.Operand{within(true), within(false)}, Fixed: true, Collects: true, Call: call(orZero)},
+	}
+}
+
 func TestConformance_MK005_OperandMatrix(t *testing.T) {
 	conformance.Covers(t, "ER-005", "UN-008", "UN-009", "UN-023", "MK-003", "MK-005", "MK-010")
-	violations, calls := matrix.Check(registered())
+	violations, calls := matrix.Check(append(registered(), functionOperations()...))
 	for i, v := range violations {
 		if i == 20 {
 			t.Errorf("and %d more", len(violations)-i)
@@ -152,6 +189,17 @@ func TestOperandMatrixCatchesBrokenOperations(t *testing.T) {
 		{"no panic", matrix.Operation{Name: "panics on an unknown", Operands: numbers, Fixed: true, Call: func(args ...tenon.Value) tenon.Value {
 			if args[0].IsResolved() && !args[0].IsKnown() {
 				return tenon.Add(args[0], tenon.Bool(true)) // a usage panic
+			}
+			return add(args)
+		}}},
+		{"ER-005", matrix.Operation{Name: "forgets where its failures sit", Operands: numbers, Fixed: true, Collects: true, Call: func(args ...tenon.Value) tenon.Value {
+			// A collecting operation must locate an error operand's
+			// diagnostics beneath its index, as go-cty's variadic
+			// argument errors are not.
+			for _, a := range args {
+				if a.IsError() {
+					return a
+				}
 			}
 			return add(args)
 		}}},
