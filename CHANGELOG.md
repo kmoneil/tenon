@@ -1,6 +1,26 @@
 # Changelog
 
-## Unreleased
+## 0.15.0 (2026-10-03)
+
+tenon has functions now. A `Function` is defined once, from a
+specification whose parameters are constraints, and called as every
+operation is called: `Call` converts each argument to its parameter's
+constraint under the policy, answers the states the implementation does
+not admit, reports every failing argument as a diagnostic located by
+its zero-based index, and holds the implementation to its contract:
+known arguments give a known result or an error, unless volatility is
+declared. ctytenon 0.2.0 crosses functions both ways, so an unmodified
+cty host calls a tenon function in place. It implements version 0.13.0
+of the tenon specification, which adds §12, functions (`FN-001` to
+`FN-030`), and amends `UN-008` for declared volatility: 227 rules.
+
+The minor version moves for the addition; nothing that existed changes.
+
+**Upgrading from 0.14.0.** Nothing changes for an existing program: the
+compiler finds nothing, documents decode as they did, and values encode
+to the same bytes.
+
+**What `CONFORMANCE.md` states.** 227 of 227.
 
 ### Added
 
