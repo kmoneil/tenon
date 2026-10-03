@@ -889,4 +889,15 @@ func TestConformance_FN022_DeclaredVolatility(t *testing.T) {
 	if rc, errv := tenon.ResultConstraint(fresh, []tenon.Value{tenon.NumberFromInt(1)}, tenon.Safe); errv != nil || !rc.Equal(num) {
 		t.Errorf("ResultConstraint of a volatile function gave %v, %v", rc, errv)
 	}
+
+	// AsVolatile declares it after the fact, on a new function, the one it
+	// was asked of unchanged.
+	quiet := fnAdd("Add", nil)
+	loud := quiet.AsVolatile()
+	if quiet.Volatile() || !loud.Volatile() || loud.Equal(quiet) {
+		t.Errorf("AsVolatile gave Volatile()=%t over %t, Equal=%t", loud.Volatile(), quiet.Volatile(), loud.Equal(quiet))
+	}
+	if got := tenon.Call(loud, []tenon.Value{tenon.NumberFromInt(1), tenon.NumberFromInt(2)}, tenon.Safe); got.IsKnown() {
+		t.Errorf("the declared function answered %v from known arguments", got)
+	}
 }

@@ -195,6 +195,17 @@ func (f Function) Result() (Constraint, bool) {
 // function of its arguments.
 func (f Function) Volatile() bool { return f.data().volatile }
 
+// AsVolatile returns f with volatility declared, its specification otherwise
+// unchanged: a function whose implementation is not pure, wrapped by cty's
+// Unpredictable on the other side of a migration, is declared this way
+// where a specification of one's own cannot be. The result is a new
+// function, equal to itself alone.
+func (f Function) AsVolatile() Function {
+	s := *f.data()
+	s.volatile = true
+	return Function{spec: &s}
+}
+
 // name names the function in messages.
 func (s *fnSpec) name_() string { return specName(s.name) }
 
