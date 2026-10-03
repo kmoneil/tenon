@@ -5,7 +5,11 @@ module of its own (`github.com/kmoneil/tenon/ctytenon`) whose versions are
 tagged `ctytenon/vX.Y.Z`. tenon's own changes are in the repository's
 `CHANGELOG.md`.
 
-## Unreleased
+## 0.2.0 (2026-10-03)
+
+Functions cross the bridge now, both ways, so a host still evaluating
+with cty calls a tenon function in place, and one mid-migration calls
+what it has through tenon. Requires tenon 0.15.0.
 
 ### Added
 
