@@ -11,6 +11,7 @@ import (
 	"github.com/kmoneil/tenon/ctytenon"
 	"github.com/zclconf/go-cty/cty"
 	"github.com/zclconf/go-cty/cty/convert"
+	"github.com/zclconf/go-cty/cty/function"
 	ctyjson "github.com/zclconf/go-cty/cty/json"
 	"github.com/zclconf/go-cty/cty/msgpack"
 )
@@ -276,6 +277,64 @@ func BenchmarkCross(b *testing.B) {
 			var err error
 			if sink, err = bridge.ToCty(v); err != nil {
 				b.Fatal(err)
+			}
+		}
+	})
+}
+
+// BenchmarkCall calls a two-number function once per service of the
+// document, through each library's own calling convention: tenon's Call
+// converts each argument to its parameter's constraint under the policy
+// inside the call, where go-cty checks conformance only and every caller
+// converts beforehand, so each measures the whole of what its callers do
+// per call.
+func BenchmarkCall(b *testing.B) {
+	sized(b, "tenon", func(b *testing.B, doc []byte) {
+		num := tenon.Exactly(tenon.NumberType())
+		scale := tenon.NewFunction(tenon.FunctionSpec{
+			Name:   "Scale",
+			Params: []tenon.Param{{Name: "count", Constraint: num}, {Name: "by", Constraint: num}},
+			Result: num,
+			Impl: func(args []tenon.Value, _ tenon.Constraint) (tenon.Value, error) {
+				return tenon.Mul(args[0], args[1]), nil
+			},
+		})
+		two := tenon.NumberFromInt(2)
+		var args [][]tenon.Value
+		for _, svc := range typedTenon(b, doc).Attribute("services").Elements() {
+			args = append(args, []tenon.Value{svc.Attribute("replicas"), two})
+		}
+		for b.Loop() {
+			for _, a := range args {
+				sink = tenon.Call(scale, a, tenon.Safe)
+			}
+		}
+	})
+	sized(b, "cty", func(b *testing.B, doc []byte) {
+		scale := function.New(&function.Spec{
+			Params: []function.Parameter{
+				{Name: "count", Type: cty.Number},
+				{Name: "by", Type: cty.Number},
+			},
+			Type: function.StaticReturnType(cty.Number),
+			Impl: func(args []cty.Value, _ cty.Type) (cty.Value, error) {
+				return args[0].Multiply(args[1]), nil
+			},
+		})
+		two := cty.NumberIntVal(2)
+		var args [][]cty.Value
+		it := typedCty(b, doc).GetAttr("services").ElementIterator()
+		for it.Next() {
+			_, svc := it.Element()
+			args = append(args, []cty.Value{svc.GetAttr("replicas"), two})
+		}
+		for b.Loop() {
+			for _, a := range args {
+				r, err := scale.Call(a)
+				if err != nil {
+					b.Fatal(err)
+				}
+				sink = r
 			}
 		}
 	})

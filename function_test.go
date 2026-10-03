@@ -901,3 +901,49 @@ func TestConformance_FN022_DeclaredVolatility(t *testing.T) {
 		t.Errorf("the declared function answered %v from known arguments", got)
 	}
 }
+
+// BenchmarkCallArguments measures a call whose arguments carry the work, at
+// a size and at four times it, so the growth job holds a call's cost to the
+// size of its arguments: a wide list and a wide map, each converted to its
+// parameter's constraint, unmarked, and read by the implementation.
+func BenchmarkCallArguments(b *testing.B) {
+	for _, size := range []int{1000, 4000} {
+		elems := make([]tenon.Value, size)
+		for i := range elems {
+			elems[i] = tenon.Object(map[string]tenon.Value{
+				"name":  tenon.String(fmt.Sprintf("r%05d", i)),
+				"count": tenon.NumberFromInt(int64(i)),
+			})
+		}
+		entries := make(map[string]tenon.Value, size)
+		for i := range size {
+			entries[fmt.Sprintf("k%05d", i)] = tenon.NumberFromInt(int64(i))
+		}
+		for _, shape := range []struct {
+			name string
+			arg  tenon.Value
+		}{
+			{"list", tenon.List(elems[0].Type(), elems...)},
+			{"map", tenon.Map(tenon.NumberType(), entries)},
+		} {
+			count := tenon.NewFunction(tenon.FunctionSpec{
+				Name:   "Count",
+				Params: []tenon.Param{{Name: "of", Constraint: tenon.Exactly(shape.arg.Type())}},
+				Result: tenon.Exactly(tenon.NumberType()),
+				Impl: func(args []tenon.Value, _ tenon.Constraint) (tenon.Value, error) {
+					return tenon.Length(args[0]), nil
+				},
+			})
+			args := []tenon.Value{shape.arg}
+			if got := tenon.Call(count, args, tenon.Safe); !got.Equal(tenon.NumberFromInt(int64(size))) {
+				b.Fatalf("%s at %d: Call gave %v", shape.name, size, got)
+			}
+			b.Run(fmt.Sprintf("%s/%d", shape.name, size), func(b *testing.B) {
+				b.ReportAllocs()
+				for b.Loop() {
+					tenon.Call(count, args, tenon.Safe)
+				}
+			})
+		}
+	}
+}
