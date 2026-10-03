@@ -24,6 +24,12 @@ type Operation struct {
 	Operands []Operand
 	Agree    bool // the operands must have one type between them
 	Fixed    bool // the result type does not depend on the operands' types
+	// Collects says the operation converts its operands and collects every
+	// failing one, each diagnostic located by its zero-based operand index,
+	// as a function call does (FN-011, FN-012, FN-030); an operation's own
+	// failures are unlocated, and a rejected operand fails it with the
+	// conversion's codes rather than the operation's.
+	Collects bool
 	Call     func(args ...tenon.Value) tenon.Value
 }
 
@@ -161,17 +167,38 @@ func checkArgs(op Operation, args []tenon.Value, report func(rule, format string
 	}
 	if len(errs) > 0 {
 		// ER-005: an error operand makes an error value of the concatenated
-		// diagnostics, in operand order, each once.
-		var want []tenon.Diagnostic
-		for _, e := range errs {
-			for _, d := range e.Diagnostics() {
-				if !slices.ContainsFunc(want, d.Equal) {
-					want = append(want, d)
+		// diagnostics, in operand order, each once. A collecting operation
+		// locates each beneath its operand, and other operands' refusals may
+		// join them, so its check asks for the located diagnostics in order
+		// among the result's rather than for the whole list.
+		if op.Collects {
+			var want []tenon.Diagnostic
+			for i, a := range args {
+				if !a.IsError() {
+					continue
+				}
+				for _, d := range a.Diagnostics() {
+					ld := located(d, i)
+					if !slices.ContainsFunc(want, ld.Equal) {
+						want = append(want, ld)
+					}
 				}
 			}
-		}
-		if !r.IsError() || !slices.EqualFunc(r.Diagnostics(), want, tenon.Diagnostic.Equal) {
-			report("ER-005", "%s(%s) gave %v, want the error operands' diagnostics", op.Name, render(args), r)
+			if !r.IsError() || !subsequence(r.Diagnostics(), want) {
+				report("ER-005", "%s(%s) gave %v, want every error operand's diagnostics, each located", op.Name, render(args), r)
+			}
+		} else {
+			var want []tenon.Diagnostic
+			for _, e := range errs {
+				for _, d := range e.Diagnostics() {
+					if !slices.ContainsFunc(want, d.Equal) {
+						want = append(want, d)
+					}
+				}
+			}
+			if !r.IsError() || !slices.EqualFunc(r.Diagnostics(), want, tenon.Diagnostic.Equal) {
+				report("ER-005", "%s(%s) gave %v, want the error operands' diagnostics", op.Name, render(args), r)
+			}
 		}
 	} else {
 		if allKnown && !r.IsKnown() && !r.IsError() {
@@ -184,8 +211,19 @@ func checkArgs(op Operation, args []tenon.Value, report func(rule, format string
 			if !op.Operands[i].Nulls && knownNull(a) && !hasCode(r, tenon.CodeOperationNullOperand) {
 				report("UN-009", "%s(%s) gave %v for a null operand %d", op.Name, render(args), r, i+1)
 			}
-			if rejected(a, op.Operands[i]) && !hasCode(r, tenon.CodeOperationWrongType) {
-				report("UN-023", "%s(%s) gave %v, but operand %d can only be of a type the operation rejects", op.Name, render(args), r, i+1)
+			if rejected(a, op.Operands[i]) {
+				if op.Collects {
+					// A collecting operation rejects by converting, and
+					// UN-023 makes recognising an impossible operand
+					// mandatory only where its constraint names exactly
+					// one type; a kind-level rejection the conversion may
+					// defer surfaces when the operand resolves.
+					if a.Constraint().Kind() == tenon.ConstraintExactly && !r.IsError() {
+						report("UN-023", "%s(%s) gave %v, but operand %d can only be of a type the operation rejects", op.Name, render(args), r, i+1)
+					}
+				} else if !hasCode(r, tenon.CodeOperationWrongType) {
+					report("UN-023", "%s(%s) gave %v, but operand %d can only be of a type the operation rejects", op.Name, render(args), r, i+1)
+				}
 			}
 		}
 	}
@@ -490,6 +528,34 @@ func rejected(v tenon.Value, o Operand) bool {
 	}
 	k, ok := kindNamed(c)
 	return ok && !admitsKind(o.Constraint, k)
+}
+
+// located returns d located beneath operand i, as a collecting operation
+// locates it (FN-030).
+func located(d tenon.Diagnostic, i int) tenon.Diagnostic {
+	p := tenon.Path{}.Index(tenon.NumberFromInt(int64(i)))
+	for _, s := range d.Path.Steps() {
+		switch s.Kind() {
+		case tenon.StepAttribute:
+			p = p.Attribute(s.Name())
+		case tenon.StepIndex:
+			p = p.Index(s.Key())
+		}
+	}
+	d.Path = p
+	return d
+}
+
+// subsequence reports whether want's diagnostics appear among got's, in
+// order.
+func subsequence(got, want []tenon.Diagnostic) bool {
+	j := 0
+	for _, d := range got {
+		if j < len(want) && want[j].Equal(d) {
+			j++
+		}
+	}
+	return j == len(want)
 }
 
 // hasCode reports whether v is an error value with a diagnostic of code c.

@@ -57,8 +57,22 @@ type FunctionSpec struct {
 	// VarParam, if set, stands for any number of further arguments after the
 	// positional ones, each on its terms.
 	VarParam *Param
-	// Result is the constraint the call's result satisfies. It is required.
+	// Result is the constraint the call's result satisfies. Exactly one of
+	// Result and ResultOf must be set.
 	Result Constraint
+	// ResultOf derives the call's result constraint from the converted
+	// arguments, in the states they stand: a derivation given an unknown or
+	// a pending argument says what it can from the rest, as an expression
+	// language type-checking before it runs needs it to. A refusal is
+	// returned as an error, which becomes diagnostics as Impl's failures
+	// do. Exactly one of Result and ResultOf must be set.
+	ResultOf func(args []Value) (Constraint, error)
+	// Volatile declares that the result is not a function of the arguments,
+	// as a timestamp or a fresh identifier is not. A volatile call's result
+	// is the unknown of its result constraint even where every argument is
+	// known, without the implementation running: the declared exception to
+	// the rule that known operands give a known result.
+	Volatile bool
 	// Impl is the function's behavior, given the converted arguments and the
 	// result constraint the call promised. It is required. A failure is
 	// returned as an error, which becomes diagnostics (a *Error contributes
@@ -83,19 +97,24 @@ type fnSpec struct {
 	params      []Param
 	varParam    *Param
 	result      Constraint
+	resultOf    func(args []Value) (Constraint, error)
+	volatile    bool
 	impl        func(args []Value, result Constraint) (Value, error)
 }
 
 // NewFunction returns the function that spec describes. The specification is
 // copied: changing spec, or what its slices hold, after the call changes
 // nothing. NewFunction panics if the specification cannot make a function:
-// no implementation, no result, or a parameter without a constraint.
+// no implementation, no result or two, or a parameter without a constraint.
 func NewFunction(spec FunctionSpec) Function {
 	if spec.Impl == nil {
 		usagePanic("NewFunction: the specification of %s has no implementation", specName(spec.Name))
 	}
-	if spec.Result.c == nil {
-		usagePanic("NewFunction: the specification of %s has no result constraint", specName(spec.Name))
+	switch {
+	case spec.Result.c == nil && spec.ResultOf == nil:
+		usagePanic("NewFunction: the specification of %s has no result", specName(spec.Name))
+	case spec.Result.c != nil && spec.ResultOf != nil:
+		usagePanic("NewFunction: the specification of %s has both a result constraint and a derivation", specName(spec.Name))
 	}
 	for i, prm := range spec.Params {
 		if prm.Constraint.c == nil {
@@ -108,6 +127,8 @@ func NewFunction(spec FunctionSpec) Function {
 		description: spec.Description,
 		params:      slices.Clone(spec.Params),
 		result:      spec.Result,
+		resultOf:    spec.ResultOf,
+		volatile:    spec.Volatile,
 		impl:        spec.Impl,
 	}
 	if spec.VarParam != nil {
@@ -162,8 +183,17 @@ func (f Function) VarParam() *Param {
 	return &v
 }
 
-// Result returns the constraint the function's result satisfies.
-func (f Function) Result() Constraint { return f.data().result }
+// Result returns the constraint the function's result satisfies, and false
+// where the function derives it from the arguments instead, which
+// ResultConstraint asks per call.
+func (f Function) Result() (Constraint, bool) {
+	s := f.data()
+	return s.result, s.resultOf == nil
+}
+
+// Volatile reports whether the function declares its result not to be a
+// function of its arguments.
+func (f Function) Volatile() bool { return f.data().volatile }
 
 // name names the function in messages.
 func (s *fnSpec) name_() string { return specName(s.name) }
@@ -191,7 +221,10 @@ func (s *fnSpec) param(i int) *Param {
 // pending argument answers as every operation answers one, and an argument
 // not wholly known makes the result the unknown of the function's result.
 // Marked arguments are unmarked for an implementation that does not admit
-// marks, and every answer carries the marks that propagate (MK-003).
+// marks, and every answer carries the marks that propagate (MK-003). A
+// function that derives its result does so first, from the converted
+// arguments in the states they stand, and a volatile function answers with
+// the unknown of its result even where every argument is known.
 //
 // Call panics on the zero Function, on a policy that is neither Safe nor
 // Unsafe, and where the implementation breaks its contract: a result that
@@ -208,73 +241,26 @@ func Call(f Function, args []Value, p Policy) Value {
 		return errorValue(s.arity(len(args)))
 	}
 
-	var (
-		ce      containerErrors // the data failures, each located (FN-012)
-		g       propagating     // the marks every answer carries (FN-016)
-		ga      propagating     // marks of admitted arguments, for answers the implementation does not make
-		visible = make([]Value, len(args))
-		pending bool // a pending argument answers the call (FN-014)
-		unknown bool // an argument not wholly known answers the call (FN-015)
-		known   = true
-	)
-	for i := range args {
-		prm := s.param(i)
-		n := args[i].data()
-		if n.state == stateError {
-			ce.add(argStep(i), args[i])
-			continue
-		}
-		// Conversion sees the argument marked, so its diagnostics withhold
-		// what a redacting mark requires and its result carries the marks
-		// that propagate; what does not propagate stays behind here.
-		c := Convert(args[i], prm.Constraint, p)
-		if c.n.state == stateError {
-			ce.add(argStep(i), c)
-			continue
-		}
-		if !prm.AllowNull && (c.n.state == stateNull || c.n.state == statePending && c.n.null == nullOnly) {
-			ce.addDiagnostic(s.nullArgument(i, c.n))
-			continue
-		}
-		if prm.AllowMarked {
-			// Propagating is the implementation's to do, but an answer the
-			// implementation does not make still carries what MK-003 carries.
-			ga.gather(c.n, true)
-			visible[i] = c
-		} else {
-			g.gather(c.n, true)
-			visible[i], _ = UnmarkDeep(c)
-		}
-		switch {
-		case c.n.state == statePending:
-			known = false
-			pending = pending || !prm.AllowPending
-		case !c.n.isKnown():
-			known = false
-			unknown = unknown || !prm.AllowUnknown
-		}
+	pr := s.prepare(args, p)
+	if e, ok := pr.ce.value(); ok {
+		return pr.finish(e, true)
+	}
+	rc, failed, ok := s.derive(pr)
+	if !ok {
+		return pr.finish(failed, true)
+	}
+	if s.volatile {
+		// The result is not a function of the arguments, so known arguments
+		// settle nothing: the declaration is the exception UN-008 names.
+		return pr.finish(resultPlaceholder(rc), true)
+	}
+	if pr.pending || pr.unknown {
+		return pr.finish(resultPlaceholder(rc), true)
 	}
 
-	finish := func(r Value, admitted bool) Value {
-		if len(g.marks) != 0 {
-			r = WithMarks(r, g.marks...)
-		}
-		if admitted && len(ga.marks) != 0 {
-			r = WithMarks(r, ga.marks...)
-		}
-		return r
-	}
-
-	if e, ok := ce.value(); ok {
-		return finish(e, true)
-	}
-	if pending || unknown {
-		return finish(resultPlaceholder(s.result), true)
-	}
-
-	r, err := s.impl(visible, s.result)
+	r, err := s.impl(pr.visible, rc)
 	if err != nil {
-		return finish(errorValue(implFailure(err)...), false)
+		return pr.finish(errorValue(implFailure(err)...), false)
 	}
 	if r.n == nil {
 		usagePanic("%s: the implementation returned the zero Value and no error", s.name_())
@@ -282,25 +268,144 @@ func Call(f Function, args []Value, p Policy) Value {
 	switch r.n.state {
 	case stateError:
 	case statePending:
-		if known {
+		if pr.known {
 			usagePanic("%s: every argument was known, but the implementation returned %s",
 				s.name_(), r.n.describe())
 		}
-		if _, ok := sharedType(r.n.constraint(), s.result); !ok {
+		if _, ok := sharedType(r.n.constraint(), rc); !ok {
 			usagePanic("%s: the implementation returned %s, which cannot satisfy its result %s",
-				s.name_(), r.n.describe(), s.result)
+				s.name_(), r.n.describe(), rc)
 		}
 	default:
-		if known && !r.n.isKnown() {
+		if pr.known && !r.n.isKnown() {
 			usagePanic("%s: every argument was known, but the implementation returned %s",
 				s.name_(), r.n.describe())
 		}
-		if !Satisfies(s.result, r.Type()) {
+		if !Satisfies(rc, r.Type()) {
 			usagePanic("%s: the implementation returned %s, which does not satisfy its result %s",
-				s.name_(), r.n.describe(), s.result)
+				s.name_(), r.n.describe(), rc)
 		}
 	}
-	return finish(r, false)
+	return pr.finish(r, false)
+}
+
+// ResultConstraint returns the constraint a call of f with these arguments
+// would promise its result, without running the implementation, so a host
+// can type-check a call before it evaluates: an unknown argument stands for
+// one not yet evaluated. The arguments cross the same boundary a call's do,
+// and where they fail it, the failure is returned as the call would have
+// returned it: wrong arity, a failed conversion, a refused null, an error
+// argument, or the derivation's own refusal. ResultConstraint panics as
+// Call panics: on the zero Function and on a policy that is neither Safe
+// nor Unsafe.
+func ResultConstraint(f Function, args []Value, p Policy) (Constraint, *Error) {
+	s := f.data()
+	if p != Safe && p != Unsafe {
+		usagePanic("ResultConstraint called with %s, which is neither Safe nor Unsafe", p)
+	}
+	if len(args) < len(s.params) || (s.varParam == nil && len(args) > len(s.params)) {
+		return Constraint{}, NewError(errorValue(s.arity(len(args))))
+	}
+	pr := s.prepare(args, p)
+	if e, ok := pr.ce.value(); ok {
+		return Constraint{}, NewError(pr.finish(e, true))
+	}
+	rc, failed, ok := s.derive(pr)
+	if !ok {
+		return Constraint{}, NewError(pr.finish(failed, true))
+	}
+	return rc, nil
+}
+
+// prepared is a call's arguments across the boundary: converted, their
+// failures collected, their marks gathered, their states counted.
+type prepared struct {
+	visible []Value
+	ce      containerErrors // the data failures, each located (FN-012)
+	g       propagating     // the marks every answer carries (FN-016)
+	ga      propagating     // marks of admitted arguments, for answers the implementation does not make
+	pending bool            // a pending argument answers the call (FN-014)
+	unknown bool            // an argument not wholly known answers the call (FN-015)
+	known   bool
+}
+
+// prepare takes every argument across the boundary. The arity holds.
+func (s *fnSpec) prepare(args []Value, p Policy) *prepared {
+	pr := &prepared{visible: make([]Value, len(args)), known: true}
+	for i := range args {
+		prm := s.param(i)
+		n := args[i].data()
+		if n.state == stateError {
+			pr.ce.add(argStep(i), args[i])
+			continue
+		}
+		// Conversion sees the argument marked, so its diagnostics withhold
+		// what a redacting mark requires and its result carries the marks
+		// that propagate; what does not propagate stays behind here.
+		c := Convert(args[i], prm.Constraint, p)
+		if c.n.state == stateError {
+			pr.ce.add(argStep(i), c)
+			continue
+		}
+		if !prm.AllowNull && (c.n.state == stateNull || c.n.state == statePending && c.n.null == nullOnly) {
+			// The null was consumed in refusing it, so its Propagate marks
+			// reach the answer (MK-003), which its diagnostic already made
+			// an error value.
+			pr.g.gather(c.n, true)
+			pr.ce.addDiagnostic(s.nullArgument(i, c.n))
+			continue
+		}
+		if prm.AllowMarked {
+			// Propagating is the implementation's to do, but an answer the
+			// implementation does not make still carries what MK-003 carries.
+			pr.ga.gather(c.n, true)
+			pr.visible[i] = c
+		} else {
+			pr.g.gather(c.n, true)
+			pr.visible[i], _ = UnmarkDeep(c)
+		}
+		switch {
+		case c.n.state == statePending:
+			pr.known = false
+			pr.pending = pr.pending || !prm.AllowPending
+		case !c.n.isKnown():
+			pr.known = false
+			pr.unknown = pr.unknown || !prm.AllowUnknown
+		}
+	}
+	return pr
+}
+
+// finish puts on r the marks the answer carries: those gathered from the
+// arguments, and, for an answer the implementation did not make, those of
+// the admitted arguments too.
+func (pr *prepared) finish(r Value, admitted bool) Value {
+	if len(pr.g.marks) != 0 {
+		r = WithMarks(r, pr.g.marks...)
+	}
+	if admitted && len(pr.ga.marks) != 0 {
+		r = WithMarks(r, pr.ga.marks...)
+	}
+	return r
+}
+
+// derive returns the call's result constraint: the specification's, or what
+// its derivation says of the converted arguments, in the states they stand.
+// A refusal comes back as the error value the call answers with, and a
+// derivation that returns neither a constraint nor an error is the
+// function author's defect.
+func (s *fnSpec) derive(pr *prepared) (Constraint, Value, bool) {
+	if s.resultOf == nil {
+		return s.result, Value{}, true
+	}
+	rc, err := s.resultOf(pr.visible)
+	if err != nil {
+		return Constraint{}, errorValue(implFailure(err)...), false
+	}
+	if rc.c == nil {
+		usagePanic("%s: the derivation returned the zero Constraint and no error", s.name_())
+	}
+	return rc, Value{}, true
 }
 
 // resultPlaceholder is the answer of a call that its arguments keep from
