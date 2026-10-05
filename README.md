@@ -37,9 +37,9 @@ fmt.Println(address.IsKnown(), tenon.Length(address))
 // false unknown(number, not null, >= 0)
 ```
 
-    go get github.com/kmoneil/tenon@v0.15.1
+    go get github.com/kmoneil/tenon@v0.16.0
 
-Version 0.15.1 implements version 0.13.1 of the tenon specification. A
+Version 0.16.0 implements version 0.14.0 of the tenon specification. A
 conformance test covers every one of its 292 rules, as `CONFORMANCE.md`
 reports; `CHANGELOG.md` says what each release holds, and, where there are
 any, which rules the report states more widely than its test exercises.
@@ -316,12 +316,14 @@ and what tenon does with its counterpart.
 tenon does more for each value than a Go map does: it parses every number
 into an exact decimal, normalizes every string, and records what is known
 about each value. Beside go-cty, the value system it answers, it is faster
-at everything measured here but calling a function, at every size, and uses
-less memory at all of it but converting to a schema, where the two are
-about even. A call costs more because it does more: tenon converts every
-argument to its parameter's constraint and answers every argument state
-inside the call, where go-cty checks conformance only and leaves both to
-each caller, unmeasured.
+at everything measured here but calling a function of one's own, at every
+size, and uses less memory at all of it but converting to a schema, where
+the two are about even, and calling a function. A call costs more because
+it does more: tenon converts every argument to its parameter's constraint
+and answers every argument state inside the call, where go-cty checks
+conformance only and leaves both to each caller, unmeasured. Calling the
+library's merge, tenon is faster all the same, with about twice the
+memory.
 [`BENCHMARKS.md`](BENCHMARKS.md) has every size, the memory each operation
 takes, and what each library does per value.
 
@@ -330,13 +332,14 @@ For a configuration of 32 KB, measured on Apple M5 Max with go1.26.4:
 
 | | encoding/json | tenon | go-cty |
 | --- | --- | --- | --- |
-| Parse JSON into a value | 246 µs | 522 µs | 4.59 ms |
-| Convert to a schema | – | 527 µs | 1.78 ms |
-| Encode and decode | 436 µs | 374 µs | 3.17 ms |
-| Compare two copies | 456 µs | 10.2 µs | 8.84 ms |
-| Read a nested value | 14.7 ns | 55.4 ns | 90.5 ns |
-| Diff one change | – | 167 µs | – |
-| Call a function | – | 97.4 µs | 35.6 µs |
+| Parse JSON into a value | 260 µs | 539 µs | 4.52 ms |
+| Convert to a schema | – | 550 µs | 1.81 ms |
+| Encode and decode | 451 µs | 408 µs | 3.38 ms |
+| Compare two copies | 499 µs | 10.3 µs | 8.16 ms |
+| Read a nested value | 16.0 ns | 58.7 ns | 95.7 ns |
+| Diff one change | – | 179 µs | – |
+| Call a function | – | 104 µs | 37.0 µs |
+| Call a library function | – | 237 µs | 258 µs |
 <!-- benchmarks:end -->
 
 ## Stability
