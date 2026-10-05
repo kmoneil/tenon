@@ -46,6 +46,19 @@
   at it; a redacted text is named by its placeholder where go-cty's
   `parseint` quotes it. The specification says so (`LN-030` to `LN-033`,
   `LN-050`).
+- `LogFunc` and `PowFunc`, correctly rounded to 96 significant digits, half
+  to even, as a quotient is: `log(1000, 10)` is 3 and `pow(10, 23)` is
+  10^23, where go-cty answers `2.9999999999999996` and
+  `99999999999999991611392`, and `pow(2, 0.5)` is the 96-digit root. A
+  number or a base outside `Log`'s domain fails with the new code
+  `number.domain`, at once whatever the other argument is; zero to a
+  negative power fails with `number.divide_by_zero`, a negative number to
+  a power that is not an integer with `number.domain`, and a result far
+  outside the range a number holds with `number.out_of_range` before any
+  of it is computed. A power whose exact value is a rounding midpoint, as
+  5^138 is, rounds half to even. No binary floating point is used: the
+  result is enclosed in decimals computed until both ends round alike.
+  The specification says so (`LN-060`, `LN-061`).
 - A function may declare its result never null (`FunctionSpec.NotNull`,
   read back with `Function.NotNull`). Every answer the call makes that is
   not a known value then says so, the unknown answer of an argument not

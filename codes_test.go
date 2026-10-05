@@ -46,7 +46,7 @@ var specCodes = []string{
 	"json.invalid_syntax",
 	"json.too_deep",
 	"map.duplicate_key",
-	"number.divide_by_zero",
+	"number.divide_by_zero", "number.domain",
 	"number.invalid_syntax",
 	"number.modulo_by_zero",
 	"number.out_of_range",

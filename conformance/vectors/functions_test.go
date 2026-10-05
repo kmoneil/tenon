@@ -16,6 +16,8 @@ import (
 // specification gives them.
 var library = map[string]tenon.Function{
 	"AssertNotNull":        stdlib.AssertNotNullFunc,
+	"Log":                  stdlib.LogFunc,
+	"Pow":                  stdlib.PowFunc,
 	"Absolute":             stdlib.AbsoluteFunc,
 	"Signum":               stdlib.SignumFunc,
 	"Int":                  stdlib.IntFunc,
@@ -126,6 +128,19 @@ var callVectors = []callVector{
 	{"ParseInt/refused/a base out of range", "ParseInt", []tenon.Value{s("10"), n(63)}, tenon.Safe, tenon.Constraint{}},
 	{"ParseInt/refused/a number", "ParseInt", []tenon.Value{n(10), n(16)}, tenon.Safe, tenon.Constraint{}},
 	{"ParseInt/refused/redacted text", "ParseInt", []tenon.Value{tenon.WithMarks(s("hunter2"), secret{}), n(10)}, tenon.Safe, tenon.Constraint{}},
+	{"Log/exact", "Log", []tenon.Value{n(1000), n(10)}, tenon.Safe, tenon.Constraint{}},
+	{"Log/correctly rounded", "Log", []tenon.Value{n(2), n(10)}, tenon.Safe, tenon.Constraint{}},
+	{"Log/a third", "Log", []tenon.Value{n(2), n(8)}, tenon.Safe, tenon.Constraint{}},
+	{"Log/refused/not positive", "Log", []tenon.Value{n(0), n(10)}, tenon.Safe, tenon.Constraint{}},
+	{"Log/refused/base one, whatever the number", "Log", []tenon.Value{tenon.Unknown(num), n(1)}, tenon.Safe, tenon.Constraint{}},
+	{"Pow/exact", "Pow", []tenon.Value{n(10), n(23)}, tenon.Safe, tenon.Constraint{}},
+	{"Pow/a root", "Pow", []tenon.Value{n(2), tenon.NumberFromText("0.5")}, tenon.Safe, tenon.Constraint{}},
+	{"Pow/a midpoint", "Pow", []tenon.Value{n(5), n(138)}, tenon.Safe, tenon.Constraint{}},
+	{"Pow/a negative base, an odd power", "Pow", []tenon.Value{n(-2), n(3)}, tenon.Safe, tenon.Constraint{}},
+	{"Pow/zero to zero", "Pow", []tenon.Value{n(0), n(0)}, tenon.Safe, tenon.Constraint{}},
+	{"Pow/refused/zero to a negative power", "Pow", []tenon.Value{n(0), n(-1)}, tenon.Safe, tenon.Constraint{}},
+	{"Pow/refused/no real power", "Pow", []tenon.Value{n(-1), tenon.NumberFromText("0.5")}, tenon.Safe, tenon.Constraint{}},
+	{"Pow/refused/out of range", "Pow", []tenon.Value{n(2), tenon.NumberFromText("1e400")}, tenon.Safe, tenon.Constraint{}},
 	{"Coalesce/the first not null", "Coalesce", []tenon.Value{tenon.Narrow(tenon.Pending(tenon.Any()), tenon.NullOnly()), tenon.Null(num), n(1), n(2)}, tenon.Safe, tenon.Constraint{}},
 	{"Coalesce/one not known yet", "Coalesce", []tenon.Value{tenon.Unknown(num), n(1)}, tenon.Safe, tenon.Constraint{}},
 	{"Coalesce/unified under Unsafe", "Coalesce", []tenon.Value{n(1), s("a")}, tenon.Unsafe, tenon.Constraint{}},
@@ -168,7 +183,7 @@ type callArg struct {
 // answers, its display form and its encoding, or the failures it gives, each
 // code with its path.
 func TestConformance_LB001_FunctionVectors(t *testing.T) {
-	conformance.Covers(t, "LB-001", "LN-001", "LN-002", "LN-010", "LN-011", "LN-020", "LN-030", "LN-031", "LN-032", "LN-033", "LN-050", "LN-080", "LN-083", "LN-085")
+	conformance.Covers(t, "LB-001", "LN-001", "LN-002", "LN-010", "LN-011", "LN-020", "LN-030", "LN-031", "LN-032", "LN-033", "LN-050", "LN-060", "LN-061", "LN-080", "LN-083", "LN-085")
 	f := callFile{
 		Format: 1,
 		About: "Each entry is a call of a function of the standard library (§13 to §20), named as the specification " +

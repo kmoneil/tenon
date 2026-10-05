@@ -6,6 +6,8 @@ import (
 	"strings"
 
 	"github.com/kmoneil/tenon"
+	"github.com/kmoneil/tenon/internal/decimal"
+	"github.com/kmoneil/tenon/internal/numbers"
 )
 
 // number is the constraint of a Number parameter or result.
@@ -497,3 +499,110 @@ func digit(c byte, base int) int {
 
 // argument returns the path of argument i of a call.
 func argument(i int) tenon.Path { return tenon.Path{}.Index(tenon.NumberFromInt(int64(i))) }
+
+// decOf returns the exact decimal the known number v holds.
+func decOf(v tenon.Value) decimal.Dec {
+	u, _ := tenon.Unmark(v)
+	return numbers.Dec(u)
+}
+
+// valueOf returns the number d as a Number value.
+func valueOf(d decimal.Dec) tenon.Value { return numbers.Value(d).(tenon.Value) }
+
+// computed returns the Number value of a result the decimal kernel gave, or
+// the error value of its failure: a result outside the window, or a
+// correctly rounded result that did not settle, which is a defect.
+func computed(d decimal.Dec, err error) tenon.Value {
+	switch err {
+	case nil:
+		return valueOf(d)
+	case decimal.ErrOutOfRange:
+		return tenon.ErrorVal(tenon.Diagnostic{Code: tenon.CodeNumberOutOfRange, Message: "the result has a digit outside the range a number holds"})
+	}
+	internalPanic("the decimal kernel failed with %v", err)
+	return tenon.Value{}
+}
+
+// domain returns the diagnostic of an argument outside a function's domain.
+func domain(message string, path tenon.Path) tenon.Diagnostic {
+	return tenon.Diagnostic{Code: tenon.CodeNumberDomain, Message: message, Path: path}
+}
+
+// LogFunc is the logarithm of a number to a base, correctly rounded to 96
+// significant digits, half to even: the 96-digit number nearest the exact
+// value, so that log(1000, 10) is 3. A number not greater than zero, and a
+// base not greater than zero or equal to one, fail with
+// tenon.CodeNumberDomain, located at the argument, and do so whatever the
+// other argument turns out to be.
+var LogFunc = tenon.NewFunction(tenon.FunctionSpec{
+	Name:        "Log",
+	Description: "Returns the logarithm of the given number in the given base.",
+	Params: []tenon.Param{
+		{Name: "num", Description: "The number to take the logarithm of.", Constraint: number, AllowUnknown: true},
+		{Name: "base", Description: "The base.", Constraint: number, AllowUnknown: true},
+	},
+	Result:  number,
+	NotNull: true,
+	Impl: func(args []tenon.Value, _ tenon.Constraint, _ tenon.Policy) (tenon.Value, error) {
+		x, b := args[0], args[1]
+		var ds []tenon.Diagnostic
+		if x.IsKnown() && !less(zero, x) {
+			ds = append(ds, domain("Log has no answer for "+x.String()+", which is not greater than zero", argument(0)))
+		}
+		if b.IsKnown() && (!less(zero, b) || b.Equal(one)) {
+			ds = append(ds, domain("Log has no answer in base "+b.String()+", which is not greater than zero and other than one", argument(1)))
+		}
+		switch {
+		case ds != nil:
+			return tenon.ErrorVal(ds...), nil
+		case !x.IsKnown() || !b.IsKnown():
+			return tenon.Unknown(tenon.NumberType()), nil
+		}
+		return computed(decimal.LogBase(decOf(x), decOf(b))), nil
+	},
+})
+
+// PowFunc is a number raised to a power, correctly rounded to 96 significant
+// digits, half to even, as LogFunc is: pow(10, 23) is 10^23 and pow(2, 0.5)
+// the 96-digit root. Any number to the power zero is 1, zero to a positive
+// power is zero, zero to a negative power fails with
+// tenon.CodeNumberDivideByZero, and a negative number to a power that is not
+// an integer fails with tenon.CodeNumberDomain, as it has no real result. A
+// result with a digit outside the window fails with
+// tenon.CodeNumberOutOfRange, decided before the work where it lies far
+// outside, as pow(2, 1e400) does.
+var PowFunc = tenon.NewFunction(tenon.FunctionSpec{
+	Name:        "Pow",
+	Description: "Returns the given number raised to the given power (exponentiation).",
+	Params: []tenon.Param{
+		{Name: "num", Description: "The number to raise.", Constraint: number, AllowUnknown: true},
+		{Name: "power", Description: "The power to raise it to.", Constraint: number, AllowUnknown: true},
+	},
+	Result:  number,
+	NotNull: true,
+	Impl: func(args []tenon.Value, _ tenon.Constraint, _ tenon.Policy) (tenon.Value, error) {
+		x, y := args[0], args[1]
+		if !x.IsKnown() || !y.IsKnown() {
+			return tenon.Unknown(tenon.NumberType()), nil
+		}
+		switch {
+		case y.Equal(zero), x.Equal(one):
+			return one, nil
+		case x.Equal(zero):
+			if less(y, zero) {
+				return tenon.ErrorVal(tenon.Diagnostic{Code: tenon.CodeNumberDivideByZero, Message: "zero has no negative power: " + y.String() + " divides by it"}), nil
+			}
+			return zero, nil
+		case less(x, zero):
+			if fractional(y) {
+				return tenon.ErrorVal(domain("a negative number has no real power "+y.String()+", which is not an integer", tenon.Path{})), nil
+			}
+			r := computed(decimal.PowPositive(decOf(negated(x)), decOf(y)))
+			if !r.IsError() && !tenon.Mod(y, tenon.NumberFromInt(2)).Equal(zero) {
+				r = negated(r)
+			}
+			return r, nil
+		}
+		return computed(decimal.PowPositive(decOf(x), decOf(y))), nil
+	},
+})
