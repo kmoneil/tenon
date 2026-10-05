@@ -2,6 +2,7 @@ package stdlib
 
 import (
 	"math/big"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -549,6 +550,26 @@ func formatted(pieces []formatPiece, args []tenon.Value, p tenon.Policy) (string
 	return b.String(), true
 }
 
+// formatAnswer answers Format of the parsed pieces with the arguments, the
+// format at index 0, which arguments has checked: the failure the
+// arguments settle, the text, or, where an argument a verb reads is not
+// known yet, the unknown string beginning with the text before its verb.
+func formatAnswer(pieces []formatPiece, args []tenon.Value, p tenon.Policy) tenon.Value {
+	for _, piece := range pieces {
+		if piece.verb == nil {
+			continue
+		}
+		if failure, ok := formatCheck(piece.verb, args[piece.verb.arg], p); !ok {
+			return failure
+		}
+	}
+	s, complete := formatted(pieces, args, p)
+	if complete {
+		return tenon.String(s)
+	}
+	return tenon.Narrow(tenon.Unknown(tenon.StringType()), tenon.NotNull(), tenon.StringPrefix(s))
+}
+
 // FormatFunc writes its arguments into a format string, by go-cty's verb
 // language: literal text, %% for a percent sign, and verbs, each % then
 // flags, width, precision, an argument index and a letter. Widths and
@@ -581,18 +602,214 @@ var FormatFunc = tenon.NewFunction(tenon.FunctionSpec{
 		if !failure.IsZero() {
 			return failure, nil
 		}
-		for _, piece := range pieces {
-			if piece.verb == nil {
-				continue
+		return formatAnswer(pieces, args, p), nil
+	},
+})
+
+// iteration is how FormatList reads an argument: iterated, one of its
+// members to each element, or repeated, the whole of it to each.
+type iteration struct {
+	iterated bool
+	// length is how many members an iterated argument has, where known.
+	length    int
+	known     bool
+	lo, hi    int64
+	bounded   bool
+	members   []tenon.Value
+	undecided bool
+}
+
+// iterationOf reads the argument a of FormatList: a list, a set or a tuple
+// not null is iterated, a pending value that can be nothing else too, and
+// any other value repeated; a pending value that may be either is
+// undecided.
+func iterationOf(a tenon.Value) iteration {
+	if a.IsNull() {
+		return iteration{}
+	}
+	kinds := []tenon.Kind{tenon.KindList, tenon.KindSet, tenon.KindTuple}
+	if a.IsPending() && !a.HasMembers() {
+		ks := kindsOf(a.Constraint())
+		switch {
+		case !slices.ContainsFunc(ks, func(k tenon.Kind) bool { return slices.Contains(kinds, k) }):
+			return iteration{}
+		case slices.ContainsFunc(ks, func(k tenon.Kind) bool { return !slices.Contains(kinds, k) }):
+			return iteration{undecided: true}
+		}
+		return iteration{iterated: true}
+	}
+	if k, ok := kindOf(a); ok && !slices.Contains(kinds, k) {
+		return iteration{}
+	}
+	it := iteration{iterated: true}
+	lo, hi, bounded := lengthOf(a)
+	it.lo, it.hi, it.bounded = lo, hi, bounded
+	switch k, _ := kindOf(a); {
+	case a.HasMembers() && (k != tenon.KindSet || bounded && lo == hi):
+		it.members = a.Elements()
+		it.length, it.known = len(it.members), true
+	case k == tenon.KindTuple:
+		for _, t := range a.Type().TupleElementTypes() {
+			it.members = append(it.members, tenon.Unknown(t))
+		}
+		it.length, it.known = len(it.members), true
+	case bounded && lo == hi:
+		// A list or a set not known yet of one length: so many members,
+		// each not known yet.
+		for range lo {
+			it.members = append(it.members, tenon.Unknown(a.Type().ElementType()))
+		}
+		it.length, it.known = int(lo), true
+	}
+	return it
+}
+
+// memberAt returns v with each diagnostic located at argument j moved to
+// its member i.
+func memberAt(v tenon.Value, j, i int) tenon.Value {
+	ds := v.Diagnostics()
+	for k, d := range ds {
+		steps := d.Path.Steps()
+		if len(steps) == 0 || !steps[0].Equal(argument(j).Steps()[0]) {
+			continue
+		}
+		path := argument(j).Index(tenon.NumberFromInt(int64(i)))
+		for _, step := range steps[1:] {
+			if step.Kind() == tenon.StepAttribute {
+				path = path.Attribute(step.Name())
+			} else {
+				path = path.Index(step.Key())
 			}
-			if failure, ok := formatCheck(piece.verb, args[piece.verb.arg], p); !ok {
+		}
+		ds[k].Path = path
+	}
+	return tenon.ErrorVal(ds...)
+}
+
+// argumentSize returns how many bytes the known parts of the argument a
+// stand for, for FormatList's bound: a string's, and the JSON text of any
+// other value known.
+func argumentSize(a tenon.Value) int {
+	switch {
+	case a.IsNull() || !a.IsKnown():
+		return 0
+	case a.Type().Kind() == tenon.KindString:
+		return len(a.AsString())
+	}
+	return len(jsonText(a))
+}
+
+// FormatListFunc writes its arguments into a format string as Format does,
+// once for each member of the lists, sets and tuples among them, the other
+// arguments repeated each time, and answers the list of the strings made.
+// The iterated arguments have one length, an argument of another failing
+// with tenon.CodeFunctionInvalidArgument at it; with none, the format is
+// written once. The format and the arguments its verbs read are checked
+// however many times it is written, and a failure in one element is
+// located at the argument and the member it read. A set's members are
+// read in the canonical order (EQ-044). An answer of more than 64 times the
+// size of the arguments, and 64 KiB, fails with tenon.CodeFunctionTooLarge
+// at the format. Not known yet, the answer is the unknown list of the
+// length the arguments settle.
+var FormatListFunc = tenon.NewFunction(tenon.FunctionSpec{
+	Name:        "FormatList",
+	Description: "Writes the arguments into the format string once for each member of the lists among them.",
+	Params:      []tenon.Param{stringParam("format", "The format string.")},
+	VarParam:    &tenon.Param{Name: "args", Description: "The arguments its verbs read; lists, sets and tuples iterated, the others repeated.", Constraint: tenon.Any(), AllowNull: true, AllowUnknown: true, AllowPending: true},
+	Result:      tenon.Exactly(tenon.ListType(tenon.StringType())),
+	NotNull:     true,
+	Impl: func(args []tenon.Value, _ tenon.Constraint, p tenon.Policy) (tenon.Value, error) {
+		format := args[0]
+		var pieces []formatPiece
+		if format.IsKnown() {
+			var failure tenon.Value
+			if pieces, failure = parseFormat(format.AsString()); failure.IsZero() {
+				failure = arguments(pieces, len(args)-1)
+			}
+			if !failure.IsZero() {
 				return failure, nil
 			}
 		}
-		s, complete := formatted(pieces, args, p)
-		if complete {
-			return tenon.String(s), nil
+		its := make([]iteration, len(args))
+		n, first, decided := -1, 0, format.IsKnown()
+		lo, hi, bounded := int64(0), int64(0), false
+		for j := 1; j < len(args); j++ {
+			it := iterationOf(args[j])
+			its[j] = it
+			switch {
+			case it.undecided:
+				decided = false
+			case !it.iterated:
+			case it.known && n < 0:
+				n, first = it.length, j
+			case it.known && it.length != n:
+				return invalid(j, "FormatList: argument "+strconv.Itoa(j)+" has "+strconv.Itoa(it.length)+
+					" members, and argument "+strconv.Itoa(first)+" has "+strconv.Itoa(n)), nil
+			case !it.known:
+				decided = false
+				lo = max(lo, it.lo)
+				if it.bounded && (!bounded || it.hi < hi) {
+					hi, bounded = it.hi, true
+				}
+			}
 		}
-		return tenon.Narrow(tenon.Unknown(tenon.StringType()), tenon.NotNull(), tenon.StringPrefix(s)), nil
+		if n >= 0 {
+			for j := 1; j < len(args); j++ {
+				if it := its[j]; it.iterated && !it.known && (int64(n) < it.lo || it.bounded && int64(n) > it.hi) {
+					return invalid(j, "FormatList: argument "+strconv.Itoa(j)+" has from "+strconv.FormatInt(it.lo, 10)+
+						" members, and argument "+strconv.Itoa(first)+" has "+strconv.Itoa(n)), nil
+				}
+			}
+		}
+		if !decided {
+			ns := []tenon.Narrowing{tenon.NotNull()}
+			switch {
+			case n >= 0:
+				ns = append(ns, tenon.LengthMin(int64(n)), tenon.LengthMax(int64(n)))
+			default:
+				ns = append(ns, tenon.LengthMin(lo))
+				if bounded {
+					ns = append(ns, tenon.LengthMax(hi))
+				}
+			}
+			return tenon.Narrow(tenon.Unknown(tenon.ListType(tenon.StringType())), ns...), nil
+		}
+		if n < 0 {
+			n = 1
+		}
+		size := len(format.AsString())
+		for _, a := range args[1:] {
+			size += argumentSize(a)
+		}
+		limit, made := 64*size+64<<10, 0
+		elems := make([]tenon.Value, n)
+		each := make([]tenon.Value, len(args))
+		for i := range n {
+			each[0] = format
+			for j := 1; j < len(args); j++ {
+				if its[j].iterated {
+					each[j] = its[j].members[i]
+				} else {
+					each[j] = args[j]
+				}
+			}
+			e := formatAnswer(pieces, each, p)
+			if e.IsError() {
+				for j := 1; j < len(args); j++ {
+					if its[j].iterated {
+						e = memberAt(e, j, i)
+					}
+				}
+				return e, nil
+			}
+			if e.IsKnown() {
+				if made += len(e.AsString()); made > limit {
+					return tooLarge(0, "FormatList: the answer passes "+strconv.Itoa(limit)+
+						" bytes, 64 times the arguments' size and 64 KiB, the most it makes"), nil
+				}
+			}
+			elems[i] = e
+		}
+		return tenon.List(tenon.StringType(), elems...), nil
 	},
 })

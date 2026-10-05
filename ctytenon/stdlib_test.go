@@ -799,6 +799,27 @@ var counterparts = map[string]counterpart{
 			},
 		}},
 	},
+	"FormatList": {
+		cty: ctystdlib.FormatListFunc,
+		ten: stdlib.FormatListFunc,
+		cases: [][]cty.Value{
+			{cty.StringVal("%s-%s"), cty.ListVal([]cty.Value{cty.StringVal("a"), cty.StringVal("b")}), cty.StringVal("x")},
+			{cty.StringVal("%s=%s"), cty.ListVal([]cty.Value{cty.StringVal("a"), cty.StringVal("b")}), cty.TupleVal([]cty.Value{cty.StringVal("1"), cty.StringVal("2")})},
+			{cty.StringVal("hello")},
+			{cty.StringVal("%s"), cty.ListValEmpty(cty.String)},
+			{cty.StringVal("%s%s"), cty.ListVal([]cty.Value{cty.StringVal("a"), cty.StringVal("b")}), cty.ListVal([]cty.Value{cty.StringVal("x")})},
+			{cty.StringVal("%z"), cty.ListValEmpty(cty.String)},
+			{cty.StringVal("%s%s"), cty.ListVal([]cty.Value{cty.StringVal("a"), cty.StringVal("b")}), cty.UnknownVal(cty.List(cty.String))},
+			{cty.StringVal("x-%s"), cty.ListVal([]cty.Value{cty.StringVal("a"), cty.UnknownVal(cty.String)})},
+			{cty.StringVal("%v"), cty.NullVal(cty.List(cty.String))},
+		},
+		divergences: []divergence{{
+			why: "an iterated argument that is empty: cty checks nothing of the format, and tenon its grammar and the arguments its verbs read, however many times it is written (LF-018)",
+			match: func(args []cty.Value) bool {
+				return formatIs("%z")(args) && len(args) > 1 && args[1].IsKnown() && args[1].LengthInt() == 0
+			},
+		}},
+	},
 	"Lookup": {
 		cty: ctystdlib.LookupFunc,
 		ten: stdlib.LookupFunc,

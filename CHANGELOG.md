@@ -83,6 +83,15 @@
   now, and an argument not known yet leaves the answer beginning with the
   text before its verb. The specification says so (`LF-001` to
   `LF-017`).
+- `FormatListFunc`: Format once for each member of the lists, sets and
+  tuples among its arguments, the others repeated. The format and the
+  arguments its verbs read are checked even where a list is empty, where
+  go-cty's accepts any format then; a failure in one element is located
+  at the argument and the member; an argument not known yet leaves the
+  answer the unknown list of the length the others settle, where go-cty's
+  answer has none; and an answer past 64 times its arguments and 64 KiB
+  fails with `function.too_large` before it is made. The specification
+  says so (`LF-018` to `LF-021`).
 
 ## 0.16.0 (2026-10-05)
 
