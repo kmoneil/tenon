@@ -59,6 +59,7 @@ var specCodes = []string{
 	"range.contradiction",
 	"regex.duplicate_group",
 	"regex.invalid_syntax",
+	"regex.missing_group",
 	"regex.mixed_groups",
 	"regex.no_match",
 	"serialize.decoder_failed",

@@ -9,7 +9,9 @@ import (
 	"math/rand"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"unicode/utf8"
@@ -853,6 +855,43 @@ var counterparts = map[string]counterpart{
 		},
 		divergences: []divergence{duplicateGroups()},
 	},
+	"RegexReplace": {
+		cty: ctystdlib.RegexReplaceFunc,
+		ten: stdlib.RegexReplaceFunc,
+		cases: [][]cty.Value{
+			{cty.StringVal("abc"), cty.StringVal("b"), cty.StringVal("X")},
+			{cty.StringVal("baaab"), cty.StringVal("a*"), cty.StringVal("-")},
+			{cty.StringVal("a=1"), cty.StringVal(`(\w)=(\d)`), cty.StringVal("$2=$1")},
+			{cty.StringVal("abc"), cty.StringVal("(b)"), cty.StringVal("[${1}x]")},
+			{cty.StringVal("abc"), cty.StringVal("b"), cty.StringVal("$$ x$ ${")},
+			{cty.StringVal("b"), cty.StringVal(`(?P<x>a)|(?P<x>b)`), cty.StringVal("[${x}]")},
+			{cty.StringVal("e-y"), cty.StringVal("-"), cty.StringVal("\U00000301")},
+			{cty.StringVal("abc"), cty.StringVal("(b)"), cty.StringVal("[$1x]")},
+			{cty.StringVal("ab"), cty.StringVal("("), cty.StringVal("x")},
+			{cty.UnknownVal(cty.String), cty.StringVal("("), cty.StringVal("x")},
+			{cty.UnknownVal(cty.String), cty.StringVal("(b)"), cty.StringVal("$1")},
+			{cty.StringVal("ab 1"), cty.StringVal(`\d`), cty.UnknownVal(cty.String)},
+			{cty.StringVal("xyz"), cty.StringVal(`\d`), cty.UnknownVal(cty.String)},
+		},
+		random: func(r *rand.Rand) []cty.Value {
+			pick := func(pieces []string, most int) cty.Value {
+				if r.Intn(10) == 0 {
+					return cty.UnknownVal(cty.String)
+				}
+				var b strings.Builder
+				for range r.Intn(most + 1) {
+					b.WriteString(pieces[r.Intn(len(pieces))])
+				}
+				return cty.StringVal(b.String())
+			}
+			return []cty.Value{
+				pick([]string{"a", "b", " ", "\U000000E9"}, 6),
+				pick([]string{"a", "b", "(a)", "(b)", "(?P<x>a)", "|", "*", ".", "^", "$", "("}, 4),
+				pick([]string{"$1", "${1}", "$2", "$0", "$x", "${x}", "$$", "$", "-", "x", "{", "}"}, 4),
+			}
+		},
+		divergences: []divergence{missingGroup(), failsBesideUnknown()},
+	},
 	"Lookup": {
 		cty: ctystdlib.LookupFunc,
 		ten: stdlib.LookupFunc,
@@ -1190,6 +1229,61 @@ func duplicateGroups() divergence {
 		match: func(args []cty.Value) bool {
 			p, _ := args[0].UnmarkDeep()
 			return p.IsKnown() && !p.IsNull() && strings.Count(p.AsString(), "(?P<x>") > 1
+		},
+	}
+}
+
+// goReference reads the references of a Go template, its $$ passed over,
+// as Go's Regexp.Expand does.
+var goReference = regexp.MustCompile(`\$(?:\$|\{([\pL\p{Nd}_]+)\}|([\pL\p{Nd}_]+))`)
+
+// missingGroup is the divergence of a replacement referring to a group its
+// pattern does not have.
+func missingGroup() divergence {
+	return divergence{
+		why: "a replacement referring to a group the pattern does not have: cty writes nothing for it, and tenon refuses it with regex.missing_group (LR-012, Appendix B row 51)",
+		match: func(args []cty.Value) bool {
+			p, _ := args[1].UnmarkDeep()
+			rep, _ := args[2].UnmarkDeep()
+			if !p.IsKnown() || p.IsNull() || !rep.IsKnown() || rep.IsNull() {
+				return false
+			}
+			re, err := regexp.Compile(p.AsString())
+			if err != nil {
+				return false
+			}
+			for _, m := range goReference.FindAllStringSubmatch(rep.AsString(), -1) {
+				name := m[1] + m[2]
+				if name == "" {
+					continue
+				}
+				if n, err := strconv.Atoi(name); err == nil && len(name) <= 9 && (name == "0" || name[0] != '0') && strings.Trim(name, "0123456789") == "" {
+					if n > re.NumSubexp() {
+						return true
+					}
+				} else if !slices.Contains(re.SubexpNames()[1:], name) {
+					return true
+				}
+			}
+			return false
+		},
+	}
+}
+
+// failsBesideUnknown is the divergence of a known pattern that is none
+// beside an argument not known yet.
+func failsBesideUnknown() divergence {
+	return divergence{
+		why: "a known pattern that is none beside an argument not known yet: cty answers unknown, and tenon fails now with regex.invalid_syntax (LR-014)",
+		match: func(args []cty.Value) bool {
+			p, _ := args[1].UnmarkDeep()
+			if !p.IsKnown() || p.IsNull() {
+				return false
+			}
+			if _, err := regexp.Compile(p.AsString()); err == nil {
+				return false
+			}
+			return slices.ContainsFunc(args, func(a cty.Value) bool { return !a.IsKnown() })
 		},
 	}
 }

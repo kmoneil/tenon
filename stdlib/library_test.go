@@ -40,6 +40,7 @@ var library = map[string]tenon.Function{
 	"FormatList":             stdlib.FormatListFunc,
 	"Regex":                  stdlib.RegexFunc,
 	"RegexAll":               stdlib.RegexAllFunc,
+	"RegexReplace":           stdlib.RegexReplaceFunc,
 	"Range":                  stdlib.RangeFunc,
 	"SetProduct":             stdlib.SetProductFunc,
 	"Contains":               stdlib.ContainsFunc,

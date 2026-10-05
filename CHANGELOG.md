@@ -111,6 +111,23 @@
   go-cty's makes a list of a string for each of a pattern's groups at
   each position of the string, whatever their number. The specification
   says so (`LR-001` to `LR-009`).
+- `RegexReplaceFunc`, replacing each match as `RegexAll` finds them. The
+  replacement is read as Go's `Regexp.Expand` reads a template, `$1`,
+  `${1}`, `$name`, `${name}` and `$$`, the letters and digits a name runs
+  over being those of the Unicode version tenon states, where go-cty's
+  follow the toolchain: on Go 1.27 a letter of a later Unicode after `$1`
+  continues the name, and the group is lost. A reference to a group the
+  pattern does not have fails with the new code `regex.missing_group` at
+  the replacement, where go-cty's writes nothing for it, so `$1x`, which
+  names a group `1x`, no longer drops group 1 silently, and the message
+  says to write `${1}x`. A pattern that is none fails located at it, and
+  with a string not known yet fails now, where go-cty's answers unknown.
+  An answer of more than 64 times the size of the arguments and 64 KiB
+  fails with `function.too_large` before it is made, where go-cty's makes
+  whatever is asked: the empty pattern over a megabyte, with a
+  replacement of a thousand bytes, makes a gigabyte. A replacement not known yet leaves the answer the string
+  where nothing matches, and beginning with the text before the first
+  match otherwise. The specification says so (`LR-010` to `LR-014`).
 
 ## 0.16.0 (2026-10-05)
 

@@ -117,6 +117,9 @@
       "code": "regex.invalid_syntax"
     },
     {
+      "code": "regex.missing_group"
+    },
+    {
       "code": "regex.mixed_groups"
     },
     {
