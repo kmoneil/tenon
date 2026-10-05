@@ -40,7 +40,7 @@ var operators = []struct {
 // the test ends.
 func swapIn(t *testing.T) {
 	t.Helper()
-	b := ctytenon.Bridge{MarkFromCty: markFromCty, MarkToCty: markToCty}
+	b := bridge()
 	for _, o := range operators {
 		f, err := b.FunctionToCty(o.f, tenon.Unsafe)
 		if err != nil {
@@ -50,6 +50,12 @@ func swapIn(t *testing.T) {
 		o.op.Impl = f
 		t.Cleanup(func() { o.op.Impl = old })
 	}
+}
+
+// bridge returns the bridge the proof crosses with: Terraform's sensitive
+// mark carried both ways.
+func bridge() ctytenon.Bridge {
+	return ctytenon.Bridge{MarkFromCty: markFromCty, MarkToCty: markToCty}
 }
 
 // sensitive is the tenon mark Terraform's "sensitive" crosses as.
