@@ -104,6 +104,16 @@
   the consumers' own `lookup` has it; a map holding a member not known yet
   still answers a known key. The specification says so (`LC-030` to
   `LC-033`).
+- `MergeFunc`. Its answer is a map where every argument with a type is a
+  map of one type, and otherwise an object of every key, each attribute of
+  the type of the last argument adding it, as go-cty's. Where go-cty's
+  differs: a language's untyped null takes no part, so it no longer turns
+  a merge of maps into an object; a null argument's marks reach the
+  answer; an object not known yet that may be null gives one of the two
+  shapes it may leave, where go-cty's type assumes it is not null; one
+  known not null leaves the other attributes known; and a map not known
+  yet leaves an object's known attributes, where go-cty's answer has no
+  type at all. The specification says so (`LC-034` to `LC-037`).
 - A function may declare its result never null (`FunctionSpec.NotNull`,
   read back with `Function.NotNull`). Every answer the call makes that is
   not a known value then says so, the unknown answer of an argument not
