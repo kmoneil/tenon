@@ -1,6 +1,7 @@
 package ctytenon_test
 
 import (
+	"encoding/csv"
 	"encoding/json"
 	"fmt"
 	"go/ast"
@@ -957,6 +958,43 @@ var counterparts = map[string]counterpart{
 				}
 				p := strings.TrimLeft(t.Range().StringPrefix(), " \t\n\r")
 				return p != "" && !strings.ContainsRune(`"tf-0123456789{[n`, rune(p[0]))
+			},
+		}},
+	},
+	"CSVDecode": {
+		cty: ctystdlib.CSVDecodeFunc,
+		ten: stdlib.CSVDecodeFunc,
+		cases: [][]cty.Value{
+			{cty.StringVal("a,b\n1,2\n3,4\n")},
+			{cty.StringVal("a,b\r\n1,2\r\n\r\n\"x,\"\"y\"\"\",\"p\r\nq\"\r\n")},
+			{cty.StringVal("a,b\n")},
+			{cty.StringVal("a\nx\ry\n")},
+			{cty.StringVal("a,b\n1,2\r")},
+			{cty.StringVal("")},
+			{cty.StringVal("a,a\n1,2\n")},
+			{cty.StringVal("a,b\n1\n")},
+			{cty.StringVal("a\nx\"y\n")},
+			{cty.StringVal("a\n\"x\n")},
+			{cty.StringVal("\xef\xbb\xbfa,b\n1,2\n")},
+			{cty.StringVal(",a\n1,2\n")},
+			{cty.UnknownVal(cty.String)},
+			{cty.UnknownVal(cty.String).Refine().StringPrefix("a,b\n1,2\n").NewValue()},
+		},
+		divergences: []divergence{{
+			why: "a leading byte order mark: go-cty keeps it in the first name, and tenon passes over it (LE-007, Appendix B row 61)",
+			match: func(args []cty.Value) bool {
+				t, _ := args[0].UnmarkDeep()
+				return t.IsKnown() && !t.IsNull() && strings.HasPrefix(t.AsString(), "\xef\xbb\xbf")
+			},
+		}, {
+			why: "an empty header name: go-cty makes an attribute of it, and tenon refuses it with object.empty_name (LE-008, Appendix B row 62)",
+			match: func(args []cty.Value) bool {
+				t, _ := args[0].UnmarkDeep()
+				if !t.IsKnown() || t.IsNull() {
+					return false
+				}
+				header, err := csv.NewReader(strings.NewReader(t.AsString())).Read()
+				return err == nil && slices.Contains(header, "")
 			},
 		}},
 	},

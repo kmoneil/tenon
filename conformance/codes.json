@@ -24,6 +24,15 @@
       "code": "convert.unsafe"
     },
     {
+      "code": "csv.field_count"
+    },
+    {
+      "code": "csv.invalid_syntax"
+    },
+    {
+      "code": "csv.missing_header"
+    },
+    {
       "code": "decode.length_mismatch"
     },
     {

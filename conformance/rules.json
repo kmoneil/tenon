@@ -360,6 +360,12 @@
     {"id":"LE-002","area":"LE","withdrawn":false,"outline":false},
     {"id":"LE-003","area":"LE","withdrawn":false,"outline":false},
     {"id":"LE-004","area":"LE","withdrawn":false,"outline":false},
-    {"id":"LE-005","area":"LE","withdrawn":false,"outline":false}
+    {"id":"LE-005","area":"LE","withdrawn":false,"outline":false},
+    {"id":"LE-006","area":"LE","withdrawn":false,"outline":false},
+    {"id":"LE-007","area":"LE","withdrawn":false,"outline":false},
+    {"id":"LE-008","area":"LE","withdrawn":false,"outline":false},
+    {"id":"LE-009","area":"LE","withdrawn":false,"outline":false},
+    {"id":"LE-010","area":"LE","withdrawn":false,"outline":false},
+    {"id":"LE-011","area":"LE","withdrawn":false,"outline":false}
   ]
 }

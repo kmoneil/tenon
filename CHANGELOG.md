@@ -25,6 +25,19 @@
   keeping the characters its text settles, and a character that begins no
   JSON value fails now. The specification says so (`LE-001` to
   `LE-005`).
+- `CSVDecodeFunc`, on a reader of tenon's own that reads as go-cty's,
+  Go's `encoding/csv` with its defaults, does, record for record: commas,
+  quoted fields holding commas, line ends and doubled quotation marks, CR
+  LF read as LF, lines holding nothing passed over, spaces kept. A leading
+  byte order mark is passed over, where go-cty's keeps it in the first
+  name, and an empty header name fails with `object.empty_name`, where
+  go-cty's makes an attribute of it (a pandas file's index column). The
+  failures have codes, `csv.missing_header`, `csv.field_count` and
+  `csv.invalid_syntax`, each located at the argument, the last naming the
+  line and the column. Text not known yet whose prefix holds the header
+  and its line end answers a list of that object type, at least as long
+  as the records its prefix ends, where go-cty's answers a value of no
+  type. The specification says so (`LE-006` to `LE-011`).
 
 ### Fixed
 
