@@ -1,6 +1,7 @@
 package stdlib_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/kmoneil/tenon"
@@ -109,5 +110,175 @@ func TestConformance_LB011_KnownFailuresFailNow(t *testing.T) {
 		if !got.IsError() || got.Diagnostics()[0].Code != code {
 			t.Errorf("%s(unknown, 0) = %v, want %s now", name, got, code)
 		}
+	}
+}
+
+// num is the number text spells.
+func num(text string) tenon.Value { return tenon.NumberFromText(text) }
+
+// between returns the unknown number, not null, within the bounds given;
+// an empty text leaves that side unbounded.
+func between(lo string, loIn bool, hi string, hiIn bool) tenon.Value {
+	ns := []tenon.Narrowing{tenon.NotNull()}
+	if lo != "" {
+		ns = append(ns, tenon.NumberMin(num(lo), loIn))
+	}
+	if hi != "" {
+		ns = append(ns, tenon.NumberMax(num(hi), hiIn))
+	}
+	return tenon.Narrow(tenon.Unknown(tenon.NumberType()), ns...)
+}
+
+// answers holds f to answering each argument as the table says.
+func answers(t *testing.T, name string, f tenon.Function, table [][2]tenon.Value) {
+	t.Helper()
+	for _, tt := range table {
+		if got := call(f, tt[0]); !got.Equal(tt[1]) {
+			t.Errorf("%s(%v) = %v, want %v", name, tt[0], got, tt[1])
+		}
+	}
+}
+
+func TestConformance_LN030_Absolute(t *testing.T) {
+	conformance.Covers(t, "LN-030")
+	answers(t, "Absolute", stdlib.AbsoluteFunc, [][2]tenon.Value{
+		{num("-2.5"), num("2.5")}, {num("3"), num("3")}, {num("0"), num("0")},
+		{num("-1e999999"), num("1e999999")}, {num("-1e-999999"), num("1e-999999")},
+		{between("1", true, "5", false), between("1", true, "5", false)},
+		{between("-5", true, "-1", false), between("1", false, "5", true)},
+		{between("-5", true, "3", true), between("0", true, "5", true)},
+		{between("-3", false, "3", true), between("0", true, "3", true)},
+		{between("-2", true, "", false), between("0", true, "", false)},
+		{tenon.Unknown(tenon.NumberType()), between("0", true, "", false)},
+	})
+}
+
+func TestConformance_LN031_Signum(t *testing.T) {
+	conformance.Covers(t, "LN-031")
+	answers(t, "Signum", stdlib.SignumFunc, [][2]tenon.Value{
+		{num("-0.5"), num("-1")}, {num("0"), num("0")}, {num("1e-999999"), num("1")}, {num("9223372036854775808"), num("1")},
+		{between("1", true, "5", true), num("1")},
+		{between("0", false, "", false), num("1")},
+		{between("", false, "-3", true), num("-1")},
+		{between("0", true, "5", true), between("0", true, "1", true)},
+		{between("-5", true, "0", true), between("-1", true, "0", true)},
+		{tenon.Unknown(tenon.NumberType()), between("-1", true, "1", true)},
+	})
+}
+
+func TestConformance_LN032_Rounding(t *testing.T) {
+	conformance.Covers(t, "LN-032")
+	answers(t, "Int", stdlib.IntFunc, [][2]tenon.Value{
+		{num("1.5"), num("1")}, {num("-1.5"), num("-1")}, {num("1e999999"), num("1e999999")},
+		{num("-1e-999999"), num("0")}, {num("123456789.987654321"), num("123456789")},
+		{between("-2", false, "3", false), between("-1", true, "2", true)},
+		{between("2", false, "", false), between("2", true, "", false)},
+	})
+	answers(t, "Ceil", stdlib.CeilFunc, [][2]tenon.Value{
+		{num("-1.5"), num("-1")}, {num("-0.5"), num("0")}, {num("1e-999999"), num("1")}, {num("2"), num("2")},
+		{between("2", false, "3", false), between("3", true, "3", true)},
+		{between("1.5", true, "", false), between("2", true, "", false)},
+	})
+	answers(t, "Floor", stdlib.FloorFunc, [][2]tenon.Value{
+		{num("-1.5"), num("-2")}, {num("-1e-999999"), num("-1")}, {num("2.9"), num("2")},
+		{between("2", false, "3", false), between("2", true, "2", true)},
+		{between("", false, "-1.5", true), between("", false, "-2", true)},
+	})
+	// A quotient of 96 digits is specified (NU-012), so what rounds it is
+	// the same everywhere: one third times three is 96 nines.
+	nines := tenon.Mul(tenon.Div(num("1"), num("3")), num("3"))
+	if got := call(stdlib.CeilFunc, nines); !got.Equal(num("1")) {
+		t.Errorf("Ceil(%v) = %v, want 1", nines, got)
+	}
+	if got := call(stdlib.FloorFunc, nines); !got.Equal(num("0")) {
+		t.Errorf("Floor(%v) = %v, want 0", nines, got)
+	}
+}
+
+func TestConformance_LN033_MinAndMax(t *testing.T) {
+	conformance.Covers(t, "LN-033")
+	for _, tt := range []struct {
+		f         tenon.Function
+		args      []tenon.Value
+		want      tenon.Value
+		name, why string
+	}{
+		{stdlib.MinFunc, []tenon.Value{num("3"), num("1.5"), num("2")}, num("1.5"), "Min", "the least"},
+		{stdlib.MaxFunc, []tenon.Value{num("3"), num("1.5"), num("2")}, num("3"), "Max", "the greatest"},
+		{stdlib.MinFunc, []tenon.Value{num("2"), between("5", true, "9", true)}, num("2"), "Min", "a known number below every other's range"},
+		{stdlib.MaxFunc, []tenon.Value{between("1", true, "4", true), num("4")}, num("4"), "Max", "a tie at the end"},
+		{stdlib.MinFunc, []tenon.Value{num("7"), between("1", true, "4", false)}, between("1", true, "4", false), "Min", "an unknown wholly below"},
+		{stdlib.MinFunc, []tenon.Value{between("1", true, "6", true), between("3", false, "5", true)}, between("1", true, "5", true), "Min", "overlapping ranges"},
+		{stdlib.MaxFunc, []tenon.Value{tenon.Unknown(tenon.NumberType()), num("5")}, between("5", true, "", false), "Max", "an unbounded unknown"},
+	} {
+		if got := call(tt.f, tt.args...); !got.Equal(tt.want) {
+			t.Errorf("%s(%v), %s: %v, want %v", tt.name, tt.args, tt.why, got, tt.want)
+		}
+	}
+	if got := call(stdlib.MinFunc); !got.IsError() || got.Diagnostics()[0].Code != tenon.CodeFunctionArity {
+		t.Errorf("Min() = %v, want %s", got, tenon.CodeFunctionArity)
+	}
+}
+
+func TestConformance_LN050_ParseInt(t *testing.T) {
+	conformance.Covers(t, "LN-050")
+	str := tenon.String
+	for _, tt := range []struct {
+		text string
+		base int64
+		want string
+	}{
+		{"ff", 16, "255"}, {"+ff", 16, "255"}, {"-0", 10, "0"}, {"012", 8, "10"},
+		{"zz", 36, "1295"}, {"ZZ", 36, "1295"}, {"Zz", 62, "3817"}, {"aA", 62, "656"}, {"10", 62, "62"},
+		{"123456789012345678901234567890", 10, "123456789012345678901234567890"},
+	} {
+		if got := call(stdlib.ParseIntFunc, str(tt.text), tenon.NumberFromInt(tt.base)); !got.Equal(num(tt.want)) {
+			t.Errorf("ParseInt(%q, %d) = %v, want %s", tt.text, tt.base, got, tt.want)
+		}
+	}
+	// Nothing else is read.
+	for _, text := range []string{"0xff", "1_000", " 1", "1 ", "", "-", "--1", "1.5", "1e3", "\U00000663", "g"} {
+		got := call(stdlib.ParseIntFunc, str(text), tenon.NumberFromInt(10))
+		if !got.IsError() || got.Diagnostics()[0].Code != tenon.CodeNumberInvalidSyntax || !got.Diagnostics()[0].Path.Equal(at(0)) {
+			t.Errorf("ParseInt(%q, 10) = %v, want %s at [0]", text, got, tenon.CodeNumberInvalidSyntax)
+		}
+	}
+	got := call(stdlib.ParseIntFunc, str(strings.Repeat("1", 10001)), tenon.NumberFromInt(10))
+	if !got.IsError() || got.Diagnostics()[0].Code != tenon.CodeNumberTooLong {
+		t.Errorf("ParseInt of 10,001 digits = %v, want %s", got, tenon.CodeNumberTooLong)
+	}
+	// A number is no text to read; the refusal is the derivation's.
+	got = call(stdlib.ParseIntFunc, tenon.NumberFromInt(10), tenon.NumberFromInt(16))
+	if !got.IsError() || got.Diagnostics()[0].Code != tenon.CodeOperationWrongType || !got.Diagnostics()[0].Path.Equal(at(0)) {
+		t.Errorf("ParseInt(10, 16) = %v, want %s at [0]", got, tenon.CodeOperationWrongType)
+	}
+	// A redacted text is named by its placeholder.
+	got = call(stdlib.ParseIntFunc, tenon.WithMarks(str("hunter2"), secret{}), tenon.NumberFromInt(10))
+	if !got.IsError() || strings.Contains(got.Diagnostics()[0].Message, "hunter2") || !tenon.HasMark(got, secret{}) {
+		t.Errorf("ParseInt(a redacted text) = %v, want a failure withholding it", got)
+	}
+	// Under a base not known yet, text no base reads fails now, and other
+	// text answers an unknown number.
+	unknownBase := tenon.Unknown(tenon.NumberType())
+	if got := call(stdlib.ParseIntFunc, str("!"), unknownBase); !got.IsError() {
+		t.Errorf("ParseInt(\"!\", unknown) = %v, want a failure now", got)
+	}
+	if got := call(stdlib.ParseIntFunc, str("ff"), unknownBase); got.IsKnown() || got.IsError() || !notNull(got) {
+		t.Errorf("ParseInt(\"ff\", unknown) = %v, want an unknown number, not null", got)
+	}
+}
+
+func TestConformance_LB030_ArgumentDomains(t *testing.T) {
+	conformance.Covers(t, "LB-030")
+	// A base outside 2 to 62 is outside what ParseInt has a meaning for,
+	// and the failure is located at it.
+	for _, base := range []string{"1", "63", "1.5", "1e30", "-16"} {
+		got := call(stdlib.ParseIntFunc, tenon.String("10"), num(base))
+		if !got.IsError() || got.Diagnostics()[0].Code != tenon.CodeFunctionInvalidArgument || !got.Diagnostics()[0].Path.Equal(at(1)) {
+			t.Errorf("ParseInt(\"10\", %s) = %v, want %s at [1]", base, got, tenon.CodeFunctionInvalidArgument)
+		}
+	}
+	if got := call(stdlib.ParseIntFunc, tenon.String("10"), num("16.0")); !got.Equal(num("16")) {
+		t.Errorf("ParseInt(\"10\", 16.0) = %v, want 16", got)
 	}
 }

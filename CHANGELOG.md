@@ -35,6 +35,17 @@
   within the argument and withholding what a redacting mark requires,
   where go-cty's quotes a sensitive argument. The specification says so
   (`LN-080`, `LN-085`).
+- `AbsoluteFunc`, `SignumFunc`, `IntFunc`, `CeilFunc`, `FloorFunc`,
+  `MinFunc` and `MaxFunc`, exact on every number, a number not known yet
+  answered with the range its own gives (`Signum` of a positive range is
+  known 1, `min(2, x)` is 2 where `x` is at least 5), where go-cty drops
+  the range and its `Signum` refuses a fraction (#218). `ParseIntFunc`
+  reads an integer in a base from 2 to 62, go-cty's alphabet, with no
+  prefix, separator or space, refusing text over 10,000 bytes before
+  reading it, and a base outside 2 to 62 with `function.invalid_argument`
+  at it; a redacted text is named by its placeholder where go-cty's
+  `parseint` quotes it. The specification says so (`LN-030` to `LN-033`,
+  `LN-050`).
 - A function may declare its result never null (`FunctionSpec.NotNull`,
   read back with `Function.NotNull`). Every answer the call makes that is
   not a known value then says so, the unknown answer of an argument not

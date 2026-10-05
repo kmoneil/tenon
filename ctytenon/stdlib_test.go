@@ -87,6 +87,32 @@ var counterparts = map[string]counterpart{
 	"And":                  {cty: ctystdlib.AndFunc, ten: stdlib.AndFunc},
 	"Or":                   {cty: ctystdlib.OrFunc, ten: stdlib.OrFunc},
 	"Equal":                equality(ctystdlib.EqualFunc, stdlib.EqualFunc),
+	"Absolute":             arithmetic(ctystdlib.AbsoluteFunc, stdlib.AbsoluteFunc),
+	"Signum":               arithmetic(ctystdlib.SignumFunc, stdlib.SignumFunc),
+	"Int":                  arithmetic(ctystdlib.IntFunc, stdlib.IntFunc),
+	"Ceil":                 arithmetic(ctystdlib.CeilFunc, stdlib.CeilFunc),
+	"Floor":                arithmetic(ctystdlib.FloorFunc, stdlib.FloorFunc),
+	"Min":                  extremes(ctystdlib.MinFunc, stdlib.MinFunc),
+	"Max":                  extremes(ctystdlib.MaxFunc, stdlib.MaxFunc),
+	"ParseInt": {
+		cty: ctystdlib.ParseIntFunc,
+		ten: stdlib.ParseIntFunc,
+		cases: [][]cty.Value{
+			{cty.StringVal("ff"), cty.NumberIntVal(16)}, {cty.StringVal("+ff"), cty.NumberIntVal(16)},
+			{cty.StringVal("Zz"), cty.NumberIntVal(62)}, {cty.StringVal("0xff"), cty.NumberIntVal(16)},
+			{cty.StringVal("10"), cty.NumberIntVal(63)}, {cty.StringVal("10"), cty.MustParseNumberVal("16.0")},
+			{cty.NumberIntVal(10), cty.NumberIntVal(16)}, {cty.UnknownVal(cty.String), cty.NumberIntVal(16)},
+			{cty.StringVal("hunter2").Mark("sensitive"), cty.NumberIntVal(10)},
+		},
+		random: func(r *rand.Rand) []cty.Value {
+			const alphabet = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ+-_ ."
+			b := make([]byte, 1+r.Intn(12))
+			for i := range b {
+				b[i] = alphabet[r.Intn(len(alphabet))]
+			}
+			return []cty.Value{cty.StringVal(string(b)), cty.NumberIntVal(int64(1 + r.Intn(64)))}
+		},
+	},
 	"Coalesce": {
 		cty: ctystdlib.CoalesceFunc,
 		ten: stdlib.CoalesceFunc,
@@ -136,6 +162,18 @@ func arithmetic(c function.Function, ten tenon.Function) counterpart {
 	switch ten.Name() {
 	case "Add", "Subtract", "Multiply", "Negate":
 		cp.divergences = []divergence{binaryArithmetic(ten)}
+	case "Signum":
+		cp.divergences = []divergence{{
+			why: "#218: go-cty v1.19.0's Signum refuses a number that is not a whole number within 64 bits (fixed on its main branch, unreleased)",
+			match: func(args []cty.Value) bool {
+				n, ok := numberOf(args[0])
+				if !ok {
+					return false
+				}
+				_, fits := n.AsInt64()
+				return !fits
+			},
+		}}
 	case "Modulo":
 		cp.divergences = []divergence{{
 			why:   "modulo by zero: cty answers the dividend, and tenon fails, known or not (NU-014, LB-011, Appendix B row 30)",
@@ -264,6 +302,29 @@ func scientific(n tenon.Value) bool {
 		n = tenon.Sub(tenon.NumberFromInt(0), n)
 	}
 	return !tenon.LessThan(n, tenon.NumberFromText("1e21")).AsBool() || tenon.LessThan(n, tenon.NumberFromText("1e-20")).AsBool()
+}
+
+// extremes returns the counterpart of Min or Max, called with one number or
+// more.
+func extremes(c function.Function, ten tenon.Function) counterpart {
+	n := cty.NumberIntVal
+	return counterpart{
+		cty: c,
+		ten: ten,
+		cases: [][]cty.Value{
+			{n(3), cty.MustParseNumberVal("1.5"), n(2)},
+			{n(2), cty.UnknownVal(cty.Number).Refine().NumberRangeLowerBound(n(5), true).NewValue()},
+			{cty.UnknownVal(cty.Number), n(5)},
+			{n(1)},
+		},
+		random: func(r *rand.Rand) []cty.Value {
+			args := make([]cty.Value, 1+r.Intn(3))
+			for i := range args {
+				args[i] = randomCtyValue(r, cty.Number)
+			}
+			return args
+		},
+	}
 }
 
 // equality returns the counterpart of Equal or NotEqual, called with pairs
