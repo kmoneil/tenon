@@ -1,5 +1,25 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- The library's text functions begin: `UpperFunc`, `LowerFunc` and
+  `TitleFunc`, on Unicode's default case conversion of the version tenon
+  states, whatever the Go toolchain's: full mappings with no language's
+  tailoring, so `upper("straße")` is `"STRASSE"` and `upper("ﬁsh")` is
+  `"FISH"`, and a capital sigma ending a word lowercases to the final
+  sigma, so `lower("ΟΔΟΣ")` is `"οδος"`, where go-cty's answers `"STRAßE"`,
+  `"ﬁSH"` and `"οδοσ"` on Go's simple mappings. `Title` keeps go-cty's
+  rule, which the specification now states: the first code point and each
+  after an ASCII punctuation mark or space, or other white space, take
+  their titlecase, so `foo.example.com` is still `Foo.Example.Com`, and
+  only the mapping is the full one (`"ßtraße"` is `"Sstraße"`). A string
+  not known yet answers with the case of its recorded prefix, where
+  go-cty's drops the prefix. The specification gains §15's first rules
+  (`LS-001` to `LS-007`): cut positions, case conversion, white space,
+  string results, and the three functions.
+
 ## 0.16.0 (2026-10-05)
 
 tenon has a standard library now. Package `stdlib` is go-cty's
