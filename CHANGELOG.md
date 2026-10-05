@@ -25,6 +25,16 @@
   the other operand's type first, so `x == null` is true of a null of any
   type. The specification says so (`LN-001`, `LN-002`, `LN-010`, `LN-011`,
   `LN-020`).
+- `CoalesceFunc`, the first argument that is not null, converted to the
+  type the arguments unify to under the call's policy: a null is passed
+  over, one not known yet leaves the answer unknown and not null, and every
+  argument null fails with `function.invalid_argument`. Its answer carries
+  the marks of what it read, not of an argument after the one it chose.
+  `MakeToFunc(c)`, a language's `tostring`, `tonumber` and `tolist`: the
+  argument converted to `c` under the unsafe policy, a failure located
+  within the argument and withholding what a redacting mark requires,
+  where go-cty's quotes a sensitive argument. The specification says so
+  (`LN-080`, `LN-085`).
 - A function may declare its result never null (`FunctionSpec.NotNull`,
   read back with `Function.NotNull`). Every answer the call makes that is
   not a known value then says so, the unknown answer of an argument not

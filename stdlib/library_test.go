@@ -19,6 +19,8 @@ import (
 // function added without its entry here fails the run.
 var library = map[string]tenon.Function{
 	"AssertNotNull":        stdlib.AssertNotNullFunc,
+	"Coalesce":             stdlib.CoalesceFunc,
+	"MakeTo":               stdlib.MakeToFunc(tenon.Exactly(tenon.NumberType())),
 	"Add":                  stdlib.AddFunc,
 	"Subtract":             stdlib.SubtractFunc,
 	"Multiply":             stdlib.MultiplyFunc,
@@ -68,7 +70,9 @@ func TestLibraryIsWhole(t *testing.T) {
 	}
 	var listed []string
 	for name := range library {
-		listed = append(listed, name+"Func")
+		if name != "MakeTo" { // a factory, declared as a function
+			listed = append(listed, name+"Func")
+		}
 	}
 	slices.Sort(declared)
 	slices.Sort(listed)
