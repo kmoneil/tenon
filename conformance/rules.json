@@ -262,6 +262,10 @@
     {"id":"LC-010","area":"LC","withdrawn":false,"outline":false},
     {"id":"LC-011","area":"LC","withdrawn":false,"outline":false},
     {"id":"LC-012","area":"LC","withdrawn":false,"outline":false},
-    {"id":"LC-013","area":"LC","withdrawn":false,"outline":false}
+    {"id":"LC-013","area":"LC","withdrawn":false,"outline":false},
+    {"id":"LC-020","area":"LC","withdrawn":false,"outline":false},
+    {"id":"LC-021","area":"LC","withdrawn":false,"outline":false},
+    {"id":"LC-022","area":"LC","withdrawn":false,"outline":false},
+    {"id":"LC-023","area":"LC","withdrawn":false,"outline":false}
   ]
 }

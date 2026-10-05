@@ -424,3 +424,358 @@ func asList(fn string, v tenon.Value, p tenon.Policy) (l tenon.Value, empty bool
 	}
 	return converted, false, nil
 }
+
+// flattened gathers what Flatten makes of a value: the leaves, the marks of
+// every container flattened, and whether every nested sequence's length is
+// settled.
+type flattened struct {
+	leaves  []tenon.Value
+	marks   []tenon.Mark
+	settled bool
+}
+
+// add flattens v into f: a list, a set or a tuple that is not null and holds
+// its members is flattened, a set's members taken in its canonical order; a
+// sequence whose members are not there to read, not known yet or pending,
+// or a set whose length is a range, unsettles the answer; anything else is
+// a leaf, a null sequence among them.
+func (f *flattened) add(v tenon.Value) {
+	u, _ := tenon.Unmark(v)
+	if u.IsPending() {
+		if u.HasMembers() && u.Constraint().Kind() == tenon.ConstraintTupleOf {
+			f.marks = append(f.marks, propagating(v)...)
+			for _, m := range u.Elements() {
+				f.add(m)
+			}
+			return
+		}
+		if mayBe(u, tenon.KindList, tenon.KindSet, tenon.KindTuple) && !u.IsNull() {
+			f.settled = false
+		}
+		f.leaves = append(f.leaves, v)
+		return
+	}
+	switch k := u.Type().Kind(); {
+	case k != tenon.KindList && k != tenon.KindSet && k != tenon.KindTuple:
+		f.leaves = append(f.leaves, v)
+	case u.IsNull():
+		f.leaves = append(f.leaves, v)
+	case !u.HasMembers() || k == tenon.KindSet && !tenon.Length(u).IsKnown():
+		f.marks = append(f.marks, propagating(v)...)
+		f.settled = false
+	default:
+		f.marks = append(f.marks, propagating(v)...)
+		for _, m := range u.Elements() {
+			f.add(m)
+		}
+	}
+}
+
+// flatten returns what Flatten makes of v.
+func flatten(v tenon.Value) flattened {
+	f := flattened{settled: true}
+	u, _ := tenon.Unmark(v)
+	f.marks = append(f.marks, propagating(v)...)
+	if !u.HasMembers() || (!u.IsPending() && u.Type().Kind() == tenon.KindSet && !tenon.Length(u).IsKnown()) {
+		f.settled = false
+		return f
+	}
+	for _, m := range u.Elements() {
+		f.add(m)
+	}
+	return f
+}
+
+// FlattenFunc replaces each list, set and tuple within a list, a set or a
+// tuple by its elements, at any depth, and answers the tuple of what is left,
+// in order, a set's elements in its canonical order (EQ-044). A null list,
+// set or tuple is left as it is, as go-cty leaves it, and so is a map or an
+// object. Where a nested sequence's members are not known yet, or a set's
+// length is a range, the answer is pending, as no constraint says a tuple
+// of some length. Each flattened container's own marks reach the answer;
+// the leaves keep theirs.
+var FlattenFunc = tenon.NewFunction(tenon.FunctionSpec{
+	Name:        "Flatten",
+	Description: "Transforms a list, set, or tuple value into a tuple by replacing any given elements that are themselves sequences with a flattened tuple of all of the nested elements concatenated together.",
+	Params:      []tenon.Param{collection("list", "The list, set or tuple.")},
+	ResultOf: func(args []tenon.Value, _ tenon.Policy) (tenon.Constraint, error) {
+		if u, _ := tenon.Unmark(args[0]); !mayBe(u, tenon.KindList, tenon.KindSet, tenon.KindTuple) {
+			return tenon.Constraint{}, wrongKind("Flatten", 0, args[0], "a list, a set or a tuple")
+		}
+		f := flatten(args[0])
+		if !f.settled {
+			return tenon.Any(), nil
+		}
+		types := make([]tenon.Type, len(f.leaves))
+		for i, l := range f.leaves {
+			u, _ := tenon.Unmark(l)
+			if u.IsPending() {
+				return tenon.Any(), nil
+			}
+			types[i] = u.Type()
+		}
+		return tenon.Exactly(tenon.TupleType(types...)), nil
+	},
+	NotNull: true,
+	Impl: func(args []tenon.Value, rc tenon.Constraint, _ tenon.Policy) (tenon.Value, error) {
+		f := flatten(args[0])
+		if !f.settled {
+			return tenon.WithMarks(unknownOf(rc), f.marks...), nil
+		}
+		return tenon.WithMarks(tenon.Tuple(f.leaves...), f.marks...), nil
+	},
+})
+
+// CompactFunc is a list of strings without its null and empty members, in
+// order. A member not known yet stays where its range rules out null and the
+// empty string, a non-empty prefix doing so; where a member may be dropped
+// or not, the answer is the unknown list of the lengths that leaves.
+var CompactFunc = tenon.NewFunction(tenon.FunctionSpec{
+	Name:        "Compact",
+	Description: "Removes all empty string elements from the given list of strings.",
+	Params:      []tenon.Param{{Name: "list", Description: "The list of strings.", Constraint: tenon.ListOf(tenon.Exactly(tenon.StringType())), AllowUnknown: true}},
+	Result:      tenon.Exactly(tenon.ListType(tenon.StringType())),
+	NotNull:     true,
+	Impl: func(args []tenon.Value, _ tenon.Constraint, _ tenon.Policy) (tenon.Value, error) {
+		l := args[0]
+		if !l.HasMembers() {
+			_, hi, bounded := lengthOf(l)
+			return unknownList(tenon.StringType(), 0, hi, bounded), nil
+		}
+		var kept []tenon.Value
+		var surely, maybe int64
+		decided := true
+		for _, m := range l.Elements() {
+			switch {
+			case m.IsKnown() && (m.IsNull() || m.AsString() == ""):
+			case m.IsKnown() || !m.Range().AllowsNull() && m.Range().StringPrefix() != "":
+				kept = append(kept, m)
+				surely++
+				maybe++
+			default:
+				decided = false
+				maybe++
+			}
+		}
+		if !decided {
+			return unknownList(tenon.StringType(), surely, maybe, true), nil
+		}
+		return tenon.List(tenon.StringType(), kept...), nil
+	},
+})
+
+// DistinctFunc is a list without the members equal to an earlier one,
+// first occurrences kept in order, equality being Equals (§5). Known members
+// are told apart by their hashes, so the work grows with the members rather
+// than with their pairs; a member not known yet is compared with every
+// other. Where a member's equality with another is not settled, the answer
+// is the unknown list whose least length is the members provably distinct
+// from all before them and whose greatest is the members not provably equal
+// to one before them. A tuple is read as the list its element types unify
+// to under the call's policy, and the empty tuple, a language's [], answers
+// the empty tuple.
+var DistinctFunc = tenon.NewFunction(tenon.FunctionSpec{
+	Name:        "Distinct",
+	Description: "Removes any duplicate values from the given list, preserving the order of remaining elements.",
+	Params:      []tenon.Param{{Name: "list", Description: "The list or tuple.", Constraint: tenon.Any(), AllowUnknown: true, AllowPending: true}},
+	ResultOf: func(args []tenon.Value, p tenon.Policy) (tenon.Constraint, error) {
+		l, empty, err := asList("Distinct", args[0], p)
+		switch {
+		case err != nil:
+			return tenon.Constraint{}, err
+		case empty:
+			return tenon.Exactly(tenon.TupleType()), nil
+		case l.IsPending():
+			return l.Constraint(), nil
+		}
+		return tenon.Exactly(l.Type()), nil
+	},
+	NotNull: true,
+	Impl: func(args []tenon.Value, rc tenon.Constraint, p tenon.Policy) (tenon.Value, error) {
+		if rc.Kind() == tenon.ConstraintExactly && rc.Type().Kind() == tenon.KindTuple {
+			return tenon.Tuple(), nil
+		}
+		l, _, _ := asList("Distinct", args[0], p)
+		if l.IsPending() || !l.HasMembers() {
+			if l.IsPending() {
+				return unknownOf(rc), nil
+			}
+			lo, hi, bounded := lengthOf(l)
+			return unknownList(l.Type().ElementType(), min(lo, 1), hi, bounded), nil
+		}
+		return distinctOf(l), nil
+	},
+})
+
+// distinctOf answers Distinct of the list l, which holds its members.
+func distinctOf(l tenon.Value) tenon.Value {
+	var kept, apart members
+	var notDuplicate int64
+	decided := true
+	for _, m := range l.Elements() {
+		equal, open := kept.meet(m)
+		if equal {
+			continue
+		}
+		notDuplicate++
+		decided = decided && !open
+		kept.add(m)
+		if e, o := apart.meet(m); !e && !o {
+			apart.add(m)
+		}
+	}
+	if !decided {
+		return unknownList(l.Type().ElementType(), apart.count(), notDuplicate, true)
+	}
+	return tenon.List(l.Type().ElementType(), kept.order...)
+}
+
+// members holds values in order, the known ones also by hash, so that a
+// known value is compared only with the known values of its hash and with
+// those not known yet. A null has no hash; the members of a list share one
+// type, so all its nulls are equal, and one held null stands for them.
+type members struct {
+	order   []tenon.Value
+	known   map[uint64][]tenon.Value
+	unknown []tenon.Value
+	null    bool
+}
+
+func (s *members) add(m tenon.Value) {
+	s.order = append(s.order, m)
+	switch {
+	case !m.IsKnown():
+		s.unknown = append(s.unknown, m)
+	case m.IsNull():
+		s.null = true
+	default:
+		if s.known == nil {
+			s.known = map[uint64][]tenon.Value{}
+		}
+		h := tenon.Hash(m)
+		s.known[h] = append(s.known[h], m)
+	}
+}
+
+// count returns how many values s holds.
+func (s *members) count() int64 { return int64(len(s.order)) }
+
+// meet reports whether m is provably equal to a value s holds, and whether
+// its equality with one is not settled.
+func (s *members) meet(m tenon.Value) (equal, open bool) {
+	compare := func(o tenon.Value) {
+		switch e := tenon.Equals(m, o); {
+		case !e.IsKnown():
+			open = true
+		case e.AsBool():
+			equal = true
+		}
+	}
+	switch {
+	case !m.IsKnown():
+		for _, o := range s.order {
+			compare(o)
+		}
+		return equal, open
+	case m.IsNull():
+		equal = s.null
+	default:
+		for _, o := range s.known[tenon.Hash(m)] {
+			compare(o)
+		}
+	}
+	for _, o := range s.unknown {
+		compare(o)
+	}
+	return equal, open
+}
+
+// CoalesceListFunc returns the first of its arguments, lists and tuples,
+// that is neither null nor empty, as it is. Nulls, a language's untyped null
+// among them, and empty sequences are passed over; one that may still be
+// null or empty, not known yet, leaves the answer unknown; where every
+// argument is null or empty the call fails with
+// tenon.CodeFunctionInvalidArgument. The result is derived from the
+// arguments that may be chosen: their type where they agree, and one of
+// their types otherwise. The answer carries the marks of the arguments
+// examined, and none of one after the choice.
+var CoalesceListFunc = tenon.NewFunction(tenon.FunctionSpec{
+	Name:        "CoalesceList",
+	Description: "Returns the first non-null, non-empty list or tuple among the given arguments.",
+	Params:      []tenon.Param{anything("vals", "The first list or tuple to consider.")},
+	VarParam:    &tenon.Param{Name: "vals", Description: "The further lists or tuples, in order.", Constraint: tenon.Any(), AllowNull: true, AllowUnknown: true, AllowPending: true, AllowMarked: true},
+	ResultOf: func(args []tenon.Value, _ tenon.Policy) (tenon.Constraint, error) {
+		var cs []tenon.Constraint
+		for i, a := range args {
+			u, _ := tenon.Unmark(a)
+			if !u.IsNull() && !mayBe(u, tenon.KindList, tenon.KindTuple) {
+				return tenon.Constraint{}, wrongKind("CoalesceList", i, a, "lists and tuples")
+			}
+		}
+		for _, a := range args {
+			u, _ := tenon.Unmark(a)
+			state := emptiness(u)
+			if state == passedOver {
+				continue
+			}
+			cs = append(cs, typeOf(u))
+			if state == chosen {
+				break
+			}
+		}
+		switch len(cs) {
+		case 0:
+			return tenon.Any(), nil
+		case 1:
+			return cs[0], nil
+		}
+		if slices.ContainsFunc(cs[1:], func(c tenon.Constraint) bool { return !c.Equal(cs[0]) }) {
+			return tenon.OneOf(cs...), nil
+		}
+		return cs[0], nil
+	},
+	NotNull: true,
+	Impl: func(args []tenon.Value, rc tenon.Constraint, _ tenon.Policy) (tenon.Value, error) {
+		var read []tenon.Value
+		for _, a := range args {
+			u, _ := tenon.Unmark(a)
+			read = append(read, a)
+			switch emptiness(u) {
+			case chosen:
+				return marked(a, read...), nil
+			case open:
+				return marked(unknownOf(rc), read...), nil
+			}
+		}
+		return marked(tenon.ErrorVal(tenon.Diagnostic{
+			Code:    tenon.CodeFunctionInvalidArgument,
+			Message: "every argument of CoalesceList is null or empty, and it has no answer without one that is neither",
+		}), read...), nil
+	},
+})
+
+// The answers emptiness gives of a CoalesceList argument.
+const (
+	passedOver = iota // null, or empty
+	chosen            // neither null nor empty
+	open              // either, as it turns out
+)
+
+// emptiness says whether the unmarked sequence v is passed over, chosen or
+// open: null or empty, neither, or not settled.
+func emptiness(v tenon.Value) int {
+	if v.IsNull() {
+		return passedOver
+	}
+	if n := tenon.IsNull(v); !n.IsKnown() {
+		return open
+	}
+	lo, hi, bounded := lengthOf(v)
+	switch {
+	case v.HasMembers() && v.Len() == 0, bounded && hi == 0:
+		return passedOver
+	case lo > 0 || v.HasMembers() && v.Len() > 0:
+		return chosen
+	}
+	return open
+}

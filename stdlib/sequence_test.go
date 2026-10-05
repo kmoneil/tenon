@@ -140,3 +140,123 @@ func TestConformance_LC013_Chunklist(t *testing.T) {
 		t.Errorf("Chunklist(five, unknown) = %v, want an unknown list of 1 to 5", got)
 	}
 }
+
+func TestConformance_LC020_Flatten(t *testing.T) {
+	conformance.Covers(t, "LC-020")
+	nums := func(vs ...tenon.Value) tenon.Value { return tenon.List(tenon.NumberType(), vs...) }
+	one, two, three := num("1"), num("2"), num("3")
+	for _, tt := range []struct {
+		v, want tenon.Value
+	}{
+		{tenon.List(tenon.ListType(tenon.NumberType()), nums(one, two), nums(three)), tenon.Tuple(one, two, three)},
+		{tenon.Tuple(a, tenon.Tuple(b, list(c))), tenon.Tuple(a, b, c)},
+		{tenon.List(tenon.ListType(tenon.NumberType()), tenon.Null(tenon.ListType(tenon.NumberType())), nums(one)), tenon.Tuple(tenon.Null(tenon.ListType(tenon.NumberType())), one)},
+		{tenon.List(tenon.SetType(tenon.NumberType()), tenon.Set(tenon.NumberType(), two, one)), tenon.Tuple(one, two)},
+		{tenon.List(tenon.ListType(tenon.NumberType()), nums(one), nums(tenon.Unknown(tenon.NumberType()))), tenon.Tuple(one, tenon.Unknown(tenon.NumberType()))},
+		{tenon.Tuple(tenon.Map(tenon.NumberType(), map[string]tenon.Value{"k": one})), tenon.Tuple(tenon.Map(tenon.NumberType(), map[string]tenon.Value{"k": one}))},
+	} {
+		if got := call(stdlib.FlattenFunc, tt.v); !got.Equal(tt.want) {
+			t.Errorf("Flatten(%v) = %v, want %v", tt.v, got, tt.want)
+		}
+	}
+	// A nested list not known yet leaves the answer pending, not null.
+	nested := tenon.List(tenon.ListType(tenon.NumberType()), nums(one), tenon.Unknown(tenon.ListType(tenon.NumberType())))
+	if got := call(stdlib.FlattenFunc, nested); !got.IsPending() || !notNull(got) {
+		t.Errorf("Flatten(%v) = %v, want a pending value, not null", nested, got)
+	}
+	failsWith(t, "Flatten of a map", call(stdlib.FlattenFunc, tenon.Map(tenon.NumberType(), map[string]tenon.Value{"a": one})), tenon.CodeOperationWrongType, at(0))
+	// The containers' own marks, the leaves keeping theirs.
+	v := tenon.Tuple(tenon.WithMarks(nums(one), bare("box")), tenon.WithMarks(two, bare("leaf")))
+	if got := call(stdlib.FlattenFunc, v); !got.Equal(tenon.WithMarks(tenon.Tuple(one, tenon.WithMarks(two, bare("leaf"))), bare("box"))) {
+		t.Errorf("Flatten(%v) = %v", v, got)
+	}
+}
+
+func TestConformance_LC021_Compact(t *testing.T) {
+	conformance.Covers(t, "LC-021")
+	empty, null := tenon.String(""), tenon.Null(str)
+	if got := call(stdlib.CompactFunc, list(a, empty, null, b)); !got.Equal(list(a, b)) {
+		t.Errorf("Compact([a, \"\", null, b]) = %v, want [a, b]", got)
+	}
+	sure := tenon.Narrow(tenon.Unknown(str), tenon.NotNull(), tenon.StringPrefix("ab"))
+	if got := call(stdlib.CompactFunc, list(a, sure)); !got.Equal(list(a, sure)) {
+		t.Errorf("Compact([a, %v]) = %v, want it kept in place", sure, got)
+	}
+	if got := call(stdlib.CompactFunc, list(a, tenon.Unknown(str), empty)); !lengthBetween(got, 1, 2) {
+		t.Errorf("Compact([a, unknown, \"\"]) = %v, want an unknown list of 1 to 2", got)
+	}
+	if got := call(stdlib.CompactFunc, tenon.Tuple()); !got.Equal(tenon.List(str)) {
+		t.Errorf("Compact([]) = %v, want the empty list of strings", got)
+	}
+}
+
+func TestConformance_LC022_Distinct(t *testing.T) {
+	conformance.Covers(t, "LC-022")
+	nums := func(ns ...string) tenon.Value {
+		var vs []tenon.Value
+		for _, s := range ns {
+			vs = append(vs, num(s))
+		}
+		return tenon.List(tenon.NumberType(), vs...)
+	}
+	if got := call(stdlib.DistinctFunc, nums("1", "2", "1", "3", "2")); !got.Equal(nums("1", "2", "3")) {
+		t.Errorf("Distinct([1, 2, 1, 3, 2]) = %v", got)
+	}
+	if got := call(stdlib.DistinctFunc, nums("1", "1.0")); !got.Equal(nums("1")) {
+		t.Errorf("Distinct([1, 1.0]) = %v", got)
+	}
+	nulls := tenon.List(tenon.NumberType(), tenon.Null(tenon.NumberType()), num("1"), tenon.Null(tenon.NumberType()))
+	if got := call(stdlib.DistinctFunc, nulls); !got.Equal(tenon.List(tenon.NumberType(), tenon.Null(tenon.NumberType()), num("1"))) {
+		t.Errorf("Distinct(%v) = %v, want [null, 1]", nulls, got)
+	}
+	if got := call(stdlib.DistinctFunc, tenon.Tuple()); !got.Equal(tenon.Tuple()) {
+		t.Errorf("Distinct([]) = %v, want []", got)
+	}
+	partly := tenon.List(tenon.NumberType(), num("1"), tenon.Unknown(tenon.NumberType()))
+	if got := call(stdlib.DistinctFunc, partly); !lengthBetween(got, 1, 2) {
+		t.Errorf("Distinct(%v) = %v, want an unknown list of 1 to 2", partly, got)
+	}
+	apart := tenon.List(tenon.NumberType(), num("1"), tenon.Narrow(tenon.Unknown(tenon.NumberType()), tenon.NumberMin(num("5"), true)))
+	if got := call(stdlib.DistinctFunc, apart); !got.Equal(apart) {
+		t.Errorf("Distinct(%v) = %v, want it as it is", apart, got)
+	}
+	// Known members are told apart by hash: many of them cost little.
+	var many []tenon.Value
+	for i := range 20000 {
+		many = append(many, tenon.NumberFromInt(int64(i%10000)))
+	}
+	if got := call(stdlib.DistinctFunc, tenon.List(tenon.NumberType(), many...)); got.Len() != 10000 {
+		t.Errorf("Distinct of 20,000 numbers, 10,000 distinct, has %d", got.Len())
+	}
+}
+
+func TestConformance_LC023_CoalesceList(t *testing.T) {
+	conformance.Covers(t, "LC-023")
+	nums := func(vs ...tenon.Value) tenon.Value { return tenon.List(tenon.NumberType(), vs...) }
+	one := num("1")
+	untyped := tenon.Narrow(tenon.Pending(tenon.Any()), tenon.NullOnly())
+	for _, tt := range []struct {
+		args []tenon.Value
+		want tenon.Value
+	}{
+		{[]tenon.Value{nums(), nums(one)}, nums(one)},
+		{[]tenon.Value{tenon.Null(tenon.ListType(tenon.NumberType())), nums(one)}, nums(one)},
+		{[]tenon.Value{untyped, nums(one)}, nums(one)},
+		{[]tenon.Value{nums(one), tenon.Unknown(tenon.ListType(tenon.NumberType()))}, nums(one)},
+		{[]tenon.Value{nums(tenon.Unknown(tenon.NumberType())), nums(one)}, nums(tenon.Unknown(tenon.NumberType()))},
+	} {
+		if got := call(stdlib.CoalesceListFunc, tt.args...); !got.Equal(tt.want) {
+			t.Errorf("CoalesceList(%v) = %v, want %v", tt.args, got, tt.want)
+		}
+	}
+	if got := call(stdlib.CoalesceListFunc, tenon.Unknown(tenon.ListType(tenon.NumberType())), nums(one)); got.IsKnown() || got.IsError() {
+		t.Errorf("CoalesceList(unknown, [1]) = %v, want the unknown list", got)
+	}
+	failsWith(t, "CoalesceList([], [])", call(stdlib.CoalesceListFunc, nums(), nums()), tenon.CodeFunctionInvalidArgument, tenon.Path{})
+	failsWith(t, "CoalesceList([1], a set)", call(stdlib.CoalesceListFunc, nums(one), tenon.Set(tenon.NumberType(), one)), tenon.CodeOperationWrongType, at(1))
+	// The marks of the arguments examined, none of one after the choice.
+	got := call(stdlib.CoalesceListFunc, tenon.WithMarks(nums(), bare("passed")), nums(one), tenon.WithMarks(nums(one), bare("after")))
+	if !got.Equal(tenon.WithMarks(nums(one), bare("passed"))) {
+		t.Errorf("CoalesceList with marks = %v", got)
+	}
+}

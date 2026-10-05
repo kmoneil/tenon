@@ -16,6 +16,10 @@ import (
 // specification gives them.
 var library = map[string]tenon.Function{
 	"AssertNotNull":        stdlib.AssertNotNullFunc,
+	"Flatten":              stdlib.FlattenFunc,
+	"Compact":              stdlib.CompactFunc,
+	"Distinct":             stdlib.DistinctFunc,
+	"CoalesceList":         stdlib.CoalesceListFunc,
 	"Slice":                stdlib.SliceFunc,
 	"ReverseList":          stdlib.ReverseListFunc,
 	"Concat":               stdlib.ConcatFunc,
@@ -184,6 +188,16 @@ var callVectors = []callVector{
 	{"Chunklist/size zero", "Chunklist", []tenon.Value{tenon.List(num, n(1), n(2)), n(0)}, tenon.Safe, tenon.Constraint{}},
 	{"Chunklist/the empty tuple", "Chunklist", []tenon.Value{tenon.Tuple(), n(2)}, tenon.Safe, tenon.Constraint{}},
 	{"Chunklist/refused/a negative size", "Chunklist", []tenon.Value{tenon.List(num, n(1)), n(-1)}, tenon.Safe, tenon.Constraint{}},
+	{"Flatten/nested", "Flatten", []tenon.Value{tenon.Tuple(s("a"), tenon.Tuple(s("b"), tenon.List(str, s("c"))))}, tenon.Safe, tenon.Constraint{}},
+	{"Flatten/a null sequence a leaf", "Flatten", []tenon.Value{tenon.Tuple(tenon.Null(tenon.ListType(num)), tenon.List(num, n(1)))}, tenon.Safe, tenon.Constraint{}},
+	{"Flatten/a nested unknown", "Flatten", []tenon.Value{tenon.Tuple(tenon.List(num, n(1)), tenon.Unknown(tenon.ListType(num)))}, tenon.Safe, tenon.Constraint{}},
+	{"Compact/strings", "Compact", []tenon.Value{tenon.List(str, s("a"), s(""), tenon.Null(str), s("b"))}, tenon.Safe, tenon.Constraint{}},
+	{"Compact/an unknown member", "Compact", []tenon.Value{tenon.List(str, s("a"), tenon.Unknown(str))}, tenon.Safe, tenon.Constraint{}},
+	{"Distinct/numbers", "Distinct", []tenon.Value{tenon.List(num, n(1), n(2), n(1), n(3), n(2))}, tenon.Safe, tenon.Constraint{}},
+	{"Distinct/the empty tuple", "Distinct", []tenon.Value{tenon.Tuple()}, tenon.Safe, tenon.Constraint{}},
+	{"Distinct/an unknown member", "Distinct", []tenon.Value{tenon.List(num, n(1), tenon.Unknown(num))}, tenon.Safe, tenon.Constraint{}},
+	{"CoalesceList/the first not empty", "CoalesceList", []tenon.Value{tenon.List(num), tenon.Narrow(tenon.Pending(tenon.Any()), tenon.NullOnly()), tenon.List(num, n(1))}, tenon.Safe, tenon.Constraint{}},
+	{"CoalesceList/refused/every one empty", "CoalesceList", []tenon.Value{tenon.List(num), tenon.List(num)}, tenon.Safe, tenon.Constraint{}},
 	{"Coalesce/the first not null", "Coalesce", []tenon.Value{tenon.Narrow(tenon.Pending(tenon.Any()), tenon.NullOnly()), tenon.Null(num), n(1), n(2)}, tenon.Safe, tenon.Constraint{}},
 	{"Coalesce/one not known yet", "Coalesce", []tenon.Value{tenon.Unknown(num), n(1)}, tenon.Safe, tenon.Constraint{}},
 	{"Coalesce/unified under Unsafe", "Coalesce", []tenon.Value{n(1), s("a")}, tenon.Unsafe, tenon.Constraint{}},
@@ -226,7 +240,7 @@ type callArg struct {
 // answers, its display form and its encoding, or the failures it gives, each
 // code with its path.
 func TestConformance_LB001_FunctionVectors(t *testing.T) {
-	conformance.Covers(t, "LB-001", "LN-001", "LN-002", "LN-010", "LN-011", "LN-020", "LN-030", "LN-031", "LN-032", "LN-033", "LN-050", "LN-060", "LN-061", "LN-080", "LN-083", "LN-085", "LC-001", "LC-002", "LC-003", "LC-004", "LC-010", "LC-011", "LC-012", "LC-013")
+	conformance.Covers(t, "LB-001", "LN-001", "LN-002", "LN-010", "LN-011", "LN-020", "LN-030", "LN-031", "LN-032", "LN-033", "LN-050", "LN-060", "LN-061", "LN-080", "LN-083", "LN-085", "LC-001", "LC-002", "LC-003", "LC-004", "LC-010", "LC-011", "LC-012", "LC-013", "LC-020", "LC-021", "LC-022", "LC-023")
 	f := callFile{
 		Format: 1,
 		About: "Each entry is a call of a function of the standard library (§13 to §20), named as the specification " +

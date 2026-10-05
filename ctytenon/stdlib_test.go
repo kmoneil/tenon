@@ -154,6 +154,59 @@ var counterparts = map[string]counterpart{
 			return []cty.Value{randomCtyValue(r, cty.List(randomCtyType(r, 1))), cty.NumberIntVal(int64(r.Intn(4)))}
 		},
 	},
+	"Flatten": {
+		cty: ctystdlib.FlattenFunc,
+		ten: stdlib.FlattenFunc,
+		cases: [][]cty.Value{
+			{cty.ListVal([]cty.Value{cty.ListVal([]cty.Value{cty.NumberIntVal(1), cty.NumberIntVal(2)}), cty.ListVal([]cty.Value{cty.NumberIntVal(3)})})},
+			{cty.TupleVal([]cty.Value{cty.StringVal("a"), cty.TupleVal([]cty.Value{cty.StringVal("b")})})},
+			{cty.ListVal([]cty.Value{cty.NullVal(cty.List(cty.Number)), cty.ListVal([]cty.Value{cty.NumberIntVal(1)})})},
+		},
+		random: func(r *rand.Rand) []cty.Value { return []cty.Value{randomCtyValue(r, cty.List(randomCtyType(r, 2)))} },
+		divergences: []divergence{{
+			why:   "a set of several members is flattened in tenon's canonical order (EQ-044), which go-cty's iteration does not follow, numbers included",
+			match: func(args []cty.Value) bool { return holdsSetOfSeveral(args[0]) },
+		}},
+	},
+	"Compact": {
+		cty: ctystdlib.CompactFunc,
+		ten: stdlib.CompactFunc,
+		cases: [][]cty.Value{
+			{cty.ListVal([]cty.Value{cty.StringVal("a"), cty.StringVal(""), cty.NullVal(cty.String), cty.StringVal("b")})},
+			{cty.ListVal([]cty.Value{cty.StringVal("a"), cty.UnknownVal(cty.String)})},
+		},
+		random: func(r *rand.Rand) []cty.Value { return []cty.Value{randomCtyValue(r, cty.List(cty.String))} },
+	},
+	"Distinct": {
+		cty: ctystdlib.DistinctFunc,
+		ten: stdlib.DistinctFunc,
+		cases: [][]cty.Value{
+			{cty.ListVal([]cty.Value{cty.NumberIntVal(1), cty.NumberIntVal(2), cty.NumberIntVal(1)})},
+			{cty.ListVal([]cty.Value{cty.NumberIntVal(1), cty.UnknownVal(cty.Number)})},
+		},
+		random: func(r *rand.Rand) []cty.Value {
+			v := randomCtyValue(r, cty.List(randomCtyType(r, 1)))
+			if v.IsKnown() && !v.IsNull() && v.LengthInt() > 0 && r.Intn(2) == 0 {
+				// A repeated member, to be taken out.
+				elems := v.AsValueSlice()
+				v = cty.ListVal(append(elems, elems[0]))
+			}
+			return []cty.Value{v}
+		},
+	},
+	"CoalesceList": {
+		cty: ctystdlib.CoalesceListFunc,
+		ten: stdlib.CoalesceListFunc,
+		cases: [][]cty.Value{
+			{cty.ListValEmpty(cty.Number), cty.ListVal([]cty.Value{cty.NumberIntVal(1)})},
+			{cty.NullVal(cty.List(cty.Number)), cty.ListVal([]cty.Value{cty.NumberIntVal(1)})},
+			{cty.ListVal([]cty.Value{cty.NumberIntVal(1)}), cty.UnknownVal(cty.List(cty.Number))},
+		},
+		random: func(r *rand.Rand) []cty.Value {
+			typ := cty.List(randomCtyType(r, 1))
+			return []cty.Value{randomCtyValue(r, typ), randomCtyValue(r, typ)}
+		},
+	},
 	"Log": transcendental(ctystdlib.LogFunc, stdlib.LogFunc),
 	"Pow": transcendental(ctystdlib.PowFunc, stdlib.PowFunc),
 	"Min": extremes(ctystdlib.MinFunc, stdlib.MinFunc),
@@ -366,6 +419,27 @@ func scientific(n tenon.Value) bool {
 		n = tenon.Sub(tenon.NumberFromInt(0), n)
 	}
 	return !tenon.LessThan(n, tenon.NumberFromText("1e21")).AsBool() || tenon.LessThan(n, tenon.NumberFromText("1e-20")).AsBool()
+}
+
+// holdsSetOfSeveral reports whether v is or holds, at any depth, a known
+// set of two members or more.
+func holdsSetOfSeveral(v cty.Value) bool {
+	v, _ = v.UnmarkDeep()
+	if !v.IsKnown() || v.IsNull() {
+		return false
+	}
+	t := v.Type()
+	if t.IsSetType() && v.LengthInt() > 1 {
+		return true
+	}
+	if t.IsListType() || t.IsSetType() || t.IsTupleType() || t.IsMapType() || t.IsObjectType() {
+		for it := v.ElementIterator(); it.Next(); {
+			if _, e := it.Element(); holdsSetOfSeveral(e) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // abcList is the list ["a", "b", "c"].
