@@ -19,6 +19,19 @@
   go-cty's drops the prefix. The specification gains §15's first rules
   (`LS-001` to `LS-007`): cut positions, case conversion, white space,
   string results, and the three functions.
+- `StrlenFunc`, `ReverseFunc` and `SubstrFunc`, by extended grapheme
+  cluster of the Unicode version tenon states, where go-cty's follow the
+  go-textseg the toolchain selects: below Go 1.27 it joins a ZWJ after a
+  regional indicator into one cluster, against UAX #29, and above it a
+  Devanagari conjunct, by a later Unicode. `Substr` takes nothing for a
+  length of zero whatever the offset, where go-cty's takes the rest for a
+  negative offset (#217), and takes offsets and lengths of any magnitude,
+  a fraction failing located at it; a string not known yet answers from
+  the clusters its recorded prefix settles, known where they hold the
+  whole part taken. `Reverse` reverses clusters, and the specification
+  says plainly that clusters meeting anew may compose, so reversing twice
+  need not give a string back. The specification says so (`LS-008` to
+  `LS-011`).
 
 ## 0.16.0 (2026-10-05)
 

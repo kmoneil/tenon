@@ -540,6 +540,69 @@ var counterparts = map[string]counterpart{
 	"Upper": caseMapping(ctystdlib.UpperFunc, stdlib.UpperFunc),
 	"Lower": caseMapping(ctystdlib.LowerFunc, stdlib.LowerFunc),
 	"Title": caseMapping(ctystdlib.TitleFunc, stdlib.TitleFunc),
+	"Strlen": {
+		cty: ctystdlib.StrlenFunc,
+		ten: stdlib.StrlenFunc,
+		cases: [][]cty.Value{
+			{cty.StringVal("")}, {cty.StringVal("hello")}, {cty.StringVal("q\U00000301")}, {cty.StringVal("\r\n")},
+			{cty.StringVal("\U0001F1FA\U0001F1F8\U0001F1EC")},
+			{cty.StringVal("\U0001F1FA\U0000200D\U0001F468")},
+			{cty.StringVal("\U00000915\U0000094D\U00000937")},
+			{cty.UnknownVal(cty.String).Refine().StringPrefix("ab-").NewValue()},
+		},
+		divergences: []divergence{segmentation()},
+	},
+	"Reverse": {
+		cty: ctystdlib.ReverseFunc,
+		ten: stdlib.ReverseFunc,
+		cases: [][]cty.Value{
+			{cty.StringVal("hello")}, {cty.StringVal("a\r\nb")}, {cty.StringVal("\U00000301e")},
+			{cty.StringVal("\U0001F1FA\U0001F1F8\U0001F1EC")},
+			{cty.StringVal("\U0001F1FA\U0000200D\U0001F468")},
+			{cty.StringVal("\U00000915\U0000094D\U00000937")},
+		},
+		divergences: []divergence{segmentation()},
+	},
+	"Substr": {
+		cty: ctystdlib.SubstrFunc,
+		ten: stdlib.SubstrFunc,
+		cases: [][]cty.Value{
+			{cty.StringVal("hello"), cty.NumberIntVal(1), cty.NumberIntVal(3)},
+			{cty.StringVal("hello"), cty.NumberIntVal(-3), cty.Zero},
+			{cty.StringVal("hello"), cty.NumberIntVal(-10), cty.NumberIntVal(2)},
+			{cty.StringVal("hello"), cty.NumberIntVal(1), cty.NumberIntVal(-5)},
+			{cty.StringVal("hello"), cty.NumberIntVal(10), cty.NumberIntVal(2)},
+			{cty.StringVal("hello"), cty.NumberIntVal(-1), cty.NumberIntVal(-1)},
+			{cty.StringVal(""), cty.NumberIntVal(-1), cty.NumberIntVal(1)},
+			{cty.StringVal("hello"), cty.MustParseNumberVal("1.5"), cty.NumberIntVal(2)},
+			{cty.StringVal("hello"), cty.Zero, cty.MustParseNumberVal("1e30")},
+			{cty.StringVal("e\U00000301x"), cty.Zero, cty.NumberIntVal(1)},
+			{cty.UnknownVal(cty.String), cty.Zero, cty.Zero},
+		},
+		random: func(r *rand.Rand) []cty.Value {
+			return []cty.Value{randomCtyValue(r, cty.String), cty.NumberIntVal(int64(r.Intn(15) - 7)), cty.NumberIntVal(int64(r.Intn(10) - 2))}
+		},
+		divergences: []divergence{{
+			why: "#217: a length of zero with a negative offset: cty takes the rest of the string, and tenon nothing, whatever the offset (LS-010, Appendix B row 43)",
+			match: func(args []cty.Value) bool {
+				o, ok1 := numberOf(args[1])
+				l, ok2 := numberOf(args[2])
+				return ok1 && ok2 && l.Equal(tenon.NumberFromInt(0)) && tenon.LessThan(o, tenon.NumberFromInt(0)).Equal(tenon.Bool(true))
+			},
+		}, {
+			why: "an offset or a length past what int64 holds: cty fails, and tenon answers, of any magnitude (LS-010, Appendix B row 43)",
+			match: func(args []cty.Value) bool {
+				for _, a := range args[1:] {
+					if n, ok := numberOf(a); ok && isInteger(n) {
+						if _, fits := n.AsInt64(); !fits {
+							return true
+						}
+					}
+				}
+				return false
+			},
+		}},
+	},
 	"Lookup": {
 		cty: ctystdlib.LookupFunc,
 		ten: stdlib.LookupFunc,
@@ -867,6 +930,19 @@ func setOperation(c function.Function, ten tenon.Function, n int) counterpart {
 				return slices.Contains(ets, cty.Bool) && (slices.Contains(ets, cty.Number) || slices.Contains(ets, cty.String))
 			},
 		}},
+	}
+}
+
+// segmentation is the divergence of a string whose clusters go-cty finds
+// otherwise than Unicode 15.0.0 does, by the go-textseg its toolchain
+// selects.
+func segmentation() divergence {
+	return divergence{
+		why: "a ZWJ after a regional indicator or a Hangul L jamo, which go-textseg v15, below Go 1.27, joins to a following pictograph against GB11, or a Devanagari virama between consonants, which v17, above it, joins by Unicode 15.1's GB9c: tenon segments by Unicode 15.0.0 on every toolchain (ST-005, Appendix B row 44)",
+		match: func(args []cty.Value) bool {
+			v, _ := args[0].UnmarkDeep()
+			return v.IsKnown() && !v.IsNull() && strings.ContainsAny(v.AsString(), "\U0000200D\U0000094D")
+		},
 	}
 }
 

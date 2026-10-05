@@ -1,6 +1,8 @@
 package stdlib
 
 import (
+	"slices"
+	"strings"
 	"unicode/utf8"
 
 	"github.com/kmoneil/tenon"
@@ -93,4 +95,156 @@ func separator(r rune) bool {
 		return !(r >= '0' && r <= '9' || r >= 'A' && r <= 'Z' || r >= 'a' && r <= 'z' || r == '_')
 	}
 	return uni.IsWhiteSpace(r)
+}
+
+// StrlenFunc is how many extended grapheme clusters a string holds: its
+// length (ST-005), as LengthFunc gives it for a string. Not known yet, the
+// answer is within the lengths the string's range allows.
+var StrlenFunc = tenon.NewFunction(tenon.FunctionSpec{
+	Name:        "Strlen",
+	Description: "Returns the number of grapheme clusters in the given string.",
+	Params:      []tenon.Param{stringParam("str", "The string.")},
+	Result:      number,
+	NotNull:     true,
+	Impl: func(args []tenon.Value, _ tenon.Constraint, _ tenon.Policy) (tenon.Value, error) {
+		return tenon.Length(args[0]), nil
+	},
+})
+
+// ReverseFunc is a string with its extended grapheme clusters in reverse
+// order. The answer is the string value of them, so where clusters meet
+// anew they may compose or segment otherwise: reversing a combining acute
+// and an e after it gives "é", one cluster, and three regional indicators
+// pair afresh. Reversing twice need not give the string back.
+var ReverseFunc = tenon.NewFunction(tenon.FunctionSpec{
+	Name:        "Reverse",
+	Description: "Returns the given string with its grapheme clusters in reverse order.",
+	Params:      []tenon.Param{{Name: "str", Description: "The string.", Constraint: text}},
+	Result:      text,
+	NotNull:     true,
+	Impl: func(args []tenon.Value, _ tenon.Constraint, _ tenon.Policy) (tenon.Value, error) {
+		s := args[0].AsString()
+		clusters := slices.Collect(uni.Clusters(s))
+		slices.Reverse(clusters)
+		return tenon.String(strings.Join(clusters, "")), nil
+	},
+})
+
+// clamped returns the whole number v within lo and hi, lo where it is less
+// and hi where it is more, whatever its magnitude.
+func clamped(v tenon.Value, lo, hi int64) int64 {
+	switch {
+	case less(v, tenon.NumberFromInt(lo)):
+		return lo
+	case less(tenon.NumberFromInt(hi), v):
+		return hi
+	}
+	n, _ := v.AsInt64()
+	return n
+}
+
+// whole checks that the known number v, argument i, is a whole number, of
+// any magnitude.
+func whole(fn string, i int, what string, v tenon.Value) (tenon.Value, bool) {
+	if fractional(v) {
+		return invalid(i, fn+": the "+what+" "+v.String()+" is not a whole number"), false
+	}
+	return tenon.Value{}, true
+}
+
+// SubstrFunc is the part of a string that begins length extended grapheme
+// clusters after offset: a negative offset counts from the end, and a
+// position still before the start is the start; an offset at or past the
+// end gives the empty string; a length of zero gives the empty string
+// whatever the offset, where go-cty's gives the rest for a negative offset
+// (#217); a negative length takes the rest. Offset and length are whole
+// numbers of any magnitude, and a fraction fails at it with
+// tenon.CodeFunctionInvalidArgument. Not known yet, the answer is at most
+// length long, or as long as a negative offset counts; where the string is
+// not known yet and the offset and length are, the clusters its recorded
+// prefix settles are read, the answer known where they hold it all.
+var SubstrFunc = tenon.NewFunction(tenon.FunctionSpec{
+	Name:        "Substr",
+	Description: "Extracts a substring from the given string, counting grapheme clusters.",
+	Params: []tenon.Param{
+		stringParam("str", "The string."),
+		{Name: "offset", Description: "The cluster to begin at, counting from the end where negative.", Constraint: number, AllowUnknown: true},
+		{Name: "length", Description: "How many clusters to take, the rest where negative.", Constraint: number, AllowUnknown: true},
+	},
+	Result:  text,
+	NotNull: true,
+	Impl: func(args []tenon.Value, _ tenon.Constraint, _ tenon.Policy) (tenon.Value, error) {
+		str, offset, length := args[0], args[1], args[2]
+		for i, v := range []tenon.Value{offset, length} {
+			if v.IsKnown() {
+				if failure, ok := whole("Substr", i+1, []string{"offset", "length"}[i], v); !ok {
+					return failure, nil
+				}
+			}
+		}
+		if length.IsKnown() && length.Equal(zero) {
+			return tenon.String(""), nil
+		}
+		if str.IsKnown() && offset.IsKnown() && length.IsKnown() {
+			clusters := slices.Collect(uni.Clusters(str.AsString()))
+			return tenon.String(strings.Join(substr(clusters, offset, length), "")), nil
+		}
+		return substrNotKnown(str, offset, length), nil
+	},
+})
+
+// substr returns the clusters Substr takes of clusters, offset and length
+// known.
+func substr(clusters []string, offset, length tenon.Value) []string {
+	n := int64(len(clusters))
+	o := clamped(offset, -n-1, n)
+	if o < 0 {
+		o = max(0, o+n)
+	}
+	rest := clusters[o:]
+	if less(length, zero) {
+		return rest
+	}
+	return rest[:clamped(length, 0, int64(len(rest)))]
+}
+
+// substrNotKnown answers Substr where an argument is not known yet: at most
+// length long, or as long as a negative offset counts back, or as the string
+// is; and, where the string is not known yet but its offset and length are,
+// what its recorded prefix settles. Every cluster of the prefix but its
+// last is a cluster of the string, which what follows the prefix may
+// extend.
+func substrNotKnown(str, offset, length tenon.Value) tenon.Value {
+	ns := []tenon.Narrowing{tenon.NotNull()}
+	hi, bounded := int64(0), false
+	most := func(n int64) {
+		if !bounded || n < hi {
+			hi, bounded = n, true
+		}
+	}
+	if length.IsKnown() && !less(length, zero) {
+		most(clamped(length, 0, 1<<62))
+	}
+	if offset.IsKnown() && less(offset, zero) {
+		most(clamped(negated(offset), 0, 1<<62))
+	}
+	if str.IsKnown() {
+		most(int64(uni.GraphemeCount(str.AsString())))
+	}
+	if !str.IsKnown() && offset.IsKnown() && !less(offset, zero) && length.IsKnown() {
+		settled := slices.Collect(uni.Clusters(str.Range().StringPrefix()))
+		if len(settled) > 0 {
+			settled = settled[:len(settled)-1]
+		}
+		taken := substr(settled, offset, length)
+		o := clamped(offset, 0, int64(len(settled)))
+		if !less(length, zero) && !less(tenon.NumberFromInt(int64(len(settled))-o), length) {
+			return tenon.String(strings.Join(taken, ""))
+		}
+		ns = append(ns, tenon.StringPrefix(strings.Join(taken, "")))
+	}
+	if bounded {
+		ns = append(ns, tenon.LengthMax(hi))
+	}
+	return tenon.Narrow(tenon.Unknown(tenon.StringType()), ns...)
 }
