@@ -54,6 +54,9 @@
       "code": "encode.untyped_nil"
     },
     {
+      "code": "format.invalid_syntax"
+    },
+    {
       "code": "function.arity"
     },
     {

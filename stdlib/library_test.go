@@ -36,6 +36,7 @@ var library = map[string]tenon.Function{
 	"Indent":                 stdlib.IndentFunc,
 	"Join":                   stdlib.JoinFunc,
 	"Sort":                   stdlib.SortFunc,
+	"Format":                 stdlib.FormatFunc,
 	"Range":                  stdlib.RangeFunc,
 	"SetProduct":             stdlib.SetProductFunc,
 	"Contains":               stdlib.ContainsFunc,

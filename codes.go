@@ -25,6 +25,7 @@ const (
 	CodeEncodeMarshalFailed         Code = "encode.marshal_failed"
 	CodeEncodeNotANumber            Code = "encode.not_a_number"
 	CodeEncodeUntypedNil            Code = "encode.untyped_nil"
+	CodeFormatInvalidSyntax         Code = "format.invalid_syntax"
 	CodeFunctionArity               Code = "function.arity"
 	CodeFunctionFailed              Code = "function.failed"
 	CodeFunctionInvalidArgument     Code = "function.invalid_argument"

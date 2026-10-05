@@ -738,6 +738,44 @@ var counterparts = map[string]counterpart{
 		random:      func(r *rand.Rand) []cty.Value { return []cty.Value{randomCtyValue(r, cty.List(cty.String))} },
 		divergences: []divergence{knownNullBesideUnknown(0)},
 	},
+	"Format": {
+		cty: ctystdlib.FormatFunc,
+		ten: stdlib.FormatFunc,
+		cases: [][]cty.Value{
+			{cty.StringVal("Hello, %s!"), cty.StringVal("world")},
+			{cty.StringVal("100%%")},
+			{cty.StringVal("%[2]s %s %[1]s %s"), cty.StringVal("a"), cty.StringVal("b"), cty.StringVal("c")},
+			{cty.StringVal("%s %s"), cty.StringVal("a")},
+			{cty.StringVal("%s"), cty.StringVal("a"), cty.StringVal("b")},
+			{cty.StringVal("%z"), cty.StringVal("a")},
+			{cty.StringVal("[%5s] [%-5s] [%05s]"), cty.StringVal("ab"), cty.StringVal("ab"), cty.StringVal("ab")},
+			{cty.StringVal("%.3s %q"), cty.StringVal("abcdef"), cty.StringVal("<a&b>")},
+			{cty.StringVal("%v %#v %v"), cty.NullVal(cty.String), cty.NullVal(cty.DynamicPseudoType), cty.True},
+			{cty.StringVal("%s"), cty.NullVal(cty.String)},
+			{cty.StringVal("%#v"), cty.ListVal([]cty.Value{cty.StringVal("a"), cty.StringVal("b")})},
+			{cty.StringVal("%#v"), cty.ObjectVal(map[string]cty.Value{"b": cty.NumberIntVal(1), "a": cty.True})},
+			{cty.StringVal("%v"), cty.NumberIntVal(1000000)},
+			{cty.StringVal("[%.0s]"), cty.StringVal("abc")},
+			{cty.StringVal("[%-05s]"), cty.StringVal("ab")},
+			{cty.StringVal("[%7t]"), cty.False},
+			{cty.StringVal("%.2v"), cty.StringVal("hello")},
+			{cty.StringVal("%10001s"), cty.StringVal("x")},
+			{cty.StringVal("%z"), cty.UnknownVal(cty.String)},
+			{cty.StringVal("id-%s-%s"), cty.StringVal("web"), cty.UnknownVal(cty.String)},
+		},
+		divergences: []divergence{{
+			why:   "the small fixes of D-298 Q5, where go-cty disagrees with Go, C and its own documentation: %v of a number is its canonical text, not %g (row 47); %.0s is empty, - overrides 0, %t pads, and %v of a string takes a precision as %s does (row 48) (LF-005, LF-007, LF-009, LF-010)",
+			match: formatIs("%v", "[%.0s]", "[%-05s]", "[%7t]", "%.2v"),
+		}, {
+			why:   "a width past 10,000: cty pads to it, and tenon fails (LF-004, LB-031, row 48)",
+			match: formatIs("%10001s"),
+		}, {
+			why: "a format whose grammar fails beside an argument not known yet: cty answers unknown, and tenon fails now (LF-011, LB-011)",
+			match: func(args []cty.Value) bool {
+				return formatIs("%z")(args) && slices.ContainsFunc(args[1:], func(a cty.Value) bool { return !a.IsKnown() })
+			},
+		}},
+	},
 	"Lookup": {
 		cty: ctystdlib.LookupFunc,
 		ten: stdlib.LookupFunc,
@@ -1065,6 +1103,14 @@ func setOperation(c function.Function, ten tenon.Function, n int) counterpart {
 				return slices.Contains(ets, cty.Bool) && (slices.Contains(ets, cty.Number) || slices.Contains(ets, cty.String))
 			},
 		}},
+	}
+}
+
+// formatIs returns a match of calls whose format is one of fs.
+func formatIs(fs ...string) func([]cty.Value) bool {
+	return func(args []cty.Value) bool {
+		f, _ := args[0].UnmarkDeep()
+		return f.IsKnown() && !f.IsNull() && slices.Contains(fs, f.AsString())
 	}
 }
 
