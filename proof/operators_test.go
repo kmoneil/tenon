@@ -135,6 +135,8 @@ var proofs = []struct {
 	{`"1p4" + 0`, `cty.NumberIntVal(16)`, `cty.NumberIntVal(16)`, ""},
 	{`nothing == null`, `cty.True`, `cty.True`, ""},
 	{`null == null`, `cty.True`, `cty.True`, ""},
+	{`[null] == [null]`, `cty.True`, `cty.True`, ""},
+	{`{a = null} != {a = null}`, `cty.False`, `cty.False`, ""},
 	{`maybenull == null`, `cty.UnknownVal(cty.Bool).RefineNotNull()`, `cty.UnknownVal(cty.Bool).RefineNotNull()`, ""},
 	{`1 == "1"`, `cty.False`, `cty.False`, ""},
 	{`secret + 1`, `cty.NumberIntVal(4).Mark("sensitive")`, `cty.NumberIntVal(4).Mark("sensitive")`, ""},

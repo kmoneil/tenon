@@ -129,6 +129,18 @@
   where nothing matches, and beginning with the text before the first
   match otherwise. The specification says so (`LR-010` to `LR-014`).
 
+### Fixed
+
+- `EqualFunc` and `NotEqualFunc` settled two untyped nulls only where
+  they were the operands themselves, so `[null] == [null]`,
+  `[1, null] == [1, null]` and `{a = null} == {a = null}` answered
+  unknown, though `null == null` is true and nothing in either operand
+  is open but its type; through HCL's evaluator with tenon's operators, an
+  expression with no variables evaluated to an unknown, which HCL's
+  specification rules out (#208). Two tuples or objects whose types wait
+  on such nulls are compared member by member now, by the same rules, and
+  `LN-011` says so.
+
 ### Changed
 
 - `Convert` gives a value back as it is, without the conversion's

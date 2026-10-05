@@ -171,6 +171,22 @@ func TestConformance_LN011_Equality(t *testing.T) {
 		// A pending value that is not null resolves as well, and says no
 		// more than it did.
 		{tenon.Pending(tenon.Any()), tenon.String("x"), tenon.Unknown(tenon.BoolType())},
+		// Tuples and objects whose types wait on untyped nulls compare
+		// member by member by the same rules, as deep as they hold them: a
+		// pair unequal decides, and a pair not settled leaves the answer
+		// open.
+		{tenon.Tuple(untyped), tenon.Tuple(untyped), tenon.Bool(true)},
+		{tenon.Tuple(tenon.NumberFromInt(1), untyped), tenon.Tuple(tenon.NumberFromInt(1), untyped), tenon.Bool(true)},
+		{tenon.Object(map[string]tenon.Value{"a": untyped}), tenon.Object(map[string]tenon.Value{"a": untyped}), tenon.Bool(true)},
+		{tenon.Tuple(tenon.Tuple(untyped), untyped), tenon.Tuple(tenon.Tuple(untyped), untyped), tenon.Bool(true)},
+		{tenon.Tuple(untyped, tenon.NumberFromInt(1)), tenon.Tuple(untyped, tenon.NumberFromInt(2)), tenon.Bool(false)},
+		{tenon.Tuple(untyped, tenon.NumberFromInt(1)), tenon.Tuple(untyped, tenon.String("1")), tenon.Bool(false)},
+		{tenon.Tuple(untyped, tenon.Unknown(num)), tenon.Tuple(untyped, tenon.NumberFromInt(1)), tenon.Unknown(tenon.BoolType())},
+		{tenon.Tuple(untyped), tenon.Tuple(untyped, untyped), tenon.Bool(false)},
+		{tenon.Object(map[string]tenon.Value{"a": untyped}), tenon.Object(map[string]tenon.Value{"b": untyped}), tenon.Bool(false)},
+		{tenon.Tuple(untyped), tenon.Object(map[string]tenon.Value{"a": untyped}), tenon.Bool(false)},
+		{tenon.Tuple(untyped), tenon.Tuple(tenon.Null(str)), tenon.Bool(true)},
+		{tenon.Tuple(untyped), tenon.Tuple(tenon.String("x")), tenon.Bool(false)},
 		// Typed values compare as Equals compares them.
 		{tenon.Null(str), tenon.Null(num), tenon.Bool(false)},
 		{tenon.NumberFromInt(1), tenon.String("1"), tenon.Bool(false)},
@@ -192,6 +208,15 @@ func TestConformance_LN011_Equality(t *testing.T) {
 	}
 	if got := call(stdlib.EqualFunc, tenon.WithMarks(untyped, secret{}), tenon.Null(str)); !got.Equal(tenon.WithMarks(tenon.Bool(true), secret{})) {
 		t.Errorf("Equal(a redacted untyped null, null) = %v, want true carrying the mark", got)
+	}
+	// Compared member by member, the answer carries the marks of the
+	// members and of the tuples alike.
+	held := tenon.Tuple(tenon.WithMarks(untyped, secret{}))
+	if got := call(stdlib.EqualFunc, held, tenon.Tuple(untyped)); !got.Equal(tenon.WithMarks(tenon.Bool(true), secret{})) {
+		t.Errorf("Equal([a redacted untyped null], [null]) = %v, want true carrying the mark", got)
+	}
+	if got := call(stdlib.EqualFunc, tenon.WithMarks(tenon.Tuple(untyped), secret{}), tenon.Tuple(untyped)); !got.Equal(tenon.WithMarks(tenon.Bool(true), secret{})) {
+		t.Errorf("Equal(a redacted [null], [null]) = %v, want true carrying the mark", got)
 	}
 }
 

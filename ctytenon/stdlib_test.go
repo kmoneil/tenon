@@ -1561,6 +1561,11 @@ func equality(c function.Function, ten tenon.Function) counterpart {
 			{cty.MustParseNumberVal("1.50"), cty.MustParseNumberVal("1.5")},
 			{cty.UnknownVal(cty.String), cty.NullVal(cty.DynamicPseudoType)},
 			{cty.ObjectVal(map[string]cty.Value{"password": cty.StringVal("x").Mark("sensitive")}), cty.NullVal(cty.DynamicPseudoType)},
+			// #208: untyped nulls held in tuples and objects.
+			{cty.TupleVal([]cty.Value{cty.NullVal(cty.DynamicPseudoType)}), cty.TupleVal([]cty.Value{cty.NullVal(cty.DynamicPseudoType)})},
+			{cty.TupleVal([]cty.Value{cty.NumberIntVal(1), cty.NullVal(cty.DynamicPseudoType)}), cty.TupleVal([]cty.Value{cty.NumberIntVal(1), cty.NullVal(cty.DynamicPseudoType)})},
+			{cty.ObjectVal(map[string]cty.Value{"a": cty.NullVal(cty.DynamicPseudoType)}), cty.ObjectVal(map[string]cty.Value{"a": cty.NullVal(cty.DynamicPseudoType)})},
+			{cty.TupleVal([]cty.Value{cty.NullVal(cty.DynamicPseudoType), cty.NumberIntVal(1)}), cty.TupleVal([]cty.Value{cty.NullVal(cty.DynamicPseudoType), cty.NumberIntVal(2)})},
 		},
 		random: func(r *rand.Rand) []cty.Value {
 			v := randomCtyValue(r, randomCtyType(r, 3))
