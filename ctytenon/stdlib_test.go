@@ -1566,6 +1566,8 @@ func equality(c function.Function, ten tenon.Function) counterpart {
 			{cty.TupleVal([]cty.Value{cty.NumberIntVal(1), cty.NullVal(cty.DynamicPseudoType)}), cty.TupleVal([]cty.Value{cty.NumberIntVal(1), cty.NullVal(cty.DynamicPseudoType)})},
 			{cty.ObjectVal(map[string]cty.Value{"a": cty.NullVal(cty.DynamicPseudoType)}), cty.ObjectVal(map[string]cty.Value{"a": cty.NullVal(cty.DynamicPseudoType)})},
 			{cty.TupleVal([]cty.Value{cty.NullVal(cty.DynamicPseudoType), cty.NumberIntVal(1)}), cty.TupleVal([]cty.Value{cty.NullVal(cty.DynamicPseudoType), cty.NumberIntVal(2)})},
+			// #209: an untyped null held beside a typed one.
+			{cty.TupleVal([]cty.Value{cty.NullVal(cty.String)}), cty.TupleVal([]cty.Value{cty.NullVal(cty.DynamicPseudoType)})},
 		},
 		random: func(r *rand.Rand) []cty.Value {
 			v := randomCtyValue(r, randomCtyType(r, 3))
@@ -1575,6 +1577,11 @@ func equality(c function.Function, ten tenon.Function) counterpart {
 			why: "#229: a set holding a member with an unknown part: cty answers false, even of the set and itself, where the members may turn out equal",
 			match: func(args []cty.Value) bool {
 				return holdsPartlyUnknownMember(args[0]) || holdsPartlyUnknownMember(args[1])
+			},
+		}, {
+			why: "an untyped null held in a tuple or an object beside a typed null: cty compares the containers' types, which differ, and answers false, where tenon resolves the untyped null to the other's type first, and answers true (LN-011, Appendix B row 56)",
+			match: func(args []cty.Value) bool {
+				return heldNullBesideTyped(args[0], args[1], false)
 			},
 		}, {
 			why: "an equality decided by null: cty's EqualFunc unmarks its operands deeply and marks the answer with all they hold, where tenon's reads no member and carries the operands' own marks (MK-003, Appendix B row 31)",
@@ -1588,6 +1595,36 @@ func equality(c function.Function, ten tenon.Function) counterpart {
 			},
 		}},
 	}
+}
+
+// heldNullBesideTyped reports whether a and b hold, at one place within
+// them (and at the top too, where top is true), an untyped null beside a
+// null of a type.
+func heldNullBesideTyped(a, b cty.Value, top bool) bool {
+	a, _ = a.UnmarkDeep()
+	b, _ = b.UnmarkDeep()
+	switch {
+	case !a.IsKnown() || !b.IsKnown():
+		return false
+	case a.IsNull() && b.IsNull():
+		return top && (a.Type() == cty.DynamicPseudoType) != (b.Type() == cty.DynamicPseudoType)
+	case a.IsNull() || b.IsNull():
+		return false
+	case a.Type().IsTupleType() && b.Type().IsTupleType() && a.LengthInt() == b.LengthInt():
+		for i := range a.LengthInt() {
+			k := cty.NumberIntVal(int64(i))
+			if heldNullBesideTyped(a.Index(k), b.Index(k), true) {
+				return true
+			}
+		}
+	case a.Type().IsObjectType() && b.Type().IsObjectType():
+		for name := range a.Type().AttributeTypes() {
+			if b.Type().HasAttribute(name) && heldNullBesideTyped(a.GetAttr(name), b.GetAttr(name), true) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // TestLibraryHasCounterparts holds counterparts to the library: every
