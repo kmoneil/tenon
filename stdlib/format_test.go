@@ -309,3 +309,84 @@ func TestConformance_LF017_Rounding(t *testing.T) {
 	formats(t, "[%+.1f] [% .1f] [%08.2f] [%-8.2f] [%+e]", vals(num("1.25"), num("1.25"), num("-3.14159"), num("3.14159"), num("5")),
 		"[+1.2] [ 1.2] [-0003.14] [3.14    ] [+5.000000e+00]")
 }
+
+// formatList calls FormatList with the format string and the arguments.
+func formatList(f string, args ...tenon.Value) tenon.Value {
+	return call(stdlib.FormatListFunc, append([]tenon.Value{tenon.String(f)}, args...)...)
+}
+
+func TestConformance_LF018_FormatList(t *testing.T) {
+	conformance.Covers(t, "LF-018")
+	ab := strs("a", "b")
+	for _, tt := range []struct {
+		f    string
+		args []tenon.Value
+		want tenon.Value
+	}{
+		{"%s-%s", vals(ab, tenon.String("x")), strs("a-x", "b-x")},
+		{"%s=%s", vals(ab, tenon.Tuple(tenon.String("1"), tenon.String("2"))), strs("a=1", "b=2")},
+		{"%v", vals(tenon.Set(tenon.NumberType(), num("3"), num("1"))), strs("1", "3")},
+		{"hello", nil, strs("hello")},
+		{"%s", vals(tenon.String("x")), strs("x")},
+		{"%s", vals(strs()), strs()},
+		// A null list is repeated, not iterated.
+		{"%v", vals(tenon.Null(tenon.ListType(tenon.StringType()))), strs("null")},
+	} {
+		if got := formatList(tt.f, tt.args...); !got.Equal(tt.want) {
+			t.Errorf("FormatList(%+q, %v) = %v, want %v", tt.f, tt.args, got, tt.want)
+		}
+	}
+	failsWith(t, "FormatList with lengths 2 and 1", formatList("%s%s", ab, strs("x")), tenon.CodeFunctionInvalidArgument, at(2))
+	// The format and its arguments are checked however many times it is
+	// written.
+	failsWith(t, "FormatList(%z, [])", formatList("%z", strs()), tenon.CodeFormatInvalidSyntax, at(0))
+	failsWith(t, "FormatList(%s, [], x, y)", formatList("%s", strs(), tenon.String("x"), tenon.String("y")), tenon.CodeFunctionInvalidArgument, at(2))
+	if !stdlib.FormatListFunc.NotNull() {
+		t.Error("FormatList does not declare its result never null")
+	}
+}
+
+func TestConformance_LF019_FormatListFailures(t *testing.T) {
+	conformance.Covers(t, "LF-019")
+	withNull := tenon.List(tenon.StringType(), tenon.String("a"), tenon.Null(tenon.StringType()))
+	failsWith(t, "FormatList(%s, [a, null])", formatList("%s", withNull), tenon.CodeOperationNullOperand, at(1).Index(tenon.NumberFromInt(1)))
+	nums := tenon.List(tenon.NumberType(), num("1"), num("1.5"))
+	failsWith(t, "FormatList(%s %d, x, [1, 1.5])", formatList("%s %d", tenon.String("x"), nums), tenon.CodeFunctionInvalidArgument, at(2).Index(tenon.NumberFromInt(1)))
+}
+
+func TestConformance_LF020_FormatListNotKnown(t *testing.T) {
+	conformance.Covers(t, "LF-020")
+	unknownList := tenon.Unknown(tenon.ListType(tenon.StringType()))
+	// An unknown list beside a known one of two: two, or the call fails.
+	got := call(stdlib.FormatListFunc, tenon.String("%s%s"), strs("a", "b"), unknownList)
+	if hi, ok := got.Range().LengthMax(); got.IsKnown() || got.Range().LengthMin() != 2 || !ok || hi != 2 || !notNull(got) {
+		t.Errorf("FormatList(%%s%%s, [a, b], unknown) = %v, want an unknown list of 2", got)
+	}
+	// A known failure fails now: lengths an unknown list's range rules out.
+	short := tenon.Narrow(unknownList, tenon.LengthMax(1))
+	failsWith(t, "FormatList with [a, b] and an unknown of at most 1", formatList("%s%s", strs("a", "b"), short), tenon.CodeFunctionInvalidArgument, at(2))
+	// An element whose argument is not known yet is not known, the others
+	// are.
+	partly := tenon.List(tenon.StringType(), tenon.String("a"), tenon.Unknown(tenon.StringType()))
+	got = formatList("x-%s", partly)
+	if !got.HasMembers() || got.Len() != 2 || !got.Index(0).Equal(tenon.String("x-a")) || !promises(got.Index(1), "x-") {
+		t.Errorf("FormatList(x-%%s, [a, unknown]) = %v, want [x-a, unknown beginning x-]", got)
+	}
+	// An unknown tuple's length is its type's.
+	tuple := tenon.Unknown(tenon.TupleType(tenon.StringType(), tenon.StringType(), tenon.StringType()))
+	if got := formatList("%s", tuple); !got.HasMembers() || got.Len() != 3 {
+		t.Errorf("FormatList(%%s, unknown tuple of 3) = %v, want a list of 3", got)
+	}
+}
+
+func TestConformance_LF021_FormatListBound(t *testing.T) {
+	conformance.Covers(t, "LF-021")
+	many := make([]string, 100)
+	for i := range many {
+		many[i] = "x"
+	}
+	failsWith(t, "FormatList(%10000s, a hundred x)", formatList("%10000s", strs(many...)), tenon.CodeFunctionTooLarge, at(0))
+	if got := formatList("%100s", strs(many...)); got.IsError() || got.Len() != 100 {
+		t.Errorf("FormatList(%%100s, a hundred x) = %v, want a hundred strings", got)
+	}
+}
