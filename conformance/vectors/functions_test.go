@@ -16,6 +16,10 @@ import (
 // specification gives them.
 var library = map[string]tenon.Function{
 	"AssertNotNull":        stdlib.AssertNotNullFunc,
+	"Slice":                stdlib.SliceFunc,
+	"ReverseList":          stdlib.ReverseListFunc,
+	"Concat":               stdlib.ConcatFunc,
+	"Chunklist":            stdlib.ChunklistFunc,
 	"Length":               stdlib.LengthFunc,
 	"HasIndex":             stdlib.HasIndexFunc,
 	"Index":                stdlib.IndexFunc,
@@ -164,6 +168,22 @@ var callVectors = []callVector{
 	{"Element/a large index", "Element", []tenon.Value{tenon.List(str, s("a"), s("b"), s("c")), tenon.NumberFromText("1e30")}, tenon.Safe, tenon.Constraint{}},
 	{"Element/refused/empty", "Element", []tenon.Value{tenon.List(str), n(0)}, tenon.Safe, tenon.Constraint{}},
 	{"Element/refused/not a whole number", "Element", []tenon.Value{tenon.List(str, s("a")), tenon.NumberFromText("1.5")}, tenon.Safe, tenon.Constraint{}},
+	{"Slice/a list", "Slice", []tenon.Value{tenon.List(str, s("a"), s("b"), s("c")), n(1), n(2)}, tenon.Safe, tenon.Constraint{}},
+	{"Slice/a tuple", "Slice", []tenon.Value{tenon.Tuple(s("a"), n(1), tenon.Bool(true)), n(1), n(3)}, tenon.Safe, tenon.Constraint{}},
+	{"Slice/an unknown list, known indexes", "Slice", []tenon.Value{tenon.Unknown(tenon.ListType(str)), n(0), n(2)}, tenon.Safe, tenon.Constraint{}},
+	{"Slice/refused/start past end", "Slice", []tenon.Value{tenon.List(str, s("a"), s("b")), n(2), n(1)}, tenon.Safe, tenon.Constraint{}},
+	{"Slice/refused/a set", "Slice", []tenon.Value{tenon.Set(str, s("a")), n(0), n(1)}, tenon.Safe, tenon.Constraint{}},
+	{"ReverseList/a list", "ReverseList", []tenon.Value{tenon.List(str, s("a"), s("b"))}, tenon.Safe, tenon.Constraint{}},
+	{"ReverseList/a set", "ReverseList", []tenon.Value{tenon.Set(num, n(3), n(1), n(2))}, tenon.Safe, tenon.Constraint{}},
+	{"ReverseList/a set holding an unknown", "ReverseList", []tenon.Value{tenon.Set(num, n(1), tenon.Unknown(num))}, tenon.Safe, tenon.Constraint{}},
+	{"Concat/lists", "Concat", []tenon.Value{tenon.List(num, n(1)), tenon.List(num, n(2))}, tenon.Safe, tenon.Constraint{}},
+	{"Concat/unified under Unsafe", "Concat", []tenon.Value{tenon.List(num, n(1)), tenon.List(str, s("a"))}, tenon.Unsafe, tenon.Constraint{}},
+	{"Concat/a tuple under Safe", "Concat", []tenon.Value{tenon.List(num, n(1)), tenon.List(str, s("a"))}, tenon.Safe, tenon.Constraint{}},
+	{"Concat/lengths summed", "Concat", []tenon.Value{tenon.Narrow(tenon.Unknown(tenon.ListType(num)), tenon.LengthMin(2), tenon.LengthMax(4)), tenon.List(num, n(1))}, tenon.Safe, tenon.Constraint{}},
+	{"Chunklist/pairs", "Chunklist", []tenon.Value{tenon.List(num, n(1), n(2), n(3)), n(2)}, tenon.Safe, tenon.Constraint{}},
+	{"Chunklist/size zero", "Chunklist", []tenon.Value{tenon.List(num, n(1), n(2)), n(0)}, tenon.Safe, tenon.Constraint{}},
+	{"Chunklist/the empty tuple", "Chunklist", []tenon.Value{tenon.Tuple(), n(2)}, tenon.Safe, tenon.Constraint{}},
+	{"Chunklist/refused/a negative size", "Chunklist", []tenon.Value{tenon.List(num, n(1)), n(-1)}, tenon.Safe, tenon.Constraint{}},
 	{"Coalesce/the first not null", "Coalesce", []tenon.Value{tenon.Narrow(tenon.Pending(tenon.Any()), tenon.NullOnly()), tenon.Null(num), n(1), n(2)}, tenon.Safe, tenon.Constraint{}},
 	{"Coalesce/one not known yet", "Coalesce", []tenon.Value{tenon.Unknown(num), n(1)}, tenon.Safe, tenon.Constraint{}},
 	{"Coalesce/unified under Unsafe", "Coalesce", []tenon.Value{n(1), s("a")}, tenon.Unsafe, tenon.Constraint{}},
@@ -206,7 +226,7 @@ type callArg struct {
 // answers, its display form and its encoding, or the failures it gives, each
 // code with its path.
 func TestConformance_LB001_FunctionVectors(t *testing.T) {
-	conformance.Covers(t, "LB-001", "LN-001", "LN-002", "LN-010", "LN-011", "LN-020", "LN-030", "LN-031", "LN-032", "LN-033", "LN-050", "LN-060", "LN-061", "LN-080", "LN-083", "LN-085", "LC-001", "LC-002", "LC-003", "LC-004")
+	conformance.Covers(t, "LB-001", "LN-001", "LN-002", "LN-010", "LN-011", "LN-020", "LN-030", "LN-031", "LN-032", "LN-033", "LN-050", "LN-060", "LN-061", "LN-080", "LN-083", "LN-085", "LC-001", "LC-002", "LC-003", "LC-004", "LC-010", "LC-011", "LC-012", "LC-013")
 	f := callFile{
 		Format: 1,
 		About: "Each entry is a call of a function of the standard library (§13 to §20), named as the specification " +
