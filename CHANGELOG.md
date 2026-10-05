@@ -57,6 +57,15 @@
   line feed is its own answer whatever the number. A string not known yet
   answers from its recorded prefix. The specification says so (`LS-019`
   to `LS-023`).
+- `JoinFunc` and `SortFunc`. A null element fails at it, located by its
+  list and index, even where another part is not known yet, where
+  go-cty's answers unknown. `Join` without a list fails as the call's
+  arity, and a string not known yet among its lists answers with the text
+  known from the start, a separator before a list not known yet left out
+  since it may be empty. `Sort` orders by scalar value, as go-cty's byte
+  order does, and a list holding an element not known yet answers a list
+  as long of strings not known yet and not null; a list of one element is
+  itself. The specification says so (`LS-024` to `LS-027`).
 
 ## 0.16.0 (2026-10-05)
 

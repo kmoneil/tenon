@@ -2,6 +2,7 @@ package stdlib
 
 import (
 	"slices"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 
@@ -248,3 +249,131 @@ func substrNotKnown(str, offset, length tenon.Value) tenon.Value {
 	}
 	return tenon.Narrow(tenon.Unknown(tenon.StringType()), ns...)
 }
+
+// stringList is the constraint of a parameter taking a list of strings.
+var stringList = tenon.ListOf(text)
+
+// nullElement returns the failure of element j of argument i, known to be
+// null, which a function joining or ordering strings has no answer for.
+func nullElement(fn string, i, j int) tenon.Value {
+	return tenon.ErrorVal(tenon.Diagnostic{
+		Code:    tenon.CodeOperationNullOperand,
+		Message: fn + ": element " + strconv.Itoa(j) + " is null, and has no text to give",
+		Path:    argument(i).Index(tenon.NumberFromInt(int64(j))),
+	})
+}
+
+// firstNull returns the failure of the first element known to be null
+// among the lists, argument first and those after it, and false where none
+// is: it fails the call now, whatever else is not known yet (UN-011).
+func firstNull(fn string, first int, lists []tenon.Value) (tenon.Value, bool) {
+	for k, l := range lists {
+		if !l.HasMembers() {
+			continue
+		}
+		for j, e := range l.Elements() {
+			if e.IsNull() {
+				return nullElement(fn, first+k, j), true
+			}
+		}
+	}
+	return tenon.Value{}, false
+}
+
+// JoinFunc joins the strings of one list or more, in order, with a
+// separator between each two, as one string: its value (LS-004), across
+// whose joins normalization may compose. A null element fails with
+// tenon.CodeOperationNullOperand at it, whatever else is not known yet.
+// Not known yet, the answer begins with the text known from the start: the
+// elements and separators up to the first part not known, and what that
+// part's recorded prefix says, a separator before a list not known yet
+// left out, since it may be empty.
+var JoinFunc = tenon.NewFunction(tenon.FunctionSpec{
+	Name:        "Join",
+	Description: "Concatenates the elements of the given lists of strings, with the separator between each two.",
+	Params: []tenon.Param{
+		stringParam("separator", "The separator."),
+		{Name: "list", Description: "The first list.", Constraint: stringList, AllowUnknown: true},
+	},
+	VarParam: &tenon.Param{Name: "lists", Description: "The further lists.", Constraint: stringList, AllowUnknown: true},
+	Result:   text,
+	NotNull:  true,
+	Impl: func(args []tenon.Value, _ tenon.Constraint, _ tenon.Policy) (tenon.Value, error) {
+		sep, lists := args[0], args[1:]
+		if failure, ok := firstNull("Join", 1, lists); ok {
+			return failure, nil
+		}
+		text, complete := joined(sep, lists)
+		if complete {
+			return tenon.String(text), nil
+		}
+		return tenon.Narrow(tenon.Unknown(tenon.StringType()), tenon.NotNull(), tenon.StringPrefix(text)), nil
+	},
+})
+
+// joined returns the text Join makes of the lists, and whether it is all of
+// it: up to the first part not known, a list's elements, an element or the
+// separator between two, with what that part's recorded prefix says, and
+// no separator before a list not known yet, which may be empty.
+func joined(sep tenon.Value, lists []tenon.Value) (string, bool) {
+	var b strings.Builder
+	first := true
+	for _, l := range lists {
+		if !l.HasMembers() {
+			return b.String(), false
+		}
+		for _, e := range l.Elements() {
+			if !first {
+				if !sep.IsKnown() {
+					b.WriteString(sep.Range().StringPrefix())
+					return b.String(), false
+				}
+				b.WriteString(sep.AsString())
+			}
+			first = false
+			if !e.IsKnown() {
+				b.WriteString(e.Range().StringPrefix())
+				return b.String(), false
+			}
+			b.WriteString(e.AsString())
+		}
+	}
+	return b.String(), true
+}
+
+// SortFunc orders a list of strings ascending by their scalar values, as
+// LessThan orders strings, duplicates kept: "B" before "a", "10" before "9".
+// A null element fails with tenon.CodeOperationNullOperand at it, whatever
+// else is not known yet. A list holding an element not known yet answers
+// a list as long, each element a string not known yet, not null, since
+// where each lands depends on the others; one of one element is itself.
+// Not known yet, the answer is the unknown list of the argument's lengths.
+var SortFunc = tenon.NewFunction(tenon.FunctionSpec{
+	Name:        "Sort",
+	Description: "Orders the given list of strings by their Unicode scalar values.",
+	Params:      []tenon.Param{{Name: "list", Description: "The list.", Constraint: stringList, AllowUnknown: true}},
+	Result:      tenon.Exactly(tenon.ListType(tenon.StringType())),
+	NotNull:     true,
+	Impl: func(args []tenon.Value, rc tenon.Constraint, _ tenon.Policy) (tenon.Value, error) {
+		l := args[0]
+		if failure, ok := firstNull("Sort", 0, args); ok {
+			return failure, nil
+		}
+		if !l.HasMembers() {
+			lo, hi, bounded := lengthOf(l)
+			return unknownList(tenon.StringType(), lo, hi, bounded), nil
+		}
+		elems := l.Elements()
+		if !l.IsKnown() {
+			if len(elems) == 1 {
+				return tenon.List(tenon.StringType(), tenon.Narrow(elems[0], tenon.NotNull())), nil
+			}
+			for i := range elems {
+				elems[i] = tenon.Narrow(tenon.Unknown(tenon.StringType()), tenon.NotNull())
+			}
+			return tenon.List(tenon.StringType(), elems...), nil
+		}
+		slices.SortStableFunc(elems, func(a, b tenon.Value) int { return strings.Compare(a.AsString(), b.AsString()) })
+		return tenon.List(tenon.StringType(), elems...), nil
+	},
+})
