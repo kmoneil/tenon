@@ -2,6 +2,7 @@ package stdlib
 
 import (
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/kmoneil/tenon"
@@ -522,5 +523,396 @@ var ElementFunc = tenon.NewFunction(tenon.FunctionSpec{
 	},
 	Impl: func(args []tenon.Value, rc tenon.Constraint, _ tenon.Policy) (tenon.Value, error) {
 		return indexed("Element", args, rc, true), nil
+	},
+})
+
+// stringValues returns the String values of names.
+func stringValues(names []string) []tenon.Value {
+	out := make([]tenon.Value, len(names))
+	for i, n := range names {
+		out[i] = tenon.String(n)
+	}
+	return out
+}
+
+// attributeNames returns the names of the unmarked object c, a pending one
+// holding its attributes included, in order, and false where they are not
+// settled.
+func attributeNames(c tenon.Value) ([]string, bool) {
+	if c.IsPending() {
+		if !c.HasMembers() || c.Constraint().Kind() != tenon.ConstraintObjectWith {
+			return nil, false
+		}
+		var names []string
+		for name := range c.Attributes() {
+			names = append(names, name)
+		}
+		return names, true
+	}
+	return c.Type().AttributeNames(), true
+}
+
+// isObject reports whether the unmarked value c is an object, or a pending
+// one holding its attributes.
+func isObject(c tenon.Value) bool {
+	if c.IsPending() {
+		return c.HasMembers() && c.Constraint().Kind() == tenon.ConstraintObjectWith
+	}
+	return c.Type().Kind() == tenon.KindObject
+}
+
+// KeysFunc is the keys of a map, or the attribute names of an object, in
+// the canonical order of strings (EQ-045): a list for a map, a tuple for an
+// object, whose names its type gives whether or not the object is known. A
+// map not known yet answers the unknown list of its lengths. Only the
+// value's own marks reach the answer.
+var KeysFunc = tenon.NewFunction(tenon.FunctionSpec{
+	Name:        "Keys",
+	Description: "Returns a list of the keys of the given map, or the attribute names of the given object, in lexicographic order.",
+	Params:      []tenon.Param{collection("inputMap", "The map or object.")},
+	ResultOf: func(args []tenon.Value, _ tenon.Policy) (tenon.Constraint, error) {
+		c, _ := tenon.Unmark(args[0])
+		if !mayBe(c, tenon.KindMap, tenon.KindObject) {
+			return tenon.Constraint{}, wrongKind("Keys", 0, args[0], "a map or an object")
+		}
+		if names, ok := objectNames(c); ok {
+			types := make([]tenon.Type, len(names))
+			for i := range types {
+				types[i] = tenon.StringType()
+			}
+			return tenon.Exactly(tenon.TupleType(types...)), nil
+		}
+		if !c.IsPending() || c.Constraint().Kind() == tenon.ConstraintMapOf {
+			return tenon.Exactly(tenon.ListType(tenon.StringType())), nil
+		}
+		return tenon.Any(), nil
+	},
+	NotNull: true,
+	Impl: func(args []tenon.Value, rc tenon.Constraint, _ tenon.Policy) (tenon.Value, error) {
+		c, _ := tenon.Unmark(args[0])
+		if names, ok := objectNames(c); ok {
+			return marked(tenon.Tuple(stringValues(names)...), args[0]), nil
+		}
+		if c.HasMembers() {
+			return marked(tenon.List(tenon.StringType(), stringValues(c.MapKeys())...), args[0]), nil
+		}
+		if rc.Kind() == tenon.ConstraintExactly {
+			lo, hi, bounded := lengthOf(c)
+			return marked(unknownList(tenon.StringType(), lo, hi, bounded), args[0]), nil
+		}
+		return marked(unknownOf(rc), args[0]), nil
+	},
+})
+
+// objectNames returns the attribute names of the unmarked value c where it
+// is an object, or a pending one holding its attributes.
+func objectNames(c tenon.Value) ([]string, bool) {
+	if !isObject(c) {
+		return nil, false
+	}
+	return attributeNames(c)
+}
+
+// ValuesFunc is the values of a map, or the attributes of an object, in the
+// order KeysFunc gives their keys: a list for a map, a tuple for an object.
+// A map not known yet answers the unknown list of its lengths, and an object
+// not known yet the unknown tuple of its attribute types. Only the value's
+// own marks reach the answer; the values keep their own.
+var ValuesFunc = tenon.NewFunction(tenon.FunctionSpec{
+	Name:        "Values",
+	Description: "Returns a list of the values of the given map, or the attributes of the given object, in the order of their keys.",
+	Params:      []tenon.Param{collection("mapping", "The map or object.")},
+	ResultOf: func(args []tenon.Value, _ tenon.Policy) (tenon.Constraint, error) {
+		c, _ := tenon.Unmark(args[0])
+		if !mayBe(c, tenon.KindMap, tenon.KindObject) {
+			return tenon.Constraint{}, wrongKind("Values", 0, args[0], "a map or an object")
+		}
+		switch {
+		case c.IsPending() && isObject(c):
+			var cs []tenon.Constraint
+			for _, v := range c.Attributes() {
+				u, _ := tenon.Unmark(v)
+				cs = append(cs, typeOf(u))
+			}
+			return tenon.TupleOf(cs...), nil
+		case c.IsPending() && c.Constraint().Kind() == tenon.ConstraintMapOf:
+			return tenon.ListOf(c.Constraint().Element()), nil
+		case c.IsPending():
+			return tenon.Any(), nil
+		case c.Type().Kind() == tenon.KindObject:
+			return tenon.Exactly(tenon.TupleType(memberTypes(c.Type())...)), nil
+		}
+		return tenon.Exactly(tenon.ListType(c.Type().ElementType())), nil
+	},
+	NotNull: true,
+	Impl: func(args []tenon.Value, rc tenon.Constraint, _ tenon.Policy) (tenon.Value, error) {
+		c, _ := tenon.Unmark(args[0])
+		if !c.HasMembers() {
+			if k, ok := kindOf(c); ok && k == tenon.KindMap {
+				lo, hi, bounded := lengthOf(c)
+				return marked(unknownList(c.Type().ElementType(), lo, hi, bounded), args[0]), nil
+			}
+			return marked(unknownOf(rc), args[0]), nil
+		}
+		var vals []tenon.Value
+		if isObject(c) {
+			for _, v := range c.Attributes() {
+				vals = append(vals, v)
+			}
+			return marked(tenon.Tuple(vals...), args[0]), nil
+		}
+		for _, v := range c.MapEntries() {
+			vals = append(vals, v)
+		}
+		return marked(tenon.List(c.Type().ElementType(), vals...), args[0]), nil
+	},
+})
+
+// zipKeys reads the keys argument of Zipmap: the known keys in order, each
+// unmarked, the marks of each key and of the list, and whether every key is
+// known. A known null key fails, located at it.
+func zipKeys(keys tenon.Value) (names []string, marks []tenon.Mark, all bool, failure tenon.Value) {
+	l, _ := tenon.Unmark(keys)
+	marks = propagating(keys)
+	if !l.HasMembers() {
+		return nil, marks, false, tenon.Value{}
+	}
+	all = true
+	for i, k := range l.Elements() {
+		u, _ := tenon.Unmark(k)
+		marks = append(marks, propagating(k)...)
+		switch {
+		case !u.IsKnown():
+			all = false
+		case u.IsNull():
+			return nil, marks, false, tenon.ErrorVal(tenon.Diagnostic{
+				Code:    tenon.CodeOperationNullOperand,
+				Message: "Zipmap: key " + strconv.Itoa(i) + " is null, and names no entry",
+				Path:    argument(0).Index(tenon.NumberFromInt(int64(i))),
+			})
+		default:
+			names = append(names, u.AsString())
+		}
+	}
+	return names, marks, all, tenon.Value{}
+}
+
+// ZipmapFunc builds a map from a list of keys and a list of values, or an
+// object from a list of keys and a tuple of values, the key at each position
+// naming the value at it, a later key naming the same entry as an earlier
+// one winning. A null key fails at it, and lists of different lengths fail,
+// now where the lengths already differ whatever the members not known yet
+// turn out to be. Not known yet, a map's answer is the unknown map between
+// the distinct keys known and the number of keys. The marks of both lists
+// and of every key reach the answer; the values keep their own.
+var ZipmapFunc = tenon.NewFunction(tenon.FunctionSpec{
+	Name:        "Zipmap",
+	Description: "Constructs a map from a list of keys and a corresponding list of values.",
+	Params: []tenon.Param{
+		{Name: "keys", Description: "The keys.", Constraint: tenon.ListOf(tenon.Exactly(tenon.StringType())), AllowUnknown: true, AllowMarked: true},
+		collection("values", "The values: a list, or a tuple to build an object."),
+	},
+	ResultOf: func(args []tenon.Value, _ tenon.Policy) (tenon.Constraint, error) {
+		vals, _ := tenon.Unmark(args[1])
+		if !mayBe(vals, tenon.KindList, tenon.KindTuple) {
+			return tenon.Constraint{}, wrongKind("Zipmap", 1, args[1], "a list or a tuple of values")
+		}
+		names, _, all, failure := zipKeys(args[0])
+		if !failure.IsZero() {
+			return tenon.Constraint{}, tenon.NewError(failure)
+		}
+		if k, ok := kindOf(vals); ok && k == tenon.KindList {
+			return tenon.Exactly(tenon.MapType(vals.Type().ElementType())), nil
+		}
+		if vals.IsPending() {
+			if c := vals.Constraint(); c.Kind() == tenon.ConstraintListOf {
+				return tenon.MapOf(c.Element()), nil
+			}
+		}
+		ts, settled := sequenceTypes(vals)
+		if !all || !settled || vals.IsPending() {
+			return tenon.Any(), nil
+		}
+		if len(ts) != len(names) {
+			return tenon.Constraint{}, tenon.NewError(lengthMismatch(len(names), len(ts)))
+		}
+		attrs := map[string]tenon.Type{}
+		for i, name := range names {
+			attrs[tenon.String(name).AsString()] = ts[i]
+		}
+		return tenon.Exactly(tenon.ObjectType(attrs)), nil
+	},
+	NotNull: true,
+	Impl: func(args []tenon.Value, rc tenon.Constraint, _ tenon.Policy) (tenon.Value, error) {
+		names, marks, all, failure := zipKeys(args[0])
+		if !failure.IsZero() {
+			return tenon.WithMarks(failure, marks...), nil
+		}
+		marks = append(marks, propagating(args[1])...)
+		vals, _ := tenon.Unmark(args[1])
+		keys, _ := tenon.Unmark(args[0])
+		klo, khi, kbounded := lengthOf(keys)
+		vlo, vhi, vbounded := lengthOf(vals)
+		if kbounded && vlo > khi || vbounded && klo > vhi {
+			return tenon.WithMarks(lengthMismatch(int(klo), int(vlo)), marks...), nil
+		}
+		if !all || !vals.HasMembers() {
+			if rc.Kind() == tenon.ConstraintExactly && rc.Type().Kind() == tenon.KindMap {
+				distinctKeys := map[string]bool{}
+				for _, n := range names {
+					distinctKeys[n] = true
+				}
+				least := int64(len(distinctKeys))
+				if least == 0 && klo > 0 {
+					least = 1
+				}
+				ns := []tenon.Narrowing{tenon.NotNull(), tenon.LengthMin(least)}
+				if kbounded {
+					ns = append(ns, tenon.LengthMax(khi))
+				}
+				return tenon.WithMarks(tenon.Narrow(tenon.Unknown(rc.Type()), ns...), marks...), nil
+			}
+			return tenon.WithMarks(unknownOf(rc), marks...), nil
+		}
+		if len(names) != vals.Len() {
+			return tenon.WithMarks(lengthMismatch(len(names), vals.Len()), marks...), nil
+		}
+		entries := map[string]tenon.Value{}
+		for i, name := range names {
+			entries[tenon.String(name).AsString()] = vals.Index(i)
+		}
+		if k, _ := kindOf(vals); k == tenon.KindList {
+			return tenon.WithMarks(tenon.Map(vals.Type().ElementType(), entries), marks...), nil
+		}
+		return tenon.WithMarks(tenon.Object(entries), marks...), nil
+	},
+})
+
+// lengthMismatch returns the failure of Zipmap's lists of different lengths.
+func lengthMismatch(keys, values int) tenon.Value {
+	return invalid(1, "Zipmap has "+strconv.Itoa(keys)+" keys and "+strconv.Itoa(values)+" values, which must be as many")
+}
+
+// LookupFunc is the member of a map or an object at a key, or, where it has
+// none, the default converted to the member's type; without a default, a
+// missing key fails with tenon.CodeFunctionInvalidArgument at it. The
+// default is optional and may be null, as the consumers' own lookup has it,
+// and it is read only where the key is missing, so a default not known yet
+// leaves a found member known. A map holding members answers a known key
+// whatever its other members are. Not known yet, the answer is the unknown
+// of the result, which may be null. The marks of the map and the key reach
+// the answer with the member's own, and the default's only where it is the
+// answer.
+var LookupFunc = tenon.NewFunction(tenon.FunctionSpec{
+	Name:        "Lookup",
+	Description: "Returns the value of the given key in a map or an object, or the default where it has none.",
+	Params: []tenon.Param{
+		collection("inputMap", "The map or object."),
+		{Name: "key", Description: "The key.", Constraint: tenon.Exactly(tenon.StringType()), AllowUnknown: true, AllowMarked: true},
+	},
+	VarParam: &tenon.Param{Name: "default", Description: "The value where the key is missing; optional.", Constraint: tenon.Any(), AllowNull: true, AllowUnknown: true, AllowPending: true, AllowMarked: true},
+	ResultOf: func(args []tenon.Value, p tenon.Policy) (tenon.Constraint, error) {
+		if len(args) > 3 {
+			return tenon.Constraint{}, tenon.NewError(tenon.ErrorVal(tenon.Diagnostic{
+				Code:    tenon.CodeFunctionArity,
+				Message: "Lookup takes 2 or 3 arguments, and " + strconv.Itoa(len(args)) + " were given",
+			}))
+		}
+		c, _ := tenon.Unmark(args[0])
+		key, _ := tenon.Unmark(args[1])
+		if !mayBe(c, tenon.KindMap, tenon.KindObject) {
+			return tenon.Constraint{}, wrongKind("Lookup", 0, args[0], "a map or an object")
+		}
+		var def tenon.Value
+		if len(args) == 3 {
+			def, _ = tenon.Unmark(args[2])
+		}
+		if c.IsPending() && !isObject(c) {
+			if k := c.Constraint(); k.Kind() == tenon.ConstraintMapOf {
+				return k.Element(), nil
+			}
+			return tenon.Any(), nil
+		}
+		if !isObject(c) {
+			el := tenon.Exactly(c.Type().ElementType())
+			if !def.IsZero() && !def.IsPending() {
+				if d := tenon.Convert(def, el, p); d.IsError() {
+					return tenon.Constraint{}, tenon.NewError(at(2, d))
+				}
+			}
+			return el, nil
+		}
+		names, _ := attributeNames(c)
+		types := map[string]tenon.Constraint{}
+		for _, name := range names {
+			if c.IsPending() {
+				v, _ := c.LookupAttribute(name)
+				u, _ := tenon.Unmark(v)
+				types[name] = typeOf(u)
+			} else {
+				types[name] = tenon.Exactly(c.Type().AttributeType(name))
+			}
+		}
+		if key.IsKnown() {
+			if t, ok := types[key.AsString()]; ok {
+				return t, nil
+			}
+			if def.IsZero() {
+				return tenon.Constraint{}, tenon.NewError(invalid(1, "Lookup: the object has no attribute "+key.String()+", and no default was given"))
+			}
+			return typeOf(def), nil
+		}
+		var cs []tenon.Constraint
+		for _, name := range names {
+			if !slices.ContainsFunc(cs, types[name].Equal) {
+				cs = append(cs, types[name])
+			}
+		}
+		if !def.IsZero() && !slices.ContainsFunc(cs, typeOf(def).Equal) {
+			cs = append(cs, typeOf(def))
+		}
+		switch len(cs) {
+		case 0:
+			return tenon.Any(), nil
+		case 1:
+			return cs[0], nil
+		}
+		return tenon.OneOf(cs...), nil
+	},
+	Impl: func(args []tenon.Value, rc tenon.Constraint, p tenon.Policy) (tenon.Value, error) {
+		c, _ := tenon.Unmark(args[0])
+		key, _ := tenon.Unmark(args[1])
+		marks := propagating(args[0], args[1])
+		answer := func(v tenon.Value) tenon.Value { return tenon.WithMarks(v, marks...) }
+		if !key.IsKnown() {
+			return answer(unknownOf(rc)), nil
+		}
+		name := key.AsString()
+		var found tenon.Value
+		var ok, settled bool
+		switch {
+		case isObject(c) && c.HasMembers():
+			found, ok = c.LookupAttribute(name)
+			settled = true
+		case isObject(c):
+			// An object not known yet has the attributes its type names.
+			if c.Type().HasAttribute(name) {
+				return answer(unknownOf(rc)), nil
+			}
+			settled = true
+		case c.HasMembers():
+			found, ok = c.LookupMapElement(name)
+			settled = true
+		}
+		switch {
+		case ok:
+			return answer(found), nil
+		case !settled:
+			return answer(unknownOf(rc)), nil
+		case len(args) < 3:
+			return answer(invalid(1, "Lookup: no member is named "+key.String()+", and no default was given")), nil
+		}
+		d := at(2, tenon.Convert(args[2], rc, p))
+		return tenon.WithMarks(d, marks...), nil
 	},
 })

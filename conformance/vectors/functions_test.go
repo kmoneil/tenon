@@ -16,6 +16,10 @@ import (
 // specification gives them.
 var library = map[string]tenon.Function{
 	"AssertNotNull":        stdlib.AssertNotNullFunc,
+	"Keys":                 stdlib.KeysFunc,
+	"Values":               stdlib.ValuesFunc,
+	"Zipmap":               stdlib.ZipmapFunc,
+	"Lookup":               stdlib.LookupFunc,
 	"Flatten":              stdlib.FlattenFunc,
 	"Compact":              stdlib.CompactFunc,
 	"Distinct":             stdlib.DistinctFunc,
@@ -198,6 +202,20 @@ var callVectors = []callVector{
 	{"Distinct/an unknown member", "Distinct", []tenon.Value{tenon.List(num, n(1), tenon.Unknown(num))}, tenon.Safe, tenon.Constraint{}},
 	{"CoalesceList/the first not empty", "CoalesceList", []tenon.Value{tenon.List(num), tenon.Narrow(tenon.Pending(tenon.Any()), tenon.NullOnly()), tenon.List(num, n(1))}, tenon.Safe, tenon.Constraint{}},
 	{"CoalesceList/refused/every one empty", "CoalesceList", []tenon.Value{tenon.List(num), tenon.List(num)}, tenon.Safe, tenon.Constraint{}},
+	{"Keys/a map", "Keys", []tenon.Value{tenon.Map(num, map[string]tenon.Value{"b": n(2), "a": n(1), "B": n(3)})}, tenon.Safe, tenon.Constraint{}},
+	{"Keys/an unknown object", "Keys", []tenon.Value{tenon.Unknown(tenon.ObjectType(map[string]tenon.Type{"b": str, "a": str}))}, tenon.Safe, tenon.Constraint{}},
+	{"Values/a map", "Values", []tenon.Value{tenon.Map(num, map[string]tenon.Value{"b": n(2), "a": n(1)})}, tenon.Safe, tenon.Constraint{}},
+	{"Values/an object", "Values", []tenon.Value{tenon.Object(map[string]tenon.Value{"b": n(2), "a": s("x")})}, tenon.Safe, tenon.Constraint{}},
+	{"Zipmap/a map", "Zipmap", []tenon.Value{tenon.List(str, s("a"), s("b")), tenon.List(num, n(1), n(2))}, tenon.Safe, tenon.Constraint{}},
+	{"Zipmap/an object", "Zipmap", []tenon.Value{tenon.List(str, s("a"), s("b")), tenon.Tuple(n(1), s("x"))}, tenon.Safe, tenon.Constraint{}},
+	{"Zipmap/the later key wins", "Zipmap", []tenon.Value{tenon.List(str, s("a"), s("a")), tenon.List(num, n(1), n(2))}, tenon.Safe, tenon.Constraint{}},
+	{"Zipmap/refused/a null key", "Zipmap", []tenon.Value{tenon.List(str, tenon.Null(str)), tenon.List(num, n(1))}, tenon.Safe, tenon.Constraint{}},
+	{"Zipmap/refused/lengths that differ", "Zipmap", []tenon.Value{tenon.List(str, s("a"), tenon.Unknown(str)), tenon.List(num, n(1))}, tenon.Safe, tenon.Constraint{}},
+	{"Lookup/found", "Lookup", []tenon.Value{tenon.Map(num, map[string]tenon.Value{"a": n(1)}), s("a"), n(0)}, tenon.Safe, tenon.Constraint{}},
+	{"Lookup/the default", "Lookup", []tenon.Value{tenon.Map(num, map[string]tenon.Value{"a": n(1)}), s("c"), n(0)}, tenon.Safe, tenon.Constraint{}},
+	{"Lookup/no default needed", "Lookup", []tenon.Value{tenon.Map(num, map[string]tenon.Value{"a": n(1)}), s("a")}, tenon.Safe, tenon.Constraint{}},
+	{"Lookup/a null default", "Lookup", []tenon.Value{tenon.Map(num, map[string]tenon.Value{"a": n(1)}), s("c"), tenon.Narrow(tenon.Pending(tenon.Any()), tenon.NullOnly())}, tenon.Safe, tenon.Constraint{}},
+	{"Lookup/refused/missing, no default", "Lookup", []tenon.Value{tenon.Map(num, map[string]tenon.Value{"a": n(1)}), s("c")}, tenon.Safe, tenon.Constraint{}},
 	{"Coalesce/the first not null", "Coalesce", []tenon.Value{tenon.Narrow(tenon.Pending(tenon.Any()), tenon.NullOnly()), tenon.Null(num), n(1), n(2)}, tenon.Safe, tenon.Constraint{}},
 	{"Coalesce/one not known yet", "Coalesce", []tenon.Value{tenon.Unknown(num), n(1)}, tenon.Safe, tenon.Constraint{}},
 	{"Coalesce/unified under Unsafe", "Coalesce", []tenon.Value{n(1), s("a")}, tenon.Unsafe, tenon.Constraint{}},
@@ -240,7 +258,7 @@ type callArg struct {
 // answers, its display form and its encoding, or the failures it gives, each
 // code with its path.
 func TestConformance_LB001_FunctionVectors(t *testing.T) {
-	conformance.Covers(t, "LB-001", "LN-001", "LN-002", "LN-010", "LN-011", "LN-020", "LN-030", "LN-031", "LN-032", "LN-033", "LN-050", "LN-060", "LN-061", "LN-080", "LN-083", "LN-085", "LC-001", "LC-002", "LC-003", "LC-004", "LC-010", "LC-011", "LC-012", "LC-013", "LC-020", "LC-021", "LC-022", "LC-023")
+	conformance.Covers(t, "LB-001", "LN-001", "LN-002", "LN-010", "LN-011", "LN-020", "LN-030", "LN-031", "LN-032", "LN-033", "LN-050", "LN-060", "LN-061", "LN-080", "LN-083", "LN-085", "LC-001", "LC-002", "LC-003", "LC-004", "LC-010", "LC-011", "LC-012", "LC-013", "LC-020", "LC-021", "LC-022", "LC-023", "LC-030", "LC-031", "LC-032", "LC-033")
 	f := callFile{
 		Format: 1,
 		About: "Each entry is a call of a function of the standard library (§13 to §20), named as the specification " +
