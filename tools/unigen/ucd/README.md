@@ -14,13 +14,19 @@ These files are Unicode's own, copied unchanged from
 | `SpecialCasing.txt` | `SpecialCasing.txt` | `78b29c64b5840d25c11a9f31b665ee551b8a499eca6c70d770fcad7dd710f494` |
 | `DerivedCoreProperties.txt` | `DerivedCoreProperties.txt` | `d367290bc0867e6b484c68370530bdd1a08b6b32404601b8c7accaf83e05628d` |
 | `PropList.txt` | `PropList.txt` | `e05c0a2811d113dae4abd832884199a3ea8d187ee1b872d8240a788a96540bfd` |
+| `Scripts.txt` | `Scripts.txt` | `cca85d830f46aece2e7c1459ef1249993dca8f2e46d51e869255be140d7ea4b0` |
+| `CaseFolding.txt` | `CaseFolding.txt` | `cdd49e55eae3bbf1f0a3f6580c974a0263cb86a6a08daa10fbf705b4808a56f7` |
+| `PropertyValueAliases.txt` | `PropertyValueAliases.txt` | `13a7666843abea5c6b7eb8c057c57ab9bb2ba96cfc936e204224dd67d71cafad` |
 
 unigen generates `internal/uni/grapheme_tables.go` from the first two, which
 neither Go's `unicode` package nor `golang.org/x/text` carries, and
 `internal/uni/case_tables.go` from the last four: the simple case mappings of
 `UnicodeData.txt`, the unconditional entries of `SpecialCasing.txt`, the Cased
 and Case_Ignorable properties of `DerivedCoreProperties.txt`, and White_Space
-of `PropList.txt`. `UnicodeData.txt` names no version, so unigen refuses it
+of `PropList.txt`; and `internal/uni/pattern_tables.go` from `UnicodeData.txt`,
+`Scripts.txt`, `CaseFolding.txt` and `PropertyValueAliases.txt`: the general
+categories, the scripts, the simple case-folding orbits and the categories'
+aliases that patterns read. `UnicodeData.txt` names no version, so unigen refuses it
 unless its SHA-256 is the one above. `GraphemeBreakTest.txt` and
 `NormalizationTest.txt` are Unicode's conformance tests for normalization and
 segmentation, which this module's tests hold `internal/uni` to on every

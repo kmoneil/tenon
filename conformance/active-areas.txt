@@ -20,6 +20,7 @@ LB
 LN
 LC
 LF
+LR
 LS
 ER
 FN

@@ -138,3 +138,9 @@ func TestConformance_LS001_CutPositions(t *testing.T) {
 		break
 	}
 }
+
+func TestPatternTablesVersion(t *testing.T) {
+	if patternTablesVersion != UnicodeVersion {
+		t.Fatalf("pattern_tables.go holds Unicode %s, and the package states %s", patternTablesVersion, UnicodeVersion)
+	}
+}

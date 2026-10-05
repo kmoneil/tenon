@@ -111,6 +111,9 @@
       "code": "range.contradiction"
     },
     {
+      "code": "regex.invalid_syntax"
+    },
+    {
       "code": "serialize.decoder_failed"
     },
     {
