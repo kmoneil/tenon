@@ -107,10 +107,57 @@ var counterparts = map[string]counterpart{
 	"HasIndex": indexing(ctystdlib.HasIndexFunc, stdlib.HasIndexFunc),
 	"Index":    indexing(ctystdlib.IndexFunc, stdlib.IndexFunc),
 	"Element":  indexing(ctystdlib.ElementFunc, stdlib.ElementFunc),
-	"Log":      transcendental(ctystdlib.LogFunc, stdlib.LogFunc),
-	"Pow":      transcendental(ctystdlib.PowFunc, stdlib.PowFunc),
-	"Min":      extremes(ctystdlib.MinFunc, stdlib.MinFunc),
-	"Max":      extremes(ctystdlib.MaxFunc, stdlib.MaxFunc),
+	"Slice": {
+		cty: ctystdlib.SliceFunc,
+		ten: stdlib.SliceFunc,
+		cases: [][]cty.Value{
+			{abcList(), cty.NumberIntVal(1), cty.NumberIntVal(2)},
+			{abcList(), cty.NumberIntVal(2), cty.NumberIntVal(1)},
+			{cty.TupleVal([]cty.Value{cty.StringVal("a"), cty.NumberIntVal(1)}), cty.NumberIntVal(0), cty.NumberIntVal(1)},
+			{cty.UnknownVal(cty.List(cty.String)), cty.NumberIntVal(0), cty.NumberIntVal(1)},
+		},
+		random: func(r *rand.Rand) []cty.Value {
+			return []cty.Value{randomCtyValue(r, cty.List(randomCtyType(r, 1))), cty.NumberIntVal(int64(r.Intn(4))), cty.NumberIntVal(int64(r.Intn(5)))}
+		},
+	},
+	"ReverseList": {
+		cty: ctystdlib.ReverseListFunc,
+		ten: stdlib.ReverseListFunc,
+		cases: [][]cty.Value{
+			{abcList()}, {cty.TupleVal([]cty.Value{cty.NumberIntVal(1), cty.StringVal("a")})},
+			{cty.SetVal([]cty.Value{cty.NumberIntVal(3), cty.NumberIntVal(1), cty.NumberIntVal(2)})},
+		},
+		random: func(r *rand.Rand) []cty.Value { return []cty.Value{randomCtyValue(r, cty.List(randomCtyType(r, 1)))} },
+	},
+	"Concat": {
+		cty: ctystdlib.ConcatFunc,
+		ten: stdlib.ConcatFunc,
+		cases: [][]cty.Value{
+			{cty.ListVal([]cty.Value{cty.NumberIntVal(1)}), cty.ListVal([]cty.Value{cty.NumberIntVal(2)})},
+			{cty.ListVal([]cty.Value{cty.NumberIntVal(1)}), cty.TupleVal([]cty.Value{cty.StringVal("a")})},
+			{cty.ListVal([]cty.Value{cty.NumberIntVal(1), cty.UnknownVal(cty.Number)}), cty.ListVal([]cty.Value{cty.NumberIntVal(2)})},
+		},
+		random: func(r *rand.Rand) []cty.Value {
+			typ := randomCtyType(r, 1)
+			return []cty.Value{randomCtyValue(r, cty.List(typ)), randomCtyValue(r, cty.List(typ))}
+		},
+	},
+	"Chunklist": {
+		cty: ctystdlib.ChunklistFunc,
+		ten: stdlib.ChunklistFunc,
+		cases: [][]cty.Value{
+			{cty.ListVal([]cty.Value{cty.NumberIntVal(1), cty.NumberIntVal(2), cty.NumberIntVal(3)}), cty.NumberIntVal(2)},
+			{cty.ListVal([]cty.Value{cty.NumberIntVal(1), cty.NumberIntVal(2)}), cty.NumberIntVal(0)},
+			{cty.ListVal([]cty.Value{cty.NumberIntVal(1), cty.UnknownVal(cty.Number)}), cty.NumberIntVal(1)},
+		},
+		random: func(r *rand.Rand) []cty.Value {
+			return []cty.Value{randomCtyValue(r, cty.List(randomCtyType(r, 1))), cty.NumberIntVal(int64(r.Intn(4)))}
+		},
+	},
+	"Log": transcendental(ctystdlib.LogFunc, stdlib.LogFunc),
+	"Pow": transcendental(ctystdlib.PowFunc, stdlib.PowFunc),
+	"Min": extremes(ctystdlib.MinFunc, stdlib.MinFunc),
+	"Max": extremes(ctystdlib.MaxFunc, stdlib.MaxFunc),
 	"ParseInt": {
 		cty: ctystdlib.ParseIntFunc,
 		ten: stdlib.ParseIntFunc,
@@ -319,6 +366,11 @@ func scientific(n tenon.Value) bool {
 		n = tenon.Sub(tenon.NumberFromInt(0), n)
 	}
 	return !tenon.LessThan(n, tenon.NumberFromText("1e21")).AsBool() || tenon.LessThan(n, tenon.NumberFromText("1e-20")).AsBool()
+}
+
+// abcList is the list ["a", "b", "c"].
+func abcList() cty.Value {
+	return cty.ListVal([]cty.Value{cty.StringVal("a"), cty.StringVal("b"), cty.StringVal("c")})
 }
 
 // indexing returns the counterpart of HasIndex, Index or Element, called

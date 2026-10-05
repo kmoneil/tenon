@@ -100,6 +100,24 @@ func invalid(i int, message string) tenon.Value {
 // does, and otherwise the least and greatest it may hold, ok false where
 // nothing bounds it.
 func lengthOf(c tenon.Value) (lo, hi int64, ok bool) {
+	if k, resolved := kindOf(c); resolved && k == tenon.KindSet {
+		// A set holding a member not known yet may hold fewer members than
+		// it lists (EQ-042): tenon's Length says how many.
+		n := tenon.Length(c)
+		if n.IsKnown() {
+			v, _ := n.AsInt64()
+			return v, v, true
+		}
+		l, _, least := n.Range().NumberMin()
+		h, _, bounded := n.Range().NumberMax()
+		if least {
+			lo, _ = l.AsInt64()
+		}
+		if bounded {
+			hi, _ = h.AsInt64()
+		}
+		return lo, hi, bounded
+	}
 	if c.HasMembers() {
 		n := int64(c.Len())
 		return n, n, true

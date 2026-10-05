@@ -19,6 +19,10 @@ import (
 // function added without its entry here fails the run.
 var library = map[string]tenon.Function{
 	"AssertNotNull":        stdlib.AssertNotNullFunc,
+	"Slice":                stdlib.SliceFunc,
+	"ReverseList":          stdlib.ReverseListFunc,
+	"Concat":               stdlib.ConcatFunc,
+	"Chunklist":            stdlib.ChunklistFunc,
 	"Length":               stdlib.LengthFunc,
 	"HasIndex":             stdlib.HasIndexFunc,
 	"Index":                stdlib.IndexFunc,

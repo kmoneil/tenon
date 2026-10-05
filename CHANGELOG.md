@@ -72,6 +72,17 @@
   already rule it out; only the collection's own marks and those of the
   member read reach the answer. The specification says so (§18, `LC-001`
   to `LC-004`).
+- `SliceFunc`, `ReverseListFunc`, `ConcatFunc` and `ChunklistFunc`. Indexes
+  and sizes are whole numbers of any magnitude, each failure located at its
+  argument and decided now where a list's recorded lengths already rule it
+  out; an unknown answer carries the length its arguments give
+  (`slice(x, 0, 2)` has 2 elements, `concat` sums its arguments' lengths,
+  `chunklist` counts its chunks). `ReverseList` of a set holding a member
+  not known yet answers within the set's length range, where go-cty's
+  claims every listed member. `Concat` unifies its lists under the call's
+  policy, so `concat([1], ["a"])` is `["1", "a"]` under Unsafe and the tuple
+  `[1, "a"]` under Safe. `Chunklist` of a language's `[]` is `[]`. The
+  specification says so (`LC-010` to `LC-013`).
 - A function may declare its result never null (`FunctionSpec.NotNull`,
   read back with `Function.NotNull`). Every answer the call makes that is
   not a known value then says so, the unknown answer of an argument not
