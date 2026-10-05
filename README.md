@@ -291,7 +291,7 @@ v, err := b.FromCty(config)
 The module's documentation says what crosses, what does not, and where the
 two differ, and its own `CHANGELOG.md` what each release holds:
 
-    go get github.com/kmoneil/tenon/ctytenon@v0.2.1
+    go get github.com/kmoneil/tenon/ctytenon@v0.3.0
 
 | | go-cty v1.19 | tenon |
 | --- | --- | --- |

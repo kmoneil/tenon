@@ -7,6 +7,7 @@ import (
 	"go/token"
 	"maps"
 	"math/rand"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -1054,9 +1055,16 @@ func equality(c function.Function, ten tenon.Function) counterpart {
 // the package's source so that a function added without its counterpart
 // fails here.
 func TestLibraryHasCounterparts(t *testing.T) {
-	files, err := filepath.Glob(filepath.Join("..", "stdlib", "*.go"))
+	// The package's source is where the module the bridge builds against
+	// has it: the repository's own tree beside the bridge, and the module
+	// cache where the bridge is tested as a program importing it gets it.
+	dir, err := exec.Command("go", "list", "-f", "{{.Dir}}", "github.com/kmoneil/tenon/stdlib").Output()
 	if err != nil {
 		t.Fatal(err)
+	}
+	files, err := filepath.Glob(filepath.Join(strings.TrimSpace(string(dir)), "*.go"))
+	if err != nil || len(files) == 0 {
+		t.Fatalf("no source of the stdlib package in %q: %v", dir, err)
 	}
 	var declared []string
 	for _, name := range files {
