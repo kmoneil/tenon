@@ -331,8 +331,163 @@ func formatNumber(v *verb, n tenon.Value) string {
 	if strings.IndexByte("bdoxX", v.letter) >= 0 {
 		return formatInteger(v, n)
 	}
-	internalPanic("Format: %s has no writer yet", v.text)
-	return ""
+	small, c, exp := numbers.Dec(n).Parts()
+	if c == nil {
+		c = big.NewInt(small)
+	}
+	negative := c.Sign() < 0
+	c = new(big.Int).Abs(c)
+	var text string
+	switch v.letter {
+	case 'e', 'E':
+		text = formatE(c, exp, precisionOr(v, 6), v.letter)
+	case 'f':
+		text = formatF(c, exp, precisionOr(v, 6))
+	default:
+		text = formatG(v, c, exp)
+	}
+	return formatSigned(v, negative, text)
+}
+
+// precisionOr returns the verb's precision, or def where it gives none.
+func precisionOr(v *verb, def int) int {
+	if v.hasPrecision {
+		return v.precision
+	}
+	return def
+}
+
+// ten is the number ten, which the decimal verbs scale by.
+var ten = big.NewInt(10)
+
+// roundScaled returns c × 10^shift rounded half to even to a whole number,
+// c not negative: the decimal verbs round the exact value so, as NU-012
+// rounds a quotient.
+func roundScaled(c *big.Int, shift int64) *big.Int {
+	if shift >= 0 {
+		return new(big.Int).Mul(c, new(big.Int).Exp(ten, big.NewInt(shift), nil))
+	}
+	d := new(big.Int).Exp(ten, big.NewInt(-shift), nil)
+	q, r := new(big.Int).QuoRem(c, d, new(big.Int))
+	switch r.Lsh(r, 1).Cmp(d) {
+	case 1:
+		q.Add(q, big.NewInt(1))
+	case 0:
+		if q.Bit(0) == 1 {
+			q.Add(q, big.NewInt(1))
+		}
+	}
+	return q
+}
+
+// digitCount returns how many decimal digits c, not zero, has.
+func digitCount(c *big.Int) int64 { return int64(len(c.String())) }
+
+// exponentText returns the exponent x as %e writes it: e or E, its sign,
+// and at least two digits.
+func exponentText(x int64, letter byte) string {
+	sign := "+"
+	if x < 0 {
+		sign, x = "-", -x
+	}
+	digits := strconv.FormatInt(x, 10)
+	if len(digits) < 2 {
+		digits = "0" + digits
+	}
+	if letter == 'E' || letter == 'G' {
+		return "E" + sign + digits
+	}
+	return "e" + sign + digits
+}
+
+// formatE returns the magnitude c × 10^exp by %e with p digits after the
+// point: one digit before it, the value rounded half to even, then the
+// exponent.
+func formatE(c *big.Int, exp int64, p int, letter byte) string {
+	var digits string
+	x := int64(0)
+	if c.Sign() == 0 {
+		digits = strings.Repeat("0", p+1)
+	} else {
+		x = digitCount(c) + exp - 1
+		m := roundScaled(c, exp-x+int64(p))
+		if digitCount(m) > int64(p)+1 {
+			x++
+			m.Quo(m, ten)
+		}
+		digits = m.String()
+	}
+	return mantissa(digits, p) + exponentText(x, letter)
+}
+
+// mantissa returns digits with a point after the first, where p digits
+// follow it.
+func mantissa(digits string, p int) string {
+	if p == 0 {
+		return digits[:1]
+	}
+	return digits[:1] + "." + digits[1:]
+}
+
+// formatF returns the magnitude c × 10^exp by %f with p digits after the
+// point, the value rounded half to even.
+func formatF(c *big.Int, exp int64, p int) string {
+	var s string
+	if c.Sign() == 0 || digitCount(c)+exp+int64(p) < 0 {
+		// Less than a tenth of the last place: it rounds to zero.
+		s = "0"
+	} else {
+		s = roundScaled(c, exp+int64(p)).String()
+	}
+	if len(s) <= p {
+		s = strings.Repeat("0", p-len(s)+1) + s
+	}
+	if p == 0 {
+		return s
+	}
+	return s[:len(s)-p] + "." + s[len(s)-p:]
+}
+
+// formatG returns the magnitude c × 10^exp by %g or %G: with a precision,
+// rounded half to even to that many significant digits, one for zero, and
+// without one, all its digits; then as %e where the exponent is less than
+// -4 or not less than the precision, six where none is given, and as %f
+// otherwise, trailing zeros not written. This is Go's rule, which go-cty's
+// big.Float follows.
+func formatG(v *verb, c *big.Int, exp int64) string {
+	if c.Sign() == 0 {
+		return "0"
+	}
+	digits := c.String()
+	dp := int64(len(digits)) + exp
+	prec := len(digits)
+	if v.hasPrecision {
+		prec = max(v.precision, 1)
+		if len(digits) > prec {
+			m := roundScaled(c, int64(prec-len(digits)))
+			dp += digitCount(m) - int64(prec)
+			digits = strings.TrimRight(m.String(), "0")
+		}
+	}
+	nd := int64(len(digits))
+	eprec := int64(prec)
+	if eprec > nd && nd >= dp {
+		eprec = nd
+	}
+	if !v.hasPrecision {
+		eprec = 6
+	}
+	if x := dp - 1; x < -4 || x >= eprec {
+		if int64(prec) > nd {
+			prec = int(nd)
+		}
+		return mantissa(digits, prec-1) + exponentText(x, v.letter)
+	}
+	if int64(prec) > dp {
+		prec = int(nd)
+	}
+	coefficient, _ := new(big.Int).SetString(digits, 10)
+	return formatF(coefficient, dp-nd, int(max(int64(prec)-dp, 0)))
 }
 
 // formatInteger returns the text of the known integer n by %d, %b, %o, %x

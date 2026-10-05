@@ -66,6 +66,23 @@
   order does, and a list holding an element not known yet answers a list
   as long of strings not known yet and not null; a list of one element is
   itself. The specification says so (`LS-024` to `LS-027`).
+- `FormatFunc`, on go-cty's verb language, which the specification now
+  states whole. Numbers are formatted from the exact decimal: `%d`, `%x`
+  and the other integer verbs write integers of any magnitude exactly, and
+  `%e`, `%f` and `%g` round ties half to even on the exact value, so
+  `%.2f` of 2.675 is `"2.68"` where go-cty's rounds the binary float to
+  `"2.67"`. `%v` of a number is its canonical text, as `"${n}"` and
+  `tostring` write it, where go-cty's is Go's `%g` (`"1e+06"` for a
+  million). Widths and precisions count grapheme clusters by the Unicode
+  version tenon states, and pass 10,000 only with `function.too_large`,
+  where go-cty's wrap past an `int` or allocate whatever is asked. The
+  small fixes: `%.0s` is empty, `-` overrides `0`, zeros come after a
+  number's sign, `%t` pads, `%v` of a string takes a precision as `%s`
+  does, and `%#o` of 0 is `0`. A format that is none fails with the new
+  code `format.invalid_syntax`; what the known arguments settle fails
+  now, and an argument not known yet leaves the answer beginning with the
+  text before its verb. The specification says so (`LF-001` to
+  `LF-017`).
 
 ## 0.16.0 (2026-10-05)
 
