@@ -5,6 +5,22 @@ module of its own (`github.com/kmoneil/tenon/ctytenon`) whose versions are
 tagged `ctytenon/vX.Y.Z`. tenon's own changes are in the repository's
 `CHANGELOG.md`.
 
+## Unreleased
+
+### Changed
+
+- A tenon function declaring its result never null crosses to cty with
+  that refinement (`RefineResult`'s not null), as its unknown answers
+  already carried it.
+- A cty function crossed by `FunctionFromCty` admits unknown arguments on
+  every parameter, so cty's own `Call` answers them as cty does: an
+  argument the function does not allow unknown gives cty's unknown result,
+  refined as the function's `RefineResult` says (not null, a length, a
+  prefix), which crosses back as tenon's narrowing, and a list holding an
+  unknown element, which cty counts as known, reaches the function as it
+  does under cty. In 0.2, tenon's boundary answered such an argument with
+  a bare unknown, saying less than cty does.
+
 ## 0.2.1 (2026-10-05)
 
 Requires tenon 0.15.1, which fixes two defects that functions crossed

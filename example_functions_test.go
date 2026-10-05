@@ -19,8 +19,9 @@ func ExampleCall() {
 			{Name: "count", Constraint: num},
 			{Name: "by", Constraint: num},
 		},
-		Result: num,
-		Impl: func(args []tenon.Value, _ tenon.Constraint) (tenon.Value, error) {
+		Result:  num,
+		NotNull: true,
+		Impl: func(args []tenon.Value, _ tenon.Constraint, _ tenon.Policy) (tenon.Value, error) {
 			return tenon.Mul(args[0], args[1]), nil
 		},
 	})
@@ -32,7 +33,8 @@ func ExampleCall() {
 	fmt.Println(tenon.Call(scale, []tenon.Value{tenon.String("8080"), tenon.NumberFromInt(2)}, tenon.Unsafe))
 
 	// An argument not yet known answers with the unknown of the result,
-	// without the implementation running.
+	// without the implementation running, and the result is declared never
+	// null, so the answer says so.
 	fmt.Println(tenon.Call(scale, []tenon.Value{tenon.Unknown(tenon.NumberType()), tenon.NumberFromInt(2)}, tenon.Safe))
 
 	// Every failing argument reports, each diagnostic located by the
@@ -44,7 +46,7 @@ func ExampleCall() {
 	// Output:
 	// 12
 	// 16160
-	// unknown(number)
+	// unknown(number, not null)
 	// operation.null_operand at .[0]: argument 1 (count) of Scale is null, which Scale cannot use
 	// convert.no_conversion at .[1]: bool does not convert to exactly(number)
 }

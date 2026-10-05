@@ -27,6 +27,10 @@ import (
 // caller as cty's own convention returns it, a function.PanicError: this
 // boundary alone converts it.
 //
+// A function declaring its result never null (tenon.FunctionSpec.NotNull)
+// declares it to cty as well, as RefineResult's not null: the values that
+// cross back carry it already, as every narrowing of an unknown value does.
+//
 // FunctionToCty fails where a parameter's constraint does not cross, as a
 // OneOf does not. A derived result constraint crosses at each call, and a
 // call whose derived constraint does not cross fails with the crossing's
@@ -54,10 +58,15 @@ func (b Bridge) FunctionToCty(f tenon.Function, p tenon.Policy) (function.Functi
 			return function.Function{}, err
 		}
 	}
+	var refine func(*cty.RefinementBuilder) *cty.RefinementBuilder
+	if f.NotNull() {
+		refine = func(rb *cty.RefinementBuilder) *cty.RefinementBuilder { return rb.NotNull() }
+	}
 	return function.New(&function.Spec{
-		Description: f.Description(),
-		Params:      cparams,
-		VarParam:    cvar,
+		Description:  f.Description(),
+		Params:       cparams,
+		VarParam:     cvar,
+		RefineResult: refine,
 		Type: func(args []cty.Value) (cty.Type, error) {
 			targs, err := b.argsFromCty(args)
 			if err != nil {
@@ -122,6 +131,14 @@ func (b Bridge) argsFromCty(args []cty.Value) ([]tenon.Value, error) {
 // through its own Call, their errors failing the tenon call as every
 // implementation failure fails it.
 //
+// Every parameter admits unknown values, whatever cty allows, so that cty's
+// Call answers them as it answers its own callers: an argument cty does not
+// allow unknown gives cty's unknown result, refined as the function's
+// RefineResult refines it (not null, a length, a prefix), and that crosses
+// back as tenon's narrowing; and a list holding an unknown element, which
+// cty counts as known, reaches the implementation as it does under cty.
+// cty gives no other way to learn what a function promises of its result.
+//
 // A cty function that answers known arguments with an unknown result, as
 // one wrapped by cty's Unpredictable does, breaks the contract a tenon
 // function makes: known in, known, given or error out, unless volatility is
@@ -159,7 +176,7 @@ func (b Bridge) FunctionFromCty(f function.Function) (tenon.Function, error) {
 		Description: f.Description(),
 		Params:      tparams,
 		VarParam:    tvar,
-		ResultOf: func(args []tenon.Value) (tenon.Constraint, error) {
+		ResultOf: func(args []tenon.Value, _ tenon.Policy) (tenon.Constraint, error) {
 			cargs, err := b.argsToCty(args)
 			if err != nil {
 				return tenon.Constraint{}, err
@@ -170,7 +187,7 @@ func (b Bridge) FunctionFromCty(f function.Function) (tenon.Function, error) {
 			}
 			return b.ConstraintFromCty(ty)
 		},
-		Impl: func(args []tenon.Value, _ tenon.Constraint) (tenon.Value, error) {
+		Impl: func(args []tenon.Value, _ tenon.Constraint, _ tenon.Policy) (tenon.Value, error) {
 			cargs, err := b.argsToCty(args)
 			if err != nil {
 				return tenon.Value{}, err
@@ -185,18 +202,20 @@ func (b Bridge) FunctionFromCty(f function.Function) (tenon.Function, error) {
 }
 
 // paramFromCty crosses one parameter, each allowance becoming the admission
-// it means.
+// it means but AllowUnknown, which every parameter is given.
 func (b Bridge) paramFromCty(prm *function.Parameter) (tenon.Param, error) {
 	c, err := b.ConstraintFromCty(prm.Type)
 	if err != nil {
 		return tenon.Param{}, err
 	}
 	return tenon.Param{
-		Name:         prm.Name,
-		Description:  prm.Description,
-		Constraint:   c,
-		AllowNull:    prm.AllowNull,
-		AllowUnknown: prm.AllowUnknown,
+		Name:        prm.Name,
+		Description: prm.Description,
+		Constraint:  c,
+		AllowNull:   prm.AllowNull,
+		// cty's Call answers an unknown argument itself, refining as the
+		// function says; see FunctionFromCty.
+		AllowUnknown: true,
 		AllowPending: prm.AllowDynamicType,
 		AllowMarked:  prm.AllowMarked,
 	}, nil

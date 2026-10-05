@@ -20,7 +20,7 @@ func fnAdd(name string, ran *bool) tenon.Function {
 			{Name: "b", Constraint: tenon.Exactly(tenon.NumberType())},
 		},
 		Result: tenon.Exactly(tenon.NumberType()),
-		Impl: func(args []tenon.Value, _ tenon.Constraint) (tenon.Value, error) {
+		Impl: func(args []tenon.Value, _ tenon.Constraint, _ tenon.Policy) (tenon.Value, error) {
 			if ran != nil {
 				*ran = true
 			}
@@ -36,7 +36,7 @@ func fnEcho(prm tenon.Param, result tenon.Constraint, probe func(tenon.Value) (t
 		Name:   "Echo",
 		Params: []tenon.Param{prm},
 		Result: result,
-		Impl: func(args []tenon.Value, _ tenon.Constraint) (tenon.Value, error) {
+		Impl: func(args []tenon.Value, _ tenon.Constraint, _ tenon.Policy) (tenon.Value, error) {
 			return probe(args[0])
 		},
 	})
@@ -45,7 +45,7 @@ func fnEcho(prm tenon.Param, result tenon.Constraint, probe func(tenon.Value) (t
 func TestConformance_FN001_TheSpecificationMakesTheFunction(t *testing.T) {
 	conformance.Covers(t, "FN-001")
 	num := tenon.Exactly(tenon.NumberType())
-	impl := func(args []tenon.Value, _ tenon.Constraint) (tenon.Value, error) { return args[0], nil }
+	impl := func(args []tenon.Value, _ tenon.Constraint, _ tenon.Policy) (tenon.Value, error) { return args[0], nil }
 
 	// A specification that cannot make a function is a usage error naming
 	// the defect.
@@ -95,7 +95,7 @@ func TestConformance_FN001_TheSpecificationMakesTheFunction(t *testing.T) {
 		Name:     "Gather",
 		VarParam: &tenon.Param{Name: "vals", Constraint: num},
 		Result:   num,
-		Impl: func(args []tenon.Value, _ tenon.Constraint) (tenon.Value, error) {
+		Impl: func(args []tenon.Value, _ tenon.Constraint, _ tenon.Policy) (tenon.Value, error) {
 			return tenon.NumberFromInt(int64(len(args))), nil
 		},
 	})
@@ -116,7 +116,7 @@ func TestConformance_FN002_Introspection(t *testing.T) {
 		Params:      []tenon.Param{{Name: "sep", Description: "the separator", Constraint: num}},
 		VarParam:    &tenon.Param{Name: "parts", Constraint: num},
 		Result:      num,
-		Impl:        func(args []tenon.Value, _ tenon.Constraint) (tenon.Value, error) { return args[0], nil },
+		Impl:        func(args []tenon.Value, _ tenon.Constraint, _ tenon.Policy) (tenon.Value, error) { return args[0], nil },
 	})
 	if f.Name() != "Join" || f.Description() != "joins" {
 		t.Errorf("Name %q and Description %q, want Join and joins", f.Name(), f.Description())
@@ -204,7 +204,7 @@ func TestConformance_FN010_Arity(t *testing.T) {
 		Params:   []tenon.Param{{Name: "first", Constraint: tenon.Exactly(tenon.NumberType())}},
 		VarParam: &tenon.Param{Name: "rest", Constraint: tenon.Exactly(tenon.NumberType())},
 		Result:   tenon.Exactly(tenon.NumberType()),
-		Impl: func(args []tenon.Value, _ tenon.Constraint) (tenon.Value, error) {
+		Impl: func(args []tenon.Value, _ tenon.Constraint, _ tenon.Policy) (tenon.Value, error) {
 			return tenon.NumberFromInt(int64(len(args))), nil
 		},
 	})
@@ -229,7 +229,7 @@ func TestConformance_FN010_Arity(t *testing.T) {
 	// An unnamed function is named "the function".
 	anon := tenon.NewFunction(tenon.FunctionSpec{
 		Result: tenon.Exactly(tenon.NumberType()),
-		Impl:   func(args []tenon.Value, _ tenon.Constraint) (tenon.Value, error) { return one, nil },
+		Impl:   func(args []tenon.Value, _ tenon.Constraint, _ tenon.Policy) (tenon.Value, error) { return one, nil },
 	})
 	got = tenon.Call(anon, []tenon.Value{one}, tenon.Safe)
 	want = []tenon.Diagnostic{{Code: tenon.CodeFunctionArity, Message: "the function takes no arguments, and 1 was given"}}
@@ -279,7 +279,7 @@ func TestConformance_FN012_FailuresCollect(t *testing.T) {
 			{Name: "a", Constraint: num}, {Name: "b", Constraint: num}, {Name: "c", Constraint: num},
 		},
 		Result: num,
-		Impl: func(args []tenon.Value, _ tenon.Constraint) (tenon.Value, error) {
+		Impl: func(args []tenon.Value, _ tenon.Constraint, _ tenon.Policy) (tenon.Value, error) {
 			ran = true
 			return args[0], nil
 		},
@@ -378,7 +378,7 @@ func TestConformance_FN014_PendingArguments(t *testing.T) {
 		Name:   "Test",
 		Params: []tenon.Param{{Name: "v", Constraint: tenon.Any()}},
 		Result: tenon.Exactly(tenon.BoolType()),
-		Impl: func(args []tenon.Value, _ tenon.Constraint) (tenon.Value, error) {
+		Impl: func(args []tenon.Value, _ tenon.Constraint, _ tenon.Policy) (tenon.Value, error) {
 			ran = true
 			return tenon.Bool(true), nil
 		},
@@ -393,7 +393,7 @@ func TestConformance_FN014_PendingArguments(t *testing.T) {
 		Name:   "Open",
 		Params: []tenon.Param{{Name: "v", Constraint: tenon.Any()}},
 		Result: tenon.ListOf(tenon.Any()),
-		Impl: func(args []tenon.Value, _ tenon.Constraint) (tenon.Value, error) {
+		Impl: func(args []tenon.Value, _ tenon.Constraint, _ tenon.Policy) (tenon.Value, error) {
 			return tenon.List(tenon.BoolType()), nil
 		},
 	})
@@ -525,7 +525,7 @@ func TestConformance_FN016_MarkedArguments(t *testing.T) {
 			{Name: "b", Constraint: tenon.Exactly(tenon.NumberType())},
 		},
 		Result: tenon.Exactly(tenon.NumberType()),
-		Impl:   func(args []tenon.Value, _ tenon.Constraint) (tenon.Value, error) { return args[1], nil },
+		Impl:   func(args []tenon.Value, _ tenon.Constraint, _ tenon.Policy) (tenon.Value, error) { return args[1], nil },
 	})
 	got = tenon.Call(two, []tenon.Value{tenon.WithMarks(one, origin), tenon.Unknown(tenon.NumberType())}, tenon.Safe)
 	if got.IsKnown() || !tenon.HasMark(got, origin) {
@@ -543,7 +543,7 @@ func TestConformance_FN017_TheDecidingOrder(t *testing.T) {
 			{Name: "a", Constraint: num}, {Name: "b", Constraint: num}, {Name: "c", Constraint: num},
 		},
 		Result: num,
-		Impl: func(args []tenon.Value, _ tenon.Constraint) (tenon.Value, error) {
+		Impl: func(args []tenon.Value, _ tenon.Constraint, _ tenon.Policy) (tenon.Value, error) {
 			ran = true
 			return args[0], nil
 		},
@@ -581,7 +581,9 @@ func TestConformance_FN021_TheResultContract(t *testing.T) {
 		Name:   "Lying",
 		Params: []tenon.Param{{Name: "v", Constraint: num}},
 		Result: num,
-		Impl:   func(args []tenon.Value, _ tenon.Constraint) (tenon.Value, error) { return tenon.Bool(true), nil },
+		Impl: func(args []tenon.Value, _ tenon.Constraint, _ tenon.Policy) (tenon.Value, error) {
+			return tenon.Bool(true), nil
+		},
 	})
 	mustPanicUsage(t, "Lying: the implementation returned a value of type bool, which does not satisfy its result exactly(number)", func() {
 		tenon.Call(lying, []tenon.Value{one}, tenon.Safe)
@@ -591,7 +593,7 @@ func TestConformance_FN021_TheResultContract(t *testing.T) {
 		Name:   "Sneaking",
 		Params: []tenon.Param{{Name: "v", Constraint: num}},
 		Result: num,
-		Impl: func(args []tenon.Value, _ tenon.Constraint) (tenon.Value, error) {
+		Impl: func(args []tenon.Value, _ tenon.Constraint, _ tenon.Policy) (tenon.Value, error) {
 			return tenon.Unknown(tenon.NumberType()), nil
 		},
 	})
@@ -604,7 +606,7 @@ func TestConformance_FN021_TheResultContract(t *testing.T) {
 		Name:   "Lenient",
 		Params: []tenon.Param{{Name: "v", Constraint: num, AllowUnknown: true}},
 		Result: num,
-		Impl: func(args []tenon.Value, _ tenon.Constraint) (tenon.Value, error) {
+		Impl: func(args []tenon.Value, _ tenon.Constraint, _ tenon.Policy) (tenon.Value, error) {
 			return tenon.Unknown(tenon.NumberType()), nil
 		},
 	})
@@ -616,7 +618,9 @@ func TestConformance_FN021_TheResultContract(t *testing.T) {
 		Name:   "Empty",
 		Params: []tenon.Param{{Name: "v", Constraint: num}},
 		Result: num,
-		Impl:   func(args []tenon.Value, _ tenon.Constraint) (tenon.Value, error) { return tenon.Value{}, nil },
+		Impl: func(args []tenon.Value, _ tenon.Constraint, _ tenon.Policy) (tenon.Value, error) {
+			return tenon.Value{}, nil
+		},
 	})
 	mustPanicUsage(t, "Empty: the implementation returned the zero Value and no error", func() {
 		tenon.Call(empty, []tenon.Value{one}, tenon.Safe)
@@ -632,7 +636,9 @@ func TestConformance_FN023_ImplementationFailures(t *testing.T) {
 			Name:   "Failing",
 			Params: []tenon.Param{{Name: "v", Constraint: num}},
 			Result: num,
-			Impl:   func(args []tenon.Value, _ tenon.Constraint) (tenon.Value, error) { return tenon.Value{}, err },
+			Impl: func(args []tenon.Value, _ tenon.Constraint, _ tenon.Policy) (tenon.Value, error) {
+				return tenon.Value{}, err
+			},
 		})
 	}
 
@@ -662,7 +668,7 @@ func TestConformance_FN023_ImplementationFailures(t *testing.T) {
 		Name:   "Erroring",
 		Params: []tenon.Param{{Name: "v", Constraint: num}},
 		Result: num,
-		Impl: func(args []tenon.Value, _ tenon.Constraint) (tenon.Value, error) {
+		Impl: func(args []tenon.Value, _ tenon.Constraint, _ tenon.Policy) (tenon.Value, error) {
 			return tenon.ErrorVal(tenon.Diagnostic{Code: "app.no", Message: "no"}), nil
 		},
 	})
@@ -678,7 +684,7 @@ func TestConformance_FN023_ImplementationFailures(t *testing.T) {
 		Name:   "Panicking",
 		Params: []tenon.Param{{Name: "v", Constraint: num}},
 		Result: num,
-		Impl: func(args []tenon.Value, _ tenon.Constraint) (tenon.Value, error) {
+		Impl: func(args []tenon.Value, _ tenon.Constraint, _ tenon.Policy) (tenon.Value, error) {
 			return tenon.Add(args[0], tenon.Bool(true)), nil
 		},
 	})
@@ -694,7 +700,7 @@ func returning(name string, v tenon.Value) tenon.Function {
 		Name:   name,
 		Params: []tenon.Param{{Name: "s", Constraint: tenon.Exactly(tenon.StringType())}},
 		Result: tenon.Any(),
-		Impl:   func([]tenon.Value, tenon.Constraint) (tenon.Value, error) { return v, nil },
+		Impl:   func([]tenon.Value, tenon.Constraint, tenon.Policy) (tenon.Value, error) { return v, nil },
 	})
 }
 
@@ -710,7 +716,7 @@ func TestConformance_FN021_GivenValuesFromKnownArguments(t *testing.T) {
 		Name:   "Decode",
 		Params: []tenon.Param{{Name: "text", Constraint: tenon.Exactly(tenon.StringType())}},
 		Result: tenon.Any(),
-		Impl: func(args []tenon.Value, _ tenon.Constraint) (tenon.Value, error) {
+		Impl: func(args []tenon.Value, _ tenon.Constraint, _ tenon.Policy) (tenon.Value, error) {
 			return tenon.ParseJSON([]byte(args[0].AsString()), tenon.Any(), tenon.Safe)
 		},
 	})
@@ -753,7 +759,7 @@ func TestConformance_FN023_FailuresWithheldWhereRedacted(t *testing.T) {
 			Name:   "Parse",
 			Params: []tenon.Param{{Name: "s", Constraint: str, AllowMarked: admit}},
 			Result: tenon.Exactly(tenon.NumberType()),
-			Impl:   func(args []tenon.Value, _ tenon.Constraint) (tenon.Value, error) { return impl(args) },
+			Impl:   func(args []tenon.Value, _ tenon.Constraint, _ tenon.Policy) (tenon.Value, error) { return impl(args) },
 		})
 	}
 	failing := map[string]func(args []tenon.Value) (tenon.Value, error){
@@ -802,7 +808,7 @@ func TestConformance_FN023_FailuresWithheldWhereRedacted(t *testing.T) {
 		Name:   "Parse",
 		Params: []tenon.Param{{Name: "l", Constraint: tenon.ListOf(str)}},
 		Result: tenon.Exactly(tenon.NumberType()),
-		Impl: func(args []tenon.Value, _ tenon.Constraint) (tenon.Value, error) {
+		Impl: func(args []tenon.Value, _ tenon.Constraint, _ tenon.Policy) (tenon.Value, error) {
 			return tenon.Value{}, fmt.Errorf("cannot parse %q", args[0].Index(1).AsString())
 		},
 	})
@@ -813,10 +819,14 @@ func TestConformance_FN023_FailuresWithheldWhereRedacted(t *testing.T) {
 	// A derivation sees the arguments as the implementation does, and its
 	// refusal is withheld alike.
 	deriving := tenon.NewFunction(tenon.FunctionSpec{
-		Name:     "Parse",
-		Params:   []tenon.Param{{Name: "s", Constraint: str}},
-		ResultOf: func(args []tenon.Value) (tenon.Constraint, error) { return tenon.Constraint{}, errors.New(quote(args)) },
-		Impl:     func([]tenon.Value, tenon.Constraint) (tenon.Value, error) { return tenon.NumberFromInt(1), nil },
+		Name:   "Parse",
+		Params: []tenon.Param{{Name: "s", Constraint: str}},
+		ResultOf: func(args []tenon.Value, _ tenon.Policy) (tenon.Constraint, error) {
+			return tenon.Constraint{}, errors.New(quote(args))
+		},
+		Impl: func([]tenon.Value, tenon.Constraint, tenon.Policy) (tenon.Value, error) {
+			return tenon.NumberFromInt(1), nil
+		},
 	})
 	if got := tenon.Call(deriving, []tenon.Value{secret}, tenon.Safe); !got.IsError() || got.Diagnostics()[0].Message != withheld {
 		t.Errorf("a refusing derivation gave %v, want the message withheld", got)
@@ -863,7 +873,7 @@ func TestConformance_FN030_DiagnosticsLocateArguments(t *testing.T) {
 		Params:   []tenon.Param{{Name: "sep", Constraint: str}},
 		VarParam: &tenon.Param{Name: "parts", Constraint: str},
 		Result:   str,
-		Impl:     func(args []tenon.Value, _ tenon.Constraint) (tenon.Value, error) { return args[0], nil },
+		Impl:     func(args []tenon.Value, _ tenon.Constraint, _ tenon.Policy) (tenon.Value, error) { return args[0], nil },
 	})
 	got := tenon.Call(join, []tenon.Value{tenon.String(","), tenon.String("a"), tenon.Bool(true)}, tenon.Safe)
 	diags := got.Diagnostics()
@@ -909,14 +919,14 @@ func TestFunctionCallIsAnExample(t *testing.T) {
 func TestConformance_FN020_TheResultDerives(t *testing.T) {
 	conformance.Covers(t, "FN-020")
 	num := tenon.Exactly(tenon.NumberType())
-	impl := func(args []tenon.Value, _ tenon.Constraint) (tenon.Value, error) { return args[0], nil }
+	impl := func(args []tenon.Value, _ tenon.Constraint, _ tenon.Policy) (tenon.Value, error) { return args[0], nil }
 
 	// Exactly one of the constraint and the derivation.
 	mustPanicUsage(t, "the specification of Both has both a result constraint and a derivation", func() {
 		tenon.NewFunction(tenon.FunctionSpec{
 			Name:     "Both",
 			Result:   num,
-			ResultOf: func([]tenon.Value) (tenon.Constraint, error) { return num, nil },
+			ResultOf: func([]tenon.Value, tenon.Policy) (tenon.Constraint, error) { return num, nil },
 			Impl:     impl,
 		})
 	})
@@ -927,14 +937,14 @@ func TestConformance_FN020_TheResultDerives(t *testing.T) {
 	ident := tenon.NewFunction(tenon.FunctionSpec{
 		Name:   "Ident",
 		Params: []tenon.Param{{Name: "v", Constraint: tenon.Any()}},
-		ResultOf: func(args []tenon.Value) (tenon.Constraint, error) {
+		ResultOf: func(args []tenon.Value, _ tenon.Policy) (tenon.Constraint, error) {
 			derived++
 			if args[0].IsPending() {
 				return tenon.Any(), nil
 			}
 			return tenon.Exactly(args[0].Type()), nil
 		},
-		Impl: func(args []tenon.Value, _ tenon.Constraint) (tenon.Value, error) {
+		Impl: func(args []tenon.Value, _ tenon.Constraint, _ tenon.Policy) (tenon.Value, error) {
 			ran++
 			return args[0], nil
 		},
@@ -956,10 +966,12 @@ func TestConformance_FN020_TheResultDerives(t *testing.T) {
 
 	// Its refusal is a data failure, as the implementation's failures are.
 	refusing := tenon.NewFunction(tenon.FunctionSpec{
-		Name:     "Refusing",
-		Params:   []tenon.Param{{Name: "v", Constraint: tenon.Any()}},
-		ResultOf: func([]tenon.Value) (tenon.Constraint, error) { return tenon.Constraint{}, errors.New("no shape fits") },
-		Impl:     impl,
+		Name:   "Refusing",
+		Params: []tenon.Param{{Name: "v", Constraint: tenon.Any()}},
+		ResultOf: func([]tenon.Value, tenon.Policy) (tenon.Constraint, error) {
+			return tenon.Constraint{}, errors.New("no shape fits")
+		},
+		Impl: impl,
 	})
 	got = tenon.Call(refusing, []tenon.Value{tenon.Bool(true)}, tenon.Safe)
 	want := []tenon.Diagnostic{{Code: tenon.CodeFunctionFailed, Message: "no shape fits"}}
@@ -971,7 +983,7 @@ func TestConformance_FN020_TheResultDerives(t *testing.T) {
 	empty := tenon.NewFunction(tenon.FunctionSpec{
 		Name:     "Empty",
 		Params:   []tenon.Param{{Name: "v", Constraint: tenon.Any()}},
-		ResultOf: func([]tenon.Value) (tenon.Constraint, error) { return tenon.Constraint{}, nil },
+		ResultOf: func([]tenon.Value, tenon.Policy) (tenon.Constraint, error) { return tenon.Constraint{}, nil },
 		Impl:     impl,
 	})
 	mustPanicUsage(t, "Empty: the derivation returned the zero Constraint and no error", func() {
@@ -1007,7 +1019,7 @@ func TestConformance_FN022_DeclaredVolatility(t *testing.T) {
 		Params:   []tenon.Param{{Name: "seed", Constraint: num}},
 		Result:   num,
 		Volatile: true,
-		Impl: func(args []tenon.Value, _ tenon.Constraint) (tenon.Value, error) {
+		Impl: func(args []tenon.Value, _ tenon.Constraint, _ tenon.Policy) (tenon.Value, error) {
 			ran = true
 			return tenon.NumberFromInt(4), nil
 		},
@@ -1040,8 +1052,10 @@ func TestConformance_FN022_DeclaredVolatility(t *testing.T) {
 		Name:     "FreshIdent",
 		Params:   []tenon.Param{{Name: "v", Constraint: tenon.Any()}},
 		Volatile: true,
-		ResultOf: func(args []tenon.Value) (tenon.Constraint, error) { return tenon.Exactly(args[0].Type()), nil },
-		Impl:     func(args []tenon.Value, _ tenon.Constraint) (tenon.Value, error) { return args[0], nil },
+		ResultOf: func(args []tenon.Value, _ tenon.Policy) (tenon.Constraint, error) {
+			return tenon.Exactly(args[0].Type()), nil
+		},
+		Impl: func(args []tenon.Value, _ tenon.Constraint, _ tenon.Policy) (tenon.Value, error) { return args[0], nil },
 	})
 	got = tenon.Call(volatileIdent, []tenon.Value{tenon.Bool(true)}, tenon.Safe)
 	if got.IsKnown() || got.IsError() || !got.Type().Equal(tenon.BoolType()) {
@@ -1094,7 +1108,7 @@ func BenchmarkCallArguments(b *testing.B) {
 				Name:   "Count",
 				Params: []tenon.Param{{Name: "of", Constraint: tenon.Exactly(shape.arg.Type())}},
 				Result: tenon.Exactly(tenon.NumberType()),
-				Impl: func(args []tenon.Value, _ tenon.Constraint) (tenon.Value, error) {
+				Impl: func(args []tenon.Value, _ tenon.Constraint, _ tenon.Policy) (tenon.Value, error) {
 					return tenon.Length(args[0]), nil
 				},
 			})
@@ -1109,5 +1123,108 @@ func BenchmarkCallArguments(b *testing.B) {
 				}
 			})
 		}
+	}
+}
+
+func TestConformance_FN024_DeclaredNotNull(t *testing.T) {
+	conformance.Covers(t, "FN-024")
+	str := tenon.Exactly(tenon.StringType())
+	declared := func(name string, spec tenon.FunctionSpec) tenon.Function {
+		spec.Name = name
+		spec.NotNull = true
+		return tenon.NewFunction(spec)
+	}
+	echo := func(args []tenon.Value, _ tenon.Constraint, _ tenon.Policy) (tenon.Value, error) { return args[0], nil }
+	// isNotNull reports whether the null check of v is settled false, as a
+	// host evaluating x == null learns it before x is known.
+	isNotNull := func(v tenon.Value) bool {
+		n := tenon.IsNull(v)
+		return n.IsKnown() && !n.AsBool()
+	}
+
+	// The boundary's own answers carry the declaration: an unknown argument,
+	// a pending one, and a volatile call.
+	upper := declared("Upper", tenon.FunctionSpec{Params: []tenon.Param{{Name: "s", Constraint: str}}, Result: str, Impl: echo})
+	if got := tenon.Call(upper, []tenon.Value{tenon.Unknown(tenon.StringType())}, tenon.Safe); got.IsKnown() || !isNotNull(got) {
+		t.Errorf("an unknown argument gave %v, want the unknown String, not null", got)
+	}
+	anything := declared("Anything", tenon.FunctionSpec{Params: []tenon.Param{{Name: "v", Constraint: tenon.Any()}}, Result: tenon.Any(), Impl: echo})
+	if got := tenon.Call(anything, []tenon.Value{tenon.Pending(tenon.Any())}, tenon.Safe); !got.IsPending() || !isNotNull(got) {
+		t.Errorf("a pending argument gave %v, want a pending value known not to be null", got)
+	}
+	stamp := declared("Stamp", tenon.FunctionSpec{Params: []tenon.Param{{Name: "s", Constraint: str}}, Result: str, Volatile: true, Impl: echo})
+	if got := tenon.Call(stamp, []tenon.Value{tenon.String("x")}, tenon.Safe); got.IsKnown() || !isNotNull(got) {
+		t.Errorf("a volatile call gave %v, want the unknown String, not null", got)
+	}
+
+	// Without the declaration the same answers may still be null.
+	plain := tenon.NewFunction(tenon.FunctionSpec{Name: "Plain", Params: []tenon.Param{{Name: "s", Constraint: str}}, Result: str, Impl: echo})
+	if got := tenon.Call(plain, []tenon.Value{tenon.Unknown(tenon.StringType())}, tenon.Safe); isNotNull(got) {
+		t.Errorf("an undeclared function's unknown answer %v is not null, which nothing promised", got)
+	}
+
+	// What the implementation returns that is not known is narrowed too.
+	lenient := declared("Lenient", tenon.FunctionSpec{
+		Params: []tenon.Param{{Name: "s", Constraint: str, AllowUnknown: true}},
+		Result: str,
+		Impl: func([]tenon.Value, tenon.Constraint, tenon.Policy) (tenon.Value, error) {
+			return tenon.Unknown(tenon.StringType()), nil
+		},
+	})
+	if got := tenon.Call(lenient, []tenon.Value{tenon.Unknown(tenon.StringType())}, tenon.Safe); !isNotNull(got) {
+		t.Errorf("an implementation's unknown answer gave %v, want it narrowed not null", got)
+	}
+
+	// A null result breaks the declaration, a typed null or a given one.
+	for _, null := range []tenon.Value{tenon.Null(tenon.StringType()), tenon.Narrow(tenon.Pending(tenon.Any()), tenon.NullOnly())} {
+		liar := declared("Liar", tenon.FunctionSpec{
+			Params: []tenon.Param{{Name: "v", Constraint: tenon.Any()}},
+			Result: tenon.Any(),
+			Impl:   func([]tenon.Value, tenon.Constraint, tenon.Policy) (tenon.Value, error) { return null, nil },
+		})
+		mustPanicUsage(t, "Liar: the function declares its result never null, but the implementation returned", func() {
+			tenon.Call(liar, []tenon.Value{tenon.String("x")}, tenon.Safe)
+		})
+	}
+
+	// The declaration is introspected, and AsVolatile keeps it.
+	if !upper.NotNull() || plain.NotNull() || !upper.AsVolatile().NotNull() {
+		t.Errorf("NotNull reports %t, %t and %t, want true, false and true", upper.NotNull(), plain.NotNull(), upper.AsVolatile().NotNull())
+	}
+}
+
+func TestConformance_FN011_HooksFollowThePolicy(t *testing.T) {
+	conformance.Covers(t, "FN-011")
+	conformance.Covers(t, "FN-020")
+	// pair converts its second argument to the type of its first, as a
+	// function unifying its arguments does, and derives that type: both
+	// hooks are given the call's policy, and the conversion follows it.
+	var derivedUnder tenon.Policy
+	pair := tenon.NewFunction(tenon.FunctionSpec{
+		Name:   "Pair",
+		Params: []tenon.Param{{Name: "a", Constraint: tenon.Any()}, {Name: "b", Constraint: tenon.Any()}},
+		ResultOf: func(args []tenon.Value, p tenon.Policy) (tenon.Constraint, error) {
+			derivedUnder = p
+			return tenon.Exactly(tenon.ListType(args[0].Type())), nil
+		},
+		Impl: func(args []tenon.Value, result tenon.Constraint, p tenon.Policy) (tenon.Value, error) {
+			b := tenon.Convert(args[1], tenon.Exactly(args[0].Type()), p)
+			if b.IsError() {
+				return b, nil
+			}
+			return tenon.List(args[0].Type(), args[0], b), nil
+		},
+	})
+	one, text := tenon.NumberFromInt(1), tenon.String("2")
+	got := tenon.Call(pair, []tenon.Value{one, text}, tenon.Unsafe)
+	if want := tenon.List(tenon.NumberType(), one, tenon.NumberFromInt(2)); !got.Equal(want) || derivedUnder != tenon.Unsafe {
+		t.Errorf("Pair(1, \"2\") under Unsafe gave %v, derived under %v; want %v, derived under Unsafe", got, derivedUnder, want)
+	}
+	got = tenon.Call(pair, []tenon.Value{one, text}, tenon.Safe)
+	if !got.IsError() || derivedUnder != tenon.Safe {
+		t.Errorf("Pair(1, \"2\") under Safe gave %v, derived under %v; want the conversion's failure, derived under Safe", got, derivedUnder)
+	}
+	if _, err := tenon.ResultConstraint(pair, []tenon.Value{one, text}, tenon.Unsafe); err != nil || derivedUnder != tenon.Unsafe {
+		t.Errorf("ResultConstraint under Unsafe failed with %v, derived under %v", err, derivedUnder)
 	}
 }
