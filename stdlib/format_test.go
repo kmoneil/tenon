@@ -389,4 +389,49 @@ func TestConformance_LF021_FormatListBound(t *testing.T) {
 	if got := formatList("%100s", strs(many...)); got.IsError() || got.Len() != 100 {
 		t.Errorf("FormatList(%%100s, a hundred x) = %v, want a hundred strings", got)
 	}
+	// A number's size is its canonical text: two of 1e60000 are 21 bytes
+	// of argument, though each element is 60,001 digits, within Format's
+	// own bound; 120,002 bytes pass 64 times 23 and 65,536.
+	n := tenon.NumberFromText("1e60000")
+	if got := format("%d", n); got.IsError() || len(got.AsString()) != 60001 {
+		t.Errorf("Format(%%d, 1e60000) = %v, want 60,001 digits", got)
+	}
+	failsWith(t, "FormatList(%d, [1e60000, 1e60000])", formatList("%d", tenon.List(tenon.NumberType(), n, n)), tenon.CodeFunctionTooLarge, at(0))
+}
+
+func TestConformance_LF022_FormatBound(t *testing.T) {
+	conformance.Covers(t, "LF-022")
+	big, small := tenon.NumberFromText("1e999999"), tenon.NumberFromText("-1e-999999")
+	// A number written out to more digits than 64 times what the arguments
+	// say, and 64 KiB, fails, before its digits are made.
+	for _, tt := range []struct {
+		f string
+		n tenon.Value
+	}{
+		{"%d", big}, {"%x", big}, {"%X", big}, {"%o", big}, {"%b", big},
+		{"%f", big}, {"%.10000f", big}, {"%#v", big}, {"%#v", small},
+		{"%v", tenon.List(tenon.NumberType(), big)},
+		{"%b", tenon.NumberFromText("1e20000")},
+	} {
+		failsWith(t, "Format("+tt.f+", "+tt.n.String()+")", format(tt.f, tt.n), tenon.CodeFunctionTooLarge, at(0))
+	}
+	// Written in its canonical text, or to a precision, it fits.
+	for _, f := range []string{"%v", "%e", "%g", "%.3e", "%s"} {
+		if got := tenon.Call(stdlib.FormatFunc, []tenon.Value{tenon.String(f), big}, tenon.Unsafe); got.IsError() {
+			t.Errorf("Format(%s, 1e999999) = %v", f, got)
+		}
+	}
+	// At the bound: 1e70000 is 70,001 digits, past 64 times the 10 bytes of
+	// "%d" and "1e+70000", and 65,536; 1e60000's 60,001 are not.
+	if got := format("%d", tenon.NumberFromText("1e60000")); got.IsError() {
+		t.Errorf("Format(%%d, 1e60000) = %v", got)
+	}
+	failsWith(t, "Format(%d, 1e70000)", format("%d", tenon.NumberFromText("1e70000")), tenon.CodeFunctionTooLarge, at(0))
+	// A string read as a number is its bytes, and is written as its number.
+	failsWith(t, "Format(%d, \"1e999999\")", tenon.Call(stdlib.FormatFunc, []tenon.Value{tenon.String("%d"), tenon.String("1e999999")}, tenon.Unsafe), tenon.CodeFunctionTooLarge, at(0))
+	// What the known arguments write passes the bound before an argument
+	// not known yet: it fails now.
+	failsWith(t, "Format(%d%s, 1e999999, unknown)", format("%d%s", big, tenon.Unknown(tenon.StringType())), tenon.CodeFunctionTooLarge, at(0))
+	// The widest verb fits: 10,000 spaces.
+	formats(t, "%10000d", vals(tenon.NumberFromInt(1)), strings.Repeat(" ", 9999)+"1")
 }

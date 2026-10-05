@@ -334,6 +334,8 @@ var callVectors = []callVector{
 	{"Format/refused/an extra argument", "Format", []tenon.Value{s("%s"), s("a"), s("b")}, tenon.Safe, tenon.Constraint{}},
 	{"Format/refused/past the bound", "Format", []tenon.Value{s("%10001s"), s("x")}, tenon.Safe, tenon.Constraint{}},
 	{"Format/refused/a null", "Format", []tenon.Value{s("%s"), tenon.Null(str)}, tenon.Safe, tenon.Constraint{}},
+	{"Format/refused/a number past the bound", "Format", []tenon.Value{s("%d"), tenon.NumberFromText("1e70000")}, tenon.Safe, tenon.Constraint{}},
+	{"Format/a number within the bound", "Format", []tenon.Value{s("%.2e"), tenon.NumberFromText("1e999999")}, tenon.Safe, tenon.Constraint{}},
 	{"FormatList/iterated and repeated", "FormatList", []tenon.Value{s("%s-%s=%v"), tenon.List(str, s("a"), s("b")), s("x"), tenon.Tuple(n(1), n(2))}, tenon.Safe, tenon.Constraint{}},
 	{"FormatList/a set", "FormatList", []tenon.Value{s("%v"), tenon.Set(num, n(3), n(1))}, tenon.Safe, tenon.Constraint{}},
 	{"FormatList/no list", "FormatList", []tenon.Value{s("%s"), s("x")}, tenon.Safe, tenon.Constraint{}},

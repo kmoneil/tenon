@@ -533,21 +533,131 @@ func formatInteger(v *verb, n tenon.Value) string {
 
 // formatted renders the pieces with the arguments, the format at index 0,
 // up to the first verb whose argument is not known yet, and reports
-// whether it reached the end.
-func formatted(pieces []formatPiece, args []tenon.Value, p tenon.Policy) (string, bool) {
+// whether it reached the end; or it fails where the text would pass limit
+// bytes (LF-022). No piece is written past the limit, and no verb's text is
+// made where the digits its number needs already pass it.
+func formatted(pieces []formatPiece, args []tenon.Value, p tenon.Policy) (string, bool, tenon.Value) {
+	// The limit is at least 64 KiB, so the arguments are measured only
+	// once the text could pass that.
+	limit := -1
+	fits := func(n int64) bool {
+		if n <= 64<<10 {
+			return true
+		}
+		if limit < 0 {
+			limit = formatLimit(args)
+		}
+		return n <= int64(limit)
+	}
+	tooLarge := func() tenon.Value {
+		if limit < 0 {
+			limit = formatLimit(args)
+		}
+		return formatTooLarge(limit)
+	}
 	var b strings.Builder
 	for _, piece := range pieces {
 		if piece.verb == nil {
+			if !fits(int64(b.Len() + len(piece.literal))) {
+				return "", false, tooLarge()
+			}
 			b.WriteString(piece.literal)
 			continue
 		}
 		a := args[piece.verb.arg]
 		if !a.IsNull() && !a.IsKnown() {
-			return b.String(), false
+			return b.String(), false, tenon.Value{}
 		}
-		b.WriteString(formatVerb(piece.verb, a, p))
+		if !fits(int64(b.Len()) + verbLeast(piece.verb, a, p)) {
+			return "", false, tooLarge()
+		}
+		text := formatVerb(piece.verb, a, p)
+		if !fits(int64(b.Len() + len(text))) {
+			return "", false, tooLarge()
+		}
+		b.WriteString(text)
 	}
-	return b.String(), true
+	return b.String(), true, tenon.Value{}
+}
+
+// formatLimit returns the most bytes Format's answer of these arguments,
+// the format at index 0, may hold (LF-022): 64 times their size, and 64
+// KiB.
+func formatLimit(args []tenon.Value) int {
+	size := 0
+	for _, a := range args {
+		size += argumentSize(a)
+	}
+	return 64*size + 64<<10
+}
+
+// formatTooLarge returns Format's failure of an answer passing limit.
+func formatTooLarge(limit int) tenon.Value {
+	return tooLarge(0, "Format: the answer passes "+strconv.Itoa(limit)+
+		" bytes, 64 times the arguments' size and 64 KiB, the most it makes")
+}
+
+// verbLeast returns, without making it, at least how many bytes the verb
+// v writes of the known argument a under the policy p where the magnitude
+// of a number decides it: the JSON text of %#v, and of %v of anything but
+// a string, a number or a bool, exactly; the integer digits an integer
+// verb writes in its base, and %f's with its precision; and nothing for
+// any other verb, whose text the argument's size and the format's widths
+// and precisions bound.
+func verbLeast(v *verb, a tenon.Value, p tenon.Policy) int64 {
+	if a.IsNull() {
+		return 0
+	}
+	switch v.letter {
+	case 'v':
+		if !v.sharp {
+			switch a.Type().Kind() {
+			case tenon.KindString, tenon.KindNumber, tenon.KindBool:
+				return 0
+			}
+		}
+		return jsonLen(a, false)
+	case 'b', 'd', 'o', 'x', 'X', 'f':
+	default:
+		return 0
+	}
+	d := integerDigits(tenon.Convert(a, number, p))
+	switch v.letter {
+	case 'b':
+		// log2(10) is more than 3, log8(10) more than 1, log16(10) more
+		// than 4/5.
+		return 3*(d-1) + 1
+	case 'o':
+		return d
+	case 'x', 'X':
+		return 4*(d-1)/5 + 1
+	case 'f':
+		if q := int64(precisionOr(v, 6)); q > 0 {
+			return d + 1 + q
+		}
+	}
+	return d
+}
+
+// integerDigits returns how many decimal digits the integer part of the
+// known number n has, one where it is zero.
+func integerDigits(n tenon.Value) int64 {
+	small, c, exp := numbers.Dec(n).Parts()
+	var d int64
+	switch {
+	case c != nil:
+		d = int64(len(c.String()))
+		if c.Sign() < 0 {
+			d--
+		}
+	case small == 0:
+		return 1
+	default:
+		for u := small; u != 0; u /= 10 {
+			d++
+		}
+	}
+	return max(d+exp, 1)
 }
 
 // formatAnswer answers Format of the parsed pieces with the arguments, the
@@ -563,7 +673,10 @@ func formatAnswer(pieces []formatPiece, args []tenon.Value, p tenon.Policy) teno
 			return failure
 		}
 	}
-	s, complete := formatted(pieces, args, p)
+	s, complete, failure := formatted(pieces, args, p)
+	if !failure.IsZero() {
+		return failure
+	}
 	if complete {
 		return tenon.String(s)
 	}
@@ -686,17 +799,19 @@ func memberAt(v tenon.Value, j, i int) tenon.Value {
 	return tenon.ErrorVal(ds...)
 }
 
-// argumentSize returns how many bytes the known parts of the argument a
-// stand for, for FormatList's bound: a string's, and the JSON text of any
-// other value known.
+// argumentSize returns how many bytes the argument a stands for, for
+// Format's and FormatList's bounds (LF-021, LF-022): a string's, and for
+// any other value known the JSON text's, each number in its canonical text,
+// so that a number's size is what it says, not the digits it may be
+// written out to. A value not known yet stands for none.
 func argumentSize(a tenon.Value) int {
 	switch {
-	case a.IsNull() || !a.IsKnown():
+	case !a.IsNull() && !a.IsKnown():
 		return 0
-	case a.Type().Kind() == tenon.KindString:
+	case !a.IsNull() && a.Type().Kind() == tenon.KindString:
 		return len(a.AsString())
 	}
-	return len(jsonText(a))
+	return int(jsonLen(a, true))
 }
 
 // FormatListFunc writes its arguments into a format string as Format does,

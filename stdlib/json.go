@@ -5,6 +5,7 @@ import (
 	"math/big"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/kmoneil/tenon"
 	"github.com/kmoneil/tenon/internal/numbers"
@@ -81,6 +82,102 @@ func writeJSON(b *strings.Builder, v tenon.Value) {
 		}
 		writeJSONString(b, s)
 	}
+}
+
+// jsonLen returns how many bytes the JSON text of the known value v
+// carrying no mark has, without writing it: as jsonText writes it, or, where
+// canonical, with each number in its canonical text (NU-020).
+func jsonLen(v tenon.Value, canonical bool) int64 {
+	if v.IsNull() {
+		return 4
+	}
+	switch t := v.Type(); t.Kind() {
+	case tenon.KindBool:
+		return int64(len(strconv.FormatBool(v.AsBool())))
+	case tenon.KindNumber:
+		if canonical {
+			return int64(len(v.String()))
+		}
+		return positionalLen(v)
+	case tenon.KindString:
+		return jsonStringLen(v.AsString())
+	case tenon.KindList, tenon.KindSet, tenon.KindTuple:
+		n := int64(2)
+		for i, e := range v.Elements() {
+			if i > 0 {
+				n++
+			}
+			n += jsonLen(e, canonical)
+		}
+		return n
+	case tenon.KindMap:
+		n, i := int64(2), 0
+		for k, e := range v.MapEntries() {
+			if i > 0 {
+				n++
+			}
+			i++
+			n += jsonStringLen(k) + 1 + jsonLen(e, canonical)
+		}
+		return n
+	case tenon.KindObject:
+		n, i := int64(2), 0
+		for name, e := range v.Attributes() {
+			if i > 0 {
+				n++
+			}
+			i++
+			n += jsonStringLen(name) + 1 + jsonLen(e, canonical)
+		}
+		return n
+	}
+	var b strings.Builder
+	writeJSON(&b, v)
+	return int64(b.Len())
+}
+
+// jsonStringLen returns how many bytes writeJSONString writes of s.
+func jsonStringLen(s string) int64 {
+	n := int64(2)
+	for _, r := range s {
+		switch {
+		case r == '"' || r == '\\' || r == '\b' || r == '\f' || r == '\n' || r == '\r' || r == '\t':
+			n += 2
+		case r < 0x20 || r == '<' || r == '>' || r == '&' || r == 0x2028 || r == 0x2029:
+			n += 6
+		default:
+			n += int64(utf8.RuneLen(r))
+		}
+	}
+	return n
+}
+
+// positionalLen returns how many bytes positional writes of the known
+// number v, without writing them.
+func positionalLen(v tenon.Value) int64 {
+	small, coefficient, exp := numbers.Dec(v).Parts()
+	if coefficient == nil {
+		coefficient = big.NewInt(small)
+	}
+	digits := new(big.Int).Abs(coefficient).String()
+	sign := int64(0)
+	if coefficient.Sign() < 0 {
+		sign = 1
+	}
+	switch {
+	case digits == "0":
+		return 1
+	case exp >= 0:
+		return sign + int64(len(digits)) + exp
+	}
+	point := int64(len(digits)) + exp
+	if point <= 0 {
+		return sign + 2 - point + int64(len(strings.TrimRight(digits, "0")))
+	}
+	if fraction := strings.TrimRight(digits[point:], "0"); fraction != "" {
+		return sign + point + 1 + int64(len(fraction))
+	}
+	return sign + point
 }
 
 // writeJSONString writes s as a JSON string to b, escaping as encoding/json
