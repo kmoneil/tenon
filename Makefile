@@ -8,7 +8,7 @@
 # The tests run with -count=1 because a cached result records nothing.
 RULECOV := $(CURDIR)/.rulecov
 
-.PHONY: check check-slow determinism fuzz fuzz-parse fuzz-string fuzz-string-xtext fuzz-deserialize fuzz-convert fuzz-json release-fuzz growth bench bench-smoke rules codes report lint vuln release-notes ctytenon-released
+.PHONY: check check-slow determinism fuzz fuzz-parse fuzz-string fuzz-string-xtext fuzz-deserialize fuzz-convert fuzz-json release-fuzz growth bench bench-smoke rules codes report lint vuln release-notes ctytenon-released proof
 
 # tools/unigen is a module of its own, which ./... does not reach, so that
 # tenon requires no other module: its tests hold internal/uni to Unicode's own
@@ -137,6 +137,14 @@ bench:
 # benchmarks broken until a release measures them. CI runs it with lint.
 bench-smoke:
 	cd bench && go vet ./... && go run $(STATICCHECK) ./... && go test -bench . -benchtime 1x ./...
+
+# proof evaluates expressions with HCL as it is and with the standard
+# library's functions in place of go-cty's, as a host that keeps HCL
+# unmodified would put them, and holds each answer to what it should be. proof
+# is a module of its own, the only one that requires HCL, so make check does
+# not reach it; CI runs this beside bench-smoke.
+proof:
+	cd proof && go vet ./... && go run $(STATICCHECK) ./... && go test -race -count=1 ./...
 
 # lint runs staticcheck and vuln runs govulncheck, each at the version named
 # here through go run, so that neither enters go.mod as a dependency. CI runs

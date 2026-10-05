@@ -85,8 +85,9 @@ func TestTenonRequiresNoModule(t *testing.T) {
 }
 
 // TestOneGoCty holds the bench module, whose tests assert go-cty's behavior
-// in its open issues, and ctytenon, which bridges to go-cty, to requiring one
-// version of it, so that what the probes say of go-cty is what the bridge
+// in its open issues, the proof module, which evaluates with go-cty's HCL,
+// and ctytenon, which bridges to go-cty, to requiring one version of it, so
+// that what the probes and the proof say of go-cty is what the bridge
 // meets.
 func TestOneGoCty(t *testing.T) {
 	version := func(gomod string) string {
@@ -102,7 +103,10 @@ func TestOneGoCty(t *testing.T) {
 		t.Fatalf("%s requires no go-cty", gomod)
 		return ""
 	}
-	if bench, bridge := version(filepath.Join("bench", "go.mod")), version(filepath.Join("ctytenon", "go.mod")); bench != bridge {
-		t.Errorf("the bench module requires go-cty %s, and ctytenon %s", bench, bridge)
+	bridge := version(filepath.Join("ctytenon", "go.mod"))
+	for _, module := range []string{"bench", "proof"} {
+		if v := version(filepath.Join(module, "go.mod")); v != bridge {
+			t.Errorf("the %s module requires go-cty %s, and ctytenon %s", module, v, bridge)
+		}
 	}
 }

@@ -144,3 +144,46 @@ func TestConformance_LB010_UnknownAnswersSayTheLeast(t *testing.T) {
 		}
 	}
 }
+
+func TestConformance_LN011_Equality(t *testing.T) {
+	conformance.Covers(t, "LN-011")
+	str, num := tenon.StringType(), tenon.NumberType()
+	untyped := tenon.Narrow(tenon.Pending(tenon.Any()), tenon.NullOnly())
+	tests := []struct {
+		a, b tenon.Value
+		want tenon.Value
+	}{
+		// A language's untyped null against a null of any type, a value,
+		// itself, and what is not known yet.
+		{untyped, tenon.Null(str), tenon.Bool(true)},
+		{tenon.Null(num), untyped, tenon.Bool(true)},
+		{untyped, tenon.String("x"), tenon.Bool(false)},
+		{untyped, untyped, tenon.Bool(true)},
+		{untyped, tenon.Unknown(str), tenon.Unknown(tenon.BoolType())},
+		{untyped, tenon.Narrow(tenon.Unknown(str), tenon.NotNull()), tenon.Bool(false)},
+		// A pending value that is not null resolves as well, and says no
+		// more than it did.
+		{tenon.Pending(tenon.Any()), tenon.String("x"), tenon.Unknown(tenon.BoolType())},
+		// Typed values compare as Equals compares them.
+		{tenon.Null(str), tenon.Null(num), tenon.Bool(false)},
+		{tenon.NumberFromInt(1), tenon.String("1"), tenon.Bool(false)},
+		{tenon.NumberFromText("1.50"), tenon.NumberFromText("1.5"), tenon.Bool(true)},
+	}
+	for _, tt := range tests {
+		got := call(stdlib.EqualFunc, tt.a, tt.b)
+		if !tenon.Identical(got, tt.want) && !(got.IsResolved() && tt.want.IsResolved() && !got.IsKnown() && !tt.want.IsKnown() && got.Type().Equal(tt.want.Type())) {
+			t.Errorf("Equal(%v, %v) = %v, want %v", tt.a, tt.b, got, tt.want)
+		}
+		if got, want := call(stdlib.NotEqualFunc, tt.a, tt.b), tenon.Not(got); !tenon.Identical(got, want) {
+			t.Errorf("NotEqual(%v, %v) = %v, want %v", tt.a, tt.b, got, want)
+		}
+	}
+	// Typed operands answer as Equals answers them, marks and all.
+	a, b := tenon.WithMarks(tenon.String("x"), secret{}), tenon.String("x")
+	if got, want := call(stdlib.EqualFunc, a, b), tenon.Equals(a, b); !tenon.Identical(got, want) {
+		t.Errorf("Equal(%v, %v) = %v, want %v", a, b, got, want)
+	}
+	if got := call(stdlib.EqualFunc, tenon.WithMarks(untyped, secret{}), tenon.Null(str)); !got.Equal(tenon.WithMarks(tenon.Bool(true), secret{})) {
+		t.Errorf("Equal(a redacted untyped null, null) = %v, want true carrying the mark", got)
+	}
+}

@@ -15,7 +15,22 @@ import (
 // library is the standard library's functions, by the names the
 // specification gives them.
 var library = map[string]tenon.Function{
-	"AssertNotNull": stdlib.AssertNotNullFunc,
+	"AssertNotNull":        stdlib.AssertNotNullFunc,
+	"Add":                  stdlib.AddFunc,
+	"Subtract":             stdlib.SubtractFunc,
+	"Multiply":             stdlib.MultiplyFunc,
+	"Divide":               stdlib.DivideFunc,
+	"Modulo":               stdlib.ModuloFunc,
+	"Negate":               stdlib.NegateFunc,
+	"LessThan":             stdlib.LessThanFunc,
+	"LessThanOrEqualTo":    stdlib.LessThanOrEqualToFunc,
+	"GreaterThan":          stdlib.GreaterThanFunc,
+	"GreaterThanOrEqualTo": stdlib.GreaterThanOrEqualToFunc,
+	"Equal":                stdlib.EqualFunc,
+	"NotEqual":             stdlib.NotEqualFunc,
+	"Not":                  stdlib.NotFunc,
+	"And":                  stdlib.AndFunc,
+	"Or":                   stdlib.OrFunc,
 }
 
 // callVector is a call of a library function with arguments under a policy.
@@ -40,6 +55,40 @@ var callVectors = []callVector{
 	{"AssertNotNull/refused/pending null", "AssertNotNull", []tenon.Value{tenon.Narrow(tenon.Pending(tenon.Any()), tenon.NullOnly())}, tenon.Safe},
 	{"AssertNotNull/refused/redacted null", "AssertNotNull", []tenon.Value{tenon.WithMarks(tenon.Null(str), secret{})}, tenon.Safe},
 	{"AssertNotNull/refused/arity", "AssertNotNull", []tenon.Value{n(1), n(2)}, tenon.Safe},
+	{"Add/exact", "Add", []tenon.Value{tenon.NumberFromText("0.1"), tenon.NumberFromText("0.2")}, tenon.Safe},
+	{"Add/large", "Add", []tenon.Value{tenon.NumberFromText("1e200"), n(1)}, tenon.Safe},
+	{"Add/a range", "Add", []tenon.Value{tenon.Narrow(tenon.Unknown(num), tenon.NumberMin(n(1), true)), n(1)}, tenon.Safe},
+	{"Add/a string under Unsafe", "Add", []tenon.Value{s("2"), n(3)}, tenon.Unsafe},
+	{"Add/marked", "Add", []tenon.Value{tenon.WithMarks(n(2), plain), n(3)}, tenon.Safe},
+	{"Add/refused/null", "Add", []tenon.Value{tenon.Null(num), n(1)}, tenon.Safe},
+	{"Add/refused/a string under Safe", "Add", []tenon.Value{s("2"), n(3)}, tenon.Safe},
+	{"Subtract/exact", "Subtract", []tenon.Value{tenon.NumberFromText("0.3"), tenon.NumberFromText("0.1")}, tenon.Safe},
+	{"Multiply/exact", "Multiply", []tenon.Value{tenon.NumberFromText("1.1"), tenon.NumberFromText("1.1")}, tenon.Safe},
+	{"Divide/terminating", "Divide", []tenon.Value{n(1), n(8)}, tenon.Safe},
+	{"Divide/rounded", "Divide", []tenon.Value{n(2), n(3)}, tenon.Safe},
+	{"Divide/refused/by zero", "Divide", []tenon.Value{n(1), n(0)}, tenon.Safe},
+	{"Divide/refused/an unknown by zero", "Divide", []tenon.Value{tenon.Unknown(num), n(0)}, tenon.Safe},
+	{"Modulo/the dividend's sign", "Modulo", []tenon.Value{n(-7), n(3)}, tenon.Safe},
+	{"Modulo/decimal", "Modulo", []tenon.Value{tenon.NumberFromText("0.9"), tenon.NumberFromText("0.3")}, tenon.Safe},
+	{"Modulo/large", "Modulo", []tenon.Value{tenon.NumberFromText("1e200"), n(7)}, tenon.Safe},
+	{"Modulo/refused/by zero", "Modulo", []tenon.Value{n(1), n(0)}, tenon.Safe},
+	{"Negate/a number", "Negate", []tenon.Value{tenon.NumberFromText("-2.5")}, tenon.Safe},
+	{"Negate/a range", "Negate", []tenon.Value{tenon.Narrow(tenon.Unknown(num), tenon.NumberMin(n(1), true))}, tenon.Safe},
+	{"LessThan/numbers", "LessThan", []tenon.Value{n(1), tenon.NumberFromText("1.5")}, tenon.Safe},
+	{"LessThanOrEqualTo/equal", "LessThanOrEqualTo", []tenon.Value{tenon.NumberFromText("1.50"), tenon.NumberFromText("1.5")}, tenon.Safe},
+	{"GreaterThan/strings as numbers", "GreaterThan", []tenon.Value{s("10"), s("9")}, tenon.Unsafe},
+	{"GreaterThan/settled by a range", "GreaterThan", []tenon.Value{tenon.Narrow(tenon.Unknown(num), tenon.NumberMin(n(5), true)), n(1)}, tenon.Safe},
+	{"GreaterThanOrEqualTo/numbers", "GreaterThanOrEqualTo", []tenon.Value{n(2), n(3)}, tenon.Safe},
+	{"Equal/an untyped null and a typed one", "Equal", []tenon.Value{tenon.Narrow(tenon.Pending(tenon.Any()), tenon.NullOnly()), tenon.Null(str)}, tenon.Safe},
+	{"Equal/an untyped null and a value", "Equal", []tenon.Value{tenon.Narrow(tenon.Pending(tenon.Any()), tenon.NullOnly()), s("x")}, tenon.Safe},
+	{"Equal/two untyped nulls", "Equal", []tenon.Value{tenon.Narrow(tenon.Pending(tenon.Any()), tenon.NullOnly()), tenon.Narrow(tenon.Pending(tenon.Any()), tenon.NullOnly())}, tenon.Safe},
+	{"Equal/types differ", "Equal", []tenon.Value{n(1), s("1")}, tenon.Safe},
+	{"Equal/numbers spelled differently", "Equal", []tenon.Value{tenon.NumberFromText("1.50"), tenon.NumberFromText("1.5")}, tenon.Safe},
+	{"NotEqual/an untyped null and a value", "NotEqual", []tenon.Value{tenon.Narrow(tenon.Pending(tenon.Any()), tenon.NullOnly()), s("x")}, tenon.Safe},
+	{"Not/true", "Not", []tenon.Value{tenon.Bool(true)}, tenon.Safe},
+	{"And/false decides", "And", []tenon.Value{tenon.Bool(false), tenon.Unknown(boo)}, tenon.Safe},
+	{"Or/true decides", "Or", []tenon.Value{tenon.Unknown(boo), tenon.Bool(true)}, tenon.Safe},
+	{"Or/refused/null", "Or", []tenon.Value{tenon.Bool(true), tenon.Null(boo)}, tenon.Safe},
 }
 
 // callFile is the layout of functions.json.
@@ -69,7 +118,7 @@ type callArg struct {
 // answers, its display form and its encoding, or the failures it gives, each
 // code with its path.
 func TestConformance_LB001_FunctionVectors(t *testing.T) {
-	conformance.Covers(t, "LB-001", "LN-083")
+	conformance.Covers(t, "LB-001", "LN-001", "LN-002", "LN-010", "LN-011", "LN-020", "LN-083")
 	f := callFile{
 		Format: 1,
 		About: "Each entry is a call of a function of the standard library (§13 to §20), named as the specification " +

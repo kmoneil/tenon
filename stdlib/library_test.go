@@ -18,7 +18,22 @@ import (
 // specification gives it. TestLibraryIsWhole holds the package to it, so a
 // function added without its entry here fails the run.
 var library = map[string]tenon.Function{
-	"AssertNotNull": stdlib.AssertNotNullFunc,
+	"AssertNotNull":        stdlib.AssertNotNullFunc,
+	"Add":                  stdlib.AddFunc,
+	"Subtract":             stdlib.SubtractFunc,
+	"Multiply":             stdlib.MultiplyFunc,
+	"Divide":               stdlib.DivideFunc,
+	"Modulo":               stdlib.ModuloFunc,
+	"Negate":               stdlib.NegateFunc,
+	"LessThan":             stdlib.LessThanFunc,
+	"LessThanOrEqualTo":    stdlib.LessThanOrEqualToFunc,
+	"GreaterThan":          stdlib.GreaterThanFunc,
+	"GreaterThanOrEqualTo": stdlib.GreaterThanOrEqualToFunc,
+	"Equal":                stdlib.EqualFunc,
+	"NotEqual":             stdlib.NotEqualFunc,
+	"Not":                  stdlib.NotFunc,
+	"And":                  stdlib.AndFunc,
+	"Or":                   stdlib.OrFunc,
 }
 
 // TestLibraryIsWhole holds library to the package: every exported variable

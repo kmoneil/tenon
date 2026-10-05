@@ -15,6 +15,16 @@
   `conformance/vectors/functions.json` holds calls of the library's
   functions, their arguments and what each answers or how it fails, for
   testing another implementation of it.
+- The library's operators: `AddFunc`, `SubtractFunc`, `MultiplyFunc`,
+  `DivideFunc`, `ModuloFunc`, `NegateFunc`, `LessThanFunc`,
+  `LessThanOrEqualToFunc`, `GreaterThanFunc`, `GreaterThanOrEqualToFunc`,
+  `EqualFunc`, `NotEqualFunc`, `NotFunc`, `AndFunc` and `OrFunc`, each
+  tenon's operation of its name offered as a function: exact arithmetic,
+  division and modulo by zero failing, an unknown operand's bounds carried
+  into the answer. `EqualFunc` settles a language's untyped `null` against
+  the other operand's type first, so `x == null` is true of a null of any
+  type. The specification says so (`LN-001`, `LN-002`, `LN-010`, `LN-011`,
+  `LN-020`).
 - A function may declare its result never null (`FunctionSpec.NotNull`,
   read back with `Function.NotNull`). Every answer the call makes that is
   not a known value then says so, the unknown answer of an argument not
