@@ -704,6 +704,40 @@ var counterparts = map[string]counterpart{
 			},
 		}},
 	},
+	"Join": {
+		cty: ctystdlib.JoinFunc,
+		ten: stdlib.JoinFunc,
+		cases: [][]cty.Value{
+			{cty.StringVal(","), cty.ListVal([]cty.Value{cty.StringVal("a"), cty.StringVal("b")}), cty.ListVal([]cty.Value{cty.StringVal("c")})},
+			{cty.StringVal(","), cty.ListValEmpty(cty.String), cty.ListVal([]cty.Value{cty.StringVal("a")})},
+			{cty.StringVal(",")},
+			{cty.StringVal(","), cty.ListVal([]cty.Value{cty.StringVal("a"), cty.NullVal(cty.String)})},
+			{cty.StringVal(","), cty.ListVal([]cty.Value{cty.StringVal("a"), cty.NullVal(cty.String), cty.UnknownVal(cty.String)})},
+			{cty.StringVal(","), cty.ListVal([]cty.Value{cty.StringVal("x"), cty.UnknownVal(cty.String).Refine().StringPrefix("ab-").NewValue()})},
+		},
+		random: func(r *rand.Rand) []cty.Value {
+			args := []cty.Value{randomCtyValue(r, cty.String)}
+			for range 1 + r.Intn(3) {
+				args = append(args, randomCtyValue(r, cty.List(cty.String)))
+			}
+			return args
+		},
+		divergences: []divergence{knownNullBesideUnknown(1)},
+	},
+	"Sort": {
+		cty: ctystdlib.SortFunc,
+		ten: stdlib.SortFunc,
+		cases: [][]cty.Value{
+			{cty.ListVal([]cty.Value{cty.StringVal("b"), cty.StringVal("a"), cty.StringVal("B"), cty.StringVal("\U000000E9"), cty.StringVal("z")})},
+			{cty.ListVal([]cty.Value{cty.StringVal("10"), cty.StringVal("9"), cty.StringVal("1")})},
+			{cty.ListVal([]cty.Value{cty.StringVal("a"), cty.NullVal(cty.String)})},
+			{cty.ListVal([]cty.Value{cty.StringVal("a"), cty.NullVal(cty.String), cty.UnknownVal(cty.String)})},
+			{cty.ListVal([]cty.Value{cty.StringVal("a"), cty.UnknownVal(cty.String)})},
+			{cty.ListValEmpty(cty.String)},
+		},
+		random:      func(r *rand.Rand) []cty.Value { return []cty.Value{randomCtyValue(r, cty.List(cty.String))} },
+		divergences: []divergence{knownNullBesideUnknown(0)},
+	},
 	"Lookup": {
 		cty: ctystdlib.LookupFunc,
 		ten: stdlib.LookupFunc,
@@ -1031,6 +1065,38 @@ func setOperation(c function.Function, ten tenon.Function, n int) counterpart {
 				return slices.Contains(ets, cty.Bool) && (slices.Contains(ets, cty.Number) || slices.Contains(ets, cty.String))
 			},
 		}},
+	}
+}
+
+// knownNullBesideUnknown is the divergence of a call whose lists, the
+// arguments from first on, hold a null element beside an argument, a list
+// or an element not known yet: cty answers unknown, and tenon fails at the
+// null now, whatever the rest turns out to be (UN-011).
+func knownNullBesideUnknown(first int) divergence {
+	return divergence{
+		why: "a list holding a null element beside a part not known yet: cty answers unknown, and tenon fails at the null now, whatever the rest turns out to be (LB-011, LS-024, LS-026)",
+		match: func(args []cty.Value) bool {
+			null, unknown := false, false
+			for _, a := range args[:first] {
+				unknown = unknown || !a.IsKnown()
+			}
+			for _, a := range args[first:] {
+				l, _ := a.UnmarkDeep()
+				if !l.IsKnown() {
+					unknown = true
+					continue
+				}
+				if l.IsNull() || !l.CanIterateElements() {
+					continue
+				}
+				for it := l.ElementIterator(); it.Next(); {
+					_, e := it.Element()
+					null = null || e.IsKnown() && e.IsNull()
+					unknown = unknown || !e.IsKnown()
+				}
+			}
+			return null && unknown
+		},
 	}
 }
 
