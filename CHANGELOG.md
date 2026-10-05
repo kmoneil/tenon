@@ -1,6 +1,28 @@
 # Changelog
 
-## Unreleased
+## 0.17.0 (2026-10-05)
+
+The standard library's text functions: go-cty's 21 functions over text,
+its strings, `Format` and `FormatList`, and patterns, each under the
+Unicode version tenon states whatever the Go toolchain's. Case conversion is
+Unicode's full mapping, lengths and substrings count grapheme clusters,
+searches and trims cut only where a cluster ends, numbers are formatted
+from their exact values, and patterns are read as Go 1.26 reads them,
+with the classes and case folding of Unicode 15.0.0, on every toolchain.
+A function whose answer multiplies its arguments is bounded before it
+works. It implements version 0.15.0 of the tenon specification, which
+makes §15 to §17 normative: 354 rules.
+
+The minor version moves for the additions.
+
+**Upgrading from 0.16.0.** Nothing changes for an existing program but
+one answer: `EqualFunc` compares two tuples or objects whose types wait
+on untyped nulls member by member, so `[null] == [null]` is true where it
+was unknown (#208). `Convert` gives a value already of its target's type
+back as it is, faster and the same. Documents decode as they did, and
+values encode to the same bytes.
+
+**What `CONFORMANCE.md` states.** 354 of 354.
 
 ### Added
 

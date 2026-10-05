@@ -37,9 +37,9 @@ fmt.Println(address.IsKnown(), tenon.Length(address))
 // false unknown(number, not null, >= 0)
 ```
 
-    go get github.com/kmoneil/tenon@v0.16.0
+    go get github.com/kmoneil/tenon@v0.17.0
 
-Version 0.16.0 implements version 0.14.0 of the tenon specification. A
+Version 0.17.0 implements version 0.15.0 of the tenon specification. A
 conformance test covers every one of its 354 rules, as `CONFORMANCE.md`
 reports; `CHANGELOG.md` says what each release holds, and, where there are
 any, which rules the report states more widely than its test exercises.
@@ -331,14 +331,14 @@ and what tenon does with its counterpart.
 tenon does more for each value than a Go map does: it parses every number
 into an exact decimal, normalizes every string, and records what is known
 about each value. Beside go-cty, the value system it answers, it is faster
-at everything measured here but calling a function of one's own, at every
-size, and uses less memory at all of it but converting to a schema, where
-the two are about even, and calling a function. A call costs more because
-it does more: tenon converts every argument to its parameter's constraint
-and answers every argument state inside the call, where go-cty checks
-conformance only and leaves both to each caller, unmeasured. Calling the
-library's merge, tenon is faster all the same, with about twice the
-memory.
+at everything measured here, at every size, but formatting text, where
+go-cty is a few percent ahead; and it uses less memory at all of it but
+calling functions. A call does more: tenon converts every argument to its
+parameter's constraint and answers every argument state inside the call,
+where go-cty checks conformance only and leaves both to each caller,
+unmeasured. It is faster all the same, and takes more memory for it: half
+as much again as go-cty for a function of one's own, an eighth more for
+the library's merge, and twice as much for its format.
 [`BENCHMARKS.md`](BENCHMARKS.md) has every size, the memory each operation
 takes, and what each library does per value.
 
@@ -347,14 +347,15 @@ For a configuration of 32 KB, measured on Apple M5 Max with go1.26.4:
 
 | | encoding/json | tenon | go-cty |
 | --- | --- | --- | --- |
-| Parse JSON into a value | 260 µs | 539 µs | 4.52 ms |
-| Convert to a schema | – | 550 µs | 1.81 ms |
-| Encode and decode | 451 µs | 408 µs | 3.38 ms |
-| Compare two copies | 499 µs | 10.3 µs | 8.16 ms |
-| Read a nested value | 16.0 ns | 58.7 ns | 95.7 ns |
-| Diff one change | – | 179 µs | – |
-| Call a function | – | 104 µs | 37.0 µs |
-| Call a library function | – | 237 µs | 258 µs |
+| Parse JSON into a value | 245 µs | 539 µs | 4.78 ms |
+| Convert to a schema | – | 606 µs | 1.88 ms |
+| Encode and decode | 461 µs | 411 µs | 3.42 ms |
+| Compare two copies | 473 µs | 10.7 µs | 7.62 ms |
+| Read a nested value | 15.3 ns | 58.5 ns | 93.2 ns |
+| Diff one change | – | 169 µs | – |
+| Call a function | – | 25.7 µs | 37.8 µs |
+| Call a library function | – | 155 µs | 282 µs |
+| Format text | – | 174 µs | 170 µs |
 <!-- benchmarks:end -->
 
 ## Stability
