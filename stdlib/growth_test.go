@@ -24,5 +24,23 @@ func BenchmarkLibraryGrowth(b *testing.B) {
 				tenon.Call(stdlib.DistinctFunc, []tenon.Value{list}, tenon.Safe)
 			}
 		})
+		// Merge reads each argument once, a map not known yet among them
+		// leaving every attribute before it open to its element type.
+		var maps, objects []tenon.Value
+		for i := range size / 2 {
+			key := fmt.Sprint(i)
+			maps = append(maps, tenon.Map(tenon.NumberType(), map[string]tenon.Value{key: tenon.NumberFromInt(int64(i))}), tenon.Unknown(tenon.MapType(tenon.NumberType())))
+			objects = append(objects, tenon.Object(map[string]tenon.Value{key: tenon.String(key)}), tenon.Unknown(tenon.MapType(tenon.NumberType())))
+		}
+		b.Run(fmt.Sprintf("merge-maps/%d", size), func(b *testing.B) {
+			for b.Loop() {
+				tenon.Call(stdlib.MergeFunc, maps, tenon.Safe)
+			}
+		})
+		b.Run(fmt.Sprintf("merge-objects/%d", size), func(b *testing.B) {
+			for b.Loop() {
+				tenon.Call(stdlib.MergeFunc, objects, tenon.Safe)
+			}
+		})
 	}
 }

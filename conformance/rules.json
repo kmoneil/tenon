@@ -270,6 +270,10 @@
     {"id":"LC-030","area":"LC","withdrawn":false,"outline":false},
     {"id":"LC-031","area":"LC","withdrawn":false,"outline":false},
     {"id":"LC-032","area":"LC","withdrawn":false,"outline":false},
-    {"id":"LC-033","area":"LC","withdrawn":false,"outline":false}
+    {"id":"LC-033","area":"LC","withdrawn":false,"outline":false},
+    {"id":"LC-034","area":"LC","withdrawn":false,"outline":false},
+    {"id":"LC-035","area":"LC","withdrawn":false,"outline":false},
+    {"id":"LC-036","area":"LC","withdrawn":false,"outline":false},
+    {"id":"LC-037","area":"LC","withdrawn":false,"outline":false}
   ]
 }

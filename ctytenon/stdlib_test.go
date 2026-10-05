@@ -264,6 +264,75 @@ var counterparts = map[string]counterpart{
 			},
 		}},
 	},
+	"Merge": {
+		cty: ctystdlib.MergeFunc,
+		ten: stdlib.MergeFunc,
+		cases: [][]cty.Value{
+			{},
+			{numberMap("a", 1), numberMap("b", 2)},
+			{numberMap("a", 1), cty.MapVal(map[string]cty.Value{"a": cty.StringVal("x")})},
+			{cty.ObjectVal(map[string]cty.Value{"a": cty.NumberIntVal(1)}), cty.ObjectVal(map[string]cty.Value{"a": cty.StringVal("x"), "b": cty.NumberIntVal(2)})},
+			{cty.NullVal(cty.Object(map[string]cty.Type{"a": cty.Number}))},
+			{cty.NullVal(cty.Map(cty.Number))},
+			{cty.MapVal(map[string]cty.Value{"a": cty.UnknownVal(cty.Number)}), numberMap("b", 2)},
+			{numberMap("\u00e9", 1), numberMap("e\u0301", 2)},
+			{cty.MapVal(map[string]cty.Value{"k": cty.ObjectVal(map[string]cty.Value{"a": cty.True})}), cty.MapVal(map[string]cty.Value{"k": cty.ObjectVal(map[string]cty.Value{"b": cty.True})})},
+			{cty.ObjectVal(map[string]cty.Value{"a": cty.NumberIntVal(1)}), cty.UnknownVal(cty.Object(map[string]cty.Type{"b": cty.Number}))},
+			{cty.ObjectVal(map[string]cty.Value{"a": cty.NumberIntVal(1)}), cty.UnknownVal(cty.Object(map[string]cty.Type{"b": cty.Number})).RefineNotNull()},
+			{cty.UnknownVal(cty.Map(cty.Number)), cty.ObjectVal(map[string]cty.Value{"a": cty.NumberIntVal(1)})},
+			{cty.NullVal(cty.DynamicPseudoType), numberMap("a", 1)},
+			{cty.NullVal(cty.Object(map[string]cty.Type{"a": cty.Number})).Mark("sensitive"), cty.ObjectVal(map[string]cty.Value{"b": cty.NumberIntVal(2)})},
+			{cty.NullVal(cty.Map(cty.Number)).Mark("sensitive"), numberMap("b", 2)},
+			{cty.UnknownVal(cty.Map(cty.Number)).Mark("sensitive"), numberMap("b", 2)},
+			{cty.ListValEmpty(cty.String)},
+		},
+		random: func(r *rand.Rand) []cty.Value {
+			args := make([]cty.Value, r.Intn(4))
+			for i := range args {
+				typ := cty.Map(cty.Number)
+				if r.Intn(3) == 0 {
+					typ = randomMapOrObject(r)
+				}
+				args[i] = randomCtyValue(r, typ)
+				switch r.Intn(10) {
+				case 0:
+					args[i] = cty.NullVal(cty.DynamicPseudoType)
+				case 1:
+					args[i] = args[i].Mark("sensitive")
+				}
+			}
+			return args
+		},
+		divergences: []divergence{{
+			why: "an untyped null beside maps of one type: cty's answer is an object, since the null has DynamicPseudoType, and tenon's the map the others give, the null taking no part (LC-036, Appendix B row 34)",
+			match: func(args []cty.Value) bool {
+				var typ cty.Type
+				untyped := false
+				for _, a := range args {
+					u, _ := a.Unmark()
+					switch {
+					case u.Type() == cty.DynamicPseudoType && u.IsNull():
+						untyped = true
+					case !u.Type().IsMapType():
+						return false
+					case typ == cty.NilType:
+						typ = u.Type()
+					case !u.Type().Equals(typ):
+						return false
+					}
+				}
+				return untyped && typ != cty.NilType
+			},
+		}, {
+			why: "a marked null: cty skips a null argument and its marks, and tenon carries them, since whether it is null decides the answer (LC-035, Appendix B row 35)",
+			match: func(args []cty.Value) bool {
+				return slices.ContainsFunc(args, func(a cty.Value) bool {
+					u, marks := a.Unmark()
+					return len(marks) > 0 && u.IsNull()
+				})
+			},
+		}},
+	},
 	"Lookup": {
 		cty: ctystdlib.LookupFunc,
 		ten: stdlib.LookupFunc,
@@ -523,6 +592,11 @@ func randomMapOrObject(r *rand.Rand) cty.Type {
 			return cty.Map(t)
 		}
 	}
+}
+
+// numberMap is the map of one number at key k.
+func numberMap(k string, n int64) cty.Value {
+	return cty.MapVal(map[string]cty.Value{k: cty.NumberIntVal(n)})
 }
 
 // abcList is the list ["a", "b", "c"].
@@ -824,7 +898,7 @@ func agree(t *testing.T, b ctytenon.Bridge, what string, cp counterpart, args []
 		if err != nil {
 			t.Fatalf("%s: cty's answer %#v does not cross: %v", what, cr, err)
 		}
-		if !tenon.Identical(tr, want) {
+		if !tenon.Identical(tr, want) && !identicalAsCty(b, tr, want) {
 			t.Errorf("%s: cty answers %#v, and tenon %v", what, cr, tr)
 		}
 	default:
@@ -839,6 +913,20 @@ func agree(t *testing.T, b ctytenon.Bridge, what string, cp counterpart, args []
 			}
 		}
 	}
+}
+
+// identicalAsCty reports whether tenon's answer ans is want once it crosses
+// to cty and back, as cty holds it: cty hands a container's marks to each
+// member read out of it, so crossing gives the members those marks, where
+// tenon's members keep their own (LB-020) and a member taken from an
+// unmarked argument carries none.
+func identicalAsCty(b ctytenon.Bridge, ans, want tenon.Value) bool {
+	c, err := b.ToCty(ans)
+	if err != nil {
+		return false
+	}
+	back, err := b.FromCty(c)
+	return err == nil && tenon.Identical(back, want)
 }
 
 // paramOf returns the parameter that argument i of f is bound to.
