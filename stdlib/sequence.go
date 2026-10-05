@@ -396,6 +396,13 @@ func asList(fn string, v tenon.Value, p tenon.Policy) (l tenon.Value, empty bool
 	if !mayBe(c, tenon.KindList, tenon.KindTuple) {
 		return tenon.Value{}, false, wrongKind(fn, 0, v, "a list or a tuple")
 	}
+	return listAt(fn, 0, v, p)
+}
+
+// listAt returns argument i, v, a list or a tuple, unmarked, as asList
+// does, a refusal located at it.
+func listAt(fn string, i int, v tenon.Value, p tenon.Policy) (l tenon.Value, empty bool, err error) {
+	c, _ := tenon.Unmark(v)
 	if c.IsPending() {
 		if k := c.Constraint(); k.Kind() == tenon.ConstraintListOf {
 			return tenon.Pending(k), false, nil
@@ -416,11 +423,11 @@ func asList(fn string, v tenon.Value, p tenon.Policy) (l tenon.Value, empty bool
 	}
 	u, uerr := tenon.Unify(cs, p)
 	if uerr != nil {
-		return tenon.Value{}, false, wrongKind(fn, 0, v, "a list, or a tuple whose element types unify")
+		return tenon.Value{}, false, wrongKind(fn, i, v, "a list, or a tuple whose element types unify")
 	}
 	converted := tenon.Convert(c, tenon.ListOf(u), p)
 	if converted.IsError() {
-		return tenon.Value{}, false, tenon.NewError(at(0, converted))
+		return tenon.Value{}, false, tenon.NewError(at(i, converted))
 	}
 	return converted, false, nil
 }

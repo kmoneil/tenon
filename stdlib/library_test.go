@@ -20,6 +20,8 @@ import (
 var library = map[string]tenon.Function{
 	"AssertNotNull":          stdlib.AssertNotNullFunc,
 	"Merge":                  stdlib.MergeFunc,
+	"Range":                  stdlib.RangeFunc,
+	"SetProduct":             stdlib.SetProductFunc,
 	"Contains":               stdlib.ContainsFunc,
 	"SetHasElement":          stdlib.SetHasElementFunc,
 	"SetUnion":               stdlib.SetUnionFunc,

@@ -17,7 +17,6 @@ EQ
 GO
 JS
 LB
-defer LB-031 the first bounded results are Range's and SetProduct's
 LN
 LC
 ER
