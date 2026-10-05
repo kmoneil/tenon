@@ -1,13 +1,38 @@
 # Changelog
 
-## Unreleased
+## 0.16.0 (2026-10-05)
+
+tenon has a standard library now. Package `stdlib` is go-cty's
+`cty/function/stdlib` as tenon functions, function for function, beginning
+with its 53 functions over values: the operators, the functions over
+numbers, the general ones, and those over collections and sets. Each
+answers as the specification states: exactly, where go-cty's rounds
+through binary floats; from what is known, where an argument is not known
+yet; and with a code, located at the argument, where go-cty's answers with
+a Go error's text or a panic. It implements version 0.14.0 of the tenon
+specification, which adds the library's part, §13 to §20 (§13, §14 and
+§18 normative, the rest outlines), and `FN-024`: 292 rules.
+
+The minor version moves for the addition and for one change to the
+function system: `FunctionSpec.Impl` and `FunctionSpec.ResultOf` are given
+the call's policy.
+
+**Upgrading from 0.15.1.** A function written for 0.15 adds the policy
+parameter to its `Impl`, and to its `ResultOf` where it has one; the
+compiler finds each. `Equals` with an operand known to be null carries the
+operands' own marks alone, where it carried every mark within the other
+operand. Nothing else changes for an existing program: documents decode as
+they did, and values encode to the same bytes.
+
+**What `CONFORMANCE.md` states.** 292 of 292.
 
 ### Added
 
-- The standard library begins: package `stdlib` (`github.com/kmoneil/tenon/stdlib`),
+- The standard library: package `stdlib` (`github.com/kmoneil/tenon/stdlib`),
   go-cty's `cty/function/stdlib` as tenon functions, each a variable named
   as go-cty names it, so a host's table of functions moves by its import
-  path. Its first function is `AssertNotNullFunc`; the rest follow. The
+  path: `AssertNotNullFunc` and the functions below. go-cty's functions
+  over text, encodings and time are not here yet. The
   specification gains a part for the library, §13 to §20, each section an
   optional feature area: §13 states what every library function shares
   (`LB-001` to `LB-031`), with the codes `function.invalid_argument` and
