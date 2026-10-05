@@ -42,7 +42,7 @@ var specCodes = []string{
 	"encode.not_a_number",
 	"encode.untyped_nil",
 	"function.arity",
-	"function.failed",
+	"function.failed", "function.invalid_argument", "function.too_large",
 	"json.invalid_syntax",
 	"json.too_deep",
 	"map.duplicate_key",

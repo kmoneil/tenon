@@ -4,6 +4,17 @@
 
 ### Added
 
+- The standard library begins: package `stdlib` (`github.com/kmoneil/tenon/stdlib`),
+  go-cty's `cty/function/stdlib` as tenon functions, each a variable named
+  as go-cty names it, so a host's table of functions moves by its import
+  path. Its first function is `AssertNotNullFunc`; the rest follow. The
+  specification gains a part for the library, §13 to §20, each section an
+  optional feature area: §13 states what every library function shares
+  (`LB-001` to `LB-031`), with the codes `function.invalid_argument` and
+  `function.too_large`, and §14 begins with `AssertNotNull` (`LN-083`).
+  `conformance/vectors/functions.json` holds calls of the library's
+  functions, their arguments and what each answers or how it fails, for
+  testing another implementation of it.
 - A function may declare its result never null (`FunctionSpec.NotNull`,
   read back with `Function.NotNull`). Every answer the call makes that is
   not a known value then says so, the unknown answer of an argument not

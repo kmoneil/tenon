@@ -16,6 +16,12 @@
 // text reads as, its display form and its encoding, or the failures it gives,
 // each a code and a path.
 //
+// functions.json holds calls of the standard library's functions, for testing
+// an implementation of the library (package stdlib): each call's function, by
+// the name the specification gives it, its arguments as display forms and
+// encodings, the policy, and either what it answers, its display form and its
+// encoding, or the failures it gives, each a code and a path.
+//
 // The test in this package builds every valid value several ways, with
 // members in different orders, numbers and strings spelled differently and
 // marks attached in different orders, requires every way to give the vector's
