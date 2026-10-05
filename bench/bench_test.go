@@ -379,3 +379,41 @@ func BenchmarkLibrary(b *testing.B) {
 		}
 	})
 }
+
+// BenchmarkText formats a line for each service through each library's
+// format function: its name, its replica count as an integer and its CPU
+// share to one decimal place.
+func BenchmarkText(b *testing.B) {
+	const format = "%s: %d replicas at %.1f CPU"
+	sized(b, "tenon", func(b *testing.B, doc []byte) {
+		var args [][]tenon.Value
+		for _, svc := range typedTenon(b, doc).Attribute("services").Elements() {
+			args = append(args, []tenon.Value{tenon.String(format), svc.Attribute("name"), svc.Attribute("replicas"), svc.Attribute("cpu")})
+		}
+		if r := tenon.Call(tenonstdlib.FormatFunc, args[0], tenon.Safe); r.IsError() {
+			b.Fatal(r)
+		}
+		for b.Loop() {
+			for _, a := range args {
+				sink = tenon.Call(tenonstdlib.FormatFunc, a, tenon.Safe)
+			}
+		}
+	})
+	sized(b, "cty", func(b *testing.B, doc []byte) {
+		var args [][]cty.Value
+		it := typedCty(b, doc).GetAttr("services").ElementIterator()
+		for it.Next() {
+			_, svc := it.Element()
+			args = append(args, []cty.Value{cty.StringVal(format), svc.GetAttr("name"), svc.GetAttr("replicas"), svc.GetAttr("cpu")})
+		}
+		for b.Loop() {
+			for _, a := range args {
+				r, err := ctystdlib.FormatFunc.Call(a)
+				if err != nil {
+					b.Fatal(err)
+				}
+				sink = r
+			}
+		}
+	})
+}

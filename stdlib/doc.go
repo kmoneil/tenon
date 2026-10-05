@@ -23,7 +23,15 @@
 // functions over numbers, Log and Pow correctly rounded to 96 significant
 // digits; the general ones, Coalesce, MakeToFunc and AssertNotNull; and those
 // over lists, sets, maps, tuples and objects, Range and SetProduct among
-// them. go-cty's functions over text, encodings and time are not here yet.
+// them. It holds go-cty's functions over text too, under the Unicode version
+// tenon states whatever the Go toolchain's: Upper, Lower and Title by
+// Unicode's full case mappings; Strlen, Substr and Reverse by grapheme
+// cluster; Split, Replace and the trims, which match and cut only where a
+// cluster ends; Join, Sort, Chomp and Indent; Format and FormatList, which
+// write numbers from their exact values; and Regex, RegexAll and
+// RegexReplace, whose patterns are read as Go 1.26 reads them, with Unicode
+// classes and case folding of that version. go-cty's functions over
+// encodings and time are not here yet.
 // A function reads a collection as it stands: where an argument is not known
 // yet, it answers from what is, the members a list holds, the lengths an
 // unknown one records, the attributes an object's type names, so its answer
