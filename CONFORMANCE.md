@@ -9,8 +9,8 @@ fails where it is stale.
 | --- | --- |
 | Specification version | 0.15.0 |
 | Unicode version (`ST-003`) | 15.0.0 |
-| Rules | 360 normative, 0 outline, 0 withdrawn |
-| Rules satisfied | 360 of 360 |
+| Rules | 366 normative, 0 outline, 0 withdrawn |
+| Rules satisfied | 366 of 366 |
 | Optional areas omitted | none |
 
 ## Rules not satisfied
@@ -54,4 +54,4 @@ implemented, and their conformance tests run.
 | `LF` | 22 | 22 |
 | `LR` | 14 | 14 |
 | `LC` | 38 | 38 |
-| `LE` | 5 | 5 |
+| `LE` | 11 | 11 |
