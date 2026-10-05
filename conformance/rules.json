@@ -274,6 +274,16 @@
     {"id":"LC-034","area":"LC","withdrawn":false,"outline":false},
     {"id":"LC-035","area":"LC","withdrawn":false,"outline":false},
     {"id":"LC-036","area":"LC","withdrawn":false,"outline":false},
-    {"id":"LC-037","area":"LC","withdrawn":false,"outline":false}
+    {"id":"LC-037","area":"LC","withdrawn":false,"outline":false},
+    {"id":"LC-040","area":"LC","withdrawn":false,"outline":false},
+    {"id":"LC-041","area":"LC","withdrawn":false,"outline":false},
+    {"id":"LC-042","area":"LC","withdrawn":false,"outline":false},
+    {"id":"LC-043","area":"LC","withdrawn":false,"outline":false},
+    {"id":"LC-044","area":"LC","withdrawn":false,"outline":false},
+    {"id":"LC-045","area":"LC","withdrawn":false,"outline":false},
+    {"id":"LC-046","area":"LC","withdrawn":false,"outline":false},
+    {"id":"LC-047","area":"LC","withdrawn":false,"outline":false},
+    {"id":"LC-048","area":"LC","withdrawn":false,"outline":false},
+    {"id":"LC-049","area":"LC","withdrawn":false,"outline":false}
   ]
 }

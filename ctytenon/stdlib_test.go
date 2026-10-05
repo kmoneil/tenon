@@ -333,6 +333,108 @@ var counterparts = map[string]counterpart{
 			},
 		}},
 	},
+	"Contains": {
+		cty: ctystdlib.ContainsFunc,
+		ten: stdlib.ContainsFunc,
+		cases: [][]cty.Value{
+			{abcList(), cty.StringVal("b")},
+			{numberList(1, 2), cty.StringVal("1")},
+			{cty.ListVal([]cty.Value{cty.StringVal("1")}), cty.NumberIntVal(1)},
+			{cty.ListVal([]cty.Value{cty.NumberIntVal(1), cty.UnknownVal(cty.Number)}), cty.NumberIntVal(1)},
+			{cty.ListVal([]cty.Value{cty.NumberIntVal(1), cty.UnknownVal(cty.Number)}), cty.NumberIntVal(2)},
+			{cty.ListVal([]cty.Value{cty.NumberIntVal(1), cty.UnknownVal(cty.Number)}), cty.StringVal("x")},
+			{cty.ListVal([]cty.Value{cty.NullVal(cty.String)}), cty.NullVal(cty.String)},
+			{cty.SetVal([]cty.Value{cty.NumberIntVal(1), cty.UnknownVal(cty.Number)}), cty.NumberIntVal(1)},
+			{numberMap("a", 1), cty.StringVal("a")},
+			{cty.ListVal([]cty.Value{cty.StringVal("a"), cty.StringVal("b").Mark("sensitive")}), cty.StringVal("a")},
+			{cty.ListValEmpty(cty.Number), cty.NullVal(cty.DynamicPseudoType)},
+			{cty.EmptyTupleVal, cty.NullVal(cty.DynamicPseudoType)},
+			{cty.ListVal([]cty.Value{cty.NullVal(cty.String)}), cty.NullVal(cty.DynamicPseudoType)},
+			{cty.ListValEmpty(cty.Number), cty.UnknownVal(cty.Number)},
+			{cty.ListVal([]cty.Value{numberList(1)}), cty.TupleVal([]cty.Value{cty.NumberIntVal(1)})},
+			{cty.TupleVal([]cty.Value{cty.True, cty.NullVal(cty.String)}), cty.NullVal(cty.Bool)},
+			{cty.ListVal([]cty.Value{cty.SetVal([]cty.Value{cty.ListVal([]cty.Value{cty.UnknownVal(cty.Number)})})}), cty.SetVal([]cty.Value{numberList(1)})},
+		},
+		random: func(r *rand.Rand) []cty.Value {
+			elem := randomCtyType(r, 1)
+			l := randomCtyValue(r, []cty.Type{cty.List(elem), cty.Set(elem), cty.Tuple([]cty.Type{elem, cty.String})}[r.Intn(3)])
+			needle := randomCtyValue(r, elem)
+			if u, _ := l.UnmarkDeep(); u.IsKnown() && !u.IsNull() && u.LengthInt() > 0 && r.Intn(2) == 0 {
+				needle = memberOf(r, u)
+			}
+			return []cty.Value{l, needle}
+		},
+		divergences: []divergence{{
+			why: "a null looked for among nulls of another type: cty's nulls are equal whatever their types, and tenon's of different types are not (EQ-004, EQ-005, Appendix B row 39)",
+			match: func(args []cty.Value) bool {
+				l, _ := args[0].UnmarkDeep()
+				v, _ := args[1].UnmarkDeep()
+				if !v.IsNull() || v.Type() == cty.DynamicPseudoType || !l.IsKnown() || l.IsNull() {
+					return false
+				}
+				for it := l.ElementIterator(); it.Next(); {
+					if _, m := it.Element(); m.IsNull() && !m.Type().Equals(v.Type()) {
+						return true
+					}
+				}
+				return false
+			},
+		}, {
+			why: "#229: a set holding a member with an unknown part: cty answers false, where the members may turn out equal",
+			match: func(args []cty.Value) bool {
+				return holdsPartlyUnknownMember(args[0]) || holdsPartlyUnknownMember(args[1])
+			},
+		}, {
+			why: "a tuple or an object looked for among lists or maps: cty compares it as it is, never equal to a list or a map, and tenon converts it to the members' type under Safe first (LC-041, Appendix B row 37)",
+			match: func(args []cty.Value) bool {
+				l, _ := args[0].UnmarkDeep()
+				v, _ := args[1].UnmarkDeep()
+				if !l.Type().IsListType() && !l.Type().IsSetType() {
+					return false
+				}
+				et := l.Type().ElementType()
+				return (v.Type().IsTupleType() && (et.IsListType() || et.IsSetType())) || (v.Type().IsObjectType() && et.IsMapType())
+			},
+		}},
+	},
+	"SetHasElement": {
+		cty: ctystdlib.SetHasElementFunc,
+		ten: stdlib.SetHasElementFunc,
+		cases: [][]cty.Value{
+			{numberSet(1, 2), cty.NumberIntVal(1)},
+			{numberSet(1, 2), cty.StringVal("1")},
+			{cty.SetVal([]cty.Value{cty.NumberIntVal(1), cty.UnknownVal(cty.Number)}), cty.NumberIntVal(1)},
+			{cty.SetVal([]cty.Value{cty.NumberIntVal(1), cty.UnknownVal(cty.Number)}), cty.NumberIntVal(5)},
+			{numberList(1), cty.NumberIntVal(1)},
+			{cty.SetVal([]cty.Value{numberList(1)}), cty.ListVal([]cty.Value{cty.UnknownVal(cty.Number)})},
+		},
+		random: func(r *rand.Rand) []cty.Value {
+			elem := randomCtyType(r, 1)
+			s := randomCtyValue(r, cty.Set(elem))
+			needle := randomCtyValue(r, elem)
+			if u, _ := s.UnmarkDeep(); u.IsKnown() && !u.IsNull() && u.LengthInt() > 0 && r.Intn(2) == 0 {
+				needle = memberOf(r, u)
+			}
+			return []cty.Value{s, needle}
+		},
+		divergences: []divergence{{
+			why: "a null element: cty refuses it, and tenon answers whether the set holds null, a member like any other (LC-043)",
+			match: func(args []cty.Value) bool {
+				v, _ := args[1].UnmarkDeep()
+				return v.IsNull()
+			},
+		}, {
+			why: "#229: a set holding a member with an unknown part beside a value it may equal: cty answers false, where tenon's answer is unknown",
+			match: func(args []cty.Value) bool {
+				v, _ := args[1].UnmarkDeep()
+				return v.IsKnown() && !v.IsWhollyKnown() || holdsPartlyUnknownMember(args[0]) || holdsPartlyUnknownMember(args[1])
+			},
+		}},
+	},
+	"SetUnion":               setOperation(ctystdlib.SetUnionFunc, stdlib.SetUnionFunc, 3),
+	"SetIntersection":        setOperation(ctystdlib.SetIntersectionFunc, stdlib.SetIntersectionFunc, 3),
+	"SetSubtract":            setOperation(ctystdlib.SetSubtractFunc, stdlib.SetSubtractFunc, 2),
+	"SetSymmetricDifference": setOperation(ctystdlib.SetSymmetricDifferenceFunc, stdlib.SetSymmetricDifferenceFunc, 3),
 	"Lookup": {
 		cty: ctystdlib.LookupFunc,
 		ten: stdlib.LookupFunc,
@@ -591,6 +693,75 @@ func randomMapOrObject(r *rand.Rand) cty.Type {
 		if r.Intn(2) == 0 {
 			return cty.Map(t)
 		}
+	}
+}
+
+// memberOf returns a member of the collection c, chosen at random.
+func memberOf(r *rand.Rand, c cty.Value) cty.Value {
+	it := c.ElementIterator()
+	for range 1 + r.Intn(c.LengthInt()) {
+		it.Next()
+	}
+	_, m := it.Element()
+	return m
+}
+
+// numberList is the list of the numbers given.
+func numberList(ns ...int64) cty.Value {
+	vs := make([]cty.Value, len(ns))
+	for i, n := range ns {
+		vs[i] = cty.NumberIntVal(n)
+	}
+	return cty.ListVal(vs)
+}
+
+// numberSet is the set of the numbers given.
+func numberSet(ns ...int64) cty.Value {
+	vs := make([]cty.Value, len(ns))
+	for i, n := range ns {
+		vs[i] = cty.NumberIntVal(n)
+	}
+	return cty.SetVal(vs)
+}
+
+// setOperation is a counterpart of a set operation over n sets at most.
+func setOperation(c function.Function, ten tenon.Function, n int) counterpart {
+	return counterpart{
+		cty: c,
+		ten: ten,
+		cases: [][]cty.Value{
+			{numberSet(1, 2), numberSet(2, 3)},
+			{numberSet(1), cty.SetVal([]cty.Value{cty.StringVal("1")})},
+			{numberSet(1), cty.SetVal([]cty.Value{cty.StringVal("a")})},
+			{numberSet(1), cty.SetVal([]cty.Value{cty.True})},
+			{cty.SetVal([]cty.Value{cty.NumberIntVal(1), cty.UnknownVal(cty.Number)}), numberSet(2)},
+			{cty.SetVal([]cty.Value{cty.NumberIntVal(1), cty.UnknownVal(cty.Number)}), cty.SetValEmpty(cty.Number)},
+			{cty.SetValEmpty(cty.Number), cty.UnknownVal(cty.Set(cty.Number))},
+			{cty.UnknownVal(cty.Set(cty.Number)), numberSet(1)},
+			{numberSet(1, 2), numberList(2)},
+			{cty.EmptyTupleVal, numberSet(1)},
+			{numberSet(1).Mark("sensitive"), numberSet(2)},
+		},
+		random: func(r *rand.Rand) []cty.Value {
+			elem := []cty.Type{cty.Number, cty.String, cty.Bool, cty.List(cty.Number)}[r.Intn(4)]
+			args := make([]cty.Value, 1+r.Intn(n))
+			for i := range args {
+				args[i] = randomCtyValue(r, cty.Set(elem))
+			}
+			return args
+		},
+		divergences: []divergence{{
+			why: "sets of numbers or strings beside sets of bools: go-cty's unification picks among the types given and finds none, where tenon's unsafe unification gives strings (CV-042, Appendix B row 38)",
+			match: func(args []cty.Value) bool {
+				var ets []cty.Type
+				for _, a := range args {
+					if t := a.Type(); t.IsSetType() || t.IsListType() {
+						ets = append(ets, t.ElementType())
+					}
+				}
+				return slices.Contains(ets, cty.Bool) && (slices.Contains(ets, cty.Number) || slices.Contains(ets, cty.String))
+			},
+		}},
 	}
 }
 

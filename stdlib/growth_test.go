@@ -42,5 +42,23 @@ func BenchmarkLibraryGrowth(b *testing.B) {
 				tenon.Call(stdlib.MergeFunc, objects, tenon.Safe)
 			}
 		})
+		// The set operations ask each set after each member once.
+		var left, right []tenon.Value
+		for i := range size {
+			left = append(left, tenon.NumberFromInt(int64(i)))
+			right = append(right, tenon.NumberFromInt(int64(i+size/2)))
+		}
+		right = append(right, tenon.Unknown(tenon.NumberType()))
+		sets := []tenon.Value{tenon.Set(tenon.NumberType(), left...), tenon.Set(tenon.NumberType(), right...)}
+		b.Run(fmt.Sprintf("setintersection/%d", size), func(b *testing.B) {
+			for b.Loop() {
+				tenon.Call(stdlib.SetIntersectionFunc, sets, tenon.Safe)
+			}
+		})
+		b.Run(fmt.Sprintf("setsymmetricdifference/%d", size), func(b *testing.B) {
+			for b.Loop() {
+				tenon.Call(stdlib.SetSymmetricDifferenceFunc, sets, tenon.Safe)
+			}
+		})
 	}
 }
