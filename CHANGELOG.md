@@ -1,6 +1,35 @@
 # Changelog
 
-## Unreleased
+## 0.15.1 (2026-10-05)
+
+Two fixes to the function system that 0.15.0 introduced. A function may
+return a null whose type is still open from known arguments, as a JSON
+`null` read with `Any` is, where `Call` panicked; and where the call
+removed a redacting mark from an argument, the implementation's failure
+no longer shows what the mark withheld. It implements version 0.13.1 of
+the tenon specification, which amends `UN-008`, `FN-021` and `FN-023`:
+227 rules. A security advisory follows this release.
+
+**Upgrade if you call functions on values a redacting mark guards, or on
+JSON from outside.** In 0.15.0, a function whose failure quoted its
+argument showed a redacted value in the diagnostic's message
+(`function.failed: cannot parse "hunter2"`, from a function of one's own,
+from cty's `parseint` crossed by ctytenon, or from `Convert` run inside the
+implementation), and a function returning a JSON null from known
+arguments, as cty's `jsondecode("null")` crossed by ctytenon does, panicked
+the host.
+
+The patch version moves: nothing that existed changes but these two
+answers.
+
+**Upgrading from 0.15.0.** Nothing changes for a program but the two
+cases: the compiler finds nothing, documents decode as they did, and
+values encode to the same bytes. A function's failure on a redacted
+argument now reads `<name> failed on redacted("...")`, its code kept and
+located at the call, so a host that matched the old text matches the code
+instead.
+
+**What `CONFORMANCE.md` states.** 227 of 227.
 
 ### Fixed
 
