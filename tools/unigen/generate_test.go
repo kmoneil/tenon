@@ -205,3 +205,23 @@ func TestDeriveCasingRefuses(t *testing.T) {
 		}
 	}
 }
+
+// TestPatternTablesAreGenerated holds internal/uni's pattern_tables.go to
+// what unigen generates from the files in ucd, on every toolchain.
+func TestPatternTablesAreGenerated(t *testing.T) {
+	p, err := derivePatterns(ucd)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, err := renderPatterns(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile("../../internal/uni/pattern_tables.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, want) {
+		t.Error("internal/uni/pattern_tables.go is not what unigen generates from ucd; run unigen")
+	}
+}

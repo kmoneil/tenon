@@ -34,6 +34,13 @@ func TestConformance_ER001_OnlyTheHelperPanics(t *testing.T) {
 			if name := d.Name(); path != "." && (strings.HasPrefix(name, ".") || strings.HasPrefix(name, "_") || name == "testdata") {
 				return filepath.SkipDir
 			}
+			// The copy of Go's regexp/syntax keeps Go's code as it is: its
+			// parser panics on a pattern past a limit and recovers that
+			// into the error it returns, so no panic of it reaches a caller
+			// but an internal defect's, as Go's own would.
+			if path == filepath.Join("internal", "resyntax") {
+				return filepath.SkipDir
+			}
 			return nil
 		}
 		if !strings.HasSuffix(path, ".go") || helpers[path] {

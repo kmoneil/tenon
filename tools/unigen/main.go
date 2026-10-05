@@ -42,8 +42,9 @@ func main() {
 	}
 }
 
-// run generates internal/uni's tables.go, grapheme_tables.go and
-// case_tables.go into dir, and reports to log what they hold.
+// run generates internal/uni's tables.go, grapheme_tables.go,
+// case_tables.go and pattern_tables.go into dir, and reports to log what
+// they hold.
 func run(dir string, log io.Writer) error {
 	if err := checkVersions(); err != nil {
 		return err
@@ -69,6 +70,10 @@ func run(dir string, log io.Writer) error {
 	if err := c.check(); err != nil {
 		return err
 	}
+	pt, err := derivePatterns(ucd)
+	if err != nil {
+		return err
+	}
 	categories := deriveCategories()
 	tables, err := renderTables(n, categories)
 	if err != nil {
@@ -91,10 +96,17 @@ func run(dir string, log io.Writer) error {
 	if err := os.WriteFile(filepath.Join(dir, "case_tables.go"), cases, 0o644); err != nil {
 		return err
 	}
+	pts, err := renderPatterns(pt)
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(dir, "pattern_tables.go"), pts, 0o644); err != nil {
+		return err
+	}
 	_, err = fmt.Fprintf(log, "unigen: Unicode %s: %d combining classes, %d decompositions, %d primary composites, "+
 		"%d rewritten, %d composing, %d category ranges, %d grapheme break ranges, %d case ranges, "+
-		"%d special casings\n",
+		"%d special casings, %d categories, %d scripts, %d folding code points\n",
 		version, len(n.ccc), len(n.decomposable), len(n.composed), len(n.rewritten), len(n.composing),
-		len(categories), len(s.ranges()), len(c.ranges()), len(c.special))
+		len(categories), len(s.ranges()), len(c.ranges()), len(c.special), len(pt.categories), len(pt.scripts), len(pt.next))
 	return err
 }

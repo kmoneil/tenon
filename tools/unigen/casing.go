@@ -19,6 +19,12 @@ import (
 // what tells it apart from another version's.
 const unicodeDataSHA256 = "806e9aed65037197f1ec85e12be6e8cd870fc5608b4de0fffd990f689f376a73"
 
+// sha256Hex returns the SHA-256 of data in lowercase hexadecimal.
+func sha256Hex(data []byte) string {
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:])
+}
+
 // caseMapping is a code point's simple case mappings, each a code point.
 type caseMapping struct{ upper, lower, title rune }
 
@@ -52,8 +58,8 @@ func deriveCasing(dir string) (casing, error) {
 	if err != nil {
 		return casing{}, err
 	}
-	if sum := sha256.Sum256(data); hex.EncodeToString(sum[:]) != unicodeDataSHA256 {
-		return casing{}, fmt.Errorf("UnicodeData.txt is not for Unicode %s: its SHA-256 is %x, not %s", version, sum, unicodeDataSHA256)
+	if err := checkUnicodeData(data); err != nil {
+		return casing{}, err
 	}
 	if err := c.readUnicodeData(string(data)); err != nil {
 		return casing{}, fmt.Errorf("UnicodeData.txt: %w", err)
