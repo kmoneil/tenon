@@ -92,6 +92,8 @@ var counterparts = map[string]counterpart{
 	"Int":                  arithmetic(ctystdlib.IntFunc, stdlib.IntFunc),
 	"Ceil":                 arithmetic(ctystdlib.CeilFunc, stdlib.CeilFunc),
 	"Floor":                arithmetic(ctystdlib.FloorFunc, stdlib.FloorFunc),
+	"Log":                  transcendental(ctystdlib.LogFunc, stdlib.LogFunc),
+	"Pow":                  transcendental(ctystdlib.PowFunc, stdlib.PowFunc),
 	"Min":                  extremes(ctystdlib.MinFunc, stdlib.MinFunc),
 	"Max":                  extremes(ctystdlib.MaxFunc, stdlib.MaxFunc),
 	"ParseInt": {
@@ -302,6 +304,48 @@ func scientific(n tenon.Value) bool {
 		n = tenon.Sub(tenon.NumberFromInt(0), n)
 	}
 	return !tenon.LessThan(n, tenon.NumberFromText("1e21")).AsBool() || tenon.LessThan(n, tenon.NumberFromText("1e-20")).AsBool()
+}
+
+// transcendental returns the counterpart of Log or Pow. go-cty works both out
+// through float64, so of known arguments its answer is a binary float good to
+// about 16 digits, and its failures are infinities or panics (#219), where
+// tenon's answer is correctly rounded to 96 and its failures are codes: what
+// is compared is how each answers what is not known, null and marked.
+func transcendental(c function.Function, ten tenon.Function) counterpart {
+	n := cty.NumberIntVal
+	unknown := cty.UnknownVal(cty.Number)
+	cp := counterpart{
+		cty: c,
+		ten: ten,
+		cases: [][]cty.Value{
+			{n(1000), n(10)}, {n(2), cty.MustParseNumberVal("0.5")}, {n(0), n(10)}, {n(-1), n(2)},
+			{unknown, n(10)}, {n(10), unknown}, {unknown.Mark("sensitive"), n(2)},
+			{cty.NullVal(cty.Number), n(2)},
+		},
+		random: func(r *rand.Rand) []cty.Value {
+			return []cty.Value{randomCtyValue(r, cty.Number), randomCtyValue(r, cty.Number)}
+		},
+		divergences: []divergence{{
+			why: "both arguments known: go-cty works the result out through float64, good to about 16 digits, and fails with an infinity or a panic (#219), where tenon's is correctly rounded to 96 digits (LN-060, LN-061, Appendix B row 5)",
+			match: func(args []cty.Value) bool {
+				_, okA := numberOf(args[0])
+				_, okB := numberOf(args[1])
+				return okA && okB
+			},
+		}},
+	}
+	if ten.Name() == "Log" {
+		cp.divergences = append(cp.divergences, divergence{
+			why: "an argument known to lie outside Log's domain, a number or a base not greater than zero or a base of one: tenon fails now, whatever the other argument turns out to be (LB-011), where go-cty answers unknown",
+			match: func(args []cty.Value) bool {
+				x, okX := numberOf(args[0])
+				b, okB := numberOf(args[1])
+				zero := tenon.NumberFromInt(0)
+				return okX && !tenon.LessThan(zero, x).AsBool() || okB && (!tenon.LessThan(zero, b).AsBool() || b.Equal(tenon.NumberFromInt(1)))
+			},
+		})
+	}
+	return cp
 }
 
 // extremes returns the counterpart of Min or Max, called with one number or

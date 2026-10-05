@@ -22,6 +22,7 @@ func TestConformance_ER001_OnlyTheHelperPanics(t *testing.T) {
 		"usage.go":                            true,
 		filepath.Join("gotenon", "usage.go"):  true,
 		filepath.Join("ctytenon", "usage.go"): true,
+		filepath.Join("stdlib", "usage.go"):   true,
 	}
 	fset := token.NewFileSet()
 	scanned := 0

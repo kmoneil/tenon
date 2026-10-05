@@ -424,14 +424,24 @@ const maxWorkingPrecision = 1 << 16
 // that number lies outside the window, and ErrUnsettled where the working
 // precision reached its bound without the ends settling.
 func correctlyRounded(enclose func(p int64) interval) (Dec, error) {
-	for p := int64(DivisionPrecision + 24); p <= maxWorkingPrecision; p *= 2 {
+	if d, err, ok := settle(enclose, DivisionPrecision+24, maxWorkingPrecision); ok {
+		return d, err
+	}
+	return Dec{}, ErrUnsettled
+}
+
+// settle runs Ziv's loop from the working precision from, doubling it up to
+// to, and reports whether the ends settled.
+func settle(enclose func(p int64) interval, from, to int64) (Dec, error, bool) {
+	for p := from; p <= to; p *= 2 {
 		x := enclose(p)
 		lo, hi := x.lo.halfEven(DivisionPrecision), x.hi.halfEven(DivisionPrecision)
 		if lo.equal(hi) {
-			return lo.dec()
+			d, err := lo.dec()
+			return d, err, true
 		}
 	}
-	return Dec{}, ErrUnsettled
+	return Dec{}, nil, false
 }
 
 // dec returns a as a Dec, or ErrOutOfRange where it lies outside the window.
@@ -488,16 +498,112 @@ func quotient(x, y interval, p int64) interval {
 
 // PowPositive returns x^y for x positive, correctly rounded to
 // DivisionPrecision significant digits, half to even, and ErrOutOfRange where
-// it lies outside the window: e^(y ln x). The caller rules out a result that
-// is a rounding midpoint, which the loop cannot settle, and decides first a
-// result far outside the window.
+// it lies outside the window: e^(y ln x).
+//
+// A result far outside the window is decided first, from y ln x enclosed to
+// a few digits, so that pow(2, 1e400) costs what that does. And a result
+// that is itself a rounding midpoint, a terminating decimal of
+// DivisionPrecision + 1 digits ending in 5 as 5^138 is, would never settle:
+// a power still unsettled after a few doublings is tested for an exact
+// result, which is then rounded as it is.
 func PowPositive(x, y Dec) (Dec, error) {
 	ty := flDec(y)
-	return correctlyRounded(func(p int64) interval {
+	t := ln(x, 30).mul(point(ty, 40), 30)
+	if limit := (fl{big.NewInt(2303000), 0}); t.lo.cmp(limit) > 0 || t.hi.cmp(limit.neg()) < 0 {
+		// e^t passes 10^1000163 or falls below its reciprocal, outside the
+		// window whatever the digits t has beyond these.
+		return Dec{}, ErrOutOfRange
+	}
+	enclose := func(p int64) interval {
 		// The exponent y ln x is read to p digits beyond its integer part,
 		// whose digits grow the error of e^(y ln x).
 		q := p + 12
 		t := ln(x, q).mul(point(ty, q+10), q)
 		return exp(t, p)
-	})
+	}
+	if d, err, ok := settle(enclose, DivisionPrecision+24, 1000); ok {
+		return d, err
+	}
+	if r, ok := exactPower(x, y); ok {
+		return r.halfEven(DivisionPrecision).dec()
+	}
+	return correctlyRounded(enclose)
+}
+
+// exactDigits bounds the coefficient of an exact power exactPower computes:
+// a midpoint has DivisionPrecision + 1 digits, so a power of more cannot be
+// one, and the loop settles it.
+const exactDigits = 2 * DivisionPrecision
+
+// exactPower returns x^y exactly where it is a terminating decimal of at
+// most exactDigits significant digits, and false otherwise. With y = p/q in
+// lowest terms, q dividing a power of ten since y terminates, x = m × 10^e
+// (m not a multiple of 10) is a rational q-th power exactly where q divides
+// e and m is a perfect q-th power: were q not to divide e, the powers of 2
+// and of 5 in x could not both be multiples of q, m holding at most one of
+// them.
+func exactPower(x, y Dec) (fl, bool) {
+	m, e := x.scaledCoefficient(0), x.exp
+	pNum, yExp := y.scaledCoefficient(0), y.exp
+	q := big.NewInt(1)
+	if yExp >= 0 {
+		pNum.Mul(pNum, pow10(yExp))
+	} else {
+		// pow10 hands out values it keeps, so q is a copy to divide.
+		q = new(big.Int).Set(pow10(-yExp))
+		g := new(big.Int).GCD(nil, nil, new(big.Int).Abs(pNum), q)
+		pNum.Quo(pNum, g)
+		q.Quo(q, g)
+	}
+	if !pNum.IsInt64() || !q.IsInt64() {
+		return fl{}, false
+	}
+	p, qq := pNum.Int64(), q.Int64()
+	if e%qq != 0 || digitCount(m)/qq*abs64(p) > exactDigits {
+		return fl{}, false
+	}
+	r, ok := intRoot(m, qq)
+	if !ok {
+		return fl{}, false
+	}
+	// x^y = (r × 10^(e/q))^p.
+	if digitCount(r)*abs64(p) > exactDigits+1 {
+		return fl{}, false
+	}
+	rp := new(big.Int).Exp(r, big.NewInt(abs64(p)), nil)
+	f := e / qq * p
+	if p >= 0 {
+		return fl{rp, f}, true
+	}
+	// A negative power terminates exactly where r^|p| divides a power of ten.
+	quo, shift := exactQuotient(big.NewInt(1), rp)
+	if quo == nil {
+		return fl{}, false
+	}
+	return fl{quo, f - shift}, true
+}
+
+// intRoot returns the q-th root of m, positive, where it is an integer.
+func intRoot(m *big.Int, q int64) (*big.Int, bool) {
+	if q == 1 {
+		return m, true
+	}
+	if int64(m.BitLen()) < q {
+		return m, m.Cmp(bigOne) == 0
+	}
+	// Newton's iteration from above: r = ((q-1) r + m / r^(q-1)) / q
+	// decreases to the floor of the root.
+	r := new(big.Int).Lsh(bigOne, uint((int64(m.BitLen())+q-1)/q))
+	qm1, qb := big.NewInt(q-1), big.NewInt(q)
+	for {
+		rq1 := new(big.Int).Exp(r, qm1, nil)
+		next := new(big.Int).Quo(m, rq1)
+		next.Add(next, new(big.Int).Mul(qm1, r))
+		next.Quo(next, qb)
+		if next.Cmp(r) >= 0 {
+			break
+		}
+		r = next
+	}
+	return r, new(big.Int).Exp(r, qb, nil).Cmp(m) == 0
 }

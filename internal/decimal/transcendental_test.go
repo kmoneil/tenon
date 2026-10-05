@@ -141,3 +141,88 @@ func TestNearOne(t *testing.T) {
 		t.Errorf("Ln(1 + 1e-99999) took %v", d)
 	}
 }
+
+// TestPowMidpoints checks the powers that are rounding midpoints, exact
+// decimals of 97 digits ending in 5, which the loop alone could never
+// settle: each comes out as its exact value rounded half to even, worked
+// out here in integer arithmetic.
+func TestPowMidpoints(t *testing.T) {
+	five138 := new(big.Int).Exp(big.NewInt(5), big.NewInt(138), nil)
+	if digitCount(five138) != DivisionPrecision+1 {
+		t.Fatalf("5^138 has %d digits", digitCount(five138))
+	}
+	want, err := (fl{five138, 0}).halfEven(DivisionPrecision).dec()
+	if err != nil {
+		t.Fatal(err)
+	}
+	five276, err := FromBigInt(new(big.Int).Mul(five138, five138))
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantNeg, err := (fl{five138, -138}).halfEven(DivisionPrecision).dec()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tt := range []struct {
+		x, y Dec
+		want Dec
+	}{
+		{FromInt64(5), FromInt64(138), want},
+		{FromInt64(25), FromInt64(69), want},
+		{five276, mustParse(t, "0.5"), want},
+		{FromInt64(2), FromInt64(-138), wantNeg},
+	} {
+		start := time.Now()
+		got, err := PowPositive(tt.x, tt.y)
+		if err != nil || !got.Equal(tt.want) {
+			t.Errorf("PowPositive(%v, %v) = %v, %v; want %v", tt.x, tt.y, got, err, tt.want)
+		}
+		if d := time.Since(start); d > 2*time.Second {
+			t.Errorf("PowPositive(%v, %v) took %v", tt.x, tt.y, d)
+		}
+	}
+}
+
+// TestPowFarOutOfRange checks that a power far outside the window is
+// decided before it is computed.
+func TestPowFarOutOfRange(t *testing.T) {
+	for _, tt := range [][2]string{{"2", "1e400"}, {"1.05", "-1e9"}, {"10", "1000001"}} {
+		start := time.Now()
+		if _, err := PowPositive(mustParse(t, tt[0]), mustParse(t, tt[1])); err != ErrOutOfRange {
+			t.Errorf("PowPositive(%s, %s) gave %v, want ErrOutOfRange", tt[0], tt[1], err)
+		}
+		if d := time.Since(start); d > 100*time.Millisecond {
+			t.Errorf("PowPositive(%s, %s) took %v to refuse", tt[0], tt[1], d)
+		}
+	}
+}
+
+// TestPowersOfTenKept checks that the powers of ten pow10 keeps, which it
+// hands out to every caller, are still powers of ten after the powers that
+// take the exact path have run: a caller dividing one in place corrupts
+// every number the package works out afterwards.
+func TestPowersOfTenKept(t *testing.T) {
+	// Only a midpoint reaches the exact path: 5^276 to the half and 5^552
+	// to the quarter are both 5^138, of 97 digits ending in 5.
+	five := big.NewInt(5)
+	for _, tt := range []struct {
+		n int64
+		y string
+	}{{276, "0.5"}, {552, "0.25"}} {
+		x, err := FromBigInt(new(big.Int).Exp(five, big.NewInt(tt.n), nil))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := PowPositive(x, mustParse(t, tt.y)); err != nil {
+			t.Fatalf("PowPositive(5^%d, %s): %v", tt.n, tt.y, err)
+		}
+	}
+	ten := big.NewInt(10)
+	want := big.NewInt(1)
+	for n := int64(0); n < 40; n++ {
+		if pow10(n).Cmp(want) != 0 {
+			t.Fatalf("pow10(%d) is %v", n, pow10(n))
+		}
+		want = new(big.Int).Mul(want, ten)
+	}
+}

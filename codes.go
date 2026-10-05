@@ -33,6 +33,7 @@ const (
 	CodeJSONTooDeep                 Code = "json.too_deep"
 	CodeMapDuplicateKey             Code = "map.duplicate_key"
 	CodeNumberDivideByZero          Code = "number.divide_by_zero"
+	CodeNumberDomain                Code = "number.domain"
 	CodeNumberInvalidSyntax         Code = "number.invalid_syntax"
 	CodeNumberModuloByZero          Code = "number.modulo_by_zero"
 	CodeNumberOutOfRange            Code = "number.out_of_range"

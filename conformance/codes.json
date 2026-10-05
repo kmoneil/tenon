@@ -78,6 +78,9 @@
       "code": "number.divide_by_zero"
     },
     {
+      "code": "number.domain"
+    },
+    {
       "code": "number.invalid_syntax"
     },
     {

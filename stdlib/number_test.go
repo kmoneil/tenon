@@ -282,3 +282,85 @@ func TestConformance_LB030_ArgumentDomains(t *testing.T) {
 		t.Errorf("ParseInt(\"10\", 16.0) = %v, want 16", got)
 	}
 }
+
+func TestConformance_LN060_Log(t *testing.T) {
+	conformance.Covers(t, "LN-060")
+	log := func(x, b string) tenon.Value { return call(stdlib.LogFunc, num(x), num(b)) }
+	for _, tt := range [][3]string{
+		{"1000", "10", "3"}, {"8", "2", "3"}, {"9", "3", "2"}, {"1e-400", "10", "-400"}, {"1", "7", "0"},
+		{"2", "10", "0.301029995663981195213738894724493026768189881462108541310427461127108189274424509486927252118186"},
+	} {
+		if got := log(tt[0], tt[1]); !got.Equal(num(tt[2])) {
+			t.Errorf("Log(%s, %s) = %v, want %s", tt[0], tt[1], got, tt[2])
+		}
+	}
+	// log(2, 8) is a third, which does not terminate: 96 threes, as
+	// Div(1, 3) has it.
+	if got, want := log("2", "8"), tenon.Div(num("1"), num("3")); !got.Equal(want) {
+		t.Errorf("Log(2, 8) = %v, want %v", got, want)
+	}
+	// The domain, at the argument, whatever the other turns out to be.
+	unknown := tenon.Unknown(tenon.NumberType())
+	for _, tt := range []struct {
+		x, b tenon.Value
+		at   []int
+	}{
+		{num("0"), num("10"), []int{0}}, {num("-1"), num("10"), []int{0}},
+		{num("10"), num("1"), []int{1}}, {num("10"), num("0"), []int{1}}, {num("10"), num("-10"), []int{1}},
+		{num("-1"), num("1"), []int{0, 1}},
+		{num("-1"), unknown, []int{0}}, {unknown, num("1"), []int{1}},
+	} {
+		got := call(stdlib.LogFunc, tt.x, tt.b)
+		if !got.IsError() || len(got.Diagnostics()) != len(tt.at) {
+			t.Errorf("Log(%v, %v) = %v, want %d failures", tt.x, tt.b, got, len(tt.at))
+			continue
+		}
+		for i, d := range got.Diagnostics() {
+			if d.Code != tenon.CodeNumberDomain || !d.Path.Equal(at(tt.at[i])) {
+				t.Errorf("Log(%v, %v) failed with %+v, want %s at %v", tt.x, tt.b, d, tenon.CodeNumberDomain, at(tt.at[i]))
+			}
+		}
+	}
+	if got := call(stdlib.LogFunc, unknown, num("10")); got.IsKnown() || !notNull(got) {
+		t.Errorf("Log(unknown, 10) = %v, want an unknown number, not null", got)
+	}
+}
+
+func TestConformance_LN061_Pow(t *testing.T) {
+	conformance.Covers(t, "LN-061")
+	pow := func(x, y tenon.Value) tenon.Value { return call(stdlib.PowFunc, x, y) }
+	for _, tt := range [][3]string{
+		{"10", "23", "100000000000000000000000"}, {"3", "40", "12157665459056928801"}, {"0.1", "2", "0.01"},
+		{"10", "-400", "1e-400"}, {"4", "0.5", "2"}, {"2.25", "0.5", "1.5"},
+		{"2", "0.5", "1.41421356237309504880168872420969807856967187537694807317667973799073247846210703885038753432764"},
+		{"0", "0", "1"}, {"-3", "0", "1"}, {"0", "5", "0"}, {"1", "1e400", "1"},
+		{"-2", "3", "-8"}, {"-2", "2", "4"}, {"-2", "-1", "-0.5"},
+	} {
+		if got := pow(num(tt[0]), num(tt[1])); !got.Equal(num(tt[2])) {
+			t.Errorf("Pow(%s, %s) = %v, want %s", tt[0], tt[1], got, tt[2])
+		}
+	}
+	// 5^138 is a rounding midpoint, 97 digits ending in 5: half to even
+	// keeps the 96th digit, a 2.
+	five138 := num("2.86985925493722536125179818657774823686197645696310430055847584540629213734064251184463500976562e96")
+	if got := pow(num("5"), num("138")); !got.Equal(five138) {
+		t.Errorf("Pow(5, 138) = %v, want %v", got, five138)
+	}
+	// What fails, and how.
+	for _, tt := range []struct {
+		x, y string
+		code tenon.Code
+	}{
+		{"0", "-1", tenon.CodeNumberDivideByZero}, {"-1", "0.5", tenon.CodeNumberDomain},
+		{"-8", "0.3333333333", tenon.CodeNumberDomain}, {"2", "1e400", tenon.CodeNumberOutOfRange},
+		{"10", "-1000000", tenon.CodeNumberOutOfRange},
+	} {
+		got := pow(num(tt.x), num(tt.y))
+		if !got.IsError() || got.Diagnostics()[0].Code != tt.code {
+			t.Errorf("Pow(%s, %s) = %v, want %s", tt.x, tt.y, got, tt.code)
+		}
+	}
+	if got := pow(tenon.Unknown(tenon.NumberType()), num("0.5")); got.IsKnown() || !notNull(got) {
+		t.Errorf("Pow(unknown, 0.5) = %v, want an unknown number, not null", got)
+	}
+}
