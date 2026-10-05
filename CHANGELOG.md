@@ -114,6 +114,21 @@
   known not null leaves the other attributes known; and a map not known
   yet leaves an object's known attributes, where go-cty's answer has no
   type at all. The specification says so (`LC-034` to `LC-037`).
+- `ContainsFunc`, `SetHasElementFunc`, `SetUnionFunc`,
+  `SetIntersectionFunc`, `SetSubtractFunc` and
+  `SetSymmetricDifferenceFunc`. `Contains` converts the value it looks for
+  to the members' type under the safe policy first, so a tuple is found
+  among lists and an untyped null among nulls (go-cty's answers the null
+  with an unknown of no type, #221), while a number is still not found
+  among strings; an empty collection holds nothing, whatever the value.
+  `SetHasElement` may look for null. The set operations unify their
+  element types under the call's policy, take the empty tuple as the empty
+  set, and answer from what is known: `SetSubtract` of the empty set is
+  the first set, members not known yet and all; an intersection, a
+  difference or a union with a member or a set not known yet is the
+  unknown set listing the members known to be in it, within the lengths
+  the arguments allow, where go-cty's is wholly unknown. The specification
+  says so (`LC-040` to `LC-049`).
 - A function may declare its result never null (`FunctionSpec.NotNull`,
   read back with `Function.NotNull`). Every answer the call makes that is
   not a known value then says so, the unknown answer of an argument not
