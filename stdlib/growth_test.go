@@ -2,6 +2,7 @@ package stdlib_test
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/kmoneil/tenon"
@@ -58,6 +59,20 @@ func BenchmarkLibraryGrowth(b *testing.B) {
 		b.Run(fmt.Sprintf("setsymmetricdifference/%d", size), func(b *testing.B) {
 			for b.Loop() {
 				tenon.Call(stdlib.SetSymmetricDifferenceFunc, sets, tenon.Safe)
+			}
+		})
+		// A search refuses each candidate that would split a cluster, a q
+		// before a combining acute, and moves on by one byte.
+		marked := tenon.String(strings.Repeat("q\U00000301 q,", size))
+		q, dash := tenon.String("q"), tenon.String("-")
+		b.Run(fmt.Sprintf("split/%d", size), func(b *testing.B) {
+			for b.Loop() {
+				tenon.Call(stdlib.SplitFunc, []tenon.Value{q, marked}, tenon.Safe)
+			}
+		})
+		b.Run(fmt.Sprintf("replace/%d", size), func(b *testing.B) {
+			for b.Loop() {
+				tenon.Call(stdlib.ReplaceFunc, []tenon.Value{marked, q, dash}, tenon.Safe)
 			}
 		})
 	}

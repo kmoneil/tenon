@@ -32,6 +32,19 @@
   says plainly that clusters meeting anew may compose, so reversing twice
   need not give a string back. The specification says so (`LS-008` to
   `LS-011`).
+- `SplitFunc`, `ReplaceFunc`, `TrimPrefixFunc` and `TrimSuffixFunc`, which
+  match and cut only at cut positions: the boundaries of extended grapheme
+  clusters and the position inside a CR LF, so no ASCII answer changes,
+  but trimming one regional indicator from two flags no longer makes a
+  third, and an `e` no longer matches the start of `é`. An empty separator
+  splits a string into its clusters, and an empty search inserts the
+  replacement between them, where go-cty's work by code points. `Replace`
+  refuses an answer of more than 64 times the size of its arguments and
+  64 KiB with `function.too_large`, before making any of it. A string not
+  known yet answers from its recorded prefix: `Split` with at least as many
+  parts as the separators it settles, the others with the text it
+  settles, matched and trimmed. The specification says so (`LS-012` to
+  `LS-018`).
 
 ## 0.16.0 (2026-10-05)
 

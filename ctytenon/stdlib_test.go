@@ -12,6 +12,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/kmoneil/tenon"
 	"github.com/kmoneil/tenon/ctytenon"
@@ -603,6 +604,53 @@ var counterparts = map[string]counterpart{
 			},
 		}},
 	},
+	"Split": {
+		cty: ctystdlib.SplitFunc,
+		ten: stdlib.SplitFunc,
+		cases: [][]cty.Value{
+			{cty.StringVal(","), cty.StringVal("a,b,,c")}, {cty.StringVal("aa"), cty.StringVal("aaaaa")},
+			{cty.StringVal("\n"), cty.StringVal("a\r\nb\r\n")}, {cty.StringVal(","), cty.StringVal("")},
+			{cty.StringVal(""), cty.StringVal("")}, {cty.StringVal(""), cty.StringVal("abc")},
+			{cty.StringVal(""), cty.StringVal("a\r\nb")},
+			{cty.StringVal("\U0001F1F8\U0001F1EC"), cty.StringVal("\U0001F1FA\U0001F1F8\U0001F1EC\U0001F1E7")},
+			{cty.StringVal(","), cty.UnknownVal(cty.String).Refine().StringPrefix("a,b,c,d").NewValue()},
+		},
+		divergences: []divergence{clustered()},
+	},
+	"Replace": {
+		cty: ctystdlib.ReplaceFunc,
+		ten: stdlib.ReplaceFunc,
+		cases: [][]cty.Value{
+			{cty.StringVal("aaa"), cty.StringVal("aa"), cty.StringVal("b")},
+			{cty.StringVal("abc"), cty.StringVal(""), cty.StringVal("-")},
+			{cty.StringVal(""), cty.StringVal(""), cty.StringVal("-")},
+			{cty.StringVal("a\r\nb"), cty.StringVal("\r"), cty.StringVal("")},
+			{cty.StringVal("e-y"), cty.StringVal("-"), cty.StringVal("\U00000301")},
+			{cty.StringVal("\U0001F1FA\U0001F1F8\U0001F1EC\U0001F1E7"), cty.StringVal("\U0001F1F8\U0001F1EC"), cty.StringVal("")},
+			{cty.StringVal("q\U00000301"), cty.StringVal("q"), cty.StringVal("e")},
+		},
+		divergences: []divergence{clustered()},
+	},
+	"TrimPrefix": {
+		cty: ctystdlib.TrimPrefixFunc,
+		ten: stdlib.TrimPrefixFunc,
+		cases: [][]cty.Value{
+			{cty.StringVal("aaa"), cty.StringVal("a")}, {cty.StringVal("abc"), cty.StringVal("")},
+			{cty.StringVal("q\U00000301x"), cty.StringVal("q")},
+			{cty.StringVal("\U0001F1FA\U0001F1F8\U0001F1EC\U0001F1E7"), cty.StringVal("\U0001F1FA")},
+		},
+		divergences: []divergence{clustered()},
+	},
+	"TrimSuffix": {
+		cty: ctystdlib.TrimSuffixFunc,
+		ten: stdlib.TrimSuffixFunc,
+		cases: [][]cty.Value{
+			{cty.StringVal("aaa"), cty.StringVal("a")}, {cty.StringVal("a\r\n"), cty.StringVal("\n")},
+			{cty.StringVal("xq\U00000301"), cty.StringVal("\U00000301")},
+			{cty.StringVal("\U000000E9"), cty.StringVal("\U00000301")},
+		},
+		divergences: []divergence{clustered()},
+	},
 	"Lookup": {
 		cty: ctystdlib.LookupFunc,
 		ten: stdlib.LookupFunc,
@@ -930,6 +978,29 @@ func setOperation(c function.Function, ten tenon.Function, n int) counterpart {
 				return slices.Contains(ets, cty.Bool) && (slices.Contains(ets, cty.Number) || slices.Contains(ets, cty.String))
 			},
 		}},
+	}
+}
+
+// clustered is the divergence of a call whose strings hold a cluster of
+// more than one code point, CR LF among them: cty searches, splits and
+// trims by bytes and code points, and tenon only at cut positions, the
+// empty text by clusters.
+func clustered() divergence {
+	return divergence{
+		why: "a string holding a cluster of more than one code point: cty matches, trims and splits by bytes, cutting clusters, and an empty separator or search by code points, where tenon cuts only at cut positions and an empty one by clusters (LS-001, LS-012, Appendix B row 45)",
+		match: func(args []cty.Value) bool {
+			for _, a := range args {
+				v, _ := a.UnmarkDeep()
+				if !v.IsKnown() || v.IsNull() || v.Type() != cty.String {
+					continue
+				}
+				n, _ := tenon.Length(tenon.String(v.AsString())).AsInt64()
+				if int(n) != utf8.RuneCountInString(v.AsString()) {
+					return true
+				}
+			}
+			return false
+		},
 	}
 }
 
