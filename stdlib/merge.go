@@ -19,10 +19,9 @@ type mergeArg struct {
 	// object is whether the argument is an object whatever it settles to,
 	// which makes the answer one.
 	object bool
-	// entries are the keys the argument adds, in its order: a known one's
-	// members, a pending object's, or the attributes of an object not known
-	// yet, each the unknown of its type.
-	entries []mergeEntry
+	// adds is how the argument adds its keys, which entries reads where
+	// they are wanted.
+	adds mergeAdds
 	// maybe is whether the argument adds its entries or none: an object not
 	// known yet that may be null.
 	maybe bool
@@ -31,7 +30,21 @@ type mergeArg struct {
 	// to be null that holds no members.
 	open bool
 	elem tenon.Constraint
+	read []mergeEntry
+	done bool
 }
+
+// mergeAdds is how an argument of Merge adds its keys: none, as a null
+// does; its members, a map's entries or an object's attributes, a pending
+// object's among them; or the attributes an object's type names, each not
+// known yet.
+type mergeAdds int
+
+const (
+	addsNothing mergeAdds = iota
+	addsMembers
+	addsTypeAttributes
+)
 
 // mergeEntry is a key an argument of Merge adds, its value and the
 // constraint the value's type satisfies.
@@ -39,6 +52,32 @@ type mergeEntry struct {
 	name string
 	v    tenon.Value
 	c    tenon.Constraint
+}
+
+// entries returns the keys the argument adds, in its order, read once.
+func (a *mergeArg) entries() []mergeEntry {
+	if a.done {
+		return a.read
+	}
+	a.done = true
+	switch {
+	case a.adds == addsTypeAttributes:
+		for _, name := range a.typ.AttributeNames() {
+			at := a.typ.AttributeType(name)
+			a.read = append(a.read, mergeEntry{name, tenon.Unknown(at), tenon.Exactly(at)})
+		}
+	case a.adds == addsMembers && a.object:
+		for name, v := range a.c.Attributes() {
+			a.read = append(a.read, mergeEntry{name, v, typeOf(v)})
+		}
+	case a.adds == addsMembers:
+		ec := tenon.Exactly(a.typ.ElementType())
+		a.read = make([]mergeEntry, 0, a.c.Len())
+		for k, v := range a.c.MapEntries() {
+			a.read = append(a.read, mergeEntry{k, v, ec})
+		}
+	}
+	return a.read
 }
 
 // mergeArgOf reads the unmarked argument c of Merge.
@@ -50,33 +89,20 @@ func mergeArgOf(c tenon.Value) mergeArg {
 			// nothing and has no type for the others to agree with.
 			return mergeArg{c: c}
 		case isObject(c):
-			a := mergeArg{c: c, object: true}
-			for name, v := range c.Attributes() {
-				a.entries = append(a.entries, mergeEntry{name, v, typeOf(v)})
-			}
-			return a
+			return mergeArg{c: c, object: true, adds: addsMembers}
 		}
 		return mergeArg{c: c, object: !slices.Contains(kindsOf(c.Constraint()), tenon.KindMap), open: true, elem: tenon.Any()}
 	}
 	t := c.Type()
 	a := mergeArg{c: c, typ: t, object: t.Kind() == tenon.KindObject}
-	switch n := tenon.IsNull(c); {
-	case n.IsKnown() && n.AsBool():
-	case c.HasMembers() && a.object:
-		for name, v := range c.Attributes() {
-			a.entries = append(a.entries, mergeEntry{name, v, typeOf(v)})
-		}
+	switch {
+	case c.IsNull():
 	case c.HasMembers():
-		for k, v := range c.MapEntries() {
-			a.entries = append(a.entries, mergeEntry{k, v, tenon.Exactly(t.ElementType())})
-		}
+		a.adds = addsMembers
 	case a.object:
 		// An object not known yet has the attributes its type names.
-		for _, name := range t.AttributeNames() {
-			at := t.AttributeType(name)
-			a.entries = append(a.entries, mergeEntry{name, tenon.Unknown(at), tenon.Exactly(at)})
-		}
-		a.maybe = !n.IsKnown()
+		n := tenon.IsNull(c)
+		a.adds, a.maybe = addsTypeAttributes, !n.IsKnown()
 	default:
 		a.open, a.elem = true, tenon.Exactly(t.ElementType())
 	}
@@ -162,7 +188,8 @@ func mergeFields(as []mergeArg, null map[int]bool, open bool) tenon.Constraint {
 		elem tenon.Constraint
 	}
 	var opens []opening
-	for i, a := range as {
+	for i := range as {
+		a := &as[i]
 		if a.open {
 			opens = slices.DeleteFunc(opens, func(o opening) bool { return o.elem.Equal(a.elem) })
 			opens = append(opens, opening{i, a.elem})
@@ -171,7 +198,7 @@ func mergeFields(as []mergeArg, null map[int]bool, open bool) tenon.Constraint {
 			continue
 		}
 		maybe := a.maybe && null == nil
-		for _, e := range a.entries {
+		for _, e := range a.entries() {
 			switch f := fields[e.name]; {
 			case f == nil && maybe:
 				fields[e.name] = &field{cs: []tenon.Constraint{e.c}, certain: -1}
@@ -237,11 +264,11 @@ func oneOf(cs []tenon.Constraint) tenon.Constraint {
 func mergeMap(t tenon.Type, as []mergeArg) tenon.Value {
 	entries := map[string]tenon.Value{}
 	var open []tenon.Value
-	for _, a := range as {
-		if a.open {
-			open = append(open, a.c)
+	for i := range as {
+		if as[i].open {
+			open = append(open, as[i].c)
 		}
-		for _, e := range a.entries {
+		for _, e := range as[i].entries() {
 			entries[e.name] = e.v
 		}
 	}
@@ -303,11 +330,12 @@ var MergeFunc = tenon.NewFunction(tenon.FunctionSpec{
 			return tenon.WithMarks(mergeMap(rc.Type(), as), marks...), nil
 		}
 		entries := map[string]tenon.Value{}
-		for _, a := range as {
+		for i := range as {
+			a := &as[i]
 			if a.open || a.maybe && !exact {
 				return tenon.WithMarks(unknownOf(rc), marks...), nil
 			}
-			for _, e := range a.entries {
+			for _, e := range a.entries() {
 				if a.maybe {
 					// It adds this attribute or leaves the one before, of
 					// the same type, since the answer's type is settled,
