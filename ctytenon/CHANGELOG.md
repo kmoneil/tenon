@@ -5,7 +5,14 @@ module of its own (`github.com/kmoneil/tenon/ctytenon`) whose versions are
 tagged `ctytenon/vX.Y.Z`. tenon's own changes are in the repository's
 `CHANGELOG.md`.
 
-## Unreleased
+## 0.2.1 (2026-10-05)
+
+Requires tenon 0.15.1, which fixes two defects that functions crossed
+from cty reached through tenon 0.15.0's call: a dynamic null returned
+from known arguments panicked, and a failure quoting a redacted argument
+showed it. ctytenon 0.2.0 built against tenon 0.15.1 is fixed as well;
+this release makes sure of it. A security advisory follows tenon's
+release.
 
 ### Fixed
 
