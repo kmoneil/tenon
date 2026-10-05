@@ -1276,3 +1276,36 @@ type nanMark struct{ value float64 }
 func (nanMark) MarkID() string                 { return "nan" }
 func (nanMark) Propagation() tenon.Propagation { return tenon.Propagate }
 func (nanMark) Redacting() bool                { return false }
+
+func TestConformance_MK003_AnEqualityWithNullReadsNoMember(t *testing.T) {
+	conformance.Covers(t, "MK-003")
+	str := tenon.StringType()
+	held := bare("held")
+	own := bare("own")
+	obj := tenon.WithMarks(tenon.Object(map[string]tenon.Value{"password": tenon.WithMarks(tenon.String("x"), held)}), own)
+	list := tenon.List(str, tenon.WithMarks(tenon.String("a"), held))
+	untyped := tenon.Narrow(tenon.Pending(tenon.Any()), tenon.NullOnly())
+
+	// An operand known to be null decides the equality by nullness alone:
+	// the other operand's own marks reach the answer, what it holds does
+	// not.
+	for _, tt := range []struct {
+		a, b tenon.Value
+		want tenon.Value
+	}{
+		{obj, untyped, tenon.WithMarks(tenon.Bool(false), own)},
+		{untyped, obj, tenon.WithMarks(tenon.Bool(false), own)},
+		{list, tenon.Null(tenon.ListType(str)), tenon.Bool(false)},
+		{tenon.WithMarks(tenon.Null(str), own), tenon.Null(str), tenon.WithMarks(tenon.Bool(true), own)},
+	} {
+		if got := tenon.Equals(tt.a, tt.b); !got.Equal(tt.want) {
+			t.Errorf("Equals(%v, %v) = %v, want %v", tt.a, tt.b, got, tt.want)
+		}
+	}
+
+	// Two values compared member by member are read within, as before.
+	other := tenon.List(str, tenon.String("b"))
+	if got := tenon.Equals(list, other); !got.Equal(tenon.WithMarks(tenon.Bool(false), held)) {
+		t.Errorf("Equals(%v, %v) = %v, want false marked held", list, other, got)
+	}
+}

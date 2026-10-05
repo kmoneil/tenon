@@ -994,8 +994,9 @@ func HasMark(v Value, m Mark) bool {
 // which it consumes along with the operand.
 func (o *op) propagated(args []Value) []Mark {
 	var g propagating
+	shallow := o.shallow != nil && o.shallow(args)
 	for i, a := range args {
-		g.gather(a.data(), o.operands[i].within)
+		g.gather(a.data(), o.operands[i].within && !shallow)
 	}
 	return g.marks
 }

@@ -200,6 +200,7 @@ func equality(c function.Function, ten tenon.Function) counterpart {
 			{cty.NumberIntVal(1), cty.StringVal("1")},
 			{cty.MustParseNumberVal("1.50"), cty.MustParseNumberVal("1.5")},
 			{cty.UnknownVal(cty.String), cty.NullVal(cty.DynamicPseudoType)},
+			{cty.ObjectVal(map[string]cty.Value{"password": cty.StringVal("x").Mark("sensitive")}), cty.NullVal(cty.DynamicPseudoType)},
 		},
 		random: func(r *rand.Rand) []cty.Value {
 			v := randomCtyValue(r, randomCtyType(r, 3))
@@ -209,6 +210,16 @@ func equality(c function.Function, ten tenon.Function) counterpart {
 			why: "#229: a set holding a member with an unknown part: cty answers false, even of the set and itself, where the members may turn out equal",
 			match: func(args []cty.Value) bool {
 				return holdsPartlyUnknownMember(args[0]) || holdsPartlyUnknownMember(args[1])
+			},
+		}, {
+			why: "an equality decided by null: cty's EqualFunc unmarks its operands deeply and marks the answer with all they hold, where tenon's reads no member and carries the operands' own marks (MK-003, Appendix B row 31)",
+			match: func(args []cty.Value) bool {
+				for i, a := range args {
+					if a.IsKnown() && a.IsNull() && args[1-i].ContainsMarked() {
+						return true
+					}
+				}
+				return false
 			},
 		}},
 	}
