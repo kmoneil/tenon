@@ -124,9 +124,16 @@ func (b Bridge) argsFromCty(args []cty.Value) ([]tenon.Value, error) {
 //
 // A cty function that answers known arguments with an unknown result, as
 // one wrapped by cty's Unpredictable does, breaks the contract a tenon
-// function makes: known in, known or error out, unless volatility is
+// function makes: known in, known, given or error out, unless volatility is
 // declared. Cross the function beneath the wrapper and declare it with
-// [tenon.Function.AsVolatile].
+// [tenon.Function.AsVolatile]. A dynamic null is given, so a function
+// answering one, as jsondecode does for a document saying null, keeps the
+// contract: it crosses as the pending null tenon reads a JSON null as.
+//
+// The cty function sees an argument unmarked where its parameter does not
+// allow marks, so where tenon's call removed a redacting mark, the
+// function's failure keeps its code and has its message withheld, since
+// cty functions such as parseint quote their argument.
 //
 // FunctionFromCty fails where a parameter's type does not cross, as one
 // holding an unpaired capsule type does not.

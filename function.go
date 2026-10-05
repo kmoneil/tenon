@@ -78,9 +78,19 @@ type FunctionSpec struct {
 	// returned as an error, which becomes diagnostics (a *Error contributes
 	// its own as they are, any other error its text under
 	// CodeFunctionFailed), or equally as an error value. What it returns
-	// must satisfy the result constraint, and must be known or an error
-	// where every argument was known; breaking either is a usage panic
-	// naming the function, since the defect is the function author's.
+	// must satisfy the result constraint, and where every argument was known
+	// it must be known, given or an error: a given value leaves nothing open
+	// but types, as the pending null ParseJSON reads from a JSON null with
+	// Any does, and a tuple or object holding only such values and known
+	// ones. Breaking either is a usage panic naming the function, since the
+	// defect is the function author's.
+	//
+	// Impl and ResultOf see an argument unmarked unless its parameter admits
+	// marks, so they cannot know that a redacting mark withheld its content.
+	// Where the call removed one, their failures keep their codes and have
+	// their messages withheld, located at the call; a function that would
+	// quote its argument in a failure admits marks and withholds what they
+	// require itself.
 	Impl func(args []Value, result Constraint) (Value, error)
 }
 
@@ -239,8 +249,8 @@ func (s *fnSpec) param(i int) *Param {
 //
 // Call panics on the zero Function, on a policy that is neither Safe nor
 // Unsafe, and where the implementation breaks its contract: a result that
-// does not satisfy the function's result constraint, or one that is not
-// known and not an error although every argument was known.
+// does not satisfy the function's result constraint, or one that is neither
+// known, given nor an error although every argument was known.
 func Call(f Function, args []Value, p Policy) Value {
 	s := f.data()
 	if p != Safe && p != Unsafe {
@@ -271,33 +281,102 @@ func Call(f Function, args []Value, p Policy) Value {
 
 	r, err := s.impl(pr.visible, rc)
 	if err != nil {
-		return pr.finish(errorValue(implFailure(err)...), false)
+		return pr.finish(errorValue(s.withheld(pr, implFailure(err))...), false)
 	}
 	if r.n == nil {
 		usagePanic("%s: the implementation returned the zero Value and no error", s.name_())
 	}
 	switch r.n.state {
 	case stateError:
+		if redactingOf(pr.g.marks) != nil {
+			// The marks the implementation put on its error stay with it.
+			r = carryMarks(r, errorValue(s.withheld(pr, r.n.diagnostics())...))
+		}
 	case statePending:
-		if pr.known {
+		// A pending value known to be null, or holding only members that
+		// are known or given, is given (UN-008): only its type is open, as
+		// a JSON null read with Any is, so known arguments may give it.
+		if pr.known && !r.n.given() {
 			usagePanic("%s: every argument was known, but the implementation returned %s",
-				s.name_(), r.n.describe())
+				s.name_(), pr.returned(r.n))
 		}
 		if _, ok := sharedType(r.n.constraint(), rc); !ok {
 			usagePanic("%s: the implementation returned %s, which cannot satisfy its result %s",
-				s.name_(), r.n.describe(), rc)
+				s.name_(), pr.returned(r.n), rc)
 		}
 	default:
 		if pr.known && !r.n.isKnown() {
 			usagePanic("%s: every argument was known, but the implementation returned %s",
-				s.name_(), r.n.describe())
+				s.name_(), pr.returned(r.n))
 		}
 		if !Satisfies(rc, r.Type()) {
 			usagePanic("%s: the implementation returned %s, which does not satisfy its result %s",
-				s.name_(), r.n.describe(), rc)
+				s.name_(), pr.returned(r.n), rc)
 		}
 	}
 	return pr.finish(r, false)
+}
+
+// given reports whether nothing about n is open but types (UN-008): n is
+// known, or n is pending and known to be null, or n is pending and holds
+// members (UN-025) each of which is given. A JSON document read with Any
+// gives such a value wherever it says null.
+func (n *node) given() bool {
+	if n.isKnown() {
+		return true
+	}
+	if n.state != statePending {
+		return false
+	}
+	if n.null == nullOnly {
+		return true
+	}
+	held, ok := n.held()
+	if !ok {
+		return false
+	}
+	for _, m := range held.vals {
+		if !m.n.given() {
+			return false
+		}
+	}
+	return true
+}
+
+// returned describes what an implementation returned for a contract panic's
+// message. The implementation saw its arguments unmarked, so where the
+// boundary removed a redacting mark from one, what it returned may show what
+// that mark withholds, its type naming the attributes of a redacted object
+// among it; it is described as the answer would have been marked, by the
+// redacting marks alone (MK-011).
+func (pr *prepared) returned(n *node) string {
+	if ms := redactingOf(pr.g.marks); ms != nil {
+		return redactedBy(ms)
+	}
+	return n.describe()
+}
+
+// withheld returns the diagnostics of an implementation's or a derivation's
+// failure as the call reports them. Those hooks saw their arguments unmarked
+// (FN-016), so where the boundary removed a redacting mark from one, they
+// could not know what it withholds, and a failure quoting the argument would
+// show it: each diagnostic then keeps its code, and its message and path give
+// way to one naming the function and the redacting marks, located at the
+// call (FN-023, MK-011).
+func (s *fnSpec) withheld(pr *prepared, ds []Diagnostic) []Diagnostic {
+	ms := redactingOf(pr.g.marks)
+	if ms == nil {
+		return ds
+	}
+	message := s.name_() + " failed on " + redactedText(ms) + ", for a reason its redacting marks withhold"
+	out := make([]Diagnostic, 0, len(ds))
+	for _, d := range ds {
+		w := Diagnostic{Code: d.Code, Message: message}
+		if !slices.ContainsFunc(out, w.Equal) {
+			out = append(out, w)
+		}
+	}
+	return out
 }
 
 // ResultConstraint returns the constraint a call of f with these arguments
@@ -411,7 +490,7 @@ func (s *fnSpec) derive(pr *prepared) (Constraint, Value, bool) {
 	}
 	rc, err := s.resultOf(pr.visible)
 	if err != nil {
-		return Constraint{}, errorValue(implFailure(err)...), false
+		return Constraint{}, errorValue(s.withheld(pr, implFailure(err))...), false
 	}
 	if rc.c == nil {
 		usagePanic("%s: the derivation returned the zero Constraint and no error", s.name_())

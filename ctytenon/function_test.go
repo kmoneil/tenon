@@ -211,3 +211,49 @@ func TestFunctionFromCty(t *testing.T) {
 		t.Errorf("AsVolatile changed the wrong function")
 	}
 }
+
+// A cty function that returns a dynamic null from known arguments, as
+// jsondecode does wherever its text says null, answers through tenon with
+// the given value a JSON null is, as ParseJSON reads it: only its type is
+// open. 0.2.0 panicked here, taking the value for an unknown one.
+func TestFunctionFromCtyGivenNulls(t *testing.T) {
+	decode, err := ctytenon.Bridge{}.FunctionFromCty(stdlib.JSONDecodeFunc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, text := range []string{`null`, `[null]`, `{"a":null}`, `[1,null]`} {
+		want, err := tenon.ParseJSON([]byte(text), tenon.Any(), tenon.Safe)
+		if err != nil {
+			t.Fatalf("ParseJSON(%s): %v", text, err)
+		}
+		got := tenon.Call(decode, []tenon.Value{tenon.String(text)}, tenon.Safe)
+		if !got.Equal(want) {
+			t.Errorf("jsondecode(%s) = %v, want %v", text, got, want)
+		}
+	}
+}
+
+// A cty function whose failure quotes its argument, as parseint's does,
+// cannot know the argument was redacted, since the boundary unmarked it:
+// the failure keeps its code and its message is withheld. 0.2.0 showed the
+// redacted text.
+func TestFunctionFromCtyWithholdsFailures(t *testing.T) {
+	parse, err := terraform().FunctionFromCty(stdlib.ParseIntFunc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	secret := tenon.WithMarks(tenon.String("hunter2"), sensitive{})
+	got := tenon.Call(parse, []tenon.Value{secret, tenon.NumberFromInt(10)}, tenon.Safe)
+	if !got.IsError() || !tenon.HasMark(got, sensitive{}) {
+		t.Fatalf("parseint(sensitive) = %v, want an error value carrying the mark", got)
+	}
+	for _, d := range got.Diagnostics() {
+		if strings.Contains(d.Message, "hunter2") || d.Code != tenon.CodeFunctionFailed {
+			t.Errorf("parseint(sensitive) failed with %+v, want %s with the text withheld", d, tenon.CodeFunctionFailed)
+		}
+	}
+	got = tenon.Call(parse, []tenon.Value{tenon.String("hunter2"), tenon.NumberFromInt(10)}, tenon.Safe)
+	if !got.IsError() || !strings.Contains(got.Diagnostics()[0].Message, "hunter2") {
+		t.Errorf("parseint(hunter2) = %v, want cty's message", got)
+	}
+}

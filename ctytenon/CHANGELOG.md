@@ -5,6 +5,20 @@ module of its own (`github.com/kmoneil/tenon/ctytenon`) whose versions are
 tagged `ctytenon/vX.Y.Z`. tenon's own changes are in the repository's
 `CHANGELOG.md`.
 
+## Unreleased
+
+### Fixed
+
+- `FunctionFromCty` panicked where the cty function returned a dynamic
+  null from known arguments, as `jsondecode` does for `null`, `[null]` or
+  `{"a":null}`: tenon 0.15.0's call took the pending null it crosses as
+  for an unknown value. With tenon 0.15.1 the call answers with it, as
+  `ParseJSON` reads a JSON null.
+- A cty function crossed by `FunctionFromCty` whose failure quotes its
+  argument, as `parseint` does, showed a value that a redacting mark
+  withheld, since the cty function saw it unmarked. With tenon 0.15.1 the
+  failure keeps its code and its message is withheld.
+
 ## 0.2.0 (2026-10-03)
 
 Functions cross the bridge now, both ways, so a host still evaluating

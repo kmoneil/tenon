@@ -3,6 +3,7 @@ package tenon_test
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/kmoneil/tenon"
@@ -684,6 +685,169 @@ func TestConformance_FN023_ImplementationFailures(t *testing.T) {
 	mustPanicUsage(t, "Add: the second operand is a value of type bool", func() {
 		tenon.Call(panicking, []tenon.Value{one}, tenon.Safe)
 	})
+}
+
+// returning returns a function of one string whose implementation returns v,
+// whatever it is given.
+func returning(name string, v tenon.Value) tenon.Function {
+	return tenon.NewFunction(tenon.FunctionSpec{
+		Name:   name,
+		Params: []tenon.Param{{Name: "s", Constraint: tenon.Exactly(tenon.StringType())}},
+		Result: tenon.Any(),
+		Impl:   func([]tenon.Value, tenon.Constraint) (tenon.Value, error) { return v, nil },
+	})
+}
+
+func TestConformance_FN021_GivenValuesFromKnownArguments(t *testing.T) {
+	conformance.Covers(t, "FN-021")
+	conformance.Covers(t, "UN-008")
+
+	// A JSON document read with Any states its nulls in full and leaves only
+	// their types to settle: such a value is given, and known arguments may
+	// give it. A function that decodes JSON returns one wherever the text
+	// says null.
+	decode := tenon.NewFunction(tenon.FunctionSpec{
+		Name:   "Decode",
+		Params: []tenon.Param{{Name: "text", Constraint: tenon.Exactly(tenon.StringType())}},
+		Result: tenon.Any(),
+		Impl: func(args []tenon.Value, _ tenon.Constraint) (tenon.Value, error) {
+			return tenon.ParseJSON([]byte(args[0].AsString()), tenon.Any(), tenon.Safe)
+		},
+	})
+	for _, text := range []string{`null`, `[null]`, `{"a": null}`, `[1, [null, {"b": null}]]`} {
+		want, err := tenon.ParseJSON([]byte(text), tenon.Any(), tenon.Safe)
+		if err != nil {
+			t.Fatalf("ParseJSON(%s): %v", text, err)
+		}
+		if !want.IsPending() {
+			t.Fatalf("ParseJSON(%s) gave %v, which is not pending: the test asks nothing", text, want)
+		}
+		if got := tenon.Call(decode, []tenon.Value{tenon.String(text)}, tenon.Safe); !got.Equal(want) {
+			t.Errorf("Decode(%s) gave %v, want %v", text, got, want)
+		}
+	}
+
+	// A value with more left open than its types is still the author's
+	// defect: a pending value that may or may not be null, and a pending
+	// tuple holding one, or holding an unknown member beside a given one.
+	nullOnly := tenon.Narrow(tenon.Pending(tenon.Any()), tenon.NullOnly())
+	for _, v := range []tenon.Value{
+		tenon.Pending(tenon.Any()),
+		tenon.Tuple(tenon.NumberFromInt(1), tenon.Pending(tenon.Any())),
+		tenon.Tuple(tenon.Unknown(tenon.NumberType()), nullOnly),
+	} {
+		mustPanicUsage(t, "Open: every argument was known, but the implementation returned a pending value", func() {
+			tenon.Call(returning("Open", v), []tenon.Value{tenon.String("x")}, tenon.Safe)
+		})
+	}
+}
+
+func TestConformance_FN023_FailuresWithheldWhereRedacted(t *testing.T) {
+	conformance.Covers(t, "FN-023")
+	conformance.Covers(t, "MK-011")
+	str := tenon.Exactly(tenon.StringType())
+	secret := tenon.WithMarks(tenon.String("hunter2"), veil("secret"))
+	quote := func(args []tenon.Value) string { return fmt.Sprintf("cannot parse %q", args[0].AsString()) }
+	parse := func(admit bool, impl func(args []tenon.Value) (tenon.Value, error)) tenon.Function {
+		return tenon.NewFunction(tenon.FunctionSpec{
+			Name:   "Parse",
+			Params: []tenon.Param{{Name: "s", Constraint: str, AllowMarked: admit}},
+			Result: tenon.Exactly(tenon.NumberType()),
+			Impl:   func(args []tenon.Value, _ tenon.Constraint) (tenon.Value, error) { return impl(args) },
+		})
+	}
+	failing := map[string]func(args []tenon.Value) (tenon.Value, error){
+		"an error": func(args []tenon.Value) (tenon.Value, error) {
+			return tenon.Value{}, errors.New(quote(args))
+		},
+		"a *Error located within the argument": func(args []tenon.Value) (tenon.Value, error) {
+			d := tenon.Diagnostic{Code: "app.parse", Message: quote(args), Path: tenon.Path{}.Index(tenon.NumberFromInt(0)).Attribute(args[0].AsString())}
+			return tenon.Value{}, tenon.NewError(tenon.ErrorVal(d, d))
+		},
+		"an error value": func(args []tenon.Value) (tenon.Value, error) {
+			return tenon.ErrorVal(tenon.Diagnostic{Code: "app.parse", Message: quote(args)}), nil
+		},
+		"a conversion's error value": func(args []tenon.Value) (tenon.Value, error) {
+			return tenon.Convert(args[0], tenon.Exactly(tenon.NumberType()), tenon.Unsafe), nil
+		},
+	}
+	withheld := `Parse failed on redacted("secret"), for a reason its redacting marks withhold`
+	for what, impl := range failing {
+		// The implementation saw the argument unmarked, so it could not
+		// withhold what the mark requires: the boundary does, keeping each
+		// code, and the answer carries the mark.
+		got := tenon.Call(parse(false, impl), []tenon.Value{secret}, tenon.Safe)
+		if !got.IsError() || !tenon.HasMark(got, veil("secret")) {
+			t.Errorf("%s: a redacted argument gave %v, want an error value carrying the mark", what, got)
+			continue
+		}
+		ds := got.Diagnostics()
+		if len(ds) != 1 || ds[0].Message != withheld || !ds[0].Path.Equal(tenon.Path{}) || ds[0].Code == "" {
+			t.Errorf("%s: a redacted argument gave %+v, want one diagnostic at the call saying %q", what, ds, withheld)
+		}
+		if strings.Contains(fmt.Sprint(got, ds), "hunter2") {
+			t.Errorf("%s: the answer shows the redacted content: %v", what, ds)
+		}
+
+		// With nothing redacted, the failure is reported as it was made.
+		got = tenon.Call(parse(false, impl), []tenon.Value{tenon.String("hunter2")}, tenon.Safe)
+		if !got.IsError() || !strings.Contains(fmt.Sprint(got.Diagnostics()), "hunter2") {
+			t.Errorf("%s: an unmarked argument gave %v, want its own message", what, got)
+		}
+	}
+
+	// A redacting mark deep within an argument withholds as well.
+	list := tenon.List(tenon.StringType(), tenon.String("a"), secret)
+	deep := tenon.NewFunction(tenon.FunctionSpec{
+		Name:   "Parse",
+		Params: []tenon.Param{{Name: "l", Constraint: tenon.ListOf(str)}},
+		Result: tenon.Exactly(tenon.NumberType()),
+		Impl: func(args []tenon.Value, _ tenon.Constraint) (tenon.Value, error) {
+			return tenon.Value{}, fmt.Errorf("cannot parse %q", args[0].Index(1).AsString())
+		},
+	})
+	if got := tenon.Call(deep, []tenon.Value{list}, tenon.Safe); !got.IsError() || got.Diagnostics()[0].Message != withheld {
+		t.Errorf("a redacting mark within a list gave %v, want the message withheld", got)
+	}
+
+	// A derivation sees the arguments as the implementation does, and its
+	// refusal is withheld alike.
+	deriving := tenon.NewFunction(tenon.FunctionSpec{
+		Name:     "Parse",
+		Params:   []tenon.Param{{Name: "s", Constraint: str}},
+		ResultOf: func(args []tenon.Value) (tenon.Constraint, error) { return tenon.Constraint{}, errors.New(quote(args)) },
+		Impl:     func([]tenon.Value, tenon.Constraint) (tenon.Value, error) { return tenon.NumberFromInt(1), nil },
+	})
+	if got := tenon.Call(deriving, []tenon.Value{secret}, tenon.Safe); !got.IsError() || got.Diagnostics()[0].Message != withheld {
+		t.Errorf("a refusing derivation gave %v, want the message withheld", got)
+	}
+	if _, err := tenon.ResultConstraint(deriving, []tenon.Value{secret}, tenon.Safe); err == nil || strings.Contains(err.Error(), "hunter2") {
+		t.Errorf("ResultConstraint gave %v, want the refusal withheld", err)
+	}
+
+	// A parameter admitting marks hands the implementation the marked
+	// value, and withholding is then the implementation's to do, as
+	// Convert does for the conversion here.
+	admitting := parse(true, failing["a conversion's error value"])
+	if got := tenon.Call(admitting, []tenon.Value{secret}, tenon.Safe); !got.IsError() || strings.Contains(fmt.Sprint(got.Diagnostics()), "hunter2") {
+		t.Errorf("an admitting parameter gave %v, want Convert's own withheld message", got)
+	}
+
+	// The contract's usage errors describe what the implementation returned
+	// by the redacting marks alone: its type would name the redacted
+	// content here.
+	lying := parse(false, func(args []tenon.Value) (tenon.Value, error) {
+		return tenon.Object(map[string]tenon.Value{args[0].AsString(): tenon.Bool(true)}), nil
+	})
+	func() {
+		defer func() {
+			msg, _ := recover().(string)
+			if !strings.Contains(msg, `Parse: the implementation returned a value redacted by "secret", which does not satisfy its result`) || strings.Contains(msg, "hunter2") {
+				t.Errorf("a lying implementation with a redacted argument panicked with %q", msg)
+			}
+		}()
+		tenon.Call(lying, []tenon.Value{secret}, tenon.Safe)
+	}()
 }
 
 func TestConformance_FN030_DiagnosticsLocateArguments(t *testing.T) {
