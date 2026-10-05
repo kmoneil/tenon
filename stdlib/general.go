@@ -16,7 +16,9 @@ func equalityOperand(name, description string) tenon.Param {
 // admits the other operand's type is resolved to it first, so a null whose
 // type was never given compares with a null of any type as equal, and with
 // any other value as not; and two such nulls are equal. That is what x ==
-// null asks of x.
+// null asks of x. Two tuples or objects whose types wait on such nulls are
+// compared member by member by the same rules, so [null] == [null] is true,
+// as null == null is.
 var EqualFunc = tenon.NewFunction(tenon.FunctionSpec{
 	Name:        "Equal",
 	Description: "Returns true if the two given values are equal, or false otherwise.",
@@ -41,9 +43,11 @@ var NotEqualFunc = tenon.NewFunction(tenon.FunctionSpec{
 	},
 })
 
-// equal is EqualFunc's answer: Equals, once a pending operand is resolved
-// to the type of the other where its constraint admits it, and true of two
-// pending values both known to be null.
+// equal is EqualFunc's answer (LN-011): Equals, once a pending operand is
+// resolved to the type of the other where its constraint admits it; true of
+// two pending values both known to be null; and, of two pending tuples or
+// objects holding their members, their members compared pair by pair by
+// these rules, the answers joined as And joins them.
 func equal(a, b tenon.Value) tenon.Value {
 	ua, _ := tenon.Unmark(a)
 	ub, _ := tenon.Unmark(b)
@@ -51,6 +55,13 @@ func equal(a, b tenon.Value) tenon.Value {
 	case ua.IsPending() && ub.IsPending():
 		if ua.IsNull() && ub.IsNull() {
 			return tenon.WithMarks(tenon.Bool(true), propagating(a, b)...)
+		}
+		if pairs, ok := heldPairs(ua, ub); ok {
+			answer := tenon.Bool(true)
+			for _, p := range pairs {
+				answer = tenon.And(answer, equal(p[0], p[1]))
+			}
+			return tenon.WithMarks(answer, propagating(a, b)...)
 		}
 	case ua.IsPending() && ub.IsResolved():
 		if tenon.Satisfies(ua.Constraint(), ub.Type()) {
@@ -62,6 +73,40 @@ func equal(a, b tenon.Value) tenon.Value {
 		}
 	}
 	return tenon.Equals(a, b)
+}
+
+// heldPairs returns the members of a and b paired, where both are pending
+// tuples holding their elements, of one length, or pending objects holding
+// their attributes, of the same names, and whether they are (UN-025).
+func heldPairs(a, b tenon.Value) ([][2]tenon.Value, bool) {
+	if !a.HasMembers() || !b.HasMembers() || a.Constraint().Kind() != b.Constraint().Kind() {
+		return nil, false
+	}
+	var pairs [][2]tenon.Value
+	switch a.Constraint().Kind() {
+	case tenon.ConstraintTupleOf:
+		ea, eb := a.Elements(), b.Elements()
+		if len(ea) != len(eb) {
+			return nil, false
+		}
+		for i := range ea {
+			pairs = append(pairs, [2]tenon.Value{ea[i], eb[i]})
+		}
+	case tenon.ConstraintObjectWith:
+		if a.Len() != b.Len() {
+			return nil, false
+		}
+		for name, va := range a.Attributes() {
+			vb, ok := b.LookupAttribute(name)
+			if !ok {
+				return nil, false
+			}
+			pairs = append(pairs, [2]tenon.Value{va, vb})
+		}
+	default:
+		return nil, false
+	}
+	return pairs, true
 }
 
 // propagating returns the marks of vs that reach what is derived from them:
