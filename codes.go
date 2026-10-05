@@ -27,6 +27,8 @@ const (
 	CodeEncodeUntypedNil            Code = "encode.untyped_nil"
 	CodeFunctionArity               Code = "function.arity"
 	CodeFunctionFailed              Code = "function.failed"
+	CodeFunctionInvalidArgument     Code = "function.invalid_argument"
+	CodeFunctionTooLarge            Code = "function.too_large"
 	CodeJSONInvalidSyntax           Code = "json.invalid_syntax"
 	CodeJSONTooDeep                 Code = "json.too_deep"
 	CodeMapDuplicateKey             Code = "map.duplicate_key"
