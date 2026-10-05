@@ -207,6 +207,76 @@ var counterparts = map[string]counterpart{
 			return []cty.Value{randomCtyValue(r, typ), randomCtyValue(r, typ)}
 		},
 	},
+	"Keys": {
+		cty: ctystdlib.KeysFunc,
+		ten: stdlib.KeysFunc,
+		cases: [][]cty.Value{
+			{cty.MapVal(map[string]cty.Value{"b": cty.NumberIntVal(2), "a": cty.NumberIntVal(1), "B": cty.NumberIntVal(3)})},
+			{cty.UnknownVal(cty.Object(map[string]cty.Type{"b": cty.String, "a": cty.String}))},
+		},
+		random: func(r *rand.Rand) []cty.Value { return []cty.Value{randomCtyValue(r, randomMapOrObject(r))} },
+	},
+	"Values": {
+		cty: ctystdlib.ValuesFunc,
+		ten: stdlib.ValuesFunc,
+		cases: [][]cty.Value{
+			{cty.MapVal(map[string]cty.Value{"b": cty.NumberIntVal(2), "a": cty.NumberIntVal(1)})},
+			{cty.ObjectVal(map[string]cty.Value{"b": cty.NumberIntVal(2), "a": cty.StringVal("x")})},
+		},
+		random: func(r *rand.Rand) []cty.Value { return []cty.Value{randomCtyValue(r, randomMapOrObject(r))} },
+	},
+	"Zipmap": {
+		cty: ctystdlib.ZipmapFunc,
+		ten: stdlib.ZipmapFunc,
+		cases: [][]cty.Value{
+			{cty.ListVal([]cty.Value{cty.StringVal("a"), cty.StringVal("b")}), cty.ListVal([]cty.Value{cty.NumberIntVal(1), cty.NumberIntVal(2)})},
+			{cty.ListVal([]cty.Value{cty.StringVal("a"), cty.StringVal("b")}), cty.TupleVal([]cty.Value{cty.NumberIntVal(1), cty.StringVal("x")})},
+			{cty.ListVal([]cty.Value{cty.StringVal("a"), cty.StringVal("a")}), cty.ListVal([]cty.Value{cty.NumberIntVal(1), cty.NumberIntVal(2)})},
+		},
+		random: func(r *rand.Rand) []cty.Value {
+			keys := randomCtyValue(r, cty.List(cty.String))
+			n := 0
+			if keys.IsKnown() && !keys.IsNull() {
+				n = keys.LengthInt()
+			}
+			vals := make([]cty.Value, n)
+			for i := range vals {
+				vals[i] = cty.NumberIntVal(int64(i))
+			}
+			if n == 0 {
+				return []cty.Value{keys, cty.ListValEmpty(cty.Number)}
+			}
+			return []cty.Value{keys, cty.ListVal(vals)}
+		},
+		divergences: []divergence{{
+			why: "a key known to be null: tenon fails now, located at it, whatever the other keys turn out to be (LB-011), where cty answers unknown, and panics where every key is known",
+			match: func(args []cty.Value) bool {
+				keys, _ := args[0].UnmarkDeep()
+				if !keys.IsKnown() || keys.IsNull() {
+					return false
+				}
+				for it := keys.ElementIterator(); it.Next(); {
+					if _, k := it.Element(); k.IsKnown() && k.IsNull() {
+						return true
+					}
+				}
+				return false
+			},
+		}},
+	},
+	"Lookup": {
+		cty: ctystdlib.LookupFunc,
+		ten: stdlib.LookupFunc,
+		cases: [][]cty.Value{
+			{cty.MapVal(map[string]cty.Value{"a": cty.NumberIntVal(1)}), cty.StringVal("a"), cty.NumberIntVal(0)},
+			{cty.MapVal(map[string]cty.Value{"a": cty.NumberIntVal(1)}), cty.StringVal("c"), cty.NumberIntVal(0)},
+			{cty.ObjectVal(map[string]cty.Value{"a": cty.NumberIntVal(1)}), cty.StringVal("c"), cty.True},
+		},
+		random: func(r *rand.Rand) []cty.Value {
+			m := randomCtyValue(r, cty.Map(cty.Number))
+			return []cty.Value{m, cty.StringVal([]string{"a", "b", "a name"}[r.Intn(3)]), cty.NumberIntVal(0)}
+		},
+	},
 	"Log": transcendental(ctystdlib.LogFunc, stdlib.LogFunc),
 	"Pow": transcendental(ctystdlib.PowFunc, stdlib.PowFunc),
 	"Min": extremes(ctystdlib.MinFunc, stdlib.MinFunc),
@@ -440,6 +510,19 @@ func holdsSetOfSeveral(v cty.Value) bool {
 		}
 	}
 	return false
+}
+
+// randomMapOrObject returns a random map or object type.
+func randomMapOrObject(r *rand.Rand) cty.Type {
+	for {
+		t := randomCtyType(r, 2)
+		if t.IsMapType() || t.IsObjectType() {
+			return t
+		}
+		if r.Intn(2) == 0 {
+			return cty.Map(t)
+		}
+	}
 }
 
 // abcList is the list ["a", "b", "c"].

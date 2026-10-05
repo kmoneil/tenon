@@ -94,6 +94,16 @@
   `CoalesceList` takes a language's `null` (#221's class) and carries the
   marks of the arguments it examined, not of one after its choice. The
   specification says so (`LC-020` to `LC-023`).
+- `KeysFunc`, `ValuesFunc`, `ZipmapFunc` and `LookupFunc`. `Keys` and
+  `Values` read in the canonical order of strings, an object's keys known
+  from its type even where it is not. `Zipmap` refuses a null key at it,
+  where go-cty's panics, and lists of different lengths now where they
+  already differ; each key's marks reach the map. `Lookup` reads its
+  default only where the key is missing, so a default not known yet leaves
+  a found member known, and the default is optional and may be null, as
+  the consumers' own `lookup` has it; a map holding a member not known yet
+  still answers a known key. The specification says so (`LC-030` to
+  `LC-033`).
 - A function may declare its result never null (`FunctionSpec.NotNull`,
   read back with `Function.NotNull`). Every answer the call makes that is
   not a known value then says so, the unknown answer of an argument not
