@@ -2,45 +2,6 @@ package stdlib
 
 import "github.com/kmoneil/tenon"
 
-// AssertNotNullFunc returns its argument as it is, marks included, and fails
-// where the argument is null: a null of a type, or a pending value known to
-// be null, with tenon.CodeOperationNullOperand located at the argument. Its
-// result is never null, so an argument not known yet answers with itself
-// narrowed not null, which a language uses to promise that a value it
-// cannot see yet will not be null when it is.
-var AssertNotNullFunc = tenon.NewFunction(tenon.FunctionSpec{
-	Name:        "AssertNotNull",
-	Description: "Returns the given value as it is, failing where it is null.",
-	Params: []tenon.Param{{
-		Name:         "value",
-		Description:  "The value that must not be null.",
-		Constraint:   tenon.Any(),
-		AllowUnknown: true,
-		AllowPending: true,
-		AllowMarked:  true,
-	}},
-	ResultOf: func(args []tenon.Value, _ tenon.Policy) (tenon.Constraint, error) {
-		return typeOf(args[0]), nil
-	},
-	NotNull: true,
-	Impl: func(args []tenon.Value, _ tenon.Constraint, _ tenon.Policy) (tenon.Value, error) {
-		return args[0], nil
-	},
-})
-
-// typeOf returns the constraint v's type gives: exactly that type, or the
-// constraint a pending value carries. A parameter admitting marks hands over
-// a marked value, whose type a redacting mark withholds from a reader, so
-// the marks come off first: the type is the function's to know, and the
-// answer carries them.
-func typeOf(v tenon.Value) tenon.Constraint {
-	v, _ = tenon.Unmark(v)
-	if v.IsPending() {
-		return v.Constraint()
-	}
-	return tenon.Exactly(v.Type())
-}
-
 // equalityOperand returns a parameter of an equality, which has an answer for
 // every value: null, values not known yet, pending ones, marked ones.
 func equalityOperand(name, description string) tenon.Param {
@@ -116,4 +77,63 @@ func propagating(vs ...tenon.Value) []tenon.Mark {
 		}
 	}
 	return out
+}
+
+// anything returns a parameter of a function that has an answer for any
+// value: null, values not known yet, pending ones, marked ones.
+func anything(name, description string) tenon.Param {
+	return tenon.Param{
+		Name: name, Description: description, Constraint: tenon.Any(),
+		AllowNull: true, AllowUnknown: true, AllowPending: true, AllowMarked: true,
+	}
+}
+
+// CoalesceFunc returns the first of its arguments that is not null,
+// converted to the type the arguments unify to under the call's policy. A
+// null argument is passed over; one that may still be null, not known yet,
+// leaves the answer unknown, never null, since a later one may stand in for
+// it; and where every argument is null the call fails with
+// tenon.CodeFunctionInvalidArgument. The answer carries the marks of what
+// the function read: the nulls it passed over and the argument it chose,
+// not those it never reached.
+var CoalesceFunc = tenon.NewFunction(tenon.FunctionSpec{
+	Name:        "Coalesce",
+	Description: "Returns the first of the given arguments that is not null.",
+	Params:      []tenon.Param{anything("first", "The first value to consider.")},
+	VarParam:    &tenon.Param{Name: "vals", Description: "The further values to consider, in order.", Constraint: tenon.Any(), AllowNull: true, AllowUnknown: true, AllowPending: true, AllowMarked: true},
+	ResultOf: func(args []tenon.Value, p tenon.Policy) (tenon.Constraint, error) {
+		cs := make([]tenon.Constraint, len(args))
+		for i, a := range args {
+			cs[i] = typeOf(a)
+		}
+		return tenon.Unify(cs, p)
+	},
+	NotNull: true,
+	Impl: func(args []tenon.Value, result tenon.Constraint, p tenon.Policy) (tenon.Value, error) {
+		var read []tenon.Mark
+		for i, a := range args {
+			u, _ := tenon.Unmark(a)
+			switch n := tenon.IsNull(u); {
+			case n.IsKnown() && n.AsBool():
+				read = append(read, propagating(a)...)
+			case !n.IsKnown():
+				return tenon.WithMarks(unknownOf(result), append(read, propagating(a)...)...), nil
+			default:
+				return tenon.WithMarks(at(i, tenon.Convert(a, result, p)), read...), nil
+			}
+		}
+		return tenon.ErrorVal(tenon.Diagnostic{
+			Code:    tenon.CodeFunctionInvalidArgument,
+			Message: "every argument of Coalesce is null, and it has no answer without one that is not",
+		}), nil
+	},
+})
+
+// unknownOf returns the value not known yet that the constraint c gives:
+// the unknown of its type where it names one, and pending otherwise.
+func unknownOf(c tenon.Constraint) tenon.Value {
+	if c.Kind() == tenon.ConstraintExactly {
+		return tenon.Unknown(c.Type())
+	}
+	return tenon.Pending(c)
 }

@@ -16,6 +16,13 @@ func (secret) MarkID() string                 { return "secret" }
 func (secret) Propagation() tenon.Propagation { return tenon.Propagate }
 func (secret) Redacting() bool                { return true }
 
+// bare is a mark that propagates, named by its string.
+type bare string
+
+func (m bare) MarkID() string               { return string(m) }
+func (bare) Propagation() tenon.Propagation { return tenon.Propagate }
+func (bare) Redacting() bool                { return false }
+
 // stays is a mark that stays on the value it is attached to.
 type stays struct{}
 
@@ -185,5 +192,77 @@ func TestConformance_LN011_Equality(t *testing.T) {
 	}
 	if got := call(stdlib.EqualFunc, tenon.WithMarks(untyped, secret{}), tenon.Null(str)); !got.Equal(tenon.WithMarks(tenon.Bool(true), secret{})) {
 		t.Errorf("Equal(a redacted untyped null, null) = %v, want true carrying the mark", got)
+	}
+}
+
+func TestConformance_LN080_Coalesce(t *testing.T) {
+	conformance.Covers(t, "LN-080")
+	str, num := tenon.StringType(), tenon.NumberType()
+	untyped := tenon.Narrow(tenon.Pending(tenon.Any()), tenon.NullOnly())
+	one := tenon.NumberFromInt(1)
+
+	// The first argument known not to be null is the answer, converted to
+	// what the arguments unify to.
+	for _, tt := range []struct {
+		args []tenon.Value
+		want tenon.Value
+	}{
+		{[]tenon.Value{untyped, one}, one},
+		{[]tenon.Value{tenon.Null(num), untyped, one, tenon.NumberFromInt(2)}, one},
+		{[]tenon.Value{one, tenon.Unknown(num)}, one},
+		{[]tenon.Value{tenon.String(""), tenon.String("a")}, tenon.String("")},
+		{[]tenon.Value{tenon.Narrow(tenon.Unknown(num), tenon.NotNull()), one}, tenon.Narrow(tenon.Unknown(num), tenon.NotNull())},
+	} {
+		if got := call(stdlib.CoalesceFunc, tt.args...); !got.Equal(tt.want) {
+			t.Errorf("Coalesce(%v) = %v, want %v", tt.args, got, tt.want)
+		}
+	}
+
+	// One that may still be null leaves the answer unknown, not null.
+	got := call(stdlib.CoalesceFunc, tenon.Unknown(num), one)
+	if got.IsKnown() || !got.Type().Equal(num) || !notNull(got) {
+		t.Errorf("Coalesce(unknown, 1) = %v, want the unknown Number, not null", got)
+	}
+
+	// Every argument null fails, located at the call; no argument is no
+	// call at all.
+	got = call(stdlib.CoalesceFunc, tenon.Null(str), untyped)
+	if !got.IsError() || got.Diagnostics()[0].Code != tenon.CodeFunctionInvalidArgument || !got.Diagnostics()[0].Path.Equal(tenon.Path{}) {
+		t.Errorf("Coalesce(null, null) = %v, want %s at the call", got, tenon.CodeFunctionInvalidArgument)
+	}
+	if got := call(stdlib.CoalesceFunc); !got.IsError() || got.Diagnostics()[0].Code != tenon.CodeFunctionArity {
+		t.Errorf("Coalesce() = %v, want %s", got, tenon.CodeFunctionArity)
+	}
+
+	// The answer carries the marks of what was read: the nulls passed over
+	// and the argument chosen, not one after it.
+	passed := tenon.WithMarks(tenon.Null(num), secret{})
+	after := tenon.WithMarks(tenon.NumberFromInt(2), bare("after"))
+	if got := call(stdlib.CoalesceFunc, passed, one, after); !got.Equal(tenon.WithMarks(one, secret{})) {
+		t.Errorf("Coalesce(%v, 1, %v) = %v, want 1 carrying only the passed null's mark", passed, after, got)
+	}
+
+	// Objects that differ unify as an object, the attributes some lack
+	// being optional (CV-042), so the answer is an object too.
+	a := tenon.Object(map[string]tenon.Value{"a": one})
+	b := tenon.Object(map[string]tenon.Value{"b": one})
+	got = call(stdlib.CoalesceFunc, a, b)
+	if !got.IsKnown() || got.Type().Kind() != tenon.KindObject {
+		t.Errorf("Coalesce(%v, %v) = %v, want an object", a, b, got)
+	}
+}
+
+func TestConformance_LB021_ConversionsFollowThePolicy(t *testing.T) {
+	conformance.Covers(t, "LB-021")
+	// Coalesce unifies its arguments' types under the call's policy: a
+	// number and a string unify as a string under Unsafe, and not at all
+	// under Safe.
+	one, a := tenon.NumberFromInt(1), tenon.String("a")
+	if got := tenon.Call(stdlib.CoalesceFunc, []tenon.Value{one, a}, tenon.Unsafe); !got.Equal(tenon.String("1")) {
+		t.Errorf("Coalesce(1, \"a\") under Unsafe = %v, want \"1\"", got)
+	}
+	got := tenon.Call(stdlib.CoalesceFunc, []tenon.Value{one, a}, tenon.Safe)
+	if !got.IsError() || got.Diagnostics()[0].Code != tenon.CodeUnifyNoCommonConstraint {
+		t.Errorf("Coalesce(1, \"a\") under Safe = %v, want %s", got, tenon.CodeUnifyNoCommonConstraint)
 	}
 }

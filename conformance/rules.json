@@ -245,6 +245,8 @@
     {"id":"LN-010","area":"LN","withdrawn":false,"outline":false},
     {"id":"LN-011","area":"LN","withdrawn":false,"outline":false},
     {"id":"LN-020","area":"LN","withdrawn":false,"outline":false},
-    {"id":"LN-083","area":"LN","withdrawn":false,"outline":false}
+    {"id":"LN-080","area":"LN","withdrawn":false,"outline":false},
+    {"id":"LN-083","area":"LN","withdrawn":false,"outline":false},
+    {"id":"LN-085","area":"LN","withdrawn":false,"outline":false}
   ]
 }

@@ -87,7 +87,31 @@ var counterparts = map[string]counterpart{
 	"And":                  {cty: ctystdlib.AndFunc, ten: stdlib.AndFunc},
 	"Or":                   {cty: ctystdlib.OrFunc, ten: stdlib.OrFunc},
 	"Equal":                equality(ctystdlib.EqualFunc, stdlib.EqualFunc),
-	"NotEqual":             equality(ctystdlib.NotEqualFunc, stdlib.NotEqualFunc),
+	"Coalesce": {
+		cty: ctystdlib.CoalesceFunc,
+		ten: stdlib.CoalesceFunc,
+		cases: [][]cty.Value{
+			{cty.NullVal(cty.DynamicPseudoType), cty.NumberIntVal(1)},
+			{cty.NullVal(cty.String), cty.NumberIntVal(1)},
+			{cty.StringVal(""), cty.StringVal("a")},
+			{cty.NumberIntVal(1), cty.UnknownVal(cty.Number)},
+			{cty.UnknownVal(cty.Number), cty.NumberIntVal(1)},
+			{cty.NullVal(cty.String), cty.NullVal(cty.String)},
+			{cty.NullVal(cty.Number).Mark("sensitive"), cty.NumberIntVal(1)},
+		},
+		random: func(r *rand.Rand) []cty.Value {
+			typ := randomCtyType(r, 2)
+			args := make([]cty.Value, 1+r.Intn(3))
+			for i := range args {
+				args[i] = randomCtyValue(r, typ)
+			}
+			return args
+		},
+	},
+	"MakeTo(number)": makeTo(cty.Number, tenon.Exactly(tenon.NumberType())),
+	"MakeTo(string)": makeTo(cty.String, tenon.Exactly(tenon.StringType())),
+	"MakeTo(bool)":   makeTo(cty.Bool, tenon.Exactly(tenon.BoolType())),
+	"NotEqual":       equality(ctystdlib.NotEqualFunc, stdlib.NotEqualFunc),
 }
 
 // arithmetic returns the counterpart of a function of numbers, with the
@@ -187,6 +211,61 @@ func isHuge(n tenon.Value) bool {
 	return !tenon.LessThan(n, huge).AsBool() || !tenon.LessThan(tenon.Sub(tenon.NumberFromInt(0), huge), n).AsBool()
 }
 
+// makeTo returns the counterpart of MakeToFunc for a type, called with
+// strings, numbers and bools as a language's tostring, tonumber and tobool
+// are.
+func makeTo(typ cty.Type, c tenon.Constraint) counterpart {
+	cp := counterpart{
+		cty: ctystdlib.MakeToFunc(typ),
+		ten: stdlib.MakeToFunc(c),
+		cases: [][]cty.Value{
+			{cty.StringVal("5")}, {cty.StringVal("true")}, {cty.NumberIntVal(5)}, {cty.True},
+			{cty.NullVal(cty.String)}, {cty.UnknownVal(cty.String)}, {cty.StringVal("x")},
+			{cty.StringVal("hunter2").Mark("sensitive")},
+		},
+		random: func(r *rand.Rand) []cty.Value {
+			return []cty.Value{randomCtyValue(r, []cty.Type{cty.String, cty.Number, cty.Bool}[r.Intn(3)])}
+		},
+	}
+	if typ == cty.Number {
+		cp.cases = append(cp.cases, []cty.Value{cty.StringVal("1p4")}, []cty.Value{cty.StringVal("inf")}, []cty.Value{cty.StringVal("+1")})
+		cp.divergences = []divergence{{
+			why: "#223: cty reads \"inf\", \"1p4\" and \"+1\" as numbers, and tenon refuses them (NU-022, Appendix B row 8)",
+			match: func(args []cty.Value) bool {
+				a, _ := args[0].UnmarkDeep()
+				if a.Type() != cty.String || !a.IsKnown() || a.IsNull() {
+					return false
+				}
+				_, err := cty.ParseNumberVal(a.AsString())
+				return err == nil && tenon.NumberFromText(a.AsString()).IsError()
+			},
+		}}
+	}
+	if typ == cty.String {
+		cp.divergences = []divergence{{
+			why: "a number of 10^21 or more in magnitude, or below 10^-20, converts to its canonical text, scientific past 20 places either way (NU-020), where cty writes every digit (Appendix B row 32)",
+			match: func(args []cty.Value) bool {
+				n, ok := numberOf(args[0])
+				return ok && scientific(n)
+			},
+		}}
+	}
+	return cp
+}
+
+// scientific reports whether the canonical text of the number n is
+// scientific: its magnitude is 10^21 or more, or not zero and below 10^-20.
+func scientific(n tenon.Value) bool {
+	n, _ = tenon.Unmark(n)
+	if n.Equal(tenon.NumberFromInt(0)) {
+		return false
+	}
+	if tenon.LessThan(n, tenon.NumberFromInt(0)).AsBool() {
+		n = tenon.Sub(tenon.NumberFromInt(0), n)
+	}
+	return !tenon.LessThan(n, tenon.NumberFromText("1e21")).AsBool() || tenon.LessThan(n, tenon.NumberFromText("1e-20")).AsBool()
+}
+
 // equality returns the counterpart of Equal or NotEqual, called with pairs
 // of values alike, related, and of other types.
 func equality(c function.Function, ten tenon.Function) counterpart {
@@ -256,13 +335,22 @@ func TestLibraryHasCounterparts(t *testing.T) {
 		}
 	}
 	slices.Sort(declared)
-	if have := slices.Sorted(maps.Keys(counterparts)); !slices.Equal(declared, have) {
-		t.Errorf("the stdlib package declares %v, and counterparts holds %v", declared, have)
-	}
+	var have []string
 	for name, cp := range counterparts {
+		// MakeToFunc is a factory, compared for each type it is made for.
+		if base, _, made := strings.Cut(name, "("); made {
+			if cp.ten.Name() != base || base != "MakeTo" {
+				t.Errorf("counterparts[%q] holds %s", name, cp.ten.Name())
+			}
+			continue
+		}
 		if cp.ten.Name() != name {
 			t.Errorf("counterparts[%q] holds %s", name, cp.ten.Name())
 		}
+		have = append(have, name)
+	}
+	if slices.Sort(have); !slices.Equal(declared, have) {
+		t.Errorf("the stdlib package declares %v, and counterparts holds %v", declared, have)
 	}
 }
 
