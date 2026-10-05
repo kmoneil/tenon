@@ -651,6 +651,59 @@ var counterparts = map[string]counterpart{
 		},
 		divergences: []divergence{clustered()},
 	},
+	"Trim": {
+		cty: ctystdlib.TrimFunc,
+		ten: stdlib.TrimFunc,
+		cases: [][]cty.Value{
+			{cty.StringVal("xyhixy"), cty.StringVal("yx")}, {cty.StringVal("abc"), cty.StringVal("")},
+			{cty.StringVal("\r\na\n\r"), cty.StringVal("\r\n")},
+			{cty.StringVal("q\U00000301xq"), cty.StringVal("q")},
+			{cty.StringVal("\U0001F44D\U0001F3FDx\U0001F44D"), cty.StringVal("\U0001F44D")},
+		},
+		divergences: []divergence{clustered()},
+	},
+	"TrimSpace": {
+		cty: ctystdlib.TrimSpaceFunc,
+		ten: stdlib.TrimSpaceFunc,
+		cases: [][]cty.Value{
+			{cty.StringVal("  hello  ")}, {cty.StringVal("\t\r\n x \U000000A0\U00003000")},
+			{cty.StringVal("\U0000FEFFx\U0000200B")}, {cty.StringVal(" \U00000301x")},
+		},
+		divergences: []divergence{clustered()},
+	},
+	"Chomp": {
+		cty: ctystdlib.ChompFunc,
+		ten: stdlib.ChompFunc,
+		cases: [][]cty.Value{
+			{cty.StringVal("a\n")}, {cty.StringVal("a\r\n\r\n")}, {cty.StringVal("a\n\r")}, {cty.StringVal("\n")},
+			{cty.StringVal("a\nb\n")}, {cty.StringVal("a\U00002028")}, {cty.StringVal("a\v\f")},
+		},
+	},
+	"Indent": {
+		cty: ctystdlib.IndentFunc,
+		ten: stdlib.IndentFunc,
+		cases: [][]cty.Value{
+			{cty.NumberIntVal(2), cty.StringVal("a\nb")}, {cty.NumberIntVal(2), cty.StringVal("a\nb\n")},
+			{cty.NumberIntVal(2), cty.StringVal("a\r\nb")}, {cty.NumberIntVal(0), cty.StringVal("a\nb")},
+			{cty.NumberIntVal(-1), cty.StringVal("ab")}, {cty.MustParseNumberVal("1.5"), cty.StringVal("a\nb")},
+			{cty.MustParseNumberVal("1e30"), cty.StringVal("ab")},
+		},
+		// Small counts only: go-cty allocates what it is asked for.
+		random: func(r *rand.Rand) []cty.Value {
+			return []cty.Value{cty.NumberIntVal(int64(r.Intn(6))), randomCtyValue(r, cty.String)}
+		},
+		divergences: []divergence{{
+			why: "a number of spaces past what int64 holds, for a string with no line feed: cty fails, and tenon answers the string, whatever the number (LS-022)",
+			match: func(args []cty.Value) bool {
+				n, ok := numberOf(args[0])
+				if !ok {
+					return false
+				}
+				_, fits := n.AsInt64()
+				return isInteger(n) && !fits
+			},
+		}},
+	},
 	"Lookup": {
 		cty: ctystdlib.LookupFunc,
 		ten: stdlib.LookupFunc,

@@ -45,6 +45,18 @@
   parts as the separators it settles, the others with the text it
   settles, matched and trimmed. The specification says so (`LS-012` to
   `LS-018`).
+- `TrimFunc`, `TrimSpaceFunc`, `ChompFunc` and `IndentFunc`. `Trim` and
+  `TrimSpace` remove runs that end and begin at cut positions, so a space
+  carrying a combining mark stays and no cluster is split; `TrimSpace`
+  reads White_Space from the Unicode version tenon states. `Indent` takes
+  a whole number not less than zero, failing with
+  `function.invalid_argument` at it otherwise, where go-cty's panics with
+  a stack trace in its message, and refuses an answer of more than 64
+  times the string and 64 KiB with `function.too_large` before making any
+  of it, where go-cty's may exhaust the host's memory; a string with no
+  line feed is its own answer whatever the number. A string not known yet
+  answers from its recorded prefix. The specification says so (`LS-019`
+  to `LS-023`).
 
 ## 0.16.0 (2026-10-05)
 
