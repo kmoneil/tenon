@@ -9,16 +9,14 @@ fails where it is stale.
 | --- | --- |
 | Specification version | 0.13.1 |
 | Unicode version (`ST-003`) | 15.0.0 |
-| Rules | 254 normative, 0 outline, 0 withdrawn |
-| Rules satisfied | 251 of 254 |
+| Rules | 258 normative, 0 outline, 0 withdrawn |
+| Rules satisfied | 257 of 258 |
 | Optional areas omitted | none |
 
 ## Rules not satisfied
 
 | Rule | Why |
 | ---- | --- |
-| `LB-012` | deferred: partly known collections are first read by the collection functions |
-| `LB-013` | deferred: sequences are first taken by the collection functions |
 | `LB-031` | deferred: the first bounded results are Range's and SetProduct's |
 
 ## Implementation-defined orderings
@@ -52,5 +50,6 @@ implemented, and their conformance tests run.
 | `DI` | 20 | 20 |
 | `JS` | 9 | 9 |
 | `FN` | 17 | 17 |
-| `LB` | 11 | 8 |
+| `LB` | 11 | 10 |
 | `LN` | 15 | 15 |
+| `LC` | 4 | 4 |

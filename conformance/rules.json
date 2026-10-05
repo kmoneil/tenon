@@ -254,6 +254,10 @@
     {"id":"LN-061","area":"LN","withdrawn":false,"outline":false},
     {"id":"LN-080","area":"LN","withdrawn":false,"outline":false},
     {"id":"LN-083","area":"LN","withdrawn":false,"outline":false},
-    {"id":"LN-085","area":"LN","withdrawn":false,"outline":false}
+    {"id":"LN-085","area":"LN","withdrawn":false,"outline":false},
+    {"id":"LC-001","area":"LC","withdrawn":false,"outline":false},
+    {"id":"LC-002","area":"LC","withdrawn":false,"outline":false},
+    {"id":"LC-003","area":"LC","withdrawn":false,"outline":false},
+    {"id":"LC-004","area":"LC","withdrawn":false,"outline":false}
   ]
 }

@@ -92,10 +92,25 @@ var counterparts = map[string]counterpart{
 	"Int":                  arithmetic(ctystdlib.IntFunc, stdlib.IntFunc),
 	"Ceil":                 arithmetic(ctystdlib.CeilFunc, stdlib.CeilFunc),
 	"Floor":                arithmetic(ctystdlib.FloorFunc, stdlib.FloorFunc),
-	"Log":                  transcendental(ctystdlib.LogFunc, stdlib.LogFunc),
-	"Pow":                  transcendental(ctystdlib.PowFunc, stdlib.PowFunc),
-	"Min":                  extremes(ctystdlib.MinFunc, stdlib.MinFunc),
-	"Max":                  extremes(ctystdlib.MaxFunc, stdlib.MaxFunc),
+	"Length": {
+		cty: ctystdlib.LengthFunc,
+		ten: stdlib.LengthFunc,
+		cases: [][]cty.Value{
+			{cty.ListVal([]cty.Value{cty.StringVal("a"), cty.UnknownVal(cty.String)})},
+			{cty.SetVal([]cty.Value{cty.NumberIntVal(1), cty.UnknownVal(cty.Number)})},
+			{cty.UnknownVal(cty.Tuple([]cty.Type{cty.String, cty.String}))},
+			{cty.ListVal([]cty.Value{cty.StringVal("a")}).Mark("sensitive")},
+		},
+		random:      func(r *rand.Rand) []cty.Value { return []cty.Value{randomCtyValue(r, randomCtyType(r, 2))} },
+		divergences: []divergence{superset("a string or an object", cty.String)},
+	},
+	"HasIndex": indexing(ctystdlib.HasIndexFunc, stdlib.HasIndexFunc),
+	"Index":    indexing(ctystdlib.IndexFunc, stdlib.IndexFunc),
+	"Element":  indexing(ctystdlib.ElementFunc, stdlib.ElementFunc),
+	"Log":      transcendental(ctystdlib.LogFunc, stdlib.LogFunc),
+	"Pow":      transcendental(ctystdlib.PowFunc, stdlib.PowFunc),
+	"Min":      extremes(ctystdlib.MinFunc, stdlib.MinFunc),
+	"Max":      extremes(ctystdlib.MaxFunc, stdlib.MaxFunc),
 	"ParseInt": {
 		cty: ctystdlib.ParseIntFunc,
 		ten: stdlib.ParseIntFunc,
@@ -304,6 +319,76 @@ func scientific(n tenon.Value) bool {
 		n = tenon.Sub(tenon.NumberFromInt(0), n)
 	}
 	return !tenon.LessThan(n, tenon.NumberFromText("1e21")).AsBool() || tenon.LessThan(n, tenon.NumberFromText("1e-20")).AsBool()
+}
+
+// indexing returns the counterpart of HasIndex, Index or Element, called
+// with collections of the kinds they take and keys of either kind.
+func indexing(c function.Function, ten tenon.Function) counterpart {
+	n := cty.NumberIntVal
+	abc := cty.ListVal([]cty.Value{cty.StringVal("a"), cty.StringVal("b"), cty.StringVal("c")})
+	cp := counterpart{
+		cty: c,
+		ten: ten,
+		cases: [][]cty.Value{
+			{abc, n(1)}, {abc, n(4)}, {abc, n(-1)}, {abc, cty.MustParseNumberVal("1.5")},
+			{cty.ListValEmpty(cty.String), n(0)},
+			{cty.TupleVal([]cty.Value{cty.StringVal("a"), n(1)}), n(1)},
+			{cty.MapVal(map[string]cty.Value{"k": n(1)}), cty.StringVal("k")},
+			{cty.ListVal([]cty.Value{cty.StringVal("a"), cty.UnknownVal(cty.String)}), n(0)},
+			{cty.UnknownVal(cty.List(cty.String)), n(0)},
+			{abc.Mark("sensitive"), n(0)},
+		},
+		random: func(r *rand.Rand) []cty.Value {
+			var coll cty.Value
+			switch r.Intn(3) {
+			case 0:
+				coll = randomCtyValue(r, cty.List(randomCtyType(r, 1)))
+			case 1:
+				coll = randomCtyValue(r, cty.Map(randomCtyType(r, 1)))
+			default:
+				coll = randomCtyValue(r, randomCtyType(r, 2))
+			}
+			key := cty.NumberIntVal(int64(r.Intn(6) - 2))
+			if r.Intn(3) == 0 {
+				key = cty.StringVal([]string{"a", "k", "a name", "0"}[r.Intn(4)])
+			}
+			return []cty.Value{coll, key}
+		},
+	}
+	switch ten.Name() {
+	case "HasIndex", "Index":
+		cp.divergences = append(cp.divergences, superset("an object"))
+	}
+	if ten.Name() == "Index" {
+		cp.divergences = append(cp.divergences, divergence{
+			why: "a key no list could have, negative or not a whole number: tenon fails now, whatever the list turns out to be (LB-011), where cty answers unknown",
+			match: func(args []cty.Value) bool {
+				coll, _ := args[0].UnmarkDeep()
+				k, ok := numberOf(args[1])
+				return ok && !coll.IsKnown() && (fractionalNumber(k) || tenon.LessThan(k, tenon.NumberFromInt(0)).AsBool())
+			},
+		})
+	}
+	return cp
+}
+
+// superset is where tenon's function takes what go-cty's refuses, as the
+// consumers' own length takes strings and objects and HCL's coll[key] indexes
+// objects (D-298): a first argument that is an object, or of another of the
+// types given.
+func superset(what string, also ...cty.Type) divergence {
+	return divergence{
+		why: "tenon's takes " + what + ", as the consumers' own functions and HCL's coll[key] do, where go-cty's refuses (D-298)",
+		match: func(args []cty.Value) bool {
+			t := args[0].Type()
+			return t.IsObjectType() || slices.Contains(also, t)
+		},
+	}
+}
+
+// fractionalNumber reports whether the known number n is not a whole number.
+func fractionalNumber(n tenon.Value) bool {
+	return !tenon.Mod(n, tenon.NumberFromInt(1)).Equal(tenon.NumberFromInt(0))
 }
 
 // transcendental returns the counterpart of Log or Pow. go-cty works both out

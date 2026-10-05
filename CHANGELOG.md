@@ -59,6 +59,19 @@
   5^138 is, rounds half to even. No binary floating point is used: the
   result is enclosed in decimals computed until both ends round alike.
   The specification says so (`LN-060`, `LN-061`).
+- The collection functions begin: `LengthFunc`, `HasIndexFunc`, `IndexFunc`
+  and `ElementFunc`, each reading a collection as it stands: a list holding
+  a member not known yet is read for the members it has
+  (`length([unknown])` is 1, `element([a, unknown], 0)` is `a`), a list not
+  known yet answers from its lengths, and a tuple or an object from its
+  type. `Length` also counts a string's grapheme clusters and an object's
+  attributes, as the consumers' own `length` does, and `HasIndex` and
+  `Index` take objects, as HCL's `coll[key]` does. `Element` wraps an index
+  of any magnitude by floor modulus. A key naming no member fails with
+  `function.invalid_argument` at the key, now where a list's lengths
+  already rule it out; only the collection's own marks and those of the
+  member read reach the answer. The specification says so (§18, `LC-001`
+  to `LC-004`).
 - A function may declare its result never null (`FunctionSpec.NotNull`,
   read back with `Function.NotNull`). Every answer the call makes that is
   not a known value then says so, the unknown answer of an argument not
