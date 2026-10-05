@@ -231,6 +231,7 @@ var (
 		{"Cross", "Cross between go-cty and tenon", "Carries the converted value across ctytenon's bridge, from go-cty to tenon and from tenon to go-cty, as a program moving from one to the other a piece at a time does."},
 		{"Call", "Call a function", "Calls a two-number function once per service, through each library's own convention: tenon converts the arguments to the parameters' constraints inside the call, where go-cty leaves converting to the caller."},
 		{"Library", "Call a library function", "Merges each service's environment variables with two defaults through each library's own merge function."},
+		{"Text", "Format text", "Formats a line for each service through each library's format function: its name, its replica count as an integer and its CPU share to one decimal place."},
 	}
 	// The libraries the summary compares come first; the rest are the
 	// directions of ctytenon's bridge, which the Cross workload measures.

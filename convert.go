@@ -117,7 +117,34 @@ func Convert(v Value, c Constraint, p Policy) Value {
 	if p != Safe && p != Unsafe {
 		usagePanic("Convert called with %s, which is neither Safe nor Unsafe", p)
 	}
+	if unchanged(v, c) {
+		return v
+	}
 	return convertOp.with(conversion{target: c, policy: p}).apply(v)
+}
+
+// unchanged reports whether converting v to c gives v itself, under either
+// policy, by what v and c say at once: a known value carrying no mark and
+// holding neither a marked member nor one not known, converted to Any(), or
+// a string, number or bool converted to Exactly its own type. It is the
+// commonest conversion, a call's argument already of its parameter's type,
+// and spares it the operation's machinery.
+func unchanged(v Value, c Constraint) bool {
+	n := v.data()
+	if n.state != stateKnown || n.marks != nil || n.markedWithin || n.partial {
+		return false
+	}
+	if c.c == anyConstraint {
+		return true
+	}
+	if c.c.kind != ConstraintExactly {
+		return false
+	}
+	switch n.typ.Kind() {
+	case KindString, KindNumber, KindBool:
+		return c.c.typ.Equal(n.typ)
+	}
+	return false
 }
 
 // conversion is the choice of parameters that a conversion is bound to.

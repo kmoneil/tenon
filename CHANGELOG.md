@@ -129,6 +129,18 @@
   where nothing matches, and beginning with the text before the first
   match otherwise. The specification says so (`LR-010` to `LR-014`).
 
+### Changed
+
+- `Convert` gives a value back as it is, without the conversion's
+  machinery, where it can say at once that the conversion would: a known
+  value carrying no mark and holding neither a marked member nor one not
+  known, converted to `Any()`, or a string, number or bool converted to
+  `Exactly` its own type. Every call converts its arguments so, and
+  library functions convert again inside: formatting a line for each of
+  200 services makes 7,200 allocations where it made 27,201, in under a
+  third of the time, and merging their environments 5,600 where it made
+  9,600. The answers are the same values.
+
 ## 0.16.0 (2026-10-05)
 
 tenon has a standard library now. Package `stdlib` is go-cty's

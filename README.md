@@ -215,9 +215,12 @@ grow past its stated bound fails before any of it is made.
 
 ```go
 functions := map[string]tenon.Function{
-	"range":    stdlib.RangeFunc,
-	"merge":    stdlib.MergeFunc,
-	"contains": stdlib.ContainsFunc,
+	"range":        stdlib.RangeFunc,
+	"merge":        stdlib.MergeFunc,
+	"contains":     stdlib.ContainsFunc,
+	"upper":        stdlib.UpperFunc,
+	"format":       stdlib.FormatFunc,
+	"regexreplace": stdlib.RegexReplaceFunc,
 }
 call := func(name string, args ...tenon.Value) {
 	fmt.Println(name+":", tenon.Call(functions[name], args, tenon.Unsafe))
@@ -234,6 +237,12 @@ null := tenon.Narrow(tenon.Pending(tenon.Any()), tenon.NullOnly())
 call("contains", tenon.List(tenon.StringType(), tenon.String("a"), tenon.Null(tenon.StringType())), null)
 // A result past its bound fails before any of it is made.
 call("range", n("5000"))
+// Text is cased by Unicode's full mappings.
+call("upper", tenon.String("straße"))
+// A number is formatted from its exact value, ties half to even.
+call("format", tenon.String("%.2f"), n("2.675"))
+// A reference to a group the pattern does not have is refused.
+call("regexreplace", tenon.String("v1"), tenon.String(`v(\d+)`), tenon.String("$1x"))
 ```
 
 ```
@@ -241,11 +250,16 @@ range: list(number)[0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
 merge: unknown(map(string), not null, length >= 1)
 contains: true
 range: error(function.too_large: "Range: from 0 to 5000 by 1 is more than 1024 elements, the most it makes" at .[0])
+upper: "STRASSE"
+format: "2.68"
+regexreplace: error(regex.missing_group: "RegexReplace: the replacement refers to a group named \"1x\", which the pattern does not have; ${1}x is group 1 followed by \"x\"" at .[2])
 ```
 
 The package holds go-cty's functions over values: the operators, numbers,
-the general functions, collections and sets. Its functions over text,
-encodings and time are not here yet. A host still evaluating with go-cty,
+the general functions, collections and sets; and over text: case, length
+and substrings by grapheme cluster, searching, trimming and joining,
+`format` and `formatlist`, and patterns. Its functions over encodings and
+time are not here yet. A host still evaluating with go-cty,
 HCL's evaluator among them, calls these through ctytenon's
 `FunctionToCty`. The
 [stdlib documentation](https://pkg.go.dev/github.com/kmoneil/tenon/stdlib)
@@ -305,6 +319,7 @@ two differ, and its own `CHANGELOG.md` what each release holds:
 | Determinism | `Equals` on objects and maps holding an unknown answers by Go's map order, and keys that are one after normalization merge at random | The same answer every time, and such keys are refused, naming both spellings |
 | Reading JSON | `ctyjson.Unmarshal` keeps the last of two members of one name, ignores text after the value, reads numbers as 512-bit floats and stops at the first failure | `ParseJSON` refuses a name given twice and anything after the value, reads numbers exactly, and reports every failure at its path |
 | Function library | Steps in binary floats: `range(0, 1, 0.1)` drifts past `0.7` and `range(0, 0.05, 0.01)` makes six elements; `pow` and `log` go through `float64`; `contains([], null)` answers an unknown of no type; and a product of 64 lists of two wraps to an empty answer | `stdlib`, function for function: the answers the specification states, exact, unknown answers as narrow as the arguments allow, and a result past its stated bound refused before the work |
+| Text functions | Go's simple case mappings, clusters and patterns of whichever Unicode the toolchain carries: `upper("straße")` is `"STRAßE"`, and `\p{Garay}` is a class on Go 1.27 and no pattern below it; `format("%.2f", 2.675)` is `"2.67"`, rounded through a binary float; and `regexreplace`'s `$1x` names a group `1x` and writes nothing | Unicode 15.0.0's full case mappings and clusters, and Go 1.26's pattern syntax, on every toolchain; numbers formatted from the exact decimal, ties half to even; a reference to a group the pattern does not have refused, and every answer that multiplies its arguments bounded |
 | Functions | A parameter is a type and four flags that change what a state means at the call; arguments are never converted, a refused argument is a Go error naming only the first failure, and a failing variadic argument is reported at the wrong index | A parameter is a constraint; arguments convert under the call's policy, every failing argument reports as a diagnostic located by its index, known arguments give a known result unless volatility is declared, and a result never null is declared rather than set in a refinement callback |
 
 The bench module holds a test for each of go-cty's open issues whose defect
@@ -368,8 +383,12 @@ equal and how long they are, so changing it is a breaking change.
 
 The version is held inside the module, and follows neither the Go toolchain you
 build with nor any module your build requires: tenon requires no other module.
-The normalization, general-category and grapheme-segmentation data live in
-`internal/uni`, generated by `tools/unigen` and committed. Two builds of one
+The normalization, general-category, grapheme-segmentation, case-mapping,
+script and case-folding data live in `internal/uni`, generated by
+`tools/unigen` and committed. The standard library's text functions read the
+same data: case conversion, white space, clusters, and the Unicode classes
+and case folding of patterns, which tenon parses with its own copy of Go
+1.26's `regexp/syntax` so that the toolchain's tables are never consulted. Two builds of one
 version of tenon therefore agree on every string, and on every encoding of
 one, whatever toolchain made them and whatever else they require. On every
 toolchain, tests hold that data to Unicode's own conformance tests for the

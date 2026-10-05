@@ -14,9 +14,12 @@ import (
 // yet, and a failure with a code where there is none.
 func Example() {
 	functions := map[string]tenon.Function{
-		"range":    stdlib.RangeFunc,
-		"merge":    stdlib.MergeFunc,
-		"contains": stdlib.ContainsFunc,
+		"range":        stdlib.RangeFunc,
+		"merge":        stdlib.MergeFunc,
+		"contains":     stdlib.ContainsFunc,
+		"upper":        stdlib.UpperFunc,
+		"format":       stdlib.FormatFunc,
+		"regexreplace": stdlib.RegexReplaceFunc,
 	}
 	call := func(name string, args ...tenon.Value) {
 		fmt.Println(name+":", tenon.Call(functions[name], args, tenon.Unsafe))
@@ -33,9 +36,18 @@ func Example() {
 	call("contains", tenon.List(tenon.StringType(), tenon.String("a"), tenon.Null(tenon.StringType())), null)
 	// A result past its bound fails before any of it is made.
 	call("range", n("5000"))
+	// Text is cased by Unicode's full mappings.
+	call("upper", tenon.String("straße"))
+	// A number is formatted from its exact value, ties half to even.
+	call("format", tenon.String("%.2f"), n("2.675"))
+	// A reference to a group the pattern does not have is refused.
+	call("regexreplace", tenon.String("v1"), tenon.String(`v(\d+)`), tenon.String("$1x"))
 	// Output:
 	// range: list(number)[0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
 	// merge: unknown(map(string), not null, length >= 1)
 	// contains: true
 	// range: error(function.too_large: "Range: from 0 to 5000 by 1 is more than 1024 elements, the most it makes" at .[0])
+	// upper: "STRASSE"
+	// format: "2.68"
+	// regexreplace: error(regex.missing_group: "RegexReplace: the replacement refers to a group named \"1x\", which the pattern does not have; ${1}x is group 1 followed by \"x\"" at .[2])
 }
