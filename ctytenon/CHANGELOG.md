@@ -5,7 +5,17 @@ module of its own (`github.com/kmoneil/tenon/ctytenon`) whose versions are
 tagged `ctytenon/vX.Y.Z`. tenon's own changes are in the repository's
 `CHANGELOG.md`.
 
-## Unreleased
+## 0.3.0 (2026-10-05)
+
+Requires tenon 0.16.0, whose standard library a host still evaluating
+with cty calls in place through `FunctionToCty`, as the repository's HCL
+proof does for HCL's operators. A tenon function declaring its result
+never null crosses with cty's not-null refinement, and a cty function
+crossed by `FunctionFromCty` answers arguments not known yet as cty does,
+refined as it says.
+
+The minor version moves for the change to what a function crossed by
+`FunctionFromCty` admits.
 
 ### Changed
 
