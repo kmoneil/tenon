@@ -23,6 +23,7 @@ LE
 LF
 LR
 LS
+LT
 ER
 FN
 MK

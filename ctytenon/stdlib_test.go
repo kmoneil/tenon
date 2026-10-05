@@ -998,6 +998,72 @@ var counterparts = map[string]counterpart{
 			},
 		}},
 	},
+	"FormatDate": {
+		cty: ctystdlib.FormatDateFunc,
+		ten: stdlib.FormatDateFunc,
+		cases: [][]cty.Value{
+			{cty.StringVal("YYYY-MM-DD'T'hh:mm:ssZ"), cty.StringVal("2017-03-02T13:04:05.5-08:30")},
+			{cty.StringVal("EEEE, D MMMM YY, H:mm aa ZZZ ZZZZ ZZZZZ"), cty.StringVal("0005-01-01T00:07:09-00:00")},
+			{cty.StringVal("'It''s' D MMM ''"), cty.StringVal("2024-02-29T12:00:00+05:45")},
+			{cty.StringVal("YYYY"), cty.StringVal("2006-01-02t15:04:05z")},
+			{cty.StringVal("'abc''"), cty.StringVal("2006-01-02T15:04:05Z")},
+			{cty.StringVal("T"), cty.StringVal("2006-01-02T15:04:05Z")},
+			{cty.StringVal("YYYY"), cty.StringVal("2016-12-31T23:59:60Z")},
+			{cty.StringVal("YYYY"), cty.StringVal("2023-02-29T00:00:00Z")},
+			{cty.StringVal("x"), cty.UnknownVal(cty.String)},
+			{cty.StringVal("'On' D"), cty.UnknownVal(cty.String)},
+		},
+		random: func(r *rand.Rand) []cty.Value {
+			pieces := []string{"YYYY", "YY", "M", "MM", "MMM", "MMMM", "D", "DD", "EEE", "EEEE", "h", "hh", "H", "HH", "AA", "aa",
+				"m", "mm", "s", "ss", "Z", "ZZZ", "ZZZZ", "ZZZZZ", "-", ":", " ", "'T'", "''", "'it''s'", "\U000000E9", "x", "'"}
+			var f strings.Builder
+			for range r.Intn(6) {
+				f.WriteString(pieces[r.Intn(len(pieces))])
+			}
+			month := 1 + r.Intn(12)
+			days := map[int]int{1: 31, 2: 28, 3: 31, 4: 30, 5: 31, 6: 30, 7: 31, 8: 31, 9: 30, 10: 31, 11: 30, 12: 31}[month]
+			ts := fmt.Sprintf("%04d-%02d-%02dT%02d:%02d:%02d", r.Intn(10000), month, 1+r.Intn(days), r.Intn(24), r.Intn(60), r.Intn(60))
+			if r.Intn(2) == 0 {
+				ts += "." + strings.Repeat("7", 1+r.Intn(12))
+			}
+			switch r.Intn(3) {
+			case 0:
+				ts += "Z"
+			case 1:
+				ts += fmt.Sprintf("+%02d:%02d", r.Intn(24), r.Intn(60))
+			default:
+				ts += fmt.Sprintf("-%02d:%02d", r.Intn(24), r.Intn(60))
+			}
+			if r.Intn(10) == 0 {
+				ts = ts[:r.Intn(len(ts))]
+			}
+			return []cty.Value{cty.StringVal(f.String()), cty.StringVal(ts)}
+		},
+		divergences: []divergence{{
+			why: "a timestamp with a small t or z: go-cty refuses it, and tenon reads it, as RFC 3339 allows (LT-001, Appendix B row 64)",
+			match: func(args []cty.Value) bool {
+				ts, _ := args[1].UnmarkDeep()
+				return ts.IsKnown() && !ts.IsNull() && len(ts.AsString()) > 10 && (ts.AsString()[10] == 't' || strings.HasSuffix(ts.AsString(), "z"))
+			},
+		}, {
+			why: "a known format that is none beside a timestamp not known yet: go-cty answers unknown, and tenon fails now (LT-006, Appendix B row 67)",
+			match: func(args []cty.Value) bool {
+				f, _ := args[0].UnmarkDeep()
+				ts, _ := args[1].UnmarkDeep()
+				if !f.IsKnown() || f.IsNull() || ts.IsKnown() {
+					return false
+				}
+				_, err := ctystdlib.FormatDate(f, cty.StringVal("2006-01-02T15:04:05Z"))
+				return err != nil
+			},
+		}, {
+			why: "literal text ending in a doubled quotation mark that nothing closes: go-cty takes it as closed, and tenon refuses it (LT-004, Appendix B row 66)",
+			match: func(args []cty.Value) bool {
+				f, _ := args[0].UnmarkDeep()
+				return f.IsKnown() && !f.IsNull() && unclosedDateLiteral(f.AsString())
+			},
+		}},
+	},
 	"Lookup": {
 		cty: ctystdlib.LookupFunc,
 		ten: stdlib.LookupFunc,
@@ -1424,6 +1490,37 @@ func strictJSONRefuses(text string) bool {
 			expectName[n-1] = true
 		}
 	}
+}
+
+// unclosedDateLiteral reports whether a FormatDate format holds literal
+// text that a quotation mark opens and none closes, the reading go-cty's
+// tokenizer gives: ” outside literal text is a quotation mark, and within
+// it, a doubled one stands for one.
+func unclosedDateLiteral(f string) bool {
+	for i := 0; i < len(f); i++ {
+		if f[i] != '\'' {
+			continue
+		}
+		if i+1 < len(f) && f[i+1] == '\'' {
+			i++
+			continue
+		}
+		closed := false
+		for i++; i < len(f); i++ {
+			if f[i] == '\'' {
+				if i+1 < len(f) && f[i+1] == '\'' {
+					i++
+					continue
+				}
+				closed = true
+				break
+			}
+		}
+		if !closed {
+			return true
+		}
+	}
+	return false
 }
 
 // goReference reads the references of a Go template, its $$ passed over,
