@@ -17,10 +17,9 @@ EQ
 GO
 JS
 LB
-defer LB-012 partly known collections are first read by the collection functions
-defer LB-013 sequences are first taken by the collection functions
 defer LB-031 the first bounded results are Range's and SetProduct's
 LN
+LC
 ER
 FN
 MK

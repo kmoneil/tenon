@@ -16,6 +16,10 @@ import (
 // specification gives them.
 var library = map[string]tenon.Function{
 	"AssertNotNull":        stdlib.AssertNotNullFunc,
+	"Length":               stdlib.LengthFunc,
+	"HasIndex":             stdlib.HasIndexFunc,
+	"Index":                stdlib.IndexFunc,
+	"Element":              stdlib.ElementFunc,
 	"Log":                  stdlib.LogFunc,
 	"Pow":                  stdlib.PowFunc,
 	"Absolute":             stdlib.AbsoluteFunc,
@@ -141,6 +145,25 @@ var callVectors = []callVector{
 	{"Pow/refused/zero to a negative power", "Pow", []tenon.Value{n(0), n(-1)}, tenon.Safe, tenon.Constraint{}},
 	{"Pow/refused/no real power", "Pow", []tenon.Value{n(-1), tenon.NumberFromText("0.5")}, tenon.Safe, tenon.Constraint{}},
 	{"Pow/refused/out of range", "Pow", []tenon.Value{n(2), tenon.NumberFromText("1e400")}, tenon.Safe, tenon.Constraint{}},
+	{"Length/a list", "Length", []tenon.Value{tenon.List(str, s("a"), tenon.Unknown(str))}, tenon.Safe, tenon.Constraint{}},
+	{"Length/a string", "Length", []tenon.Value{s("e\U00000301\U0001F1FA\U0001F1F8")}, tenon.Safe, tenon.Constraint{}},
+	{"Length/an object", "Length", []tenon.Value{tenon.Object(map[string]tenon.Value{"x": n(1), "y": n(2)})}, tenon.Safe, tenon.Constraint{}},
+	{"Length/an unknown tuple", "Length", []tenon.Value{tenon.Unknown(tenon.TupleType(str, num))}, tenon.Safe, tenon.Constraint{}},
+	{"Length/a set holding an unknown", "Length", []tenon.Value{tenon.Set(num, n(1), tenon.Unknown(num))}, tenon.Safe, tenon.Constraint{}},
+	{"Length/refused/a number", "Length", []tenon.Value{n(1)}, tenon.Safe, tenon.Constraint{}},
+	{"HasIndex/in range", "HasIndex", []tenon.Value{tenon.List(str, s("a"), s("b")), n(1)}, tenon.Safe, tenon.Constraint{}},
+	{"HasIndex/a string key into a list", "HasIndex", []tenon.Value{tenon.List(str, s("a")), s("0")}, tenon.Safe, tenon.Constraint{}},
+	{"HasIndex/an object's attribute", "HasIndex", []tenon.Value{tenon.Object(map[string]tenon.Value{"x": n(1)}), s("x")}, tenon.Safe, tenon.Constraint{}},
+	{"HasIndex/settled by a length", "HasIndex", []tenon.Value{tenon.Narrow(tenon.Unknown(tenon.ListType(str)), tenon.LengthMin(1)), n(0)}, tenon.Safe, tenon.Constraint{}},
+	{"Index/a list", "Index", []tenon.Value{tenon.List(str, s("a"), s("b")), n(1)}, tenon.Safe, tenon.Constraint{}},
+	{"Index/a map", "Index", []tenon.Value{tenon.Map(num, map[string]tenon.Value{"k": n(1)}), s("k")}, tenon.Safe, tenon.Constraint{}},
+	{"Index/refused/out of range", "Index", []tenon.Value{tenon.List(str, s("a")), n(1)}, tenon.Safe, tenon.Constraint{}},
+	{"Index/refused/the wrong kind of key", "Index", []tenon.Value{tenon.List(str, s("a")), s("0")}, tenon.Safe, tenon.Constraint{}},
+	{"Element/wrapped", "Element", []tenon.Value{tenon.List(str, s("a"), s("b"), s("c")), n(4)}, tenon.Safe, tenon.Constraint{}},
+	{"Element/from the end", "Element", []tenon.Value{tenon.List(str, s("a"), s("b"), s("c")), n(-1)}, tenon.Safe, tenon.Constraint{}},
+	{"Element/a large index", "Element", []tenon.Value{tenon.List(str, s("a"), s("b"), s("c")), tenon.NumberFromText("1e30")}, tenon.Safe, tenon.Constraint{}},
+	{"Element/refused/empty", "Element", []tenon.Value{tenon.List(str), n(0)}, tenon.Safe, tenon.Constraint{}},
+	{"Element/refused/not a whole number", "Element", []tenon.Value{tenon.List(str, s("a")), tenon.NumberFromText("1.5")}, tenon.Safe, tenon.Constraint{}},
 	{"Coalesce/the first not null", "Coalesce", []tenon.Value{tenon.Narrow(tenon.Pending(tenon.Any()), tenon.NullOnly()), tenon.Null(num), n(1), n(2)}, tenon.Safe, tenon.Constraint{}},
 	{"Coalesce/one not known yet", "Coalesce", []tenon.Value{tenon.Unknown(num), n(1)}, tenon.Safe, tenon.Constraint{}},
 	{"Coalesce/unified under Unsafe", "Coalesce", []tenon.Value{n(1), s("a")}, tenon.Unsafe, tenon.Constraint{}},
@@ -183,7 +206,7 @@ type callArg struct {
 // answers, its display form and its encoding, or the failures it gives, each
 // code with its path.
 func TestConformance_LB001_FunctionVectors(t *testing.T) {
-	conformance.Covers(t, "LB-001", "LN-001", "LN-002", "LN-010", "LN-011", "LN-020", "LN-030", "LN-031", "LN-032", "LN-033", "LN-050", "LN-060", "LN-061", "LN-080", "LN-083", "LN-085")
+	conformance.Covers(t, "LB-001", "LN-001", "LN-002", "LN-010", "LN-011", "LN-020", "LN-030", "LN-031", "LN-032", "LN-033", "LN-050", "LN-060", "LN-061", "LN-080", "LN-083", "LN-085", "LC-001", "LC-002", "LC-003", "LC-004")
 	f := callFile{
 		Format: 1,
 		About: "Each entry is a call of a function of the standard library (§13 to §20), named as the specification " +
