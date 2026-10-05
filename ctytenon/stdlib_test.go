@@ -820,6 +820,39 @@ var counterparts = map[string]counterpart{
 			},
 		}},
 	},
+	"Regex": {
+		cty: ctystdlib.RegexFunc,
+		ten: stdlib.RegexFunc,
+		cases: [][]cty.Value{
+			{cty.StringVal("a|ab"), cty.StringVal("ab")},
+			{cty.StringVal(`(\w+)-(\d+)`), cty.StringVal("web-42")},
+			{cty.StringVal(`(?P<name>\w+)-(?P<n>\d+)`), cty.StringVal("web-42")},
+			{cty.StringVal(`(?P<x>a)|(?P<y>b)`), cty.StringVal("b")},
+			{cty.StringVal(`(?P<x>a)(b)`), cty.StringVal("ab")},
+			{cty.StringVal(`(`), cty.StringVal("ab")},
+			{cty.StringVal("x"), cty.StringVal("abc")},
+			{cty.StringVal(`(?i)k`), cty.StringVal("K")},
+			{cty.StringVal(`\p{Greek}+`), cty.StringVal("x\U000003B1\U000003B2")},
+			{cty.StringVal(`(?P<x>a)(?P<x>b)`), cty.StringVal("ab")},
+			{cty.UnknownVal(cty.String), cty.StringVal("x")},
+			{cty.StringVal(`(\w)`), cty.UnknownVal(cty.String)},
+		},
+		divergences: []divergence{duplicateGroups()},
+	},
+	"RegexAll": {
+		cty: ctystdlib.RegexAllFunc,
+		ten: stdlib.RegexAllFunc,
+		cases: [][]cty.Value{
+			{cty.StringVal(`\d+`), cty.StringVal("a1b22c333")},
+			{cty.StringVal("a*"), cty.StringVal("baaab")},
+			{cty.StringVal(""), cty.StringVal("abc")},
+			{cty.StringVal("x"), cty.StringVal("abc")},
+			{cty.StringVal(`(\w)=(\d)`), cty.StringVal("a=1 b=2")},
+			{cty.StringVal(`(?P<x>a)(?P<x>b)`), cty.StringVal("ab")},
+			{cty.UnknownVal(cty.String), cty.StringVal("x")},
+		},
+		divergences: []divergence{duplicateGroups()},
+	},
 	"Lookup": {
 		cty: ctystdlib.LookupFunc,
 		ten: stdlib.LookupFunc,
@@ -1147,6 +1180,17 @@ func setOperation(c function.Function, ten tenon.Function, n int) counterpart {
 				return slices.Contains(ets, cty.Bool) && (slices.Contains(ets, cty.Number) || slices.Contains(ets, cty.String))
 			},
 		}},
+	}
+}
+
+// duplicateGroups is the divergence of a pattern naming a group twice.
+func duplicateGroups() divergence {
+	return divergence{
+		why: "a pattern naming a group twice: cty keeps the later capture under the name, losing the earlier, and tenon refuses it with regex.duplicate_group (LR-005, Appendix B row 50)",
+		match: func(args []cty.Value) bool {
+			p, _ := args[0].UnmarkDeep()
+			return p.IsKnown() && !p.IsNull() && strings.Count(p.AsString(), "(?P<x>") > 1
+		},
 	}
 }
 

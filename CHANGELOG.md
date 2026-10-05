@@ -92,6 +92,25 @@
   answer has none; and an answer past 64 times its arguments and 64 KiB
   fails with `function.too_large` before it is made. The specification
   says so (`LF-018` to `LF-021`).
+- `RegexFunc` and `RegexAllFunc`, on a pattern language the specification
+  now states and holds: Go 1.26's `regexp/syntax` with its Perl flags,
+  whatever the Go toolchain's, so `(?<name>)` and loose property names
+  mean one thing everywhere, and Unicode classes and case folding of the
+  Unicode version tenon states, so `\p{Greek}` and `(?i)k` match alike on
+  every toolchain and a script of a later Unicode is no class. Answers
+  have go-cty's shapes: the match, a tuple for unnamed groups, an object
+  for named ones, a group that took no part null. A pattern naming a group
+  twice fails with the new code `regex.duplicate_group`, where go-cty's
+  keeps the later capture and loses the earlier; one mixing named and
+  unnamed groups with `regex.mixed_groups`; one that is none with
+  `regex.invalid_syntax`; each located at the pattern and failing now,
+  though the string is not known yet. `Regex` with no match fails with
+  `regex.no_match` at the string. An answer of more than 64 times the
+  size of the arguments and 64 KiB, each capture counting its bytes and
+  one more, fails with `function.too_large` before it is made, where
+  go-cty's makes a list of a string for each of a pattern's groups at
+  each position of the string, whatever their number. The specification
+  says so (`LR-001` to `LR-009`).
 
 ## 0.16.0 (2026-10-05)
 

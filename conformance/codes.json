@@ -111,7 +111,16 @@
       "code": "range.contradiction"
     },
     {
+      "code": "regex.duplicate_group"
+    },
+    {
       "code": "regex.invalid_syntax"
+    },
+    {
+      "code": "regex.mixed_groups"
+    },
+    {
+      "code": "regex.no_match"
     },
     {
       "code": "serialize.decoder_failed"
