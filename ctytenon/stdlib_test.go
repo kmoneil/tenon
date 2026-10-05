@@ -1,6 +1,7 @@
 package ctytenon_test
 
 import (
+	"encoding/json"
 	"fmt"
 	"go/ast"
 	"go/parser"
@@ -892,6 +893,73 @@ var counterparts = map[string]counterpart{
 		},
 		divergences: []divergence{missingGroup(), failsBesideUnknown()},
 	},
+	"JSONEncode": {
+		cty: ctystdlib.JSONEncodeFunc,
+		ten: stdlib.JSONEncodeFunc,
+		cases: [][]cty.Value{
+			{cty.StringVal("a<b>&c\U00002028\"\\\n\x01")},
+			{cty.MustParseNumberVal("1e21")},
+			{cty.MustParseNumberVal("-1.5e-7")},
+			{cty.MustParseNumberVal("-0")},
+			{cty.NullVal(cty.String)},
+			{cty.NullVal(cty.DynamicPseudoType)},
+			{cty.TupleVal([]cty.Value{cty.NullVal(cty.DynamicPseudoType), cty.NumberIntVal(1)})},
+			{cty.ObjectVal(map[string]cty.Value{"b": cty.True, "a": cty.ListVal([]cty.Value{cty.StringVal("x")})})},
+			{cty.MapVal(map[string]cty.Value{"z": cty.NumberIntVal(1), "a": cty.NumberIntVal(2)})},
+			{cty.SetVal([]cty.Value{cty.StringVal("b"), cty.StringVal("a")})},
+			{cty.UnknownVal(cty.String).RefineNotNull()},
+			{cty.ListVal([]cty.Value{cty.NumberIntVal(1), cty.UnknownVal(cty.Number)})},
+			{cty.StringVal("x").Mark("sensitive")},
+		},
+		random: func(r *rand.Rand) []cty.Value { return []cty.Value{randomCtyValue(r, randomCtyType(r, 2))} },
+		divergences: []divergence{{
+			why:   "a set of several members is written in tenon's canonical order (EQ-044), which go-cty's iteration does not follow (Appendix B row 33)",
+			match: func(args []cty.Value) bool { return holdsSetOfSeveral(args[0]) },
+		}, {
+			why:   "a negative zero: go-cty's 512-bit float keeps its sign and writes -0, and tenon has one zero (NU-001, Appendix B row 58)",
+			match: func(args []cty.Value) bool { return holdsNegativeZero(args[0]) },
+		}},
+	},
+	"JSONDecode": {
+		cty: ctystdlib.JSONDecodeFunc,
+		ten: stdlib.JSONDecodeFunc,
+		cases: [][]cty.Value{
+			{cty.StringVal(` {"a": [1, "x", true], "b": 1.50} `)},
+			{cty.StringVal(`null`)},
+			{cty.StringVal(`[null, 1]`)},
+			{cty.StringVal(`{"a": null}`)},
+			{cty.StringVal(`"\u00e9"`)},
+			{cty.StringVal(`-0`)},
+			{cty.StringVal(`123456789012345678901234567890`)},
+			{cty.StringVal(`1]garbage{{{`)},
+			{cty.StringVal(`1e1000000000`)},
+			{cty.StringVal(`"\ud800"`)},
+			{cty.StringVal(`{"a": 1, "a": 2}`)},
+			{cty.StringVal(`[1,`)},
+			{cty.UnknownVal(cty.String)},
+			{cty.UnknownVal(cty.String).Refine().StringPrefix(`"abc `).NewValue()},
+			{cty.UnknownVal(cty.String).Refine().StringPrefix("tru").NewValue()},
+			{cty.UnknownVal(cty.String).Refine().StringPrefix("nul").NewValue()},
+			{cty.UnknownVal(cty.String).Refine().StringPrefix(".5").NewValue()},
+		},
+		divergences: []divergence{{
+			why: "text go-cty reads past or reads as what tenon has no value for: trailing text after a closing bracket, a number past the range of numbers, a lone surrogate escape, a name given twice or empty (LE-004, Appendix B rows 21, 22 and 59)",
+			match: func(args []cty.Value) bool {
+				t, _ := args[0].UnmarkDeep()
+				return t.IsKnown() && !t.IsNull() && strictJSONRefuses(t.AsString())
+			},
+		}, {
+			why: "text not known yet beginning with a character that begins no JSON value: go-cty answers a number for ., and tenon fails now (LE-005, Appendix B row 60)",
+			match: func(args []cty.Value) bool {
+				t, _ := args[0].UnmarkDeep()
+				if t.IsKnown() {
+					return false
+				}
+				p := strings.TrimLeft(t.Range().StringPrefix(), " \t\n\r")
+				return p != "" && !strings.ContainsRune(`"tf-0123456789{[n`, rune(p[0]))
+			},
+		}},
+	},
 	"Lookup": {
 		cty: ctystdlib.LookupFunc,
 		ten: stdlib.LookupFunc,
@@ -1230,6 +1298,93 @@ func duplicateGroups() divergence {
 			p, _ := args[0].UnmarkDeep()
 			return p.IsKnown() && !p.IsNull() && strings.Count(p.AsString(), "(?P<x>") > 1
 		},
+	}
+}
+
+// holdsNegativeZero reports whether v is or holds a negative zero.
+func holdsNegativeZero(v cty.Value) bool {
+	v, _ = v.UnmarkDeep()
+	switch {
+	case !v.IsKnown() || v.IsNull():
+		return false
+	case v.Type() == cty.Number:
+		return v.AsBigFloat().Signbit() && v.AsBigFloat().Sign() == 0
+	case v.CanIterateElements():
+		for it := v.ElementIterator(); it.Next(); {
+			if _, e := it.Element(); holdsNegativeZero(e) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// lowSurrogateFollows matches a low surrogate escape at the start of text.
+var lowSurrogateFollows = regexp.MustCompile(`^\\u[dD][c-fC-F][0-9a-fA-F]{2}`)
+
+// strictJSONRefuses reports whether text is JSON that tenon's reading
+// refuses where go-cty's reads it: text encoding/json refuses, which
+// go-cty's reading passes after a closing bracket; a number whose exponent
+// passes the range of numbers; a lone surrogate escape; or an object
+// naming a member twice or with an empty name. Text both refuse is not
+// among them.
+func strictJSONRefuses(text string) bool {
+	if !json.Valid([]byte(text)) {
+		var v any
+		dec := json.NewDecoder(strings.NewReader(text))
+		return dec.Decode(&v) == nil
+	}
+	for i := 0; i+6 <= len(text); i++ {
+		if text[i] == '\\' && text[i+1] == 'u' && (text[i+2] == 'd' || text[i+2] == 'D') && strings.ContainsRune("89abAB", rune(text[i+3])) {
+			if !lowSurrogateFollows.MatchString(text[i+6:]) {
+				return true
+			}
+			i += 11
+		} else if text[i] == '\\' {
+			i++
+		}
+	}
+	dec := json.NewDecoder(strings.NewReader(text))
+	dec.UseNumber()
+	var objects []map[string]bool
+	var expectName []bool
+	for {
+		tok, err := dec.Token()
+		if err != nil {
+			return false
+		}
+		switch t := tok.(type) {
+		case json.Delim:
+			switch t {
+			case '{':
+				objects = append(objects, map[string]bool{})
+				expectName = append(expectName, true)
+			case '[':
+				objects = append(objects, nil)
+				expectName = append(expectName, false)
+			default:
+				objects, expectName = objects[:len(objects)-1], expectName[:len(expectName)-1]
+			}
+			continue
+		case json.Number:
+			if e := strings.IndexAny(string(t), "eE"); e >= 0 {
+				if exp, err := strconv.Atoi(strings.TrimPrefix(string(t)[e+1:], "+")); err != nil || exp > 999999 || exp < -999999 {
+					return true
+				}
+			}
+		case string:
+			if n := len(objects); n > 0 && objects[n-1] != nil && expectName[n-1] {
+				if t == "" || objects[n-1][t] {
+					return true
+				}
+				objects[n-1][t] = true
+				expectName[n-1] = false
+				continue
+			}
+		}
+		if n := len(objects); n > 0 && objects[n-1] != nil {
+			expectName[n-1] = true
+		}
 	}
 }
 
