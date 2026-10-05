@@ -33,7 +33,7 @@ func functionOperations() []matrix.Operation {
 		Name:   "MatrixAdd",
 		Params: []tenon.Param{{Name: "a", Constraint: num}, {Name: "b", Constraint: num}},
 		Result: num,
-		Impl: func(args []tenon.Value, _ tenon.Constraint) (tenon.Value, error) {
+		Impl: func(args []tenon.Value, _ tenon.Constraint, _ tenon.Policy) (tenon.Value, error) {
 			return tenon.Add(args[0], args[1]), nil
 		},
 	})
@@ -41,7 +41,7 @@ func functionOperations() []matrix.Operation {
 		Name:   "MatrixAddOrZero",
 		Params: []tenon.Param{{Name: "a", Constraint: num, AllowNull: true}, {Name: "b", Constraint: num}},
 		Result: num,
-		Impl: func(args []tenon.Value, _ tenon.Constraint) (tenon.Value, error) {
+		Impl: func(args []tenon.Value, _ tenon.Constraint, _ tenon.Policy) (tenon.Value, error) {
 			if args[0].IsNull() {
 				return args[1], nil
 			}

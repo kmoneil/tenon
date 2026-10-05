@@ -295,7 +295,7 @@ func BenchmarkCall(b *testing.B) {
 			Name:   "Scale",
 			Params: []tenon.Param{{Name: "count", Constraint: num}, {Name: "by", Constraint: num}},
 			Result: num,
-			Impl: func(args []tenon.Value, _ tenon.Constraint) (tenon.Value, error) {
+			Impl: func(args []tenon.Value, _ tenon.Constraint, _ tenon.Policy) (tenon.Value, error) {
 				return tenon.Mul(args[0], args[1]), nil
 			},
 		})

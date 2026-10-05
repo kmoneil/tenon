@@ -1,5 +1,30 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- A function may declare its result never null (`FunctionSpec.NotNull`,
+  read back with `Function.NotNull`). Every answer the call makes that is
+  not a known value then says so, the unknown answer of an argument not
+  yet known among them, as `unknown(number, not null)`, so a host knows
+  before evaluating what a null check of the result will say; an
+  implementation returning null breaks the declaration, a usage panic.
+  go-cty states the same in a `RefineResult` callback. The specification
+  says so (`FN-024`, a new rule; `FN-001`, `FN-002`).
+
+### Changed
+
+- `FunctionSpec.Impl` and `FunctionSpec.ResultOf` are given the call's
+  policy, as a third and a second argument, so a conversion a function
+  makes between its own arguments, as one unifying their types does,
+  follows the policy the call is made under, as the arguments' own
+  conversions do. A function written for 0.15 adds the parameter:
+  `func(args []tenon.Value, result tenon.Constraint, p tenon.Policy)
+  (tenon.Value, error)`, and `func(args []tenon.Value, p tenon.Policy)
+  (tenon.Constraint, error)`. The specification says so (`FN-011`,
+  `FN-020`).
+
 ## 0.15.1 (2026-10-05)
 
 Two fixes to the function system that 0.15.0 introduced. A function may

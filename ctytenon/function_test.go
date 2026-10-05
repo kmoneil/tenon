@@ -19,7 +19,7 @@ func tenonAdd() tenon.Function {
 		Name:   "Add",
 		Params: []tenon.Param{{Name: "a", Constraint: num}, {Name: "b", Constraint: num}},
 		Result: num,
-		Impl: func(args []tenon.Value, _ tenon.Constraint) (tenon.Value, error) {
+		Impl: func(args []tenon.Value, _ tenon.Constraint, _ tenon.Policy) (tenon.Value, error) {
 			return tenon.Add(args[0], args[1]), nil
 		},
 	})
@@ -89,7 +89,7 @@ func TestFunctionToCty(t *testing.T) {
 		Name:   "Liar",
 		Params: []tenon.Param{{Name: "v", Constraint: tenon.Exactly(tenon.NumberType())}},
 		Result: tenon.Exactly(tenon.NumberType()),
-		Impl: func(args []tenon.Value, _ tenon.Constraint) (tenon.Value, error) {
+		Impl: func(args []tenon.Value, _ tenon.Constraint, _ tenon.Policy) (tenon.Value, error) {
 			return tenon.Bool(true), nil
 		},
 	})
@@ -108,7 +108,7 @@ func TestFunctionToCty(t *testing.T) {
 		Name:   "Either",
 		Params: []tenon.Param{{Name: "v", Constraint: tenon.OneOf(tenon.Exactly(tenon.NumberType()), tenon.Exactly(tenon.StringType()))}},
 		Result: tenon.Exactly(tenon.StringType()),
-		Impl: func(args []tenon.Value, _ tenon.Constraint) (tenon.Value, error) {
+		Impl: func(args []tenon.Value, _ tenon.Constraint, _ tenon.Policy) (tenon.Value, error) {
 			return tenon.String("x"), nil
 		},
 	})
@@ -255,5 +255,50 @@ func TestFunctionFromCtyWithholdsFailures(t *testing.T) {
 	got = tenon.Call(parse, []tenon.Value{tenon.String("hunter2"), tenon.NumberFromInt(10)}, tenon.Safe)
 	if !got.IsError() || !strings.Contains(got.Diagnostics()[0].Message, "hunter2") {
 		t.Errorf("parseint(hunter2) = %v, want cty's message", got)
+	}
+}
+
+// A result declared never null crosses both ways: a tenon function's
+// declaration as cty's RefineResult, and a cty function's refinement, which
+// cty's Call applies to the unknown it answers, as tenon's narrowing.
+func TestFunctionNotNullCrosses(t *testing.T) {
+	str := tenon.Exactly(tenon.StringType())
+	declared := tenon.NewFunction(tenon.FunctionSpec{
+		Name:    "Upper",
+		Params:  []tenon.Param{{Name: "s", Constraint: str}},
+		Result:  str,
+		NotNull: true,
+		Impl: func(args []tenon.Value, _ tenon.Constraint, _ tenon.Policy) (tenon.Value, error) {
+			return args[0], nil
+		},
+	})
+	cf, err := ctytenon.Bridge{}.FunctionToCty(declared, tenon.Safe)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r, err := cf.Call([]cty.Value{cty.UnknownVal(cty.String)})
+	if err != nil || r.IsKnown() || r.Range().CouldBeNull() {
+		t.Errorf("the crossed tenon function on an unknown gave %#v (%v), want an unknown string refined not null", r, err)
+	}
+
+	upper, err := ctytenon.Bridge{}.FunctionFromCty(stdlib.UpperFunc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := tenon.Call(upper, []tenon.Value{tenon.Unknown(tenon.StringType())}, tenon.Safe)
+	if got.IsKnown() || got.Range().AllowsNull() {
+		t.Errorf("cty's upper on an unknown gave %v, want the unknown String, not null, as cty refines it", got)
+	}
+
+	// cty counts a list holding an unknown element as known, and its
+	// function answers from the elements it has; through tenon it does the
+	// same.
+	element, err := ctytenon.Bridge{}.FunctionFromCty(stdlib.ElementFunc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	list := tenon.List(tenon.StringType(), tenon.String("a"), tenon.Unknown(tenon.StringType()))
+	if got := tenon.Call(element, []tenon.Value{list, tenon.NumberFromInt(0)}, tenon.Safe); !got.Equal(tenon.String("a")) {
+		t.Errorf("cty's element of a partly known list gave %v, want \"a\" as cty answers", got)
 	}
 }

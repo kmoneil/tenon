@@ -63,18 +63,29 @@ type FunctionSpec struct {
 	// ResultOf derives the call's result constraint from the converted
 	// arguments, in the states they stand: a derivation given an unknown or
 	// a pending argument says what it can from the rest, as an expression
-	// language type-checking before it runs needs it to. A refusal is
-	// returned as an error, which becomes diagnostics as Impl's failures
-	// do. Exactly one of Result and ResultOf must be set.
-	ResultOf func(args []Value) (Constraint, error)
+	// language type-checking before it runs needs it to. It is given the
+	// call's policy too, which a conversion it makes between the arguments
+	// follows, as the arguments' own conversions do. A refusal is returned
+	// as an error, which becomes diagnostics as Impl's failures do. Exactly
+	// one of Result and ResultOf must be set.
+	ResultOf func(args []Value, p Policy) (Constraint, error)
 	// Volatile declares that the result is not a function of the arguments,
 	// as a timestamp or a fresh identifier is not. A volatile call's result
 	// is the unknown of its result constraint even where every argument is
 	// known, without the implementation running: the declared exception to
 	// the rule that known operands give a known result.
 	Volatile bool
-	// Impl is the function's behavior, given the converted arguments and the
-	// result constraint the call promised. It is required. A failure is
+	// NotNull declares that the result is never null. Every answer the call
+	// makes without a known result, an unknown or a pending one, is then
+	// narrowed not null, as is what the implementation returns that is not
+	// known, so a host learns before evaluation what a null check of the
+	// result will say. An implementation that returns null breaks the
+	// declaration: a usage panic naming the function.
+	NotNull bool
+	// Impl is the function's behavior, given the converted arguments, the
+	// result constraint the call promised and the call's policy, which a
+	// conversion it makes between the arguments follows, as the arguments'
+	// own conversions do. It is required. A failure is
 	// returned as an error, which becomes diagnostics (a *Error contributes
 	// its own as they are, any other error its text under
 	// CodeFunctionFailed), or equally as an error value. What it returns
@@ -91,7 +102,7 @@ type FunctionSpec struct {
 	// their messages withheld, located at the call; a function that would
 	// quote its argument in a failure admits marks and withholds what they
 	// require itself.
-	Impl func(args []Value, result Constraint) (Value, error)
+	Impl func(args []Value, result Constraint, p Policy) (Value, error)
 }
 
 // Function is a caller-defined operation: a value built once by NewFunction
@@ -107,9 +118,10 @@ type fnSpec struct {
 	params      []Param
 	varParam    *Param
 	result      Constraint
-	resultOf    func(args []Value) (Constraint, error)
+	resultOf    func(args []Value, p Policy) (Constraint, error)
 	volatile    bool
-	impl        func(args []Value, result Constraint) (Value, error)
+	notNull     bool
+	impl        func(args []Value, result Constraint, p Policy) (Value, error)
 }
 
 // NewFunction returns the function that spec describes. The specification is
@@ -139,6 +151,7 @@ func NewFunction(spec FunctionSpec) Function {
 		result:      spec.Result,
 		resultOf:    spec.ResultOf,
 		volatile:    spec.Volatile,
+		notNull:     spec.NotNull,
 		impl:        spec.Impl,
 	}
 	if spec.VarParam != nil {
@@ -205,6 +218,9 @@ func (f Function) Result() (Constraint, bool) {
 // function of its arguments.
 func (f Function) Volatile() bool { return f.data().volatile }
 
+// NotNull reports whether the function declares its result never null.
+func (f Function) NotNull() bool { return f.data().notNull }
+
 // AsVolatile returns f with volatility declared, its specification otherwise
 // unchanged: a function whose implementation is not pure, wrapped by cty's
 // Unpredictable on the other side of a migration, is declared this way
@@ -266,20 +282,20 @@ func Call(f Function, args []Value, p Policy) Value {
 	if e, ok := pr.ce.value(); ok {
 		return pr.finish(e, true)
 	}
-	rc, failed, ok := s.derive(pr)
+	rc, failed, ok := s.derive(pr, p)
 	if !ok {
 		return pr.finish(failed, true)
 	}
 	if s.volatile {
 		// The result is not a function of the arguments, so known arguments
 		// settle nothing: the declaration is the exception UN-008 names.
-		return pr.finish(resultPlaceholder(rc), true)
+		return pr.finish(s.placeholder(rc), true)
 	}
 	if pr.pending || pr.unknown {
-		return pr.finish(resultPlaceholder(rc), true)
+		return pr.finish(s.placeholder(rc), true)
 	}
 
-	r, err := s.impl(pr.visible, rc)
+	r, err := s.impl(pr.visible, rc, p)
 	if err != nil {
 		return pr.finish(errorValue(s.withheld(pr, implFailure(err))...), false)
 	}
@@ -304,6 +320,7 @@ func Call(f Function, args []Value, p Policy) Value {
 			usagePanic("%s: the implementation returned %s, which cannot satisfy its result %s",
 				s.name_(), pr.returned(r.n), rc)
 		}
+		r = s.notNullBroken(pr, r)
 	default:
 		if pr.known && !r.n.isKnown() {
 			usagePanic("%s: every argument was known, but the implementation returned %s",
@@ -313,8 +330,27 @@ func Call(f Function, args []Value, p Policy) Value {
 			usagePanic("%s: the implementation returned %s, which does not satisfy its result %s",
 				s.name_(), pr.returned(r.n), rc)
 		}
+		r = s.notNullBroken(pr, r)
 	}
 	return pr.finish(r, false)
+}
+
+// notNullBroken holds what the implementation returned to the declaration
+// that the result is never null (FN-024): null breaks it, a usage panic
+// naming the function, and a result that is not known is narrowed not null,
+// as the declaration promises it.
+func (s *fnSpec) notNullBroken(pr *prepared, r Value) Value {
+	if !s.notNull {
+		return r
+	}
+	if r.n.state == stateNull || r.n.state == statePending && r.n.null == nullOnly {
+		usagePanic("%s: the function declares its result never null, but the implementation returned %s",
+			s.name_(), pr.returned(r.n))
+	}
+	if !r.n.isKnown() {
+		return Narrow(r, NotNull())
+	}
+	return r
 }
 
 // given reports whether nothing about n is open but types (UN-008): n is
@@ -400,7 +436,7 @@ func ResultConstraint(f Function, args []Value, p Policy) (Constraint, *Error) {
 	if e, ok := pr.ce.value(); ok {
 		return Constraint{}, NewError(pr.finish(e, true))
 	}
-	rc, failed, ok := s.derive(pr)
+	rc, failed, ok := s.derive(pr, p)
 	if !ok {
 		return Constraint{}, NewError(pr.finish(failed, true))
 	}
@@ -484,11 +520,11 @@ func (pr *prepared) finish(r Value, admitted bool) Value {
 // A refusal comes back as the error value the call answers with, and a
 // derivation that returns neither a constraint nor an error is the
 // function author's defect.
-func (s *fnSpec) derive(pr *prepared) (Constraint, Value, bool) {
+func (s *fnSpec) derive(pr *prepared, p Policy) (Constraint, Value, bool) {
 	if s.resultOf == nil {
 		return s.result, Value{}, true
 	}
-	rc, err := s.resultOf(pr.visible)
+	rc, err := s.resultOf(pr.visible, p)
 	if err != nil {
 		return Constraint{}, errorValue(s.withheld(pr, implFailure(err))...), false
 	}
@@ -498,16 +534,23 @@ func (s *fnSpec) derive(pr *prepared) (Constraint, Value, bool) {
 	return rc, Value{}, true
 }
 
-// resultPlaceholder is the answer of a call that its arguments keep from
-// running: the unknown of the result where the constraint settles one type,
-// and otherwise pending with the result constraint (UN-023). It is not
-// narrowed away from null, since a function's result may be null where the
-// operations of the value layer never are.
-func resultPlaceholder(rc Constraint) Value {
+// placeholder is the answer of a call that its arguments keep from running:
+// the unknown of the result where the constraint settles one type, and
+// otherwise pending with the result constraint (UN-023). It is narrowed away
+// from null only where the function declares its result never null (FN-024),
+// since a function's result may be null where the operations of the value
+// layer never are.
+func (s *fnSpec) placeholder(rc Constraint) Value {
+	var v Value
 	if rc.Kind() == ConstraintExactly {
-		return Unknown(rc.Type())
+		v = Unknown(rc.Type())
+	} else {
+		v = Pending(rc)
 	}
-	return Pending(rc)
+	if s.notNull {
+		v = Narrow(v, NotNull())
+	}
+	return v
 }
 
 // argStep is the path step that locates argument i, counting from zero
