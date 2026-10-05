@@ -1,5 +1,32 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- A function's implementation may return a value whose only open part is
+  its type, from known arguments: a pending value known to be null, as
+  `ParseJSON` reads a JSON `null` with `Any`, and a tuple or object
+  holding only such values and known ones. `Call` took such a value for an
+  unknown one and panicked, calling it the function author's defect,
+  though nothing else can say `null` before its type is known. A function
+  that decodes JSON, or one crossed from cty that returns a dynamic null
+  as `jsondecode("null")` does, now answers with it. From 0.15.0. The
+  specification says so (`UN-008`, `FN-021`).
+- A function whose implementation failed with a message quoting its
+  argument showed what a redacting mark withheld: the call unmarks an
+  argument whose parameter does not admit marks, so the implementation
+  could not know, and a failure such as `cannot parse "hunter2"` reached
+  the diagnostic, as cty's `parseint` and `tonumber` put it there when
+  crossed. Where the call removed a redacting mark from an argument, the
+  failures of the implementation and of the derivation now keep their
+  codes and have their messages withheld, located at the call:
+  `Parse failed on redacted("secret"), for a reason its redacting marks
+  withhold`. A usage panic for a broken contract describes the result by
+  the redacting marks too. A function that would quote its argument
+  admits marks and withholds what they require itself. From 0.15.0. The
+  specification says so (`FN-021`, `FN-023`).
+
 ## 0.15.0 (2026-10-03)
 
 tenon has functions now. A `Function` is defined once, from a
