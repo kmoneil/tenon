@@ -69,7 +69,7 @@ func at(i int, v tenon.Value) tenon.Value {
 	_, marks := tenon.Unmark(v)
 	ds := v.Diagnostics()
 	for k, d := range ds {
-		path := tenon.Path{}.Index(tenon.NumberFromInt(int64(i)))
+		path := argument(i)
 		for _, step := range d.Path.Steps() {
 			if step.Kind() == tenon.StepAttribute {
 				path = path.Attribute(step.Name())

@@ -16,6 +16,14 @@ import (
 // specification gives them.
 var library = map[string]tenon.Function{
 	"AssertNotNull":        stdlib.AssertNotNullFunc,
+	"Absolute":             stdlib.AbsoluteFunc,
+	"Signum":               stdlib.SignumFunc,
+	"Int":                  stdlib.IntFunc,
+	"Ceil":                 stdlib.CeilFunc,
+	"Floor":                stdlib.FloorFunc,
+	"Min":                  stdlib.MinFunc,
+	"Max":                  stdlib.MaxFunc,
+	"ParseInt":             stdlib.ParseIntFunc,
 	"Coalesce":             stdlib.CoalesceFunc,
 	"MakeTo":               stdlib.MakeToFunc(tenon.Exactly(tenon.NumberType())),
 	"Add":                  stdlib.AddFunc,
@@ -94,6 +102,30 @@ var callVectors = []callVector{
 	{"And/false decides", "And", []tenon.Value{tenon.Bool(false), tenon.Unknown(boo)}, tenon.Safe, tenon.Constraint{}},
 	{"Or/true decides", "Or", []tenon.Value{tenon.Unknown(boo), tenon.Bool(true)}, tenon.Safe, tenon.Constraint{}},
 	{"Or/refused/null", "Or", []tenon.Value{tenon.Bool(true), tenon.Null(boo)}, tenon.Safe, tenon.Constraint{}},
+	{"Absolute/negative", "Absolute", []tenon.Value{tenon.NumberFromText("-2.5")}, tenon.Safe, tenon.Constraint{}},
+	{"Absolute/a range across zero", "Absolute", []tenon.Value{tenon.Narrow(tenon.Unknown(num), tenon.NumberMin(n(-5), true), tenon.NumberMax(n(3), true))}, tenon.Safe, tenon.Constraint{}},
+	{"Signum/a fraction", "Signum", []tenon.Value{tenon.NumberFromText("-0.5")}, tenon.Safe, tenon.Constraint{}},
+	{"Signum/beyond 64 bits", "Signum", []tenon.Value{tenon.NumberFromText("9223372036854775808")}, tenon.Safe, tenon.Constraint{}},
+	{"Signum/a positive range", "Signum", []tenon.Value{tenon.Narrow(tenon.Unknown(num), tenon.NumberMin(n(1), true))}, tenon.Safe, tenon.Constraint{}},
+	{"Int/toward zero", "Int", []tenon.Value{tenon.NumberFromText("-1.5")}, tenon.Safe, tenon.Constraint{}},
+	{"Int/large", "Int", []tenon.Value{tenon.NumberFromText("1e999999")}, tenon.Safe, tenon.Constraint{}},
+	{"Ceil/a negative fraction", "Ceil", []tenon.Value{tenon.NumberFromText("-0.5")}, tenon.Safe, tenon.Constraint{}},
+	{"Ceil/a tiny fraction", "Ceil", []tenon.Value{tenon.NumberFromText("1e-999999")}, tenon.Safe, tenon.Constraint{}},
+	{"Ceil/an open range", "Ceil", []tenon.Value{tenon.Narrow(tenon.Unknown(num), tenon.NumberMin(n(2), false), tenon.NumberMax(n(3), false))}, tenon.Safe, tenon.Constraint{}},
+	{"Floor/a negative fraction", "Floor", []tenon.Value{tenon.NumberFromText("-1.5")}, tenon.Safe, tenon.Constraint{}},
+	{"Floor/96 nines", "Floor", []tenon.Value{tenon.Mul(tenon.Div(n(1), n(3)), n(3))}, tenon.Safe, tenon.Constraint{}},
+	{"Min/numbers", "Min", []tenon.Value{n(3), tenon.NumberFromText("1.5"), n(2)}, tenon.Safe, tenon.Constraint{}},
+	{"Min/one below the rest", "Min", []tenon.Value{n(2), tenon.Narrow(tenon.Unknown(num), tenon.NumberMin(n(5), true))}, tenon.Safe, tenon.Constraint{}},
+	{"Min/overlapping ranges", "Min", []tenon.Value{tenon.Narrow(tenon.Unknown(num), tenon.NumberMin(n(1), true), tenon.NumberMax(n(6), true)), tenon.Narrow(tenon.Unknown(num), tenon.NumberMin(n(3), false), tenon.NumberMax(n(5), true))}, tenon.Safe, tenon.Constraint{}},
+	{"Min/refused/no number", "Min", []tenon.Value{}, tenon.Safe, tenon.Constraint{}},
+	{"Max/numbers", "Max", []tenon.Value{n(3), tenon.NumberFromText("1.5"), n(2)}, tenon.Safe, tenon.Constraint{}},
+	{"ParseInt/hexadecimal", "ParseInt", []tenon.Value{s("+ff"), n(16)}, tenon.Safe, tenon.Constraint{}},
+	{"ParseInt/base 62", "ParseInt", []tenon.Value{s("Zz"), n(62)}, tenon.Safe, tenon.Constraint{}},
+	{"ParseInt/a base not known yet", "ParseInt", []tenon.Value{s("ff"), tenon.Unknown(num)}, tenon.Safe, tenon.Constraint{}},
+	{"ParseInt/refused/a prefix", "ParseInt", []tenon.Value{s("0xff"), n(16)}, tenon.Safe, tenon.Constraint{}},
+	{"ParseInt/refused/a base out of range", "ParseInt", []tenon.Value{s("10"), n(63)}, tenon.Safe, tenon.Constraint{}},
+	{"ParseInt/refused/a number", "ParseInt", []tenon.Value{n(10), n(16)}, tenon.Safe, tenon.Constraint{}},
+	{"ParseInt/refused/redacted text", "ParseInt", []tenon.Value{tenon.WithMarks(s("hunter2"), secret{}), n(10)}, tenon.Safe, tenon.Constraint{}},
 	{"Coalesce/the first not null", "Coalesce", []tenon.Value{tenon.Narrow(tenon.Pending(tenon.Any()), tenon.NullOnly()), tenon.Null(num), n(1), n(2)}, tenon.Safe, tenon.Constraint{}},
 	{"Coalesce/one not known yet", "Coalesce", []tenon.Value{tenon.Unknown(num), n(1)}, tenon.Safe, tenon.Constraint{}},
 	{"Coalesce/unified under Unsafe", "Coalesce", []tenon.Value{n(1), s("a")}, tenon.Unsafe, tenon.Constraint{}},
@@ -136,7 +168,7 @@ type callArg struct {
 // answers, its display form and its encoding, or the failures it gives, each
 // code with its path.
 func TestConformance_LB001_FunctionVectors(t *testing.T) {
-	conformance.Covers(t, "LB-001", "LN-001", "LN-002", "LN-010", "LN-011", "LN-020", "LN-080", "LN-083", "LN-085")
+	conformance.Covers(t, "LB-001", "LN-001", "LN-002", "LN-010", "LN-011", "LN-020", "LN-030", "LN-031", "LN-032", "LN-033", "LN-050", "LN-080", "LN-083", "LN-085")
 	f := callFile{
 		Format: 1,
 		About: "Each entry is a call of a function of the standard library (§13 to §20), named as the specification " +

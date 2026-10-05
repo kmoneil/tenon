@@ -19,6 +19,14 @@ import (
 // function added without its entry here fails the run.
 var library = map[string]tenon.Function{
 	"AssertNotNull":        stdlib.AssertNotNullFunc,
+	"Absolute":             stdlib.AbsoluteFunc,
+	"Signum":               stdlib.SignumFunc,
+	"Int":                  stdlib.IntFunc,
+	"Ceil":                 stdlib.CeilFunc,
+	"Floor":                stdlib.FloorFunc,
+	"Min":                  stdlib.MinFunc,
+	"Max":                  stdlib.MaxFunc,
+	"ParseInt":             stdlib.ParseIntFunc,
 	"Coalesce":             stdlib.CoalesceFunc,
 	"MakeTo":               stdlib.MakeToFunc(tenon.Exactly(tenon.NumberType())),
 	"Add":                  stdlib.AddFunc,
