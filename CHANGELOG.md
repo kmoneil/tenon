@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- `FormatFunc` and `FormatListFunc` wrote a number's digits in full,
+  however few bytes said it: `%d`, `%f`, the integer verbs and `%#v` of
+  `1e999999` each made a million bytes from nine, and `FormatList` of a
+  list of such numbers made a million bytes for each, its bound measuring
+  the arguments by the very digits it was meant to limit. `Format`'s
+  answer is now bounded as `FormatList`'s is, at 64 times the size of the
+  arguments and 64 KiB, and both measure a number by its canonical text,
+  `1e+999999`, so either fails with `function.too_large` before the
+  digits are made. A verb's text is not made where the digits its number
+  needs already pass the bound. The specification says so (`LF-022`, and
+  `LF-021` amended).
+
 ## 0.17.0 (2026-10-05)
 
 The standard library's text functions: go-cty's 21 functions over text,
