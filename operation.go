@@ -68,6 +68,13 @@ type op struct {
 	// narrow narrows the unknown result r by what the operand ranges say. It is
 	// optional, and what it returns must still hold every possible outcome.
 	narrow func(args []Value, r Value) Value
+	// shallow reports, of operands the operation otherwise reads within,
+	// that this call reads none of the values within them: its answer is
+	// decided by what the operands are at their top, as an equality with a
+	// null is decided by nullness alone. The values within are then not
+	// consumed, and their marks stay off the result (MK-003). It is
+	// optional.
+	shallow func(args []Value) bool
 	// registered is set by register, and apply refuses an operation without
 	// it, so that no operation escapes the operand matrix.
 	registered bool

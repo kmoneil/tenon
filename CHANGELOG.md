@@ -46,6 +46,17 @@
   (tenon.Constraint, error)`. The specification says so (`FN-011`,
   `FN-020`).
 
+### Fixed
+
+- `Equals` with an operand known to be null, a null of a type or a pending
+  value known to be null, carried every mark the other operand held within
+  it, though its answer is decided by nullness alone: `x == null` came back
+  sensitive where `x` merely held a sensitive value. It now reads no value
+  within either operand and carries the operands' own marks alone. go-cty
+  fixed the same in `Value.Equals` in v1.18.0, but its `EqualFunc`, which
+  HCL's `==` calls, still unmarks deeply first; tenon's `EqualFunc`
+  follows `Equals`. The specification says so (`MK-003`).
+
 ## 0.15.1 (2026-10-05)
 
 Two fixes to the function system that 0.15.0 introduced. A function may

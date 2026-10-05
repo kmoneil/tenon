@@ -47,6 +47,12 @@ var equalsOp = register(&op{
 		}
 		return Value{}, false
 	},
+	// An operand known to be null decides the answer by nullness and types
+	// alone (equality), so no member of either operand is read, and none of
+	// their marks is consumed: x == null says nothing of what x holds.
+	shallow: func(args []Value) bool {
+		return knownNull(args[0].data()) || knownNull(args[1].data())
+	},
 })
 
 // equality says whether a and b are the same value, and whether that is

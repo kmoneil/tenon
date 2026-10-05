@@ -31,6 +31,11 @@ type Operation struct {
 	// conversion's codes rather than the operation's.
 	Collects bool
 	Call     func(args ...tenon.Value) tenon.Value
+	// Shallow reports that a call reads none of the values within its
+	// operands, its answer decided by what they are at their top, as an
+	// equality with a null is: the marks held within them then stay off the
+	// result (MK-003). Nil where the operation always reads within.
+	Shallow func(args []tenon.Value) bool
 }
 
 // Operand is what an operation accepts in one position.
@@ -479,7 +484,7 @@ func mark(op Operation, args []tenon.Value, marks []markedness) ([]tenon.Value, 
 			elems := args[i].Elements()
 			elems[0] = tenon.WithMarks(elems[0], label{id: fmt.Sprintf("held-%d", i), policy: tenon.Propagate})
 			out[i] = tenon.List(args[i].Type().ElementType(), elems...)
-			if op.Operands[i].Within {
+			if op.Operands[i].Within && (op.Shallow == nil || !op.Shallow(args)) {
 				want = append(want, fmt.Sprintf("held-%d", i))
 			}
 		case redacted:

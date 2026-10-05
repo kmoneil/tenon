@@ -18,6 +18,9 @@ type RegisteredOperation struct {
 	Agree       bool
 	Fixed       bool
 	Call        func(args ...Value) Value
+	// Shallow reports that a call reads no value within its operands, where
+	// the operation says so; nil where it never does.
+	Shallow func(args []Value) bool
 }
 
 // RegisteredOperations returns every registered operation, in the order they
@@ -36,7 +39,7 @@ func RegisteredOperations() []RegisteredOperation {
 	}
 	out := make([]RegisteredOperation, len(bound))
 	for i, o := range bound {
-		r := RegisteredOperation{Name: o.name, Agree: o.agree, Call: o.apply}
+		r := RegisteredOperation{Name: o.name, Agree: o.agree, Call: o.apply, Shallow: o.shallow}
 		if o.param != nil {
 			r.Params = o.param.String()
 		}
