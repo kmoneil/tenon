@@ -372,6 +372,11 @@
     {"id":"LT-003","area":"LT","withdrawn":false,"outline":false},
     {"id":"LT-004","area":"LT","withdrawn":false,"outline":false},
     {"id":"LT-005","area":"LT","withdrawn":false,"outline":false},
-    {"id":"LT-006","area":"LT","withdrawn":false,"outline":false}
+    {"id":"LT-006","area":"LT","withdrawn":false,"outline":false},
+    {"id":"LT-007","area":"LT","withdrawn":false,"outline":false},
+    {"id":"LT-008","area":"LT","withdrawn":false,"outline":false},
+    {"id":"LT-009","area":"LT","withdrawn":false,"outline":false},
+    {"id":"LT-010","area":"LT","withdrawn":false,"outline":false},
+    {"id":"LT-011","area":"LT","withdrawn":false,"outline":false}
   ]
 }
