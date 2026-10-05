@@ -1,10 +1,12 @@
 package stdlib
 
 import (
+	"math/big"
 	"strconv"
 	"strings"
 
 	"github.com/kmoneil/tenon"
+	"github.com/kmoneil/tenon/internal/numbers"
 	"github.com/kmoneil/tenon/internal/uni"
 )
 
@@ -300,6 +302,12 @@ func formatString(v *verb, s string) string {
 // given, or with spaces on the right where the - flag is, which overrides
 // 0.
 func formatSigned(v *verb, negative bool, digits string) string {
+	return formatSignedPrefixed(v, negative, "", digits)
+}
+
+// formatSignedPrefixed is formatSigned with a prefix between the sign and
+// the digits, which zeros pad after.
+func formatSignedPrefixed(v *verb, negative bool, prefix, digits string) string {
 	sign := ""
 	switch {
 	case negative:
@@ -310,18 +318,61 @@ func formatSigned(v *verb, negative bool, digits string) string {
 		sign = " "
 	}
 	if v.zero && !v.minus && v.hasWidth {
-		if n := v.width - len(sign) - len(digits); n > 0 {
-			return sign + strings.Repeat("0", n) + digits
+		if n := v.width - len(sign) - len(prefix) - len(digits); n > 0 {
+			return sign + prefix + strings.Repeat("0", n) + digits
 		}
 	}
-	return padded(&verb{hasWidth: v.hasWidth, width: v.width, minus: v.minus}, sign+digits)
+	return padded(&verb{hasWidth: v.hasWidth, width: v.width, minus: v.minus}, sign+prefix+digits)
 }
 
 // formatNumber returns the text of the known number n by an integer or a
 // decimal verb.
 func formatNumber(v *verb, n tenon.Value) string {
+	if strings.IndexByte("bdoxX", v.letter) >= 0 {
+		return formatInteger(v, n)
+	}
 	internalPanic("Format: %s has no writer yet", v.text)
 	return ""
+}
+
+// formatInteger returns the text of the known integer n by %d, %b, %o, %x
+// or %X: its digits in base 10, 2, 8 or 16, in capitals for %X, at least as
+// many as a precision says, none for a precision of zero and n zero; after
+// the sign, the # flag's prefix, 0b, 0, 0x or 0X, the octal one only where
+// the digits do not begin with 0; padded as formatSigned pads, but with no
+// zeros where a precision is given.
+func formatInteger(v *verb, n tenon.Value) string {
+	i, _ := numbers.Dec(n).BigInt()
+	base := map[byte]int{'d': 10, 'b': 2, 'o': 8, 'x': 16, 'X': 16}[v.letter]
+	digits := new(big.Int).Abs(i).Text(base)
+	if v.letter == 'X' {
+		digits = strings.ToUpper(digits)
+	}
+	if v.hasPrecision {
+		if i.Sign() == 0 && v.precision == 0 {
+			digits = ""
+		} else if pad := v.precision - len(digits); pad > 0 {
+			digits = strings.Repeat("0", pad) + digits
+		}
+	}
+	prefix := ""
+	if v.sharp {
+		switch v.letter {
+		case 'b':
+			prefix = "0b"
+		case 'o':
+			if !strings.HasPrefix(digits, "0") {
+				prefix = "0"
+			}
+		case 'x':
+			prefix = "0x"
+		case 'X':
+			prefix = "0X"
+		}
+	}
+	w := *v
+	w.zero = v.zero && !v.hasPrecision
+	return formatSignedPrefixed(&w, i.Sign() < 0, prefix, digits)
 }
 
 // formatted renders the pieces with the arguments, the format at index 0,

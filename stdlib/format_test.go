@@ -207,3 +207,47 @@ func TestConformance_LF011_FormatNotKnown(t *testing.T) {
 		}
 	}
 }
+
+func TestConformance_LF012_Integers(t *testing.T) {
+	conformance.Covers(t, "LF-012")
+	for _, tt := range []struct {
+		f, n, want string
+	}{
+		{"%d", "42", "42"}, {"%d", "-42", "-42"}, {"%d", "0", "0"},
+		{"%b", "5", "101"}, {"%o", "8", "10"}, {"%x", "255", "ff"}, {"%X", "255", "FF"},
+		{"%x", "-255", "-ff"},
+		// Of any magnitude, exactly.
+		{"%x", "1e30", "c9f2c9cd04674edea40000000"},
+		{"%d", "123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890",
+			"123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890"},
+		{"%d", "2.5e3", "2500"},
+	} {
+		formats(t, tt.f, vals(num(tt.n)), tt.want)
+	}
+	// Converted to a number under the call's policy.
+	if got := tenon.Call(stdlib.FormatFunc, []tenon.Value{tenon.String("%d"), tenon.String("12")}, tenon.Unsafe); got.AsString() != "12" {
+		t.Errorf("Format(%%d, \"12\") under Unsafe = %v, want 12", got)
+	}
+	failsWith(t, "Format(%d, \"12\") under Safe", format("%d", tenon.String("12")), tenon.CodeConvertUnsafe, at(1))
+	failsWith(t, "Format(%d, 1.5)", format("%d", num("1.5")), tenon.CodeFunctionInvalidArgument, at(1))
+	failsWith(t, "Format(%x, true)", tenon.Call(stdlib.FormatFunc, []tenon.Value{tenon.String("%x"), tenon.Bool(true)}, tenon.Unsafe), tenon.CodeConvertNoConversion, at(1))
+}
+
+func TestConformance_LF013_IntegerFlags(t *testing.T) {
+	conformance.Covers(t, "LF-013")
+	for _, tt := range []struct {
+		f, n, want string
+	}{
+		{"%+d", "5", "+5"}, {"% d", "5", " 5"}, {"%+d", "-5", "-5"},
+		{"%#x", "255", "0xff"}, {"%#X", "255", "0XFF"}, {"%#b", "5", "0b101"}, {"%#o", "8", "010"},
+		// The octal prefix only where the digits do not begin with 0.
+		{"%#o", "0", "0"}, {"%#.3o", "8", "010"},
+		{"%.3d", "5", "005"}, {"%.0d", "0", ""}, {"%.0d", "7", "7"},
+		{"[%5d]", "-42", "[  -42]"}, {"[%-5d]", "42", "[42   ]"}, {"[%05d]", "-42", "[-0042]"},
+		{"[%#08x]", "255", "[0x0000ff]"},
+		// A precision drops the 0 flag; - overrides it.
+		{"[%08.3d]", "5", "[     005]"}, {"[%-05d]", "5", "[5    ]"},
+	} {
+		formats(t, tt.f, vals(num(tt.n)), tt.want)
+	}
+}
