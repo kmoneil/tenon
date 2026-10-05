@@ -762,10 +762,27 @@ var counterparts = map[string]counterpart{
 			{cty.StringVal("%10001s"), cty.StringVal("x")},
 			{cty.StringVal("%z"), cty.UnknownVal(cty.String)},
 			{cty.StringVal("id-%s-%s"), cty.StringVal("web"), cty.UnknownVal(cty.String)},
+			{cty.StringVal("%d %x %X %b %o"), cty.NumberIntVal(42), cty.NumberIntVal(255), cty.NumberIntVal(255), cty.NumberIntVal(5), cty.NumberIntVal(8)},
+			{cty.StringVal("[%+d] [% d] [%#x] [%#b] [%.3d] [%05d] [%-5d] [%08.3d]"), cty.NumberIntVal(5), cty.NumberIntVal(5), cty.NumberIntVal(255), cty.NumberIntVal(5), cty.NumberIntVal(5), cty.NumberIntVal(-42), cty.NumberIntVal(42), cty.NumberIntVal(5)},
+			{cty.StringVal("%x"), cty.MustParseNumberVal("1e30")},
+			{cty.StringVal("%d"), cty.MustParseNumberVal("1.5")},
+			{cty.StringVal("%d"), cty.StringVal("12")},
+			{cty.StringVal("%#o"), cty.Zero},
+			{cty.StringVal("%d"), cty.MustParseNumberVal("1e200")},
 		},
 		divergences: []divergence{{
 			why:   "the small fixes of D-298 Q5, where go-cty disagrees with Go, C and its own documentation: %v of a number is its canonical text, not %g (row 47); %.0s is empty, - overrides 0, %t pads, and %v of a string takes a precision as %s does (row 48) (LF-005, LF-007, LF-009, LF-010)",
-			match: formatIs("%v", "[%.0s]", "[%-05s]", "[%7t]", "%.2v"),
+			match: formatIs("%v", "[%.0s]", "[%-05s]", "[%7t]", "%.2v", "%#o"),
+		}, {
+			why: "a number of 10^150 or more: cty formats the 512-bit float, whose last digits are lost, and tenon the exact number (Appendix B row 5)",
+			match: func(args []cty.Value) bool {
+				for _, a := range args[1:] {
+					if n, ok := numberOf(a); ok && isHuge(n) {
+						return true
+					}
+				}
+				return false
+			},
 		}, {
 			why:   "a width past 10,000: cty pads to it, and tenon fails (LF-004, LB-031, row 48)",
 			match: formatIs("%10001s"),
