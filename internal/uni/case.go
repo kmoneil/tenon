@@ -151,23 +151,61 @@ const (
 // passes over it after the sigma, and takes it for the cased code point
 // before it.
 func finalSigma(s string, i int) bool {
-	before := false
-	for j := i; j > 0; {
-		r, size := utf8.DecodeLastRuneInString(s[:j])
-		if !inRanges(caseIgnorable[:], r) {
-			before = inRanges(cased[:], r)
-			break
-		}
-		j -= size
-	}
-	if !before {
+	if !casedBefore(s, i) {
 		return false
 	}
 	_, size := utf8.DecodeRuneInString(s[i:])
-	for _, r := range s[i+size:] {
+	isCased, _ := casedAfter(s[i+size:])
+	return !isCased
+}
+
+// casedBefore reports whether, passing over case-ignorable code points, a
+// cased code point comes before i in s.
+func casedBefore(s string, i int) bool {
+	for j := i; j > 0; {
+		r, size := utf8.DecodeLastRuneInString(s[:j])
 		if !inRanges(caseIgnorable[:], r) {
-			return !inRanges(cased[:], r)
+			return inRanges(cased[:], r)
+		}
+		j -= size
+	}
+	return false
+}
+
+// casedAfter reports whether, passing over case-ignorable code points, the
+// text after begins with a cased code point, and whether after settles it:
+// text of case-ignorable code points alone leaves it to what follows, and
+// counts as uncased where nothing does.
+func casedAfter(after string) (isCased, settled bool) {
+	for _, r := range after {
+		if !inRanges(caseIgnorable[:], r) {
+			return inRanges(cased[:], r), true
 		}
 	}
-	return true
+	return false, false
+}
+
+// LowerPrefix returns what Lower of any text beginning with p begins with:
+// the lowercase of p, each code point mapped in the context p gives it, up
+// to the first capital sigma whose Final_Sigma the text after p decides, a
+// cased code point coming before it and nothing but case-ignorable ones
+// after it in p.
+func LowerPrefix(p string) string {
+	b := make([]byte, 0, len(p))
+	for i, r := range p {
+		if r == capitalSigma && casedBefore(p, i) {
+			isCased, settled := casedAfter(p[i+utf8.RuneLen(r):])
+			if !settled {
+				break
+			}
+			if isCased {
+				b = utf8.AppendRune(b, 0x03C3)
+			} else {
+				b = utf8.AppendRune(b, smallFinalSigma)
+			}
+			continue
+		}
+		b = append(b, Lower(string(r))...)
+	}
+	return string(b)
 }

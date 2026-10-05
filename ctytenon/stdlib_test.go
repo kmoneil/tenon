@@ -537,6 +537,9 @@ var counterparts = map[string]counterpart{
 			},
 		}},
 	},
+	"Upper": caseMapping(ctystdlib.UpperFunc, stdlib.UpperFunc),
+	"Lower": caseMapping(ctystdlib.LowerFunc, stdlib.LowerFunc),
+	"Title": caseMapping(ctystdlib.TitleFunc, stdlib.TitleFunc),
 	"Lookup": {
 		cty: ctystdlib.LookupFunc,
 		ten: stdlib.LookupFunc,
@@ -862,6 +865,44 @@ func setOperation(c function.Function, ten tenon.Function, n int) counterpart {
 					}
 				}
 				return slices.Contains(ets, cty.Bool) && (slices.Contains(ets, cty.Number) || slices.Contains(ets, cty.String))
+			},
+		}},
+	}
+}
+
+// caseMapping is a counterpart of a case conversion.
+func caseMapping(c function.Function, ten tenon.Function) counterpart {
+	return counterpart{
+		cty: c,
+		ten: ten,
+		cases: [][]cty.Value{
+			{cty.StringVal("hello world")},
+			{cty.StringVal("HeLLo_World")},
+			{cty.StringVal("foo.example.com")},
+			{cty.StringVal("o'neil")},
+			{cty.StringVal("1st place")},
+			{cty.StringVal("hello\U000000A0world")},
+			{cty.StringVal("\U000000ABbonjour\U000000BB")},
+			{cty.StringVal("\U000001C6emal")},
+			{cty.StringVal("stra\U000000DFe")},
+			{cty.StringVal("\U0000039F\U00000394\U0000039F\U000003A3")},
+			{cty.StringVal("\U00000130")},
+			{cty.StringVal("\U0000FB01sh")},
+			{cty.StringVal("")},
+			{cty.UnknownVal(cty.String)},
+			{cty.UnknownVal(cty.String).Refine().StringPrefix("abc").NewValue()},
+			{cty.StringVal("SECRET").Mark("sensitive")},
+		},
+		divergences: []divergence{{
+			why: "a code point whose full case mapping is not its simple one (SpecialCasing.txt), or a capital sigma: cty maps each code point by Go's simple mapping, and tenon by Unicode's default case conversion, full mappings and Final_Sigma (LS-002, Appendix B row 42)",
+			match: func(args []cty.Value) bool {
+				v, _ := args[0].UnmarkDeep()
+				if !v.IsKnown() || v.IsNull() {
+					return false
+				}
+				return strings.ContainsFunc(v.AsString(), func(r rune) bool {
+					return slices.Contains([]rune{0x00DF, 0xFB01, 0x0149, 0x0390, 0x0130, 0x03A3}, r)
+				})
 			},
 		}},
 	}
