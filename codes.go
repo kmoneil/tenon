@@ -46,6 +46,7 @@ const (
 	CodeRangeContradiction          Code = "range.contradiction"
 	CodeRegexDuplicateGroup         Code = "regex.duplicate_group"
 	CodeRegexInvalidSyntax          Code = "regex.invalid_syntax"
+	CodeRegexMissingGroup           Code = "regex.missing_group"
 	CodeRegexMixedGroups            Code = "regex.mixed_groups"
 	CodeRegexNoMatch                Code = "regex.no_match"
 	CodeSerializeDecoderFailed      Code = "serialize.decoder_failed"
