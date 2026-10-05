@@ -1,0 +1,16 @@
+{
+  "format": 1,
+  "about": "Each entry is a call of a function of the standard library (§13 to §20), named as the specification names it, with arguments, each given as its display form and its encoding (args), under a policy. A call that answers gives value, its display form, and valueHex, its encoding; one that fails gives the failures, each a code and the display form of its path, in order. The marks the arguments carry are those vectors.json lists.",
+  "calls": [
+    {"name":"AssertNotNull/a number","function":"AssertNotNull","args":[{"value":"1","hex":"da74656e00820183000201"}],"policy":"safe","value":"1","valueHex":"da74656e00820183000201"},
+    {"name":"AssertNotNull/marks","function":"AssertNotNull","args":[{"value":"redacted(\"r\")","hex":"da74656e008201830003da74656e02826768756e746572328281616d816172"}],"policy":"safe","value":"redacted(\"r\")","valueHex":"da74656e008201830003da74656e02826768756e746572328281616d816172"},
+    {"name":"AssertNotNull/a tuple holding a null","function":"AssertNotNull","args":[{"value":"[null(string), 1]","hex":"da74656e0082018300820782030282f601"}],"policy":"safe","value":"[null(string), 1]","valueHex":"da74656e0082018300820782030282f601"},
+    {"name":"AssertNotNull/unknown","function":"AssertNotNull","args":[{"value":"unknown(string)","hex":"da74656e008201830003da74656e01a0"}],"policy":"safe","value":"unknown(string, not null)","valueHex":"da74656e008201830003da74656e01a100f5"},
+    {"name":"AssertNotNull/unknown with a prefix","function":"AssertNotNull","args":[{"value":"unknown(string, prefix \"ab\", length >= 2)","hex":"da74656e008201830003da74656e01a2036261620402"}],"policy":"safe","value":"unknown(string, not null, prefix \"ab\", length >= 2)","valueHex":"da74656e008201830003da74656e01a300f5036261620402"},
+    {"name":"AssertNotNull/pending","function":"AssertNotNull","args":[{"value":"pending(list_of(any))","hex":"da74656e00820183018203810200"}],"policy":"safe","value":"pending(list_of(any), not null)","valueHex":"da74656e00820183018203810201"},
+    {"name":"AssertNotNull/refused/null","function":"AssertNotNull","args":[{"value":"null(string)","hex":"da74656e008201830003f6"}],"policy":"safe","failures":[{"code":"operation.null_operand","path":".[0]"}]},
+    {"name":"AssertNotNull/refused/pending null","function":"AssertNotNull","args":[{"value":"pending(any, null)","hex":"da74656e0082018301810202"}],"policy":"safe","failures":[{"code":"operation.null_operand","path":".[0]"}]},
+    {"name":"AssertNotNull/refused/redacted null","function":"AssertNotNull","args":[{"value":"redacted(\"r\")","hex":"da74656e008201830003da74656e0282f681816172"}],"policy":"safe","failures":[{"code":"operation.null_operand","path":".[0]"}]},
+    {"name":"AssertNotNull/refused/arity","function":"AssertNotNull","args":[{"value":"1","hex":"da74656e00820183000201"},{"value":"2","hex":"da74656e00820183000202"}],"policy":"safe","failures":[{"code":"function.arity","path":"."}]}
+  ]
+}

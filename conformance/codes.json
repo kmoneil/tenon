@@ -60,6 +60,12 @@
       "code": "function.failed"
     },
     {
+      "code": "function.invalid_argument"
+    },
+    {
+      "code": "function.too_large"
+    },
+    {
       "code": "json.invalid_syntax"
     },
     {

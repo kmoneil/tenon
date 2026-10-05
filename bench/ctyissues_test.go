@@ -29,10 +29,11 @@ import (
 // that an upgrade that fixes the issue fails the test and says so, and then
 // what tenon does with its counterpart.
 
-// openCtyIssues is go-cty's open issues, as listed on 2026-10-01, unchanged
-// since 2026-09-14. TestEveryOpenCtyIssueIsProbed holds the file to it: each
-// has a TestCtyIssueN or a reason in unprobed.
-var openCtyIssues = []int{17, 90, 148, 211, 215, 216, 217, 219, 220, 221, 222, 223, 224, 225, 226, 227, 228}
+// openCtyIssues is go-cty's open issues, as listed on 2026-10-05: those of
+// 2026-10-01, unchanged since 2026-09-14, and #229 and #230, opened on
+// 2026-10-02. TestEveryOpenCtyIssueIsProbed holds the file to it: each has a
+// TestCtyIssueN or a reason in unprobed.
+var openCtyIssues = []int{17, 90, 148, 211, 215, 216, 217, 219, 220, 221, 222, 223, 224, 225, 226, 227, 228, 229, 230}
 
 // unprobed gives the reason for each open issue that reports nothing tenon
 // could get wrong.
@@ -552,6 +553,56 @@ func TestCtyIssue228_EmptyNumberRanges(t *testing.T) {
 		}
 		if v := tenon.Narrow(tenon.Unknown(num), append(bounds, tenon.NotNull())...); !failsWith(v, tenon.CodeRangeContradiction) {
 			t.Errorf("tenon narrowed 3 < x (<= %t) 3, not null, to %s", inclusive, v)
+		}
+	}
+}
+
+// TestCtyIssue229_ASetEqualsItself: cty answers false where a set holds a
+// member with an unknown part, compared even with itself, which can be no
+// other value. tenon answers unknown: the member may turn out to be any list
+// of one bool, and two such sets are equal or not as their members turn out.
+func TestCtyIssue229_ASetEqualsItself(t *testing.T) {
+	s := cty.SetVal([]cty.Value{cty.ListVal([]cty.Value{cty.UnknownVal(cty.Bool)})})
+	if got := s.Equals(s); !got.RawEquals(cty.False) {
+		t.Errorf("cty answers %#v; #229 is fixed", got)
+	}
+	ts := tenon.Set(tenon.ListType(tenon.BoolType()), tenon.List(tenon.BoolType(), tenon.Unknown(tenon.BoolType())))
+	if got := tenon.Equals(ts, ts); got.IsKnown() {
+		t.Errorf("tenon answers %v, want unknown", got)
+	}
+}
+
+// TestCtyIssue230_AShortTuple: cty's JSON reader panics on an array shorter
+// than the tuple it reads it as, at the top level. tenon's fails with the
+// failure to convert, located where the tuple is short, its message naming
+// both lengths.
+func TestCtyIssue230_AShortTuple(t *testing.T) {
+	ty := cty.Tuple([]cty.Type{cty.Number, cty.Number})
+	func() {
+		defer func() {
+			if recover() == nil {
+				t.Errorf("cty read a short tuple without panicking; #230 is fixed")
+			}
+		}()
+		_, _ = ctyjson.Unmarshal([]byte(`[1]`), ty)
+	}()
+	pair := tenon.Exactly(tenon.TupleType(tenon.NumberType(), tenon.NumberType()))
+	for text, at := range map[string]tenon.Path{
+		`[1]`:        {},
+		`{"a": [1]}`: tenon.Path{}.Attribute("a"),
+	} {
+		c := pair
+		if text != `[1]` {
+			c = tenon.ObjectWith(map[string]tenon.Field{"a": tenon.Required(pair)}, true)
+		}
+		_, err := tenon.ParseJSON([]byte(text), c, tenon.Safe)
+		var failed *tenon.Error
+		if !errors.As(err, &failed) {
+			t.Errorf("tenon read %s with %v", text, err)
+			continue
+		}
+		if d := failed.Diagnostics(); len(d) != 1 || d[0].Code != tenon.CodeConvertNoConversion || !d[0].Path.Equal(at) {
+			t.Errorf("tenon read %s failing with %+v, want %s at %s", text, d, tenon.CodeConvertNoConversion, at)
 		}
 	}
 }

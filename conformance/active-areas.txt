@@ -16,6 +16,14 @@ DI
 EQ
 GO
 JS
+LB
+defer LB-011 known failures are first exercised by the operators, the card after the library's frame
+defer LB-012 partly known collections are first read by the collection functions
+defer LB-013 sequences are first taken by the collection functions
+defer LB-021 conversions between arguments first come with Coalesce
+defer LB-030 argument domains are first refused by the rounding functions and ParseInt
+defer LB-031 the first bounded results are Range's and SetProduct's
+LN
 ER
 FN
 MK
