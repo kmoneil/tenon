@@ -14,6 +14,7 @@ import (
 
 	"github.com/kmoneil/tenon"
 	"github.com/kmoneil/tenon/gotenon"
+	tenonstdlib "github.com/kmoneil/tenon/stdlib"
 	"github.com/zclconf/go-cty/cty"
 	"github.com/zclconf/go-cty/cty/convert"
 	"github.com/zclconf/go-cty/cty/function"
@@ -39,7 +40,6 @@ var openCtyIssues = []int{17, 90, 148, 211, 215, 216, 217, 219, 220, 221, 222, 2
 // could get wrong.
 var unprobed = map[int]string{
 	215: "a thank-you for the README's line about a language's reflection API, reporting no defect",
-	217: "Substr's offsets: tenon defines no string functions, leaving them to the language built on it",
 }
 
 func TestEveryOpenCtyIssueIsProbed(t *testing.T) {
@@ -244,6 +244,23 @@ func TestCtyIssue216_ConversionGivesTheTarget(t *testing.T) {
 		got := tenon.Convert(v, tenon.Exactly(target), tenon.Unsafe)
 		if !got.IsResolved() || got.Type() != target {
 			t.Errorf("tenon converted %s to %s", v, got)
+		}
+	}
+}
+
+// TestCtyIssue217_SubstrOfNothing: cty's substr takes the rest of the
+// string for a length of zero where the offset is negative, so
+// substr("hello", -3, 0) is "llo", where (2, 0) is "". tenon's Substr takes
+// nothing for a length of zero, whatever the offset.
+func TestCtyIssue217_SubstrOfNothing(t *testing.T) {
+	hello := cty.StringVal("hello")
+	if got, err := stdlib.SubstrFunc.Call([]cty.Value{hello, cty.NumberIntVal(-3), cty.Zero}); err != nil || got != cty.StringVal("llo") {
+		t.Errorf("cty's substr(\"hello\", -3, 0) is %#v, %v; #217 is fixed", got, err)
+	}
+	for _, offset := range []int64{-6, -3, -1, 0, 2, 7} {
+		got := tenon.Call(tenonstdlib.SubstrFunc, []tenon.Value{tenon.String("hello"), tenon.NumberFromInt(offset), tenon.NumberFromInt(0)}, tenon.Safe)
+		if !got.Equal(tenon.String("")) {
+			t.Errorf("tenon's Substr(\"hello\", %d, 0) is %v, want the empty string", offset, got)
 		}
 	}
 }

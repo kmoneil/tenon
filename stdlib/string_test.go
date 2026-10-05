@@ -145,3 +145,136 @@ func TestConformance_LS007_Title(t *testing.T) {
 	}
 	promisesHold(t, stdlib.TitleFunc)
 }
+
+func TestConformance_LS008_Strlen(t *testing.T) {
+	conformance.Covers(t, "LS-008")
+	for _, tt := range []struct {
+		in   string
+		want int64
+	}{
+		{"", 0}, {"hello", 5}, {"q\U00000301", 1}, {"\r\n", 1},
+		{"\U0001F1FA\U0001F1F8\U0001F1EC", 2},
+		// A ZWJ after a regional indicator joins no pictograph to it (GB11).
+		{"\U0001F1FA\U0000200D\U0001F468", 2},
+		{"\U00000915\U0000094D\U00000937", 2},
+	} {
+		if got := call(stdlib.StrlenFunc, tenon.String(tt.in)); !got.Equal(tenon.NumberFromInt(tt.want)) {
+			t.Errorf("Strlen(%+q) = %v, want %d", tt.in, got, tt.want)
+		}
+	}
+	got := call(stdlib.StrlenFunc, tenon.Narrow(tenon.Unknown(tenon.StringType()), tenon.StringPrefix("ab-"), tenon.LengthMax(5)))
+	lo, _, _ := got.Range().NumberMin()
+	hi, _, _ := got.Range().NumberMax()
+	if got.IsKnown() || !lo.Equal(num("3")) || !hi.Equal(num("5")) || !notNull(got) {
+		t.Errorf("Strlen(unknown beginning ab-, at most 5 long) = %v, want 3 to 5", got)
+	}
+}
+
+func TestConformance_LS009_Reverse(t *testing.T) {
+	conformance.Covers(t, "LS-009")
+	for _, tt := range []struct{ in, want string }{
+		{"hello", "olleh"},
+		{"a\r\nb", "b\r\na"},
+		{"e\U00000301x", "xe\U00000301"},
+		{"\U0001F1FA\U0001F1F8\U0001F1EC\U0001F1E7", "\U0001F1EC\U0001F1E7\U0001F1FA\U0001F1F8"},
+		// Clusters meeting anew compose: a lone acute after e.
+		{"\U00000301e", "\U000000E9"},
+	} {
+		if got := call(stdlib.ReverseFunc, tenon.String(tt.in)); got.AsString() != tenon.String(tt.want).AsString() {
+			t.Errorf("Reverse(%+q) = %+q, want %+q", tt.in, got.AsString(), tt.want)
+		}
+	}
+	// So reversing twice need not give the string back: three regional
+	// indicators pair afresh.
+	three := tenon.String("\U0001F1FA\U0001F1F8\U0001F1EC")
+	if twice := call(stdlib.ReverseFunc, call(stdlib.ReverseFunc, three)); twice.Equal(three) {
+		t.Errorf("Reverse twice of %v = %v, the string itself", three, twice)
+	}
+	if got := call(stdlib.ReverseFunc, tenon.Unknown(tenon.StringType())); got.IsKnown() || !notNull(got) {
+		t.Errorf("Reverse(unknown) = %v, want unknown and not null", got)
+	}
+}
+
+func TestConformance_LS010_Substr(t *testing.T) {
+	conformance.Covers(t, "LS-010")
+	hello := tenon.String("hello")
+	for _, tt := range []struct {
+		offset, length string
+		want           string
+	}{
+		{"1", "3", "ell"}, {"0", "5", "hello"}, {"2", "100", "llo"},
+		{"-3", "2", "ll"}, {"-1", "-1", "o"}, {"-10", "2", "he"},
+		{"5", "2", ""}, {"10", "2", ""}, {"1", "-5", "ello"},
+		// A length of zero is empty whatever the offset (#217).
+		{"0", "0", ""}, {"2", "0", ""}, {"-3", "0", ""}, {"-6", "0", ""},
+		// Of any magnitude.
+		{"0", "1e30", "hello"}, {"-1e30", "1", "h"}, {"1e30", "1", ""},
+	} {
+		if got := call(stdlib.SubstrFunc, hello, num(tt.offset), num(tt.length)); got.AsString() != tt.want {
+			t.Errorf("Substr(hello, %s, %s) = %v, want %q", tt.offset, tt.length, got, tt.want)
+		}
+	}
+	// By cluster: an e and its acute are one.
+	if got := call(stdlib.SubstrFunc, tenon.String("e\U00000301x"), num("0"), num("1")); got.AsString() != "\U000000E9" {
+		t.Errorf("Substr(e and acute, x, 0, 1) = %+q", got.AsString())
+	}
+	failsWith(t, "Substr(hello, 1.5, 2)", call(stdlib.SubstrFunc, hello, num("1.5"), num("2")), tenon.CodeFunctionInvalidArgument, at(1))
+	failsWith(t, "Substr(hello, 1, 2.5)", call(stdlib.SubstrFunc, hello, num("1"), num("2.5")), tenon.CodeFunctionInvalidArgument, at(2))
+}
+
+func TestConformance_LS011_SubstrNotKnown(t *testing.T) {
+	conformance.Covers(t, "LS-011")
+	str := tenon.Unknown(tenon.StringType())
+	// A length of zero settles it, and a fraction fails, whatever else is
+	// not known yet.
+	if got := call(stdlib.SubstrFunc, str, unknownNumber, num("0")); !got.Equal(tenon.String("")) {
+		t.Errorf("Substr(unknown, unknown, 0) = %v, want the empty string", got)
+	}
+	failsWith(t, "Substr(unknown, 1.5, unknown)", call(stdlib.SubstrFunc, str, num("1.5"), unknownNumber), tenon.CodeFunctionInvalidArgument, at(1))
+	// At most the length, or as far as a negative offset counts.
+	for _, tt := range []struct {
+		offset, length tenon.Value
+		hi             int64
+	}{
+		{unknownNumber, num("3"), 3},
+		{num("-2"), unknownNumber, 2},
+		{num("-2"), num("5"), 2},
+	} {
+		got := call(stdlib.SubstrFunc, str, tt.offset, tt.length)
+		if hi, ok := got.Range().LengthMax(); got.IsKnown() || !ok || hi != tt.hi || !notNull(got) {
+			t.Errorf("Substr(unknown, %v, %v) = %v, want at most %d long", tt.offset, tt.length, got, tt.hi)
+		}
+	}
+	// The clusters the prefix settles: all but its last, which what
+	// follows may extend.
+	if got := call(stdlib.SubstrFunc, prefixed("hello world"), num("0"), num("5")); !got.Equal(tenon.String("hello")) {
+		t.Errorf("Substr(unknown beginning hello world, 0, 5) = %v, want hello", got)
+	}
+	if got := call(stdlib.SubstrFunc, prefixed("hello world"), num("6"), num("-1")); !promises(got, "wor") {
+		t.Errorf("Substr(unknown beginning hello world, 6, -1) = %v, want an unknown beginning wor", got)
+	}
+	// For any prefix and continuation, and any offset and length, the
+	// answer for the whole is what was answered for the prefix, or begins
+	// with what it promised.
+	alphabet := []string{"a", "b", " ", "\r", "\n", "\U00000301", "\U0001F1FA", "\U0001F1F8", "\U0000200D", "\U0001F468", "\U00001100", "\U00001161"}
+	rng := rand.New(rand.NewPCG(20261005, 3))
+	word := func() string {
+		var b strings.Builder
+		for range rng.IntN(7) {
+			b.WriteString(alphabet[rng.IntN(len(alphabet))])
+		}
+		return b.String()
+	}
+	for range 5000 {
+		p, rest := tenon.String(word()).AsString(), word()
+		offset, length := tenon.NumberFromInt(int64(rng.IntN(6))), tenon.NumberFromInt(int64(rng.IntN(7)-1))
+		promised := call(stdlib.SubstrFunc, prefixed(p), offset, length)
+		got := call(stdlib.SubstrFunc, tenon.String(p+rest), offset, length)
+		switch {
+		case promised.IsKnown() && !promised.Equal(got):
+			t.Fatalf("Substr(%+q, %v, %v) = %v, and %v was answered for the prefix %+q", p+rest, offset, length, got, promised, p)
+		case !promised.IsKnown() && !strings.HasPrefix(got.AsString(), promised.Range().StringPrefix()):
+			t.Fatalf("Substr(%+q, %v, %v) = %v, which does not begin with %+q, promised for the prefix %+q", p+rest, offset, length, got, promised.Range().StringPrefix(), p)
+		}
+	}
+}
