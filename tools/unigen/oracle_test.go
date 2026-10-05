@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -83,6 +84,54 @@ func TestConformance_ST005_GraphemeBreakTest(t *testing.T) {
 				t.Errorf("line %d: %s: the first %d code points hold %d clusters, and GraphemeCount gives %d",
 					i+1, strings.TrimSpace(line), k/2+1, clusters, got)
 				break
+			}
+		}
+	}
+	if cases < 600 {
+		t.Fatalf("GraphemeBreakTest.txt held %d cases, fewer than the 602 of Unicode 15.0.0", cases)
+	}
+}
+
+// TestConformance_LS001_ClustersAndCuts holds Clusters and CutsOf to
+// Unicode's GraphemeBreakTest.txt: the clusters are the text between the
+// breaks, "÷", and the cut positions are the breaks and, beside them, the
+// position between the CR and the LF of a CR LF.
+func TestConformance_LS001_ClustersAndCuts(t *testing.T) {
+	conformance.Covers(t, "LS-001")
+	cases := 0
+	for i, line := range strings.Split(readOracle(t, "GraphemeBreakTest.txt"), "\n") {
+		line, _, _ = strings.Cut(line, "#")
+		fields := strings.Fields(line)
+		if len(fields) == 0 {
+			continue
+		}
+		cases++
+		var text strings.Builder
+		var clusters []string
+		cuts := map[int]bool{0: true}
+		start := 0
+		for k := 1; k < len(fields); k += 2 {
+			if fields[k-1] == "÷" && k > 1 {
+				clusters = append(clusters, text.String()[start:])
+				start = text.Len()
+				cuts[start] = true
+			}
+			r := codePoints(t, i+1, fields[k:k+1])
+			if r == "\n" && strings.HasSuffix(text.String(), "\r") {
+				cuts[text.Len()] = true
+			}
+			text.WriteString(r)
+		}
+		s := text.String()
+		clusters = append(clusters, s[start:])
+		cuts[len(s)] = true
+		if got := slices.Collect(uni.Clusters(s)); !slices.Equal(got, clusters) {
+			t.Errorf("line %d: %s: Clusters gives %+q, want %+q", i+1, strings.TrimSpace(line), got, clusters)
+		}
+		c := uni.CutsOf(s)
+		for j := 0; j <= len(s); j++ {
+			if c.At(j) != cuts[j] {
+				t.Errorf("line %d: %s: CutsOf(...).At(%d) = %v, want %v", i+1, strings.TrimSpace(line), j, c.At(j), cuts[j])
 			}
 		}
 	}

@@ -42,8 +42,8 @@ func main() {
 	}
 }
 
-// run generates internal/uni's tables.go and grapheme_tables.go into dir, and
-// reports to log what they hold.
+// run generates internal/uni's tables.go, grapheme_tables.go and
+// case_tables.go into dir, and reports to log what they hold.
 func run(dir string, log io.Writer) error {
 	if err := checkVersions(); err != nil {
 		return err
@@ -62,6 +62,13 @@ func run(dir string, log io.Writer) error {
 	if err := s.check(); err != nil {
 		return err
 	}
+	c, err := deriveCasing(ucd)
+	if err != nil {
+		return err
+	}
+	if err := c.check(); err != nil {
+		return err
+	}
 	categories := deriveCategories()
 	tables, err := renderTables(n, categories)
 	if err != nil {
@@ -77,9 +84,17 @@ func run(dir string, log io.Writer) error {
 	if err := os.WriteFile(filepath.Join(dir, "grapheme_tables.go"), graphemes, 0o644); err != nil {
 		return err
 	}
+	cases, err := renderCasing(c)
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(dir, "case_tables.go"), cases, 0o644); err != nil {
+		return err
+	}
 	_, err = fmt.Fprintf(log, "unigen: Unicode %s: %d combining classes, %d decompositions, %d primary composites, "+
-		"%d rewritten, %d composing, %d category ranges, %d grapheme break ranges\n",
+		"%d rewritten, %d composing, %d category ranges, %d grapheme break ranges, %d case ranges, "+
+		"%d special casings\n",
 		version, len(n.ccc), len(n.decomposable), len(n.composed), len(n.rewritten), len(n.composing),
-		len(categories), len(s.ranges()))
+		len(categories), len(s.ranges()), len(c.ranges()), len(c.special))
 	return err
 }
