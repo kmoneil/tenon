@@ -79,7 +79,7 @@ func fencedBlocks(text, language string) []string {
 func exampleSource(t *testing.T) string {
 	t.Helper()
 	var b strings.Builder
-	for _, dir := range []string{".", "gotenon", "ctytenon"} {
+	for _, dir := range []string{".", "gotenon", "ctytenon", "stdlib"} {
 		names, err := filepath.Glob(filepath.Join(dir, "example*_test.go"))
 		if err != nil {
 			t.Fatal(err)

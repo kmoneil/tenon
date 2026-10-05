@@ -230,6 +230,7 @@ var (
 		{"Diff", "Diff one change", "Reports what changed between two versions of the converted value that differ in one replica count."},
 		{"Cross", "Cross between go-cty and tenon", "Carries the converted value across ctytenon's bridge, from go-cty to tenon and from tenon to go-cty, as a program moving from one to the other a piece at a time does."},
 		{"Call", "Call a function", "Calls a two-number function once per service, through each library's own convention: tenon converts the arguments to the parameters' constraints inside the call, where go-cty leaves converting to the caller."},
+		{"Library", "Call a library function", "Merges each service's environment variables with two defaults through each library's own merge function."},
 	}
 	// The libraries the summary compares come first; the rest are the
 	// directions of ctytenon's bridge, which the Cross workload measures.
@@ -390,7 +391,9 @@ const fairness = `## Reading the figures
   each argument to its parameter's constraint under the call's policy and
   answers every argument state itself; go-cty's ` + "`Call`" + ` checks conformance
   only, each host converting beforehand, so each measures the whole of its
-  own convention.
+  own convention. The library call is each library's own merge, the map of
+  a service's environment variables after a map of two defaults, as a
+  configuration adds settings to a map it was given.
 - **Growth.** The sizes are 32 times apart, so work growing faster than the
   document shows as a step of more than 32 between rows. tenon keeps its work
   in proportion to its input (` + "`SECURITY.md`" + ` says where it bounds it), and

@@ -1,8 +1,8 @@
 // Package stdlib is tenon's standard library of functions: what a
 // configuration language built on tenon offers its users to call, each a
 // [tenon.Function]. It is go-cty's cty/function/stdlib, function for function,
-// with tenon's call boundary, exact numbers, strings measured and cut by
-// grapheme cluster, and every answer stated by the specification, so that a
+// with tenon's call boundary, exact numbers, strings measured by grapheme
+// cluster, and every answer stated by the specification, so that a
 // configuration evaluates alike wherever it runs.
 //
 // Each function is a variable named as go-cty names it, AssertNotNullFunc for
@@ -18,6 +18,16 @@
 // state the function does not admit, as it does for any function. A host still
 // evaluating with go-cty, HCL's evaluator among them, calls these in place
 // through the ctytenon module's Bridge.FunctionToCty.
+//
+// The package holds go-cty's functions over values: the operators; the
+// functions over numbers, Log and Pow correctly rounded to 96 significant
+// digits; the general ones, Coalesce, MakeToFunc and AssertNotNull; and those
+// over lists, sets, maps, tuples and objects, Range and SetProduct among
+// them. go-cty's functions over text, encodings and time are not here yet.
+// A function reads a collection as it stands: where an argument is not known
+// yet, it answers from what is, the members a list holds, the lengths an
+// unknown one records, the attributes an object's type names, so its answer
+// is as narrow as its arguments allow.
 //
 // The operator functions, AddFunc through NegateFunc, the four orderings,
 // EqualFunc, NotEqualFunc, AndFunc, OrFunc and NotFunc, are what an

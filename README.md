@@ -203,6 +203,54 @@ it is written, case included. A type that marshals itself to text, as
 [gotenon documentation](https://pkg.go.dev/github.com/kmoneil/tenon/gotenon)
 has the whole mapping.
 
+## Functions
+
+Package `stdlib` is a standard library of functions for a language built on
+tenon: go-cty's, function for function and named as go-cty names them, so a
+host's table of functions moves across by its import path. Each answer is
+the one the specification states. Numbers are exact, an argument not known
+yet leaves the answer as narrow as what is known allows, a function with no
+answer fails with a code located at the argument, and a result that would
+grow past its stated bound fails before any of it is made.
+
+```go
+functions := map[string]tenon.Function{
+	"range":    stdlib.RangeFunc,
+	"merge":    stdlib.MergeFunc,
+	"contains": stdlib.ContainsFunc,
+}
+call := func(name string, args ...tenon.Value) {
+	fmt.Println(name+":", tenon.Call(functions[name], args, tenon.Unsafe))
+}
+n := tenon.NumberFromText
+
+// Every element is exact, so the steps do not drift.
+call("range", n("0"), n("1"), n("0.1"))
+// A map not known yet leaves the keys open, but not what is known.
+tier := tenon.Map(tenon.StringType(), map[string]tenon.Value{"tier": tenon.String("web")})
+call("merge", tenon.Unknown(tenon.MapType(tenon.StringType())), tier)
+// A language's untyped null is found among nulls.
+null := tenon.Narrow(tenon.Pending(tenon.Any()), tenon.NullOnly())
+call("contains", tenon.List(tenon.StringType(), tenon.String("a"), tenon.Null(tenon.StringType())), null)
+// A result past its bound fails before any of it is made.
+call("range", n("5000"))
+```
+
+```
+range: list(number)[0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
+merge: unknown(map(string), not null, length >= 1)
+contains: true
+range: error(function.too_large: "Range: from 0 to 5000 by 1 is more than 1024 elements, the most it makes" at .[0])
+```
+
+The package holds go-cty's functions over values: the operators, numbers,
+the general functions, collections and sets. Its functions over text,
+encodings and time are not here yet. A host still evaluating with go-cty,
+HCL's evaluator among them, calls these through ctytenon's
+`FunctionToCty`. The
+[stdlib documentation](https://pkg.go.dev/github.com/kmoneil/tenon/stdlib)
+lists them.
+
 ## What it is for
 
 | What it does | The example that builds it |
@@ -211,6 +259,7 @@ has the whole mapping.
 | **Plugin protocols** pass values, unknown and marked ones included, across a process boundary in one canonical encoding, and tell a receiver about a mark it does not know rather than dropping it. | `Example_pluginProtocol` |
 | **Validation layers** check values against constraints and report every failure with a stable code and the path to it. | `Example_validation` |
 | **Configuration languages** evaluate expressions over values some of which are not settled, unify the branches of a conditional, and locate what is wrong in the file. | `Example_configLanguage` |
+| **Language hosts** offer their users go-cty's functions, function for function, answering exactly and from what is known. | stdlib's `Example` |
 | **Go programs with types already** encode their structs and decode them back, keeping in a `tenon.Value` field whatever Go has no type for. | gotenon's `Example_quickStart` |
 | **Go programs without them** take data whose types they do not know, the `map[string]any` that `encoding/json` gives, by what each value holds, with the document's own numbers kept exactly. | gotenon's `Example_json` |
 
@@ -255,6 +304,7 @@ two differ, and its own `CHANGELOG.md` what each release holds:
 | Diffs | None: each program writes its own | `Diff`, which never looks inside what a redacting mark withholds |
 | Determinism | `Equals` on objects and maps holding an unknown answers by Go's map order, and keys that are one after normalization merge at random | The same answer every time, and such keys are refused, naming both spellings |
 | Reading JSON | `ctyjson.Unmarshal` keeps the last of two members of one name, ignores text after the value, reads numbers as 512-bit floats and stops at the first failure | `ParseJSON` refuses a name given twice and anything after the value, reads numbers exactly, and reports every failure at its path |
+| Function library | Steps in binary floats: `range(0, 1, 0.1)` drifts past `0.7` and `range(0, 0.05, 0.01)` makes six elements; `pow` and `log` go through `float64`; `contains([], null)` answers an unknown of no type; and a product of 64 lists of two wraps to an empty answer | `stdlib`, function for function: the answers the specification states, exact, unknown answers as narrow as the arguments allow, and a result past its stated bound refused before the work |
 | Functions | A parameter is a type and four flags that change what a state means at the call; arguments are never converted, a refused argument is a Go error naming only the first failure, and a failing variadic argument is reported at the wrong index | A parameter is a constraint; arguments convert under the call's policy, every failing argument reports as a diagnostic located by its index, known arguments give a known result unless volatility is declared, and a result never null is declared rather than set in a refinement callback |
 
 The bench module holds a test for each of go-cty's open issues whose defect

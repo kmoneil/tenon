@@ -9,9 +9,11 @@ import (
 
 	"github.com/kmoneil/tenon"
 	"github.com/kmoneil/tenon/ctytenon"
+	tenonstdlib "github.com/kmoneil/tenon/stdlib"
 	"github.com/zclconf/go-cty/cty"
 	"github.com/zclconf/go-cty/cty/convert"
 	"github.com/zclconf/go-cty/cty/function"
+	ctystdlib "github.com/zclconf/go-cty/cty/function/stdlib"
 	ctyjson "github.com/zclconf/go-cty/cty/json"
 	"github.com/zclconf/go-cty/cty/msgpack"
 )
@@ -331,6 +333,44 @@ func BenchmarkCall(b *testing.B) {
 		for b.Loop() {
 			for _, a := range args {
 				r, err := scale.Call(a)
+				if err != nil {
+					b.Fatal(err)
+				}
+				sink = r
+			}
+		}
+	})
+}
+
+// BenchmarkLibrary merges each service's environment variables with two
+// defaults through each library's own merge function, as a configuration
+// adds settings to a map it was given: tenon's MergeFunc called with Call,
+// go-cty's MergeFunc with its Call.
+func BenchmarkLibrary(b *testing.B) {
+	sized(b, "tenon", func(b *testing.B, doc []byte) {
+		str := tenon.StringType()
+		defaults := tenon.Map(str, map[string]tenon.Value{"LOG": tenon.String("debug"), "TIER": tenon.String("web")})
+		var args [][]tenon.Value
+		for _, svc := range typedTenon(b, doc).Attribute("services").Elements() {
+			args = append(args, []tenon.Value{defaults, svc.Attribute("env")})
+		}
+		for b.Loop() {
+			for _, a := range args {
+				sink = tenon.Call(tenonstdlib.MergeFunc, a, tenon.Safe)
+			}
+		}
+	})
+	sized(b, "cty", func(b *testing.B, doc []byte) {
+		defaults := cty.MapVal(map[string]cty.Value{"LOG": cty.StringVal("debug"), "TIER": cty.StringVal("web")})
+		var args [][]cty.Value
+		it := typedCty(b, doc).GetAttr("services").ElementIterator()
+		for it.Next() {
+			_, svc := it.Element()
+			args = append(args, []cty.Value{defaults, svc.GetAttr("env")})
+		}
+		for b.Loop() {
+			for _, a := range args {
+				r, err := ctystdlib.MergeFunc.Call(a)
 				if err != nil {
 					b.Fatal(err)
 				}
