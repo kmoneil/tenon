@@ -144,6 +144,18 @@ var proofs = []struct {
 	{`!true`, `cty.False`, `cty.False`, ""},
 	{`null && true`, `cty.False`, `cty.False`, ""},
 	{`unknown > 1`, `cty.UnknownVal(cty.Bool).RefineNotNull()`, `cty.UnknownVal(cty.Bool).RefineNotNull()`, ""},
+	{`unknown == maybenull`, `cty.UnknownVal(cty.Bool).RefineNotNull()`, `cty.False`,
+		"a number and a string are never equal (EQ-005), known or not, where cty and HCL's specification answer unknown (Appendix B row 53)"},
+	{`[unknown, 1] == [1, 2]`, `cty.UnknownVal(cty.Bool).RefineNotNull()`, `cty.False`,
+		"a pair of elements known unequal decides (EQ-003), where cty answers unknown at the first element not known (Appendix B row 53)"},
+	{`unknown * 0`, `cty.UnknownVal(cty.Number).RefineNotNull()`, `cty.NumberIntVal(0)`,
+		"every number times zero is zero, tenon having no infinity (NU-002, UN-007), where cty and HCL's specification answer unknown (Appendix B row 54)"},
+	{`[nothing] == [null]`, `cty.False`, `cty.True`,
+		"an untyped null takes the other side's type first, in a tuple as at the top (LN-011), where cty compares a string with no type (Appendix B row 56)"},
+	{`"<${-0}>"`, `cty.StringVal("<-0>")`, `cty.StringVal("<0>")`,
+		"tenon has one zero (NU-001), where cty keeps math/big's signed zero (Appendix B row 55)"},
+	{`"inf" + 0`, `cty.NumberFloatVal(+Inf)`, `error: Error during operation: encode.not_a_number: +Inf is not a number.`,
+		"HCL converts the string with go-cty, to an infinity, which has no tenon number to cross to (NU-002, Appendix B rows 6 and 8)"},
 }
 
 // TestOperators evaluates each expression with HCL as it is and with tenon's

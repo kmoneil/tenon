@@ -18,8 +18,18 @@
 //   - Each operation answers as tenon's: 1/0 fails with
 //     number.divide_by_zero, 5 % 0 with number.modulo_by_zero, 0.1 + 0.2 is
 //     0.3, and an operand not yet known keeps its bounds in the answer.
+//   - Where tenon settles an answer from what is known, it is known, though
+//     HCL's specification says unknown: an unknown number and an unknown
+//     string are never equal, an unknown number times zero is zero, tenon
+//     having no infinity, and [u, 1] == [1, 2] is false.
+//   - An untyped null takes the other side's type first, inside a tuple or
+//     an object as at the top, so [n] == [null] is true for a null string
+//     n, where HCL as it is answers false.
+//   - tenon has one zero: "${-0}" is "0".
 //   - HCL converts each operand to the operation's type with go-cty before
-//     the call, so go-cty's reading of strings as numbers stays ("1p4" is 16).
+//     the call, so go-cty's reading of strings as numbers stays ("1p4" is
+//     16), but a string go-cty reads as an infinity, "inf" or "Inf", has no
+//     tenon number to cross to, and the operation fails.
 //   - Each answer crosses back to go-cty, which holds a number in 512 binary
 //     bits, so exactness is the operation's, not the expression's: a number
 //     of more than 153 digits rounds between one operation and the next.
