@@ -240,6 +240,11 @@
     {"id":"LB-021","area":"LB","withdrawn":false,"outline":false},
     {"id":"LB-030","area":"LB","withdrawn":false,"outline":false},
     {"id":"LB-031","area":"LB","withdrawn":false,"outline":false},
+    {"id":"LN-001","area":"LN","withdrawn":false,"outline":false},
+    {"id":"LN-002","area":"LN","withdrawn":false,"outline":false},
+    {"id":"LN-010","area":"LN","withdrawn":false,"outline":false},
+    {"id":"LN-011","area":"LN","withdrawn":false,"outline":false},
+    {"id":"LN-020","area":"LN","withdrawn":false,"outline":false},
     {"id":"LN-083","area":"LN","withdrawn":false,"outline":false}
   ]
 }

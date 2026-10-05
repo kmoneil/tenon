@@ -40,3 +40,80 @@ func typeOf(v tenon.Value) tenon.Constraint {
 	}
 	return tenon.Exactly(v.Type())
 }
+
+// equalityOperand returns a parameter of an equality, which has an answer for
+// every value: null, values not known yet, pending ones, marked ones.
+func equalityOperand(name, description string) tenon.Param {
+	return tenon.Param{
+		Name: name, Description: description, Constraint: tenon.Any(),
+		AllowNull: true, AllowUnknown: true, AllowPending: true, AllowMarked: true,
+	}
+}
+
+// EqualFunc reports whether two values are equal: tenon's Equals, after a
+// language's untyped null is settled. A pending operand whose constraint
+// admits the other operand's type is resolved to it first, so a null whose
+// type was never given compares with a null of any type as equal, and with
+// any other value as not; and two such nulls are equal. That is what x ==
+// null asks of x.
+var EqualFunc = tenon.NewFunction(tenon.FunctionSpec{
+	Name:        "Equal",
+	Description: "Returns true if the two given values are equal, or false otherwise.",
+	Params:      []tenon.Param{equalityOperand("a", "The first value."), equalityOperand("b", "The second value.")},
+	Result:      boolean,
+	NotNull:     true,
+	Impl: func(args []tenon.Value, _ tenon.Constraint, _ tenon.Policy) (tenon.Value, error) {
+		return equal(args[0], args[1]), nil
+	},
+})
+
+// NotEqualFunc reports whether two values differ: EqualFunc's answer,
+// negated.
+var NotEqualFunc = tenon.NewFunction(tenon.FunctionSpec{
+	Name:        "NotEqual",
+	Description: "Returns false if the two given values are equal, or true otherwise.",
+	Params:      []tenon.Param{equalityOperand("a", "The first value."), equalityOperand("b", "The second value.")},
+	Result:      boolean,
+	NotNull:     true,
+	Impl: func(args []tenon.Value, _ tenon.Constraint, _ tenon.Policy) (tenon.Value, error) {
+		return tenon.Not(equal(args[0], args[1])), nil
+	},
+})
+
+// equal is EqualFunc's answer: Equals, once a pending operand is resolved
+// to the type of the other where its constraint admits it, and true of two
+// pending values both known to be null.
+func equal(a, b tenon.Value) tenon.Value {
+	ua, _ := tenon.Unmark(a)
+	ub, _ := tenon.Unmark(b)
+	switch {
+	case ua.IsPending() && ub.IsPending():
+		if ua.IsNull() && ub.IsNull() {
+			return tenon.WithMarks(tenon.Bool(true), propagating(a, b)...)
+		}
+	case ua.IsPending() && ub.IsResolved():
+		if tenon.Satisfies(ua.Constraint(), ub.Type()) {
+			a = tenon.Resolve(a, ub.Type())
+		}
+	case ub.IsPending() && ua.IsResolved():
+		if tenon.Satisfies(ub.Constraint(), ua.Type()) {
+			b = tenon.Resolve(b, ua.Type())
+		}
+	}
+	return tenon.Equals(a, b)
+}
+
+// propagating returns the marks of vs that reach what is derived from them:
+// those that propagate, and redacting ones, whatever they say.
+func propagating(vs ...tenon.Value) []tenon.Mark {
+	var out []tenon.Mark
+	for _, v := range vs {
+		_, ms := tenon.Unmark(v)
+		for _, m := range ms {
+			if m.Propagation() == tenon.Propagate || m.Redacting() {
+				out = append(out, m)
+			}
+		}
+	}
+	return out
+}

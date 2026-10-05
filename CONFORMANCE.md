@@ -9,15 +9,14 @@ fails where it is stale.
 | --- | --- |
 | Specification version | 0.13.1 |
 | Unicode version (`ST-003`) | 15.0.0 |
-| Rules | 240 normative, 0 outline, 0 withdrawn |
-| Rules satisfied | 234 of 240 |
+| Rules | 245 normative, 0 outline, 0 withdrawn |
+| Rules satisfied | 240 of 245 |
 | Optional areas omitted | none |
 
 ## Rules not satisfied
 
 | Rule | Why |
 | ---- | --- |
-| `LB-011` | deferred: known failures are first exercised by the operators, the card after the library's frame |
 | `LB-012` | deferred: partly known collections are first read by the collection functions |
 | `LB-013` | deferred: sequences are first taken by the collection functions |
 | `LB-021` | deferred: conversions between arguments first come with Coalesce |
@@ -55,5 +54,5 @@ implemented, and their conformance tests run.
 | `DI` | 20 | 20 |
 | `JS` | 9 | 9 |
 | `FN` | 17 | 17 |
-| `LB` | 11 | 5 |
-| `LN` | 1 | 1 |
+| `LB` | 11 | 6 |
+| `LN` | 6 | 6 |

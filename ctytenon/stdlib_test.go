@@ -37,6 +37,9 @@ type counterpart struct {
 	// cases are arguments to call with, beside random ones of the
 	// parameters' types.
 	cases [][]cty.Value
+	// random returns random arguments, where randomArgs's are not the
+	// ones to compare with.
+	random func(r *rand.Rand) []cty.Value
 	// divergences are where tenon answers otherwise, and why.
 	divergences []divergence
 }
@@ -70,6 +73,145 @@ var counterparts = map[string]counterpart{
 			match: func(args []cty.Value) bool { return args[0].Type() == cty.DynamicPseudoType && !args[0].IsKnown() },
 		}},
 	},
+	"Add":                  arithmetic(ctystdlib.AddFunc, stdlib.AddFunc),
+	"Subtract":             arithmetic(ctystdlib.SubtractFunc, stdlib.SubtractFunc),
+	"Multiply":             arithmetic(ctystdlib.MultiplyFunc, stdlib.MultiplyFunc),
+	"Divide":               arithmetic(ctystdlib.DivideFunc, stdlib.DivideFunc),
+	"Modulo":               arithmetic(ctystdlib.ModuloFunc, stdlib.ModuloFunc),
+	"Negate":               arithmetic(ctystdlib.NegateFunc, stdlib.NegateFunc),
+	"LessThan":             arithmetic(ctystdlib.LessThanFunc, stdlib.LessThanFunc),
+	"LessThanOrEqualTo":    arithmetic(ctystdlib.LessThanOrEqualToFunc, stdlib.LessThanOrEqualToFunc),
+	"GreaterThan":          arithmetic(ctystdlib.GreaterThanFunc, stdlib.GreaterThanFunc),
+	"GreaterThanOrEqualTo": arithmetic(ctystdlib.GreaterThanOrEqualToFunc, stdlib.GreaterThanOrEqualToFunc),
+	"Not":                  {cty: ctystdlib.NotFunc, ten: stdlib.NotFunc},
+	"And":                  {cty: ctystdlib.AndFunc, ten: stdlib.AndFunc},
+	"Or":                   {cty: ctystdlib.OrFunc, ten: stdlib.OrFunc},
+	"Equal":                equality(ctystdlib.EqualFunc, stdlib.EqualFunc),
+	"NotEqual":             equality(ctystdlib.NotEqualFunc, stdlib.NotEqualFunc),
+}
+
+// arithmetic returns the counterpart of a function of numbers, with the
+// cases every one of them is called with.
+func arithmetic(c function.Function, ten tenon.Function) counterpart {
+	n := cty.NumberIntVal
+	cases := [][]cty.Value{
+		{n(7), n(2)}, {n(-7), n(2)}, {n(1), n(0)}, {n(0), n(0)},
+		{cty.MustParseNumberVal("0.1"), cty.MustParseNumberVal("0.2")},
+		{cty.MustParseNumberVal("1e200"), n(7)},
+		{cty.UnknownVal(cty.Number), n(0)},
+		{cty.UnknownVal(cty.Number).Refine().NumberRangeLowerBound(n(1), true).NewValue(), n(1)},
+		{n(3).Mark("sensitive"), n(2)},
+		{cty.NullVal(cty.Number), n(1)},
+	}
+	if len(c.Params()) == 1 {
+		for i := range cases {
+			cases[i] = cases[i][:1]
+		}
+	}
+	cp := counterpart{cty: c, ten: ten, cases: cases}
+	switch ten.Name() {
+	case "Add", "Subtract", "Multiply", "Negate":
+		cp.divergences = []divergence{binaryArithmetic(ten)}
+	case "Modulo":
+		cp.divergences = []divergence{{
+			why:   "modulo by zero: cty answers the dividend, and tenon fails, known or not (NU-014, LB-011, Appendix B row 30)",
+			match: func(args []cty.Value) bool { return isZero(args[1]) },
+		}, binaryArithmetic(ten)}
+	case "Divide":
+		cp.divergences = []divergence{{
+			why:   "division by zero: cty answers an infinity, and tenon fails (NU-013, Appendix B row 6)",
+			match: func(args []cty.Value) bool { return isZero(args[1]) },
+		}, binaryArithmetic(ten), {
+			why: "a quotient that does not terminate: cty rounds it to 512 bits, and tenon to 96 significant digits (NU-012)",
+			match: func(args []cty.Value) bool {
+				a, okA := numberOf(args[0])
+				b, okB := numberOf(args[1])
+				return okA && okB && !tenon.Mul(tenon.Div(a, b), b).Equal(a)
+			},
+		}}
+	}
+	return cp
+}
+
+// binaryArithmetic is where cty's numbers, binary floating point of 512
+// bits, round what tenon's hold exactly: an operand that is not an integer,
+// or a value at or beyond 10^150, given or computed (Appendix B row 5).
+func binaryArithmetic(ten tenon.Function) divergence {
+	return divergence{
+		why: "an operand that is not an integer, or a value of 10^150 or more: cty rounds it to 512 binary bits, and tenon holds it exactly (NU-010, Appendix B row 5)",
+		match: func(args []cty.Value) bool {
+			targs := make([]tenon.Value, len(args))
+			for i, a := range args {
+				n, ok := numberOf(a)
+				if !ok {
+					return false
+				}
+				if !isInteger(n) || isHuge(n) {
+					return true
+				}
+				targs[i] = n
+			}
+			r := tenon.Call(ten, targs, tenon.Safe)
+			return !r.IsError() && r.IsKnown() && isHuge(r)
+		},
+	}
+}
+
+// numberOf returns the number a cty value is, where it is a known number.
+func numberOf(v cty.Value) (tenon.Value, bool) {
+	v, _ = v.UnmarkDeep()
+	if v.Type() != cty.Number || !v.IsKnown() || v.IsNull() {
+		return tenon.Value{}, false
+	}
+	n, err := ctytenon.Bridge{}.FromCty(v)
+	return n, err == nil
+}
+
+// isZero reports whether v is the number zero.
+func isZero(v cty.Value) bool {
+	n, ok := numberOf(v)
+	return ok && n.Equal(tenon.NumberFromInt(0))
+}
+
+// isInteger reports whether the number n is an integer.
+func isInteger(n tenon.Value) bool {
+	return tenon.Mod(n, tenon.NumberFromInt(1)).Equal(tenon.NumberFromInt(0))
+}
+
+// huge is 10^150, below which cty's 512 bits hold every integer.
+var huge = tenon.NumberFromText("1e150")
+
+// isHuge reports whether the number n is 10^150 or more in magnitude.
+func isHuge(n tenon.Value) bool {
+	n, _ = tenon.Unmark(n)
+	return !tenon.LessThan(n, huge).AsBool() || !tenon.LessThan(tenon.Sub(tenon.NumberFromInt(0), huge), n).AsBool()
+}
+
+// equality returns the counterpart of Equal or NotEqual, called with pairs
+// of values alike, related, and of other types.
+func equality(c function.Function, ten tenon.Function) counterpart {
+	return counterpart{
+		cty: c,
+		ten: ten,
+		cases: [][]cty.Value{
+			{cty.NullVal(cty.DynamicPseudoType), cty.NullVal(cty.String)},
+			{cty.NullVal(cty.DynamicPseudoType), cty.StringVal("x")},
+			{cty.NullVal(cty.DynamicPseudoType), cty.NullVal(cty.DynamicPseudoType)},
+			{cty.NumberIntVal(1), cty.StringVal("1")},
+			{cty.MustParseNumberVal("1.50"), cty.MustParseNumberVal("1.5")},
+			{cty.UnknownVal(cty.String), cty.NullVal(cty.DynamicPseudoType)},
+		},
+		random: func(r *rand.Rand) []cty.Value {
+			v := randomCtyValue(r, randomCtyType(r, 3))
+			return []cty.Value{v, pairOf(r, v)}
+		},
+		divergences: []divergence{{
+			why: "#229: a set holding a member with an unknown part: cty answers false, even of the set and itself, where the members may turn out equal",
+			match: func(args []cty.Value) bool {
+				return holdsPartlyUnknownMember(args[0]) || holdsPartlyUnknownMember(args[1])
+			},
+		}},
+	}
 }
 
 // TestLibraryHasCounterparts holds counterparts to the library: every
@@ -121,7 +263,11 @@ func TestLibraryAgreesWithCty(t *testing.T) {
 		fired := make([]bool, len(cp.divergences))
 		calls := slices.Clone(cp.cases)
 		for range conformance.Iterations(t, 300) {
-			calls = append(calls, randomArgs(r, cp.cty))
+			if cp.random != nil {
+				calls = append(calls, cp.random(r))
+			} else {
+				calls = append(calls, randomArgs(r, cp.cty))
+			}
 		}
 		for _, args := range calls {
 			what := fmt.Sprintf("%s(%#v)", name, args)

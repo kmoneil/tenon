@@ -19,6 +19,14 @@
 // evaluating with go-cty, HCL's evaluator among them, calls these in place
 // through the ctytenon module's Bridge.FunctionToCty.
 //
+// The operator functions, AddFunc through NegateFunc, the four orderings,
+// EqualFunc, NotEqualFunc, AndFunc, OrFunc and NotFunc, are what an
+// expression language's operators call, each the tenon operation of its
+// name. HCL's operators are go-cty functions held in hclsyntax.OpAdd and the
+// rest, whose Impl field a host may set to these crossed by FunctionToCty;
+// the repository's proof module does so, and says what that gives and what
+// it does not.
+//
 // No function here is volatile. A function's failures carry tenon's codes,
 // never the text of a Go error: an argument outside what the function has a
 // meaning for is CodeFunctionInvalidArgument, located at the argument, and a

@@ -57,3 +57,7 @@ jobs:
       # this builds it, lints it, runs its tests, go-cty's open issues probed
       # among them, and runs each benchmark once.
       - run: make bench-smoke
+      # The proof module has its own go.mod too, the only one requiring HCL;
+      # this evaluates expressions with HCL as it is and with the standard
+      # library in go-cty's place, and holds each answer to what it should be.
+      - run: make proof

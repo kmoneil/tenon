@@ -5,7 +5,8 @@ version: 2
 updates:
   # ctytenon, which programs import, is a module of its own: its updates
   # reach them. A go-cty update there fails TestOneGoCty until the bench
-  # module, whose probes assert go-cty's behavior, moves with it.
+  # module, whose probes assert go-cty's behavior, and the proof module,
+  # which evaluates with go-cty's HCL, move with it.
   - package-ecosystem: gomod
     directories:
       - /
