@@ -51,6 +51,20 @@
   where the timestamp is not known yet, the answer begins with the
   format's text before its first directive. The specification says so
   (`LT-001` to `LT-006`).
+- `TimeAddFunc`, on Go's duration language, stated whole, and exact
+  arithmetic: each number times its unit, summed and added with no float
+  and no int64 anywhere, where go-cty's reads a duration through a float64
+  into nanoseconds, so `0.3333333333333333333h` is its exact 1,199.999...88
+  seconds, `0.5ns0.5ns` is a nanosecond, and a duration past 292 years
+  adds rather than failing. The answer keeps the fraction of a second,
+  where go-cty's drops it (`500ms` is no longer lost), with no trailing
+  zero and no point where it is zero, so whole seconds give go-cty's
+  bytes. An answer outside the years 0000 to 9999, which go-cty's writes
+  though no timestamp reads it, fails with the new code
+  `time.out_of_range`; a duration that is none with `time.invalid_syntax`,
+  located at it, now even beside a timestamp not known yet; and the answer
+  not known is never null. The specification says so (`LT-007` to
+  `LT-011`).
 
 ### Fixed
 

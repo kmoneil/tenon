@@ -16,6 +16,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 	"unicode/utf8"
 
 	"github.com/kmoneil/tenon"
@@ -1064,6 +1065,103 @@ var counterparts = map[string]counterpart{
 			},
 		}},
 	},
+	"TimeAdd": {
+		cty: ctystdlib.TimeAddFunc,
+		ten: stdlib.TimeAddFunc,
+		cases: [][]cty.Value{
+			{cty.StringVal("2020-01-01T00:00:00Z"), cty.StringVal("1h30m")},
+			{cty.StringVal("2020-01-01T00:00:00+05:30"), cty.StringVal("-90m")},
+			{cty.StringVal("2020-01-01T00:00:00-00:00"), cty.StringVal("+0")},
+			{cty.StringVal("2020-01-01T00:00:00Z"), cty.StringVal("500ms")},
+			{cty.StringVal("2020-01-01T00:00:00.9Z"), cty.StringVal("0s")},
+			{cty.StringVal("2020-01-01T00:00:00Z"), cty.StringVal("2562048h")},
+			{cty.StringVal("9999-12-31T23:00:00Z"), cty.StringVal("1h")},
+			{cty.StringVal("2020-01-01t00:00:00z"), cty.StringVal("1h")},
+			{cty.StringVal("2020-01-01T00:00:00Z"), cty.StringVal("1d")},
+			{cty.UnknownVal(cty.String), cty.StringVal("1d")},
+			{cty.UnknownVal(cty.String), cty.StringVal("1h")},
+		},
+		random: func(r *rand.Rand) []cty.Value {
+			ts := fmt.Sprintf("%04d-%02d-%02dT%02d:%02d:%02d", 1000+r.Intn(7000), 1+r.Intn(12), 1+r.Intn(28), r.Intn(24), r.Intn(60), r.Intn(60))
+			switch r.Intn(3) {
+			case 0:
+				ts += "Z"
+			case 1:
+				ts += fmt.Sprintf("+%02d:%02d", r.Intn(24), r.Intn(60))
+			default:
+				ts += fmt.Sprintf("-%02d:%02d", r.Intn(24), r.Intn(60))
+			}
+			units := []string{"s", "m", "h", "d", ""}
+			var d strings.Builder
+			if r.Intn(3) == 0 {
+				d.WriteString([]string{"-", "+"}[r.Intn(2)])
+			}
+			if r.Intn(10) == 0 {
+				d.WriteString("0")
+			} else {
+				for range 1 + r.Intn(3) {
+					d.WriteString(fmt.Sprint(r.Intn(1000)) + units[r.Intn(len(units))])
+				}
+			}
+			return []cty.Value{cty.StringVal(ts), cty.StringVal(d.String())}
+		},
+		divergences: []divergence{{
+			why: "a fraction of a second, in the timestamp or the duration: go-cty drops it from the answer, and tenon keeps it (LT-010, Appendix B row 68)",
+			match: func(args []cty.Value) bool {
+				ts, _ := args[0].UnmarkDeep()
+				d, _ := args[1].UnmarkDeep()
+				if !ts.IsKnown() || ts.IsNull() || !d.IsKnown() || d.IsNull() {
+					return false
+				}
+				return strings.Contains(ts.AsString(), ".") || durationFraction.MatchString(d.AsString())
+			},
+		}, {
+			why: "a duration past int64 nanoseconds, about 292 years: go-cty fails, and tenon adds it exactly (LT-009, Appendix B row 69)",
+			match: func(args []cty.Value) bool {
+				d, _ := args[1].UnmarkDeep()
+				if !d.IsKnown() || d.IsNull() || !durationGrammar.MatchString(d.AsString()) {
+					return false
+				}
+				_, err := time.ParseDuration(d.AsString())
+				return err != nil
+			},
+		}, {
+			why: "an answer outside the years 0000 to 9999, or a small t or z: go-cty writes the year or refuses the letter, and tenon refuses the year and reads the letter (LT-001, LT-010, Appendix B rows 64 and 70)",
+			match: func(args []cty.Value) bool {
+				ts, _ := args[0].UnmarkDeep()
+				d, _ := args[1].UnmarkDeep()
+				if !ts.IsKnown() || ts.IsNull() || !d.IsKnown() || d.IsNull() {
+					return false
+				}
+				text := ts.AsString()
+				if len(text) > 10 && (text[10] == 't' || strings.HasSuffix(text, "z")) {
+					return true
+				}
+				gt, err := time.Parse(time.RFC3339, text)
+				gd, derr := time.ParseDuration(d.AsString())
+				if err != nil || derr != nil {
+					return false
+				}
+				y := gt.Add(gd).Year()
+				return y < 0 || y > 9999
+			},
+		}, {
+			why: "a known timestamp or duration that is none beside one not known yet: go-cty answers unknown, and tenon fails now (LT-011, Appendix B row 71)",
+			match: func(args []cty.Value) bool {
+				ts, _ := args[0].UnmarkDeep()
+				d, _ := args[1].UnmarkDeep()
+				switch {
+				case ts.IsKnown() == d.IsKnown():
+					return false
+				case d.IsKnown():
+					_, err := time.ParseDuration(d.AsString())
+					return err != nil
+				}
+				_, err := time.Parse(time.RFC3339, ts.AsString())
+				return err != nil
+			},
+		}},
+	},
 	"Lookup": {
 		cty: ctystdlib.LookupFunc,
 		ten: stdlib.LookupFunc,
@@ -1522,6 +1620,13 @@ func unclosedDateLiteral(f string) bool {
 	}
 	return false
 }
+
+// durationGrammar matches a duration by TimeAdd's grammar, Go's.
+var durationGrammar = regexp.MustCompile(`^[+-]?(0|((\d+\.?\d*|\.\d+)(ns|us|\x{B5}s|\x{3BC}s|ms|s|m|h))+)$`)
+
+// durationFraction matches a duration with a fraction or a unit shorter than
+// a second.
+var durationFraction = regexp.MustCompile(`\.|ns|us|\x{B5}s|\x{3BC}s|ms`)
 
 // goReference reads the references of a Go template, its $$ passed over,
 // as Go's Regexp.Expand does.
