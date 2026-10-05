@@ -35,6 +35,10 @@ const (
 	// ErrInexact reports a rational number that is not a terminating
 	// decimal, which no number is.
 	ErrInexact
+	// ErrUnsettled reports a correctly rounded result that did not settle
+	// within the working precision allowed: the value was a rounding
+	// midpoint, which a caller is to rule out first, so it is a defect.
+	ErrUnsettled
 )
 
 func (e Error) Error() string {
@@ -51,6 +55,8 @@ func (e Error) Error() string {
 		return "decimal: number text too long"
 	case ErrInexact:
 		return "decimal: rational not a terminating decimal"
+	case ErrUnsettled:
+		return "decimal: a correctly rounded result did not settle"
 	}
 	return "decimal: error " + strconv.Itoa(int(e))
 }
