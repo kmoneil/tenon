@@ -41,6 +41,8 @@ var library = map[string]tenon.Function{
 	"Regex":                  stdlib.RegexFunc,
 	"RegexAll":               stdlib.RegexAllFunc,
 	"RegexReplace":           stdlib.RegexReplaceFunc,
+	"JSONEncode":             stdlib.JSONEncodeFunc,
+	"JSONDecode":             stdlib.JSONDecodeFunc,
 	"Range":                  stdlib.RangeFunc,
 	"SetProduct":             stdlib.SetProductFunc,
 	"Contains":               stdlib.ContainsFunc,

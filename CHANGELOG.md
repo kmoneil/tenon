@@ -2,6 +2,30 @@
 
 ## Unreleased
 
+### Added
+
+- `JSONEncodeFunc` and `JSONDecodeFunc`, the library's encodings begin.
+  `JSONEncode` writes go-cty's bytes where go-cty is right: the escapes of
+  `<`, `>`, `&`, U+2028 and U+2029, numbers written positionally, no
+  whitespace; but a number is its exact value, `1/3` its 96 significant
+  digits where go-cty's writes `0.33333333333333333334`, there is one
+  zero, and a set is written in the canonical order. A value not known
+  yet answers with as much of its text as what is known settles, `[1,`
+  for a list whose second element is not known, where go-cty's answers
+  `[`; nulls not yet typed are written as `null`; and an answer past 64
+  times the value's size and 64 KiB, a number counting its canonical
+  text, fails with `function.too_large` before it is made, where go-cty's
+  writes a million digits for `1e999999`. `JSONDecode` reads as
+  `ParseJSON` reads with `Any`: numbers exactly, `null` as a language's
+  untyped null, and RFC 8259 strictly, so trailing text after a closing
+  bracket, a number past the range of numbers, a lone surrogate escape
+  and a name given twice each fail, located at the argument, where
+  go-cty's reads past them or reads an infinity. Text not known yet
+  answers by its first character, now known not to be null, a string
+  keeping the characters its text settles, and a character that begins no
+  JSON value fails now. The specification says so (`LE-001` to
+  `LE-005`).
+
 ### Fixed
 
 - `FormatFunc` and `FormatListFunc` wrote a number's digits in full,
