@@ -129,6 +129,19 @@
   unknown set listing the members known to be in it, within the lengths
   the arguments allow, where go-cty's is wholly unknown. The specification
   says so (`LC-040` to `LC-049`).
+- `RangeFunc` and `SetProductFunc`, the library's first bounded results
+  (`LB-031`). `Range` computes each element exactly, so `range(0, 1, 0.1)`
+  is ten tenths and `range(0, 0.05, 0.01)` five hundredths, where go-cty's
+  binary steps drift to wrong elements and counts. It refuses a step of
+  zero however it is written (go-cty's catches only its own zero value),
+  and more than 1,024 elements with `function.too_large` before making
+  any, as soon as the known arguments settle it. `SetProduct` refuses more
+  than 1,048,576 tuples with `function.too_large` at the argument that
+  passes the bound, before making any, where go-cty's product of 64 lists
+  of two wraps to an empty answer and one of 63 panics (go-cty #227). Its
+  unknown answers keep the lengths the arguments allow, an empty one
+  included, and the empty tuple as an argument answers the empty tuple.
+  The specification says so (`LC-050` to `LC-057`).
 - A function may declare its result never null (`FunctionSpec.NotNull`,
   read back with `Function.NotNull`). Every answer the call makes that is
   not a known value then says so, the unknown answer of an argument not

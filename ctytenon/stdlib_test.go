@@ -435,6 +435,107 @@ var counterparts = map[string]counterpart{
 	"SetIntersection":        setOperation(ctystdlib.SetIntersectionFunc, stdlib.SetIntersectionFunc, 3),
 	"SetSubtract":            setOperation(ctystdlib.SetSubtractFunc, stdlib.SetSubtractFunc, 2),
 	"SetSymmetricDifference": setOperation(ctystdlib.SetSymmetricDifferenceFunc, stdlib.SetSymmetricDifferenceFunc, 3),
+	"Range": {
+		cty: ctystdlib.RangeFunc,
+		ten: stdlib.RangeFunc,
+		cases: [][]cty.Value{
+			{cty.NumberIntVal(3)}, {cty.NumberIntVal(-3)}, {cty.MustParseNumberVal("1.5")},
+			{cty.NumberIntVal(4), cty.NumberIntVal(1)},
+			{cty.MustParseNumberVal("0.5"), cty.NumberIntVal(-1)},
+			{cty.NumberIntVal(10), cty.NumberIntVal(1), cty.NumberIntVal(-3)},
+			{cty.NumberIntVal(0), cty.NumberIntVal(3), cty.NumberIntVal(-1)},
+			{cty.NumberIntVal(3), cty.NumberIntVal(3), cty.NumberIntVal(-1)},
+			{cty.NumberIntVal(0), cty.NumberIntVal(1024)},
+			{cty.NumberIntVal(0), cty.NumberIntVal(1025)},
+			{},
+			{cty.NumberIntVal(0), cty.NumberIntVal(5), cty.Zero},
+			{cty.NumberIntVal(0), cty.NumberIntVal(5), cty.NumberIntVal(0)},
+			{cty.NumberIntVal(5), cty.NumberIntVal(5), cty.NumberIntVal(0)},
+			{cty.NumberIntVal(0), cty.NumberIntVal(1), cty.MustParseNumberVal("0.1")},
+			{cty.UnknownVal(cty.Number), cty.NumberIntVal(3), cty.NumberIntVal(0)},
+			{cty.UnknownVal(cty.Number), cty.NumberIntVal(3)},
+			{cty.NumberIntVal(2).Mark("sensitive")},
+		},
+		random: func(r *rand.Rand) []cty.Value {
+			args := make([]cty.Value, 1+r.Intn(3))
+			for i := range args {
+				switch r.Intn(8) {
+				case 0:
+					args[i] = cty.UnknownVal(cty.Number)
+				case 1:
+					args[i] = cty.MustParseNumberVal([]string{"0.1", "-0.25", "0.01", "2.5"}[r.Intn(4)])
+				default:
+					args[i] = cty.NumberIntVal(int64(r.Intn(41) - 20))
+				}
+			}
+			return args
+		},
+		divergences: []divergence{{
+			why: "a step of zero where start and limit are equal: cty answers the empty list, catching only its own cty.Zero value as zero, and tenon fails at the step however zero is written (LC-051, Appendix B row 40)",
+			match: func(args []cty.Value) bool {
+				if len(args) != 3 {
+					return false
+				}
+				step, ok := numberOf(args[2])
+				return ok && step.Equal(tenon.NumberFromInt(0)) && args[0].RawEquals(args[1])
+			},
+		}, {
+			why: "an argument not known yet beside a step of zero: tenon fails now, whatever it turns out to be (LB-011), where cty answers unknown",
+			match: func(args []cty.Value) bool {
+				if len(args) != 3 || args[0].IsKnown() && args[1].IsKnown() {
+					return false
+				}
+				step, ok := numberOf(args[2])
+				return ok && step.Equal(tenon.NumberFromInt(0))
+			},
+		}, {
+			why: "a start, limit or step that is not a whole number: cty adds the step in 512 binary bits, and its elements and count drift, where tenon's are exact (LC-052, Appendix B row 5)",
+			match: func(args []cty.Value) bool {
+				for _, a := range args {
+					if n, ok := numberOf(a); ok && !isInteger(n) {
+						return true
+					}
+				}
+				return false
+			},
+		}},
+	},
+	"SetProduct": {
+		cty: ctystdlib.SetProductFunc,
+		ten: stdlib.SetProductFunc,
+		cases: [][]cty.Value{
+			{abcList(), numberList(1, 2)},
+			{cty.SetVal([]cty.Value{cty.StringVal("a"), cty.StringVal("b")}), numberList(1, 2)},
+			{abcList()},
+			{cty.ListValEmpty(cty.String), numberList(1)},
+			{cty.TupleVal([]cty.Value{cty.NumberIntVal(1), cty.StringVal("a")}), cty.ListVal([]cty.Value{cty.True})},
+			{cty.EmptyTupleVal, numberList(1)},
+			{numberList(1, 1), abcList()},
+			{cty.SetVal([]cty.Value{cty.UnknownVal(cty.String)}), abcList()},
+			{cty.UnknownVal(cty.List(cty.String)), numberList(1, 2)},
+			{cty.SetVal([]cty.Value{cty.NumberIntVal(1), cty.UnknownVal(cty.Number)}), abcList()},
+			{abcList().Mark("sensitive"), numberList(1)},
+			{cty.ListVal([]cty.Value{cty.StringVal("a").Mark("sensitive")}), numberSet(1)},
+		},
+		random: func(r *rand.Rand) []cty.Value {
+			args := make([]cty.Value, 2+r.Intn(2))
+			for i := range args {
+				elem := randomCtyType(r, 1)
+				if r.Intn(3) == 0 {
+					args[i] = randomCtyValue(r, cty.Set(elem))
+				} else {
+					args[i] = randomCtyValue(r, cty.List(elem))
+				}
+			}
+			return args
+		},
+		divergences: []divergence{{
+			why: "the empty tuple, HCL's [], as an argument: cty answers an empty collection of tuples with a dynamic part, and tenon, which has no type for that part, the empty tuple (LC-054, Appendix B row 41)",
+			match: func(args []cty.Value) bool {
+				return slices.ContainsFunc(args, func(a cty.Value) bool { return a.Type().Equals(cty.EmptyTuple) })
+			},
+		}},
+	},
 	"Lookup": {
 		cty: ctystdlib.LookupFunc,
 		ten: stdlib.LookupFunc,

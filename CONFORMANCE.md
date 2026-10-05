@@ -9,15 +9,13 @@ fails where it is stale.
 | --- | --- |
 | Specification version | 0.13.1 |
 | Unicode version (`ST-003`) | 15.0.0 |
-| Rules | 284 normative, 0 outline, 0 withdrawn |
-| Rules satisfied | 283 of 284 |
+| Rules | 292 normative, 0 outline, 0 withdrawn |
+| Rules satisfied | 292 of 292 |
 | Optional areas omitted | none |
 
 ## Rules not satisfied
 
-| Rule | Why |
-| ---- | --- |
-| `LB-031` | deferred: the first bounded results are Range's and SetProduct's |
+None. Every normative rule is enforced, and a passing conformance test covers it.
 
 ## Implementation-defined orderings
 
@@ -50,6 +48,6 @@ implemented, and their conformance tests run.
 | `DI` | 20 | 20 |
 | `JS` | 9 | 9 |
 | `FN` | 17 | 17 |
-| `LB` | 11 | 10 |
+| `LB` | 11 | 11 |
 | `LN` | 15 | 15 |
-| `LC` | 30 | 30 |
+| `LC` | 38 | 38 |
