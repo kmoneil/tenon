@@ -281,6 +281,10 @@ func numberCode(err decimal.Error) Code {
 		return CodeNumberTooLong
 	case decimal.ErrInexact:
 		return CodeEncodeInexact
+	case decimal.ErrUnsettled:
+		// A correctly rounded result reaches its precision bound only from
+		// a rounding midpoint, which its caller rules out first.
+		internalPanic("%v: a rounding midpoint reached the correctly rounded loop", err)
 	}
 	internalPanic("no diagnostic code maps %v", err)
 	return ""

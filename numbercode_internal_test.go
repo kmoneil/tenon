@@ -30,6 +30,18 @@ func TestDecimalErrorsMapToOneCode(t *testing.T) {
 	}
 	for i, name := range constants {
 		err := decimal.Error(i + 1) // the constants count from one, in order
+		if name == "ErrUnsettled" {
+			// A defect, which no code reports: numberCode panics on it.
+			func() {
+				defer func() {
+					if recover() == nil {
+						t.Errorf("numberCode(%s) gave a code, where it reports a defect", name)
+					}
+				}()
+				numberCode(err)
+			}()
+			continue
+		}
 		code, ok := want[name]
 		if !ok {
 			t.Errorf("internal/decimal declares %s, which this test does not know; map it in numberCode and here", name)
