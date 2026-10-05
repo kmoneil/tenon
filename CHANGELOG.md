@@ -38,6 +38,19 @@
   and its line end answers a list of that object type, at least as long
   as the records its prefix ends, where go-cty's answers a value of no
   type. The specification says so (`LE-006` to `LE-011`).
+- `FormatDateFunc`, on go-cty's format language and RFC 3339 timestamps
+  read by a profile the specification states: `T` and `Z` in either case,
+  as RFC 3339 allows, where go-cty's take capitals alone; the leap second
+  refused, as go-cty's refuses it; a fraction of any length kept exactly.
+  The format is read whole, where go-cty's drops text past 64 KiB without
+  a word (a quoted literal of 70,000 characters gives `""`), and literal
+  text a quotation mark does not close fails, where go-cty's takes
+  `'abc''` as closed. A format or timestamp that is none fails with the new
+  code `time.invalid_syntax`, located at it and naming the part, now even
+  beside an argument not known yet, where go-cty's answers unknown; and
+  where the timestamp is not known yet, the answer begins with the
+  format's text before its first directive. The specification says so
+  (`LT-001` to `LT-006`).
 
 ### Fixed
 

@@ -171,6 +171,9 @@
       "code": "string.invalid_utf8"
     },
     {
+      "code": "time.invalid_syntax"
+    },
+    {
       "code": "unify.no_common_constraint"
     },
     {

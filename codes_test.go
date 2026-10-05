@@ -77,6 +77,7 @@ var specCodes = []string{
 	"serialize.unknown_mark",
 	"serialize.unsupported_version",
 	"string.invalid_utf8",
+	"time.invalid_syntax",
 	"unify.no_common_constraint",
 	"unify.too_large",
 }

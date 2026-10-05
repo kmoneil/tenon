@@ -64,6 +64,7 @@ const (
 	CodeSerializeUnknownMark        Code = "serialize.unknown_mark"
 	CodeSerializeUnsupportedVersion Code = "serialize.unsupported_version"
 	CodeStringInvalidUTF8           Code = "string.invalid_utf8"
+	CodeTimeInvalidSyntax           Code = "time.invalid_syntax"
 	CodeUnifyNoCommonConstraint     Code = "unify.no_common_constraint"
 	CodeUnifyTooLarge               Code = "unify.too_large"
 )

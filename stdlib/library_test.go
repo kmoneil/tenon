@@ -44,6 +44,7 @@ var library = map[string]tenon.Function{
 	"JSONEncode":             stdlib.JSONEncodeFunc,
 	"JSONDecode":             stdlib.JSONDecodeFunc,
 	"CSVDecode":              stdlib.CSVDecodeFunc,
+	"FormatDate":             stdlib.FormatDateFunc,
 	"Range":                  stdlib.RangeFunc,
 	"SetProduct":             stdlib.SetProductFunc,
 	"Contains":               stdlib.ContainsFunc,
