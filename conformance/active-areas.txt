@@ -19,6 +19,7 @@ JS
 LB
 LN
 LC
+LS
 ER
 FN
 MK
