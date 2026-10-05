@@ -83,6 +83,17 @@
   policy, so `concat([1], ["a"])` is `["1", "a"]` under Unsafe and the tuple
   `[1, "a"]` under Safe. `Chunklist` of a language's `[]` is `[]`. The
   specification says so (`LC-010` to `LC-013`).
+- `FlattenFunc`, `CompactFunc`, `DistinctFunc` and `CoalesceListFunc`.
+  `Flatten` keeps a null sequence as a leaf, as go-cty does, takes a set's
+  members in the canonical order, and answers pending where a nested
+  sequence is not known yet. `Compact` keeps a member not known yet where
+  its range rules out null and the empty string. `Distinct` tells known
+  members apart by their hashes, so its work grows with the list rather
+  than with its pairs (go-cty's takes 2.8 s for 4,000 members), and with a
+  member not known yet answers within the lengths that leaves.
+  `CoalesceList` takes a language's `null` (#221's class) and carries the
+  marks of the arguments it examined, not of one after its choice. The
+  specification says so (`LC-020` to `LC-023`).
 - A function may declare its result never null (`FunctionSpec.NotNull`,
   read back with `Function.NotNull`). Every answer the call makes that is
   not a known value then says so, the unknown answer of an argument not
