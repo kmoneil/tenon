@@ -251,3 +251,61 @@ func TestConformance_LF013_IntegerFlags(t *testing.T) {
 		formats(t, tt.f, vals(num(tt.n)), tt.want)
 	}
 }
+
+func TestConformance_LF014_Exponent(t *testing.T) {
+	conformance.Covers(t, "LF-014")
+	for _, tt := range []struct{ f, n, want string }{
+		{"%e", "1234.5678", "1.234568e+03"}, {"%E", "1234.5678", "1.234568E+03"},
+		{"%.2e", "9.995", "1.00e+01"}, {"%.0e", "15", "2e+01"}, {"%.0e", "25", "2e+01"},
+		{"%e", "0", "0.000000e+00"}, {"%e", "1e-400", "1.000000e-400"},
+		{"%.3e", "-0.0001234", "-1.234e-04"}, {"%e", "1e100", "1.000000e+100"},
+	} {
+		formats(t, tt.f, vals(num(tt.n)), tt.want)
+	}
+}
+
+func TestConformance_LF015_Fixed(t *testing.T) {
+	conformance.Covers(t, "LF-015")
+	for _, tt := range []struct{ f, n, want string }{
+		{"%f", "3.14159265", "3.141593"}, {"%.2f", "1", "1.00"}, {"%.0f", "1234.5", "1234"},
+		{"%f", "0", "0.000000"}, {"%.3f", "1e-10", "0.000"}, {"%f", "1e21", "1000000000000000000000.000000"},
+		{"%.1f", "-12.34", "-12.3"},
+		{"%.170f", "0.1", "0.1" + strings.Repeat("0", 169)},
+	} {
+		formats(t, tt.f, vals(num(tt.n)), tt.want)
+	}
+}
+
+func TestConformance_LF016_General(t *testing.T) {
+	conformance.Covers(t, "LF-016")
+	for _, tt := range []struct{ f, n, want string }{
+		{"%g", "100000", "100000"}, {"%g", "1000000", "1e+06"}, {"%G", "1000000", "1E+06"},
+		{"%g", "0.0001", "0.0001"}, {"%g", "0.00001", "1e-05"},
+		{"%g", "1234.5678", "1234.5678"}, {"%.3g", "1234.5678", "1.23e+03"},
+		{"%.3g", "1", "1"}, {"%.10g", "123", "123"}, {"%.0g", "1.5", "2"},
+		{"%g", "0", "0"}, {"%g", "-2.5", "-2.5"},
+		// Every significant digit of the exact number, where no precision is
+		// given.
+		{"%g", "0.333333333333333333333333333333", "0.333333333333333333333333333333"},
+	} {
+		formats(t, tt.f, vals(num(tt.n)), tt.want)
+	}
+}
+
+func TestConformance_LF017_Rounding(t *testing.T) {
+	conformance.Covers(t, "LF-017")
+	// Ties round half to even on the exact value, where binary floats
+	// round by the error of their representation.
+	for _, tt := range []struct{ f, n, want string }{
+		{"%.2f", "2.675", "2.68"}, {"%.2f", "1.015", "1.02"}, {"%.1f", "0.35", "0.4"},
+		{"%.1f", "0.25", "0.2"}, {"%.0f", "0.5", "0"}, {"%.0f", "1.5", "2"}, {"%.0f", "2.5", "2"},
+		{"%.2e", "1.125", "1.12e+00"}, {"%.3g", "2.675", "2.68"},
+		// The sign is the value's before rounding.
+		{"%.2f", "-0.0001", "-0.00"},
+	} {
+		formats(t, tt.f, vals(num(tt.n)), tt.want)
+	}
+	// The flags, as for every number.
+	formats(t, "[%+.1f] [% .1f] [%08.2f] [%-8.2f] [%+e]", vals(num("1.25"), num("1.25"), num("-3.14159"), num("3.14159"), num("5")),
+		"[+1.2] [ 1.2] [-0003.14] [3.14    ] [+5.000000e+00]")
+}

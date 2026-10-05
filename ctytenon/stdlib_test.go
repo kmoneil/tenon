@@ -769,10 +769,16 @@ var counterparts = map[string]counterpart{
 			{cty.StringVal("%d"), cty.StringVal("12")},
 			{cty.StringVal("%#o"), cty.Zero},
 			{cty.StringVal("%d"), cty.MustParseNumberVal("1e200")},
+			{cty.StringVal("%e %E %f %g %G"), cty.MustParseNumberVal("1234.5678"), cty.MustParseNumberVal("1234.5678"), cty.MustParseNumberVal("1234.5678"), cty.MustParseNumberVal("1234.5678"), cty.NumberIntVal(1000000)},
+			{cty.StringVal("[%.3e] [%.0f] [%.0f] [%g] [%g] [%+.1f] [%08.2f]"), cty.MustParseNumberVal("-0.0001234"), cty.MustParseNumberVal("2.5"), cty.MustParseNumberVal("1.5"), cty.MustParseNumberVal("0.0001"), cty.MustParseNumberVal("0.00001"), cty.MustParseNumberVal("1.25"), cty.MustParseNumberVal("-3.14159")},
+			{cty.StringVal("%.2f"), cty.MustParseNumberVal("2.675")},
 		},
 		divergences: []divergence{{
 			why:   "the small fixes of D-298 Q5, where go-cty disagrees with Go, C and its own documentation: %v of a number is its canonical text, not %g (row 47); %.0s is empty, - overrides 0, %t pads, and %v of a string takes a precision as %s does (row 48) (LF-005, LF-007, LF-009, LF-010)",
 			match: formatIs("%v", "[%.0s]", "[%-05s]", "[%7t]", "%.2v", "%#o"),
+		}, {
+			why:   "a tie that is no binary fraction: cty rounds the 512-bit float nearest it, by its error, and tenon the exact decimal half to even, so %.2f of 2.675 is 2.68 (LF-017, Appendix B row 49)",
+			match: formatIs("%.2f"),
 		}, {
 			why: "a number of 10^150 or more: cty formats the 512-bit float, whose last digits are lost, and tenon the exact number (Appendix B row 5)",
 			match: func(args []cty.Value) bool {
