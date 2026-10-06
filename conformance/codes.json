@@ -117,6 +117,12 @@
       "code": "operation.wrong_type"
     },
     {
+      "code": "path.invalid_syntax"
+    },
+    {
+      "code": "path.no_member"
+    },
+    {
       "code": "range.contradiction"
     },
     {

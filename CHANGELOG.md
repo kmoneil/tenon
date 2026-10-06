@@ -1,5 +1,28 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- Paths can be applied to values. `Path.Apply` reads a path's steps in
+  turn and answers the value it reaches, carrying its own marks and the
+  propagating and redacting marks of everything it was read out of; a step
+  that reaches nothing fails with the new code `path.no_member`, one of
+  the wrong kind with `operation.wrong_type`, and one from a null with
+  `operation.null_operand`, each an error value located at the step, or
+  at a redacted value the steps went into, saying nothing of what it
+  holds. Through a value not known yet it answers the unknown the path
+  would reach, the container's marks kept, where go-cty's drops them for
+  a list or a map and panics for a tuple, and a step no outcome could take
+  fails now. `Path.Lookup` answers whether the path reaches anything,
+  without a failure. A step into a set names a member by its place in the
+  set's iteration order, now stated. `ComparePaths` orders paths
+  canonically, the order a walk visits in; `HasPrefix`, `Parent` and
+  `Last` take paths apart; and `ParsePath` reads a path's display form
+  back, failing with the new code `path.invalid_syntax`. The
+  specification says so (`VA-020` amended, `VA-022` to `VA-026`,
+  `DI-038`).
+
 ## 0.18.0 (2026-10-06)
 
 The standard library is whole: go-cty's encodings and time join its
