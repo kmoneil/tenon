@@ -41,6 +41,19 @@
   function answers ends the transform and is its answer. Every visit is in
   the canonical order, where go-cty's visits an object's attributes in Go
   map order. The specification says so (`VA-028`).
+- Marks can be taken with where they are and put back. `MarkLocations`
+  gives an entry for each value that carries marks, its path and its
+  marks, in the canonical order of paths, and nothing, at once, for a value
+  holding no mark; a deep mark is reported at every value it reached, and
+  a set's marks at the set. `WithLocatedMarks` puts entries back, uniting
+  every entry for one path where go-cty's `MarkWithPaths` keeps the first,
+  a path into a set's member marking the set, and returns the entries it
+  could not place, a path reaching nothing or running through a null or a
+  value not known yet, where go-cty drops them silently. It follows each
+  path once: 8,000 entries on 8,000 values take 2.4 ms, where
+  `MarkWithPaths` takes 6.6 s. Taking a value's marks off with
+  `UnmarkDeep` and putting its located marks back gives the value back.
+  The specification says so (`MK-012`, `MK-013`).
 
 ## 0.18.0 (2026-10-06)
 

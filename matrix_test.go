@@ -235,7 +235,7 @@ func TestEveryOperationIsRegistered(t *testing.T) {
 	others := []string{
 		"Bool", "Call", "CapsuleType.Value", "Deserialize", "ErrorVal", "List", "Map", "Narrow", "Null", "NumberFromBigInt",
 		"NumberFromBigRat", "NumberFromInt", "NumberFromText", "Object", "ParseJSON", "Pending", "Resolve", "Set", "String",
-		"Transform", "TransformWith", "Tuple", "Unknown", "Unmark", "UnmarkDeep", "WithMarks",
+		"Transform", "TransformWith", "Tuple", "Unknown", "Unmark", "UnmarkDeep", "WithLocatedMarks", "WithMarks",
 	}
 	for _, name := range exportedFuncs(t, "Value") {
 		isOp, isOther := slices.Contains(ops, name), slices.Contains(others, name)
