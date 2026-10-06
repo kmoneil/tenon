@@ -46,6 +46,8 @@ const (
 	CodeObjectEmptyName             Code = "object.empty_name"
 	CodeOperationNullOperand        Code = "operation.null_operand"
 	CodeOperationWrongType          Code = "operation.wrong_type"
+	CodePathInvalidSyntax           Code = "path.invalid_syntax"
+	CodePathNoMember                Code = "path.no_member"
 	CodeRangeContradiction          Code = "range.contradiction"
 	CodeRegexDuplicateGroup         Code = "regex.duplicate_group"
 	CodeRegexInvalidSyntax          Code = "regex.invalid_syntax"

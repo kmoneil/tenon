@@ -59,6 +59,8 @@ var specCodes = []string{
 	"object.empty_name",
 	"operation.null_operand",
 	"operation.wrong_type",
+	"path.invalid_syntax",
+	"path.no_member",
 	"range.contradiction",
 	"regex.duplicate_group",
 	"regex.invalid_syntax",
