@@ -37,9 +37,9 @@ fmt.Println(address.IsKnown(), tenon.Length(address))
 // false unknown(number, not null, >= 0)
 ```
 
-    go get github.com/kmoneil/tenon@v0.18.0
+    go get github.com/kmoneil/tenon@v0.19.0
 
-Version 0.18.0 implements version 0.16.0 of the tenon specification. A
+Version 0.19.0 implements version 0.17.0 of the tenon specification. A
 conformance test covers every one of its 390 rules, as `CONFORMANCE.md`
 reports; `CHANGELOG.md` says what each release holds, and, where there are
 any, which rules the report states more widely than its test exercises.
@@ -356,15 +356,15 @@ For a configuration of 32 KB, measured on Apple M5 Max with go1.26.4:
 
 | | encoding/json | tenon | go-cty |
 | --- | --- | --- | --- |
-| Parse JSON into a value | 242 µs | 500 µs | 4.31 ms |
-| Convert to a schema | – | 532 µs | 1.73 ms |
-| Encode and decode | 435 µs | 372 µs | 3.16 ms |
-| Compare two copies | 460 µs | 10.1 µs | 7.56 ms |
-| Read a nested value | 15.9 ns | 64.4 ns | 105 ns |
-| Diff one change | – | 239 µs | – |
-| Call a function | – | 32.6 µs | 45.7 µs |
-| Call a library function | – | 196 µs | 332 µs |
-| Format text | – | 200 µs | 198 µs |
+| Parse JSON into a value | 301 µs | 676 µs | 6.45 ms |
+| Convert to a schema | – | 750 µs | 2.39 ms |
+| Encode and decode | 547 µs | 500 µs | 4.08 ms |
+| Compare two copies | 559 µs | 13.4 µs | 9.28 ms |
+| Read a nested value | 18.7 ns | 67.1 ns | 112 ns |
+| Diff one change | – | 234 µs | – |
+| Call a function | – | 34.2 µs | 46.9 µs |
+| Call a library function | – | 201 µs | 325 µs |
+| Format text | – | 217 µs | 207 µs |
 <!-- benchmarks:end -->
 
 ## Stability

@@ -1,6 +1,26 @@
 # Changelog
 
-## Unreleased
+## 0.19.0 (2026-10-06)
+
+Values can be walked, rewritten and stored with their marks where they
+are. A path applies to a value and reads back from its text; `Walk` and
+`Transform` visit every value within one in the canonical order, every
+path they hand out staying valid, and a rebuild the members' types refuse
+is an error value, never a panic. A value's marks come off with their
+paths and go back on, every entry placed or handed back, in time that
+grows with the value and the entries, never with their product; the
+marks have an algebra, and a rewrite in the canonical order. ctytenon
+0.4.0, which requires this release, crosses them to and from go-cty's,
+and its walkthrough takes sensitive values through Terraform's state with
+both, byte for byte. It implements version 0.17.0 of the tenon
+specification: 390 rules.
+
+The minor version moves for the additions.
+
+**Upgrading from 0.18.0.** Nothing changes for an existing program.
+Documents decode as they did, and values encode to the same bytes.
+
+**What `CONFORMANCE.md` states.** 390 of 390.
 
 ### Added
 
