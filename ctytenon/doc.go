@@ -6,9 +6,12 @@
 // A [Bridge] does the carrying, both ways: [Bridge.FromCty] and [Bridge.ToCty]
 // for values, [Bridge.TypeFromCty] and [Bridge.TypeToCty] for types,
 // [Bridge.ConstraintFromCty] and [Bridge.ConstraintToCty] for type
-// constraints, [Bridge.PathFromCty] and [Bridge.PathToCty] for paths, and
-// [Bridge.ErrorFromCty] for an error cty gave. The zero Bridge is ready to
-// use; one that maps marks or pairs capsule types says how in its fields.
+// constraints, [Bridge.PathFromCty] and [Bridge.PathToCty] for paths,
+// [Bridge.PathSetFromCty] and [Bridge.PathSetToCty] for sets of them,
+// [Bridge.LocatedMarksFromCty] and [Bridge.LocatedMarksToCty] for marks with
+// their paths, and [Bridge.ErrorFromCty] for an error cty gave. The zero
+// Bridge is ready to use; one that maps marks or pairs capsule types says how
+// in its fields.
 //
 // # What crosses
 //
@@ -41,7 +44,14 @@
 //     with its own, holding the same pointer.
 //   - A path crosses given the value it lies within: cty steps into a set by
 //     the member, and tenon by the member's place in the set's order, which
-//     only the set says.
+//     only the set says. A cty path set crosses as tenon's paths, sorted.
+//   - Marks with their paths, cty's PathValueMarks, cross as tenon's located
+//     marks, given the value they lie within: located, as a mark is carried,
+//     on every value within the one a path reaches, and back with what a
+//     container's entry carries left off the entries within it, so that
+//     putting either back gives what crossing the marked value gives. Those
+//     cty's MarkWithPaths drops silently, tenon's WithLocatedMarks hands
+//     back.
 //   - An error cty gave crosses as diagnostics located by its paths, and a
 //     tenon error value as the [*tenon.Error] holding it.
 //   - A function crosses both ways: [Bridge.FunctionToCty] wraps a tenon

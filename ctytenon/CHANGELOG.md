@@ -5,6 +5,30 @@ module of its own (`github.com/kmoneil/tenon/ctytenon`) whose versions are
 tagged `ctytenon/vX.Y.Z`. tenon's own changes are in the repository's
 `CHANGELOG.md`.
 
+## Unreleased
+
+### Added
+
+- `LocatedMarksFromCty` and `LocatedMarksToCty` cross marks with their
+  paths, go-cty's `PathValueMarks` and tenon's `LocatedMarks`, given the
+  value they lie within. go-cty hands a container's marks to every value
+  read out of it, so an entry from go-cty is located at every value within
+  its path, as `FromCty` puts the marks, and an entry to go-cty leaves off
+  what a container's entry carries, as `ToCty` does. Putting either side's
+  back on the other side's value gives what crossing the marked value
+  gives, and the entries go-cty's `MarkWithPaths` drops silently, tenon's
+  `WithLocatedMarks` hands back.
+- `PathSetFromCty` and `PathSetToCty` cross a `cty.PathSet` as tenon paths
+  sorted in their canonical order, each once, and back.
+- A walkthrough, as a test, takes a resource's sensitive values through
+  Terraform's state with go-cty and with tenon side by side, holding both
+  to the same values, marks and bytes. The steps are: strip the marks with
+  their places, make unknowns null, write the JSON and
+  `sensitive_attributes`, read them back, show the next plan's changes
+  redacted, and carry it all in tenon's own encoding. go-cty's
+  `UnknownAsNull` is a recipe over tenon's `Transform` there, held to
+  go-cty's answers; the repository's `MIGRATING.md` gives it.
+
 ## 0.3.0 (2026-10-05)
 
 Requires tenon 0.16.0, whose standard library a host still evaluating

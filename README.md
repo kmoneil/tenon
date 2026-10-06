@@ -317,6 +317,8 @@ two differ, and its own `CHANGELOG.md` what each release holds:
 | Unknown values | Refinements: not null, a string prefix, number bounds, collection lengths | Ranges: the same facts, and the members a set is known to hold |
 | Types | One `Type` serves as a type and as a constraint, `DynamicPseudoType` standing for any | Types and constraints are distinct, and a value whose type is not settled yet carries a constraint in its place |
 | Diffs | None: each program writes its own | `Diff`, which never looks inside what a redacting mark withholds |
+| Paths and traversal | `Walk` and `Transform` reuse the storage of the paths they hand out, so a path kept past its visit reads another place; `Transform` panics when a callback changes one element's type, and visits an object's attributes in Go's map order; `Path.Apply` drops the marks of a list not known yet | A path never changes; walks and transforms visit in one canonical order; a rebuild the members' types refuse is an error value at the collection; and applying a path keeps every container's marks |
+| Marks with their paths | `MarkWithPaths` keeps only the first entry for a path, drops silently one it cannot place, and takes 6.6 s for 8,000 entries; `WrangleMarksDeep` answers by Go's map order | `WithLocatedMarks` places every entry and hands back those it cannot place, in milliseconds; `RewriteMarks` works in the canonical order; and tenon's own encoding carries marks, so storing a value strips nothing |
 | Determinism | `Equals` on objects and maps holding an unknown answers by Go's map order, and keys that are one after normalization merge at random | The same answer every time, and such keys are refused, naming both spellings |
 | Reading JSON | `ctyjson.Unmarshal` keeps the last of two members of one name, ignores text after the value, reads numbers as 512-bit floats and stops at the first failure | `ParseJSON` refuses a name given twice and anything after the value, reads numbers exactly, and reports every failure at its path |
 | Function library | Steps in binary floats: `range(0, 1, 0.1)` drifts past `0.7` and `range(0, 0.05, 0.01)` makes six elements; `pow` and `log` go through `float64`; `contains([], null)` answers an unknown of no type; and a product of 64 lists of two wraps to an empty answer | `stdlib`, function for function: the answers the specification states, exact, unknown answers as narrow as the arguments allow, and a result past its stated bound refused before the work |
@@ -324,7 +326,10 @@ two differ, and its own `CHANGELOG.md` what each release holds:
 | Functions | A parameter is a type and four flags that change what a state means at the call; arguments are never converted, a refused argument is a Go error naming only the first failure, and a failing variadic argument is reported at the wrong index | A parameter is a constraint; arguments convert under the call's policy, every failing argument reports as a diagnostic located by its index, known arguments give a known result unless volatility is declared, and a result never null is declared rather than set in a refinement callback |
 
 [MIGRATING.md](MIGRATING.md) takes the function library function by
-function: each beside go-cty's, how their answers differ, and why.
+function: each beside go-cty's, how their answers differ, and why. It
+also maps go-cty's paths, traversal and located marks to tenon's, and
+points to a walkthrough that takes sensitive values through Terraform's
+state with both.
 
 The bench module holds a test for each of go-cty's open issues whose defect
 tenon could share, asserting what go-cty v1.19.0 does with the issue's case
