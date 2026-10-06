@@ -1,6 +1,30 @@
 # Changelog
 
-## Unreleased
+## 0.18.0 (2026-10-06)
+
+The standard library is whole: go-cty's encodings and time join its
+values and text, `JSONEncode`, `JSONDecode`, `CSVDecode`, `FormatDate` and
+`TimeAdd`, so every function of go-cty's `cty/function/stdlib` is here but
+its Bytes capsule, which no language expression can make. Each answers
+exactly, by a reading the specification states whole, and the
+HCL-evaluator proof runs every one of them, and every operator, through
+HCL beside go-cty's, each difference named. `MIGRATING.md` takes a
+function table across, function by function. It implements version
+0.16.0 of the tenon specification, every section of which is now
+normative: 377 rules.
+
+The minor version moves for the additions. It fixes a resource
+exhaustion in `FormatFunc` and `FormatListFunc` of 0.17.0, listed under
+Fixed; a security advisory follows this release.
+
+**Upgrading from 0.17.0.** Nothing changes for an existing program but
+`Format` and `FormatList` of a number whose digits would pass 64 times
+the size of the arguments and 64 KiB, `format("%d", 1e999999)` among
+them, which now fail with `function.too_large` where they made a
+million bytes. Documents decode as they did, and values encode to the
+same bytes.
+
+**What `CONFORMANCE.md` states.** 377 of 377.
 
 ### Added
 

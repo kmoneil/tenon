@@ -7,7 +7,7 @@ fails where it is stale.
 
 | | |
 | --- | --- |
-| Specification version | 0.15.0 |
+| Specification version | 0.16.0 |
 | Unicode version (`ST-003`) | 15.0.0 |
 | Rules | 377 normative, 0 outline, 0 withdrawn |
 | Rules satisfied | 377 of 377 |

@@ -37,9 +37,9 @@ fmt.Println(address.IsKnown(), tenon.Length(address))
 // false unknown(number, not null, >= 0)
 ```
 
-    go get github.com/kmoneil/tenon@v0.17.0
+    go get github.com/kmoneil/tenon@v0.18.0
 
-Version 0.17.0 implements version 0.15.0 of the tenon specification. A
+Version 0.18.0 implements version 0.16.0 of the tenon specification. A
 conformance test covers every one of its 377 rules, as `CONFORMANCE.md`
 reports; `CHANGELOG.md` says what each release holds, and, where there are
 any, which rules the report states more widely than its test exercises.
@@ -336,8 +336,8 @@ tenon does more for each value than a Go map does: it parses every number
 into an exact decimal, normalizes every string, and records what is known
 about each value. Beside go-cty, the value system it answers, it is faster
 at everything measured here, at every size, but formatting text, where
-go-cty is a few percent ahead; and it uses less memory at all of it but
-calling functions. A call does more: tenon converts every argument to its
+the two are within a few percent of each other; and it uses less memory at
+all of it but calling functions. A call does more: tenon converts every argument to its
 parameter's constraint and answers every argument state inside the call,
 where go-cty checks conformance only and leaves both to each caller,
 unmeasured. It is faster all the same, and takes more memory for it: half
@@ -351,15 +351,15 @@ For a configuration of 32 KB, measured on Apple M5 Max with go1.26.4:
 
 | | encoding/json | tenon | go-cty |
 | --- | --- | --- | --- |
-| Parse JSON into a value | 245 µs | 539 µs | 4.78 ms |
-| Convert to a schema | – | 606 µs | 1.88 ms |
-| Encode and decode | 461 µs | 411 µs | 3.42 ms |
-| Compare two copies | 473 µs | 10.7 µs | 7.62 ms |
-| Read a nested value | 15.3 ns | 58.5 ns | 93.2 ns |
-| Diff one change | – | 169 µs | – |
-| Call a function | – | 25.7 µs | 37.8 µs |
-| Call a library function | – | 155 µs | 282 µs |
-| Format text | – | 174 µs | 170 µs |
+| Parse JSON into a value | 242 µs | 500 µs | 4.31 ms |
+| Convert to a schema | – | 532 µs | 1.73 ms |
+| Encode and decode | 435 µs | 372 µs | 3.16 ms |
+| Compare two copies | 460 µs | 10.1 µs | 7.56 ms |
+| Read a nested value | 15.9 ns | 64.4 ns | 105 ns |
+| Diff one change | – | 239 µs | – |
+| Call a function | – | 32.6 µs | 45.7 µs |
+| Call a library function | – | 196 µs | 332 µs |
+| Format text | – | 200 µs | 198 µs |
 <!-- benchmarks:end -->
 
 ## Stability
