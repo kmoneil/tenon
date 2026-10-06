@@ -255,15 +255,16 @@ format: "2.68"
 regexreplace: error(regex.missing_group: "RegexReplace: the replacement refers to a group named \"1x\", which the pattern does not have; ${1}x is group 1 followed by \"x\"" at .[2])
 ```
 
-The package holds go-cty's functions over values: the operators, numbers,
-the general functions, collections and sets; and over text: case, length
-and substrings by grapheme cluster, searching, trimming and joining,
-`format` and `formatlist`, and patterns. Its functions over encodings and
-time are not here yet. A host still evaluating with go-cty,
-HCL's evaluator among them, calls these through ctytenon's
-`FunctionToCty`. The
+The package holds every function of go-cty's: over values, the operators,
+numbers, the general functions, collections and sets; over text, case,
+length and substrings by grapheme cluster, searching, trimming and joining,
+`format` and `formatlist`, and patterns; and the encodings and time, JSON,
+CSV, `formatdate` and `timeadd`. A host still evaluating with go-cty, HCL's
+evaluator among them, calls these through ctytenon's `FunctionToCty`, one
+at a time if it likes. [MIGRATING.md](MIGRATING.md) names each function
+beside go-cty's and how their answers differ, and the
 [stdlib documentation](https://pkg.go.dev/github.com/kmoneil/tenon/stdlib)
-lists them.
+says what each does.
 
 ## What it is for
 
@@ -321,6 +322,9 @@ two differ, and its own `CHANGELOG.md` what each release holds:
 | Function library | Steps in binary floats: `range(0, 1, 0.1)` drifts past `0.7` and `range(0, 0.05, 0.01)` makes six elements; `pow` and `log` go through `float64`; `contains([], null)` answers an unknown of no type; and a product of 64 lists of two wraps to an empty answer | `stdlib`, function for function: the answers the specification states, exact, unknown answers as narrow as the arguments allow, and a result past its stated bound refused before the work |
 | Text functions | Go's simple case mappings, clusters and patterns of whichever Unicode the toolchain carries: `upper("straße")` is `"STRAßE"`, and `\p{Garay}` is a class on Go 1.27 and no pattern below it; `format("%.2f", 2.675)` is `"2.67"`, rounded through a binary float; and `regexreplace`'s `$1x` names a group `1x` and writes nothing | Unicode 15.0.0's full case mappings and clusters, and Go 1.26's pattern syntax, on every toolchain; numbers formatted from the exact decimal, ties half to even; a reference to a group the pattern does not have refused, and every answer that multiplies its arguments bounded |
 | Functions | A parameter is a type and four flags that change what a state means at the call; arguments are never converted, a refused argument is a Go error naming only the first failure, and a failing variadic argument is reported at the wrong index | A parameter is a constraint; arguments convert under the call's policy, every failing argument reports as a diagnostic located by its index, known arguments give a known result unless volatility is declared, and a result never null is declared rather than set in a refinement callback |
+
+[MIGRATING.md](MIGRATING.md) takes the function library function by
+function: each beside go-cty's, how their answers differ, and why.
 
 The bench module holds a test for each of go-cty's open issues whose defect
 tenon could share, asserting what go-cty v1.19.0 does with the issue's case
