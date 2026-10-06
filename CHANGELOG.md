@@ -54,6 +54,22 @@
   `MarkWithPaths` takes 6.6 s. Taking a value's marks off with
   `UnmarkDeep` and putting its located marks back gives the value back.
   The specification says so (`MK-012`, `MK-013`).
+- Located marks have an algebra. `MergeLocatedMarks` unites lists into
+  one entry for each path in the canonical order; `CompactLocatedMarks`
+  takes a deep mark from the entries within one carrying it, which putting
+  them back gives again, so a deeply marked value's marks are written
+  where they were put rather than at every value within, its map keys
+  included; `FilterLocatedMarks` keeps the marks a predicate keeps.
+  `SameMarks` compares two values' located marks, where go-cty's
+  `HasSameMarks` compares only the values' own, and `HasMarkDeep` finds a
+  mark anywhere in a value; both answer at once for a value holding no
+  mark, where go-cty walks it. `RewriteMarks` hands each mark at each
+  value to a function, in the canonical order, which keeps it
+  (`KeepMark`), drops it (`DropMark`) or replaces it (`ReplaceMark`), where
+  go-cty's `WrangleMarksDeep` hands them in Go map order and so answered
+  one way 1,748 times in 2,000 and another 252; a value whose marks are
+  all kept comes back as itself. The specification says so (`MK-014` to
+  `MK-016`).
 
 ## 0.18.0 (2026-10-06)
 
