@@ -4,6 +4,13 @@
 
 ### Added
 
+- `MIGRATING.md`, the guide to moving a function table from go-cty's
+  library to tenon's: how to set it, natively or through ctytenon one
+  function at a time, and every function beside go-cty's with how their
+  answers differ and the rule that says so. The library is whole: every
+  function of go-cty's `cty/function/stdlib` but its Bytes capsule, which
+  no language expression can make, is here.
+
 - `JSONEncodeFunc` and `JSONDecodeFunc`, the library's encodings begin.
   `JSONEncode` writes go-cty's bytes where go-cty is right: the escapes of
   `<`, `>`, `&`, U+2028 and U+2029, numbers written positionally, no

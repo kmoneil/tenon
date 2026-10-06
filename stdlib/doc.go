@@ -30,8 +30,12 @@
 // cluster ends; Join, Sort, Chomp and Indent; Format and FormatList, which
 // write numbers from their exact values; and Regex, RegexAll and
 // RegexReplace, whose patterns are read as Go 1.26 reads them, with Unicode
-// classes and case folding of that version. go-cty's functions over
-// encodings and time are not here yet.
+// classes and case folding of that version. And it holds its encodings and
+// time: JSONEncode and JSONDecode, numbers exact and RFC 8259 read
+// strictly; CSVDecode, on a reader of its own that reads as go-cty's; and
+// FormatDate and TimeAdd, RFC 3339 timestamps with fractions of a second
+// kept and durations added exactly. MIGRATING.md, in the repository, names
+// each function beside go-cty's and how their answers differ.
 // A function reads a collection as it stands: where an argument is not known
 // yet, it answers from what is, the members a list holds, the lengths an
 // unknown one records, the attributes an object's type names, so its answer
