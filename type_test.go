@@ -419,6 +419,7 @@ func TestConformance_TY001_EveryValueHasOneConcreteType(t *testing.T) {
 		"Transform":         tenon.Transform(tenon.List(num, one), texts),
 		"TransformWith":     tenon.TransformWith(one, nil, nil),
 		"WithLocatedMarks":  placedMarks(one, []tenon.LocatedMarks{{Marks: []tenon.Mark{stamp{id: "m"}}}}),
+		"RewriteMarks":      tenon.RewriteMarks(tenon.WithMarks(one, stamp{id: "m"}), func(tenon.Path, tenon.Mark) tenon.MarkAction { return tenon.DropMark() }),
 	}
 	want := map[string]tenon.Type{
 		"Bool": bl, "NumberFromInt": num, "NumberFromBigInt": num, "NumberFromBigRat": num, "NumberFromText": num, "String": str,
@@ -429,7 +430,7 @@ func TestConformance_TY001_EveryValueHasOneConcreteType(t *testing.T) {
 		"Equals": bl, "LessThan": bl, "Length": num, "Contains": bl,
 		"Add": num, "Sub": num, "Mul": num, "Div": num, "Mod": num, "Convert": str, "Call": num, "ParseJSON": tenon.TupleType(num, bl),
 		"WithMarks": num, "Unmark": num, "UnmarkDeep": tenon.ListType(num),
-		"Transform": tenon.ListType(str), "TransformWith": num, "WithLocatedMarks": num,
+		"Transform": tenon.ListType(str), "TransformWith": num, "WithLocatedMarks": num, "RewriteMarks": num,
 	}
 	// A value with no type is the other half of the rule.
 	untyped := map[string]tenon.Value{

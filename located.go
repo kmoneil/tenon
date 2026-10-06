@@ -130,7 +130,12 @@ type placing struct {
 
 // placer gathers the entries WithLocatedMarks could not place.
 type placer struct {
-	unplaced []*placing
+	unplaced []LocatedMarks
+}
+
+// leave records that the entry e could not be placed.
+func (pl *placer) leave(e *placing) {
+	pl.unplaced = append(pl.unplaced, LocatedMarks{Path: e.path, Marks: e.marks})
 }
 
 // place returns n with the marks of the entries, whose paths reached n after
@@ -167,7 +172,7 @@ func (pl *placer) intoSet(n *node, entries []*placing, depth int) []Mark {
 		if reachesWithin(n, e.steps[depth:]) {
 			marks = append(marks, e.marks...)
 		} else {
-			pl.unplaced = append(pl.unplaced, e)
+			pl.leave(e)
 		}
 	}
 	return marks
@@ -193,7 +198,7 @@ func (pl *placer) placeBelow(n *node, entries []*placing, depth int) *node {
 	for _, e := range entries {
 		at, ok := memberPlace(n, e.steps[depth])
 		if !ok {
-			pl.unplaced = append(pl.unplaced, e)
+			pl.leave(e)
 			continue
 		}
 		e.at = at
@@ -312,18 +317,26 @@ func memberNode(n *node, i int) *node {
 // each path, its marks united and sorted by identifier, in the canonical
 // order of their paths.
 func (pl *placer) unplacedEntries() []LocatedMarks {
-	if len(pl.unplaced) == 0 {
+	return mergeEntries(pl.unplaced)
+}
+
+// mergeEntries returns the entries, which it may reorder, merged into one
+// for each path, its marks the union of theirs sorted by identifier, in the
+// canonical order of their paths, or nil where there are none. Every entry
+// has marks.
+func mergeEntries(entries []LocatedMarks) []LocatedMarks {
+	if len(entries) == 0 {
 		return nil
 	}
-	slices.SortStableFunc(pl.unplaced, func(a, b *placing) int { return ComparePaths(a.path, b.path) })
+	slices.SortStableFunc(entries, func(a, b LocatedMarks) int { return ComparePaths(a.Path, b.Path) })
 	var out []LocatedMarks
-	for _, e := range pl.unplaced {
-		if last := len(out) - 1; last >= 0 && out[last].Path.Equal(e.path) {
-			out[last].Marks, _ = mergeMarks(out[last].Marks, e.marks)
+	for _, e := range entries {
+		if last := len(out) - 1; last >= 0 && out[last].Path.Equal(e.Path) {
+			out[last].Marks, _ = mergeMarks(out[last].Marks, e.Marks)
 			continue
 		}
-		marks, _ := mergeMarks(nil, e.marks)
-		out = append(out, LocatedMarks{Path: e.path, Marks: marks})
+		marks, _ := mergeMarks(nil, e.Marks)
+		out = append(out, LocatedMarks{Path: e.Path, Marks: marks})
 	}
 	return out
 }
