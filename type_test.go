@@ -410,6 +410,8 @@ func TestConformance_TY001_EveryValueHasOneConcreteType(t *testing.T) {
 		"WithMarks":         tenon.WithMarks(one, stamp{id: "m"}),
 		"Unmark":            unmarked(tenon.WithMarks(one, stamp{id: "m"})),
 		"UnmarkDeep":        unmarkedDeep(tenon.List(num, tenon.WithMarks(one, stamp{id: "m"}))),
+		"Transform":         tenon.Transform(tenon.List(num, one), texts),
+		"TransformWith":     tenon.TransformWith(one, nil, nil),
 	}
 	want := map[string]tenon.Type{
 		"Bool": bl, "NumberFromInt": num, "NumberFromBigInt": num, "NumberFromBigRat": num, "NumberFromText": num, "String": str,
@@ -420,6 +422,7 @@ func TestConformance_TY001_EveryValueHasOneConcreteType(t *testing.T) {
 		"Equals": bl, "LessThan": bl, "Length": num, "Contains": bl,
 		"Add": num, "Sub": num, "Mul": num, "Div": num, "Mod": num, "Convert": str, "Call": num, "ParseJSON": tenon.TupleType(num, bl),
 		"WithMarks": num, "Unmark": num, "UnmarkDeep": tenon.ListType(num),
+		"Transform": tenon.ListType(str), "TransformWith": num,
 	}
 	// A value with no type is the other half of the rule.
 	untyped := map[string]tenon.Value{

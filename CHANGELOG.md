@@ -29,6 +29,18 @@
   after the visit returns, where go-cty's Walk reuses its paths' storage,
   so of the 511 paths of a walk eight deep, kept until it ends, 360 read
   a different place. The specification says so (`VA-027`).
+- `Transform` replaces a value and every value within it by what a
+  function answers for each, after the values within it, and
+  `TransformWith` adds a function given each value before, which may
+  replace it, pass over what it holds, or stop. Each value holding members
+  is rebuilt from what they became, keeping its own marks: a list, a map
+  or a set of the type they now share, a set's members merged where they
+  became equal and their marks moved onto the set. Members that no longer
+  share a type are an error value with the code `convert.no_common_type`,
+  located at the collection, where go-cty's Transform panics; an error a
+  function answers ends the transform and is its answer. Every visit is in
+  the canonical order, where go-cty's visits an object's attributes in Go
+  map order. The specification says so (`VA-028`).
 
 ## 0.18.0 (2026-10-06)
 
