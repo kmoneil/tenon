@@ -256,20 +256,7 @@ func (n *node) markList() []Mark {
 // is neither Propagate nor Isolate.
 func WithMarks(v Value, marks ...Mark) Value {
 	n := v.data()
-	for i, m := range marks {
-		if m == nil {
-			usagePanic("WithMarks called with a nil Mark as mark %d", i)
-		}
-		switch comparable, self := comparableMark(m); {
-		case !comparable:
-			usagePanic("WithMarks called with a mark of type %T, which is not comparable and so cannot be told from other marks", m)
-		case !self:
-			usagePanic("WithMarks called with a mark of type %T holding a value that does not equal itself, so it cannot be told from other marks", m)
-		}
-		if p := m.Propagation(); !knownPolicy(p) {
-			usagePanic("WithMarks called with a mark of type %T whose propagation policy is %s, neither Propagate nor Isolate", m, p)
-		}
-	}
+	checkMarks("WithMarks", marks)
 	merged, grew := mergeMarks(n.markList(), marks)
 	if !grew {
 		// A deep mark v carries already is on everything within v too, since
@@ -282,6 +269,26 @@ func WithMarks(v Value, marks ...Mark) Value {
 		newAttachment(deep, nil).within(nn)
 	}
 	return Value{n: nn}
+}
+
+// checkMarks panics, naming the caller, where one of marks is one a value
+// cannot carry: nil, of a type that is not comparable, unequal to itself, or
+// of a propagation policy that is neither Propagate nor Isolate.
+func checkMarks(caller string, marks []Mark) {
+	for i, m := range marks {
+		if m == nil {
+			usagePanic("%s called with a nil Mark as mark %d", caller, i)
+		}
+		switch comparable, self := comparableMark(m); {
+		case !comparable:
+			usagePanic("%s called with a mark of type %T, which is not comparable and so cannot be told from other marks", caller, m)
+		case !self:
+			usagePanic("%s called with a mark of type %T holding a value that does not equal itself, so it cannot be told from other marks", caller, m)
+		}
+		if p := m.Propagation(); !knownPolicy(p) {
+			usagePanic("%s called with a mark of type %T whose propagation policy is %s, neither Propagate nor Isolate", caller, m, p)
+		}
+	}
 }
 
 // comparableMark reports whether Go equality can compare m at all, and
