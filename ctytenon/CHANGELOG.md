@@ -5,7 +5,16 @@ module of its own (`github.com/kmoneil/tenon/ctytenon`) whose versions are
 tagged `ctytenon/vX.Y.Z`. tenon's own changes are in the repository's
 `CHANGELOG.md`.
 
-## Unreleased
+## 0.4.0 (2026-10-06)
+
+Requires tenon 0.19.0, for its marks with their paths. A host that
+stores or redacts marked values with go-cty can move that work to tenon:
+the bridge crosses go-cty's marks with their paths, and its path sets,
+to tenon's and back, each held to what crossing the marked value itself
+gives, and a walkthrough takes sensitive values through Terraform's
+state with both, byte for byte.
+
+The minor version moves for the additions.
 
 ### Added
 
