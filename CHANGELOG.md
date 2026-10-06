@@ -22,6 +22,13 @@
   back, failing with the new code `path.invalid_syntax`. The
   specification says so (`VA-020` amended, `VA-022` to `VA-026`,
   `DI-038`).
+- `Walk` visits a value and every value within it in the canonical order
+  of their paths, a value before what is within it, each handed as it is
+  stored with its own marks; a visit may skip what is within or stop.
+  `All` is the walk as an iterator. Every path handed out stays valid
+  after the visit returns, where go-cty's Walk reuses its paths' storage,
+  so of the 511 paths of a walk eight deep, kept until it ends, 360 read
+  a different place. The specification says so (`VA-027`).
 
 ## 0.18.0 (2026-10-06)
 
