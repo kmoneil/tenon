@@ -8,7 +8,7 @@ and [go-cty](https://github.com/zclconf/go-cty), the value system that
 Terraform and HCL use. Each does one thing a program does with a
 configuration document, at three sizes, in each library that does it.
 
-Measured on Apple M5 Max, darwin/arm64, with go1.26.4, tenon at 781903b with
+Measured on Apple M5 Max, darwin/arm64, with go1.26.4, tenon at a242554 with
 changes and go-cty v1.19.0, on 2026-10-06. Each figure is the median of every
 run of its benchmark: the time one operation takes, the memory it allocates,
 and how many allocations that takes.
@@ -24,9 +24,9 @@ Reads the document's bytes into a value that holds the whole of it.
 
 | Size | encoding/json | tenon | go-cty |
 | --- | --- | --- | --- |
-| 1 KB | 7.35 µs · 10.6 KB · 283 allocs | 15.3 µs · 28.3 KB · 621 allocs | 106 µs · 314 KB · 3.22k allocs |
-| 32 KB | 242 µs · 390 KB · 9.02k allocs | 500 µs · 919 KB · 20.0k allocs | 4.31 ms · 10.2 MB · 105k allocs |
-| 1 MB | 7.65 ms · 12.6 MB · 288k allocs | 16.9 ms · 29.5 MB · 640k allocs | 126 ms · 328 MB · 3.37M allocs |
+| 1 KB | 9.18 µs · 10.6 KB · 283 allocs | 19.9 µs · 28.3 KB · 621 allocs | 158 µs · 314 KB · 3.22k allocs |
+| 32 KB | 301 µs · 390 KB · 9.02k allocs | 676 µs · 919 KB · 20.0k allocs | 6.45 ms · 10.2 MB · 105k allocs |
+| 1 MB | 9.12 ms · 12.6 MB · 288k allocs | 22.1 ms · 29.5 MB · 640k allocs | 158 ms · 328 MB · 3.37M allocs |
 
 ## Convert to a schema
 
@@ -35,9 +35,9 @@ each JSON array to a list, each object of environment variables to a map.
 
 | Size | tenon | go-cty |
 | --- | --- | --- |
-| 1 KB | 20.3 µs · 36.5 KB · 613 allocs | 26.8 µs · 39.0 KB · 807 allocs |
-| 32 KB | 532 µs · 949 KB · 14.6k allocs | 1.73 ms · 1.22 MB · 24.1k allocs |
-| 1 MB | 18.4 ms · 30.6 MB · 461k allocs | 807 ms · 39.0 MB · 768k allocs |
+| 1 KB | 28.4 µs · 36.5 KB · 613 allocs | 35.9 µs · 39.0 KB · 807 allocs |
+| 32 KB | 750 µs · 949 KB · 14.6k allocs | 2.39 ms · 1.22 MB · 24.1k allocs |
+| 1 MB | 24.6 ms · 30.6 MB · 461k allocs | 1.04 s · 39.0 MB · 768k allocs |
 
 ## Encode and decode
 
@@ -45,9 +45,9 @@ Encodes the converted value for another process and decodes it back.
 
 | Size | encoding/json | tenon | go-cty |
 | --- | --- | --- | --- |
-| 1 KB | 13.0 µs · 16.2 KB · 419 allocs | 12.7 µs · 20.4 KB · 450 allocs | 94.2 µs · 55.2 KB · 1.07k allocs |
-| 32 KB | 435 µs · 583 KB · 13.4k allocs | 372 µs · 584 KB · 12.5k allocs | 3.16 ms · 1.80 MB · 35.1k allocs |
-| 1 MB | 13.2 ms · 19.6 MB · 429k allocs | 12.5 ms · 19.7 MB · 397k allocs | 103 ms · 57.5 MB · 1.12M allocs |
+| 1 KB | 16.6 µs · 16.2 KB · 419 allocs | 16.4 µs · 20.4 KB · 450 allocs | 119 µs · 55.2 KB · 1.07k allocs |
+| 32 KB | 547 µs · 580 KB · 13.4k allocs | 500 µs · 584 KB · 12.5k allocs | 4.08 ms · 1.80 MB · 35.1k allocs |
+| 1 MB | 16.0 ms · 19.6 MB · 429k allocs | 16.1 ms · 19.7 MB · 397k allocs | 124 ms · 57.5 MB · 1.12M allocs |
 
 The encoding's length:
 
@@ -64,9 +64,9 @@ library's equality.
 
 | Size | encoding/json | tenon | go-cty |
 | --- | --- | --- | --- |
-| 1 KB | 13.0 µs · 24.2 KB · 194 allocs | 312 ns · 32 B · 2 allocs | 227 µs · 164 KB · 4.05k allocs |
-| 32 KB | 460 µs · 877 KB · 6.05k allocs | 10.1 µs · 32 B · 2 allocs | 7.56 ms · 5.44 MB · 135k allocs |
-| 1 MB | 16.8 ms · 28.3 MB · 193k allocs | 528 µs · 32 B · 2 allocs | 258 ms · 174 MB · 4.31M allocs |
+| 1 KB | 16.1 µs · 24.2 KB · 194 allocs | 352 ns · 32 B · 2 allocs | 271 µs · 164 KB · 4.05k allocs |
+| 32 KB | 559 µs · 877 KB · 6.05k allocs | 13.4 µs · 32 B · 2 allocs | 9.28 ms · 5.44 MB · 135k allocs |
+| 1 MB | 23.6 ms · 28.3 MB · 193k allocs | 978 µs · 32 B · 2 allocs | 323 ms · 174 MB · 4.31M allocs |
 
 ## Read a nested value
 
@@ -74,9 +74,9 @@ Reads one environment variable of the middle service.
 
 | Size | encoding/json | tenon | go-cty |
 | --- | --- | --- | --- |
-| 1 KB | 15.5 ns · 0 B · 0 allocs | 58.5 ns · 0 B · 0 allocs | 106 ns · 32 B · 1 alloc |
-| 32 KB | 15.9 ns · 0 B · 0 allocs | 64.4 ns · 0 B · 0 allocs | 105 ns · 32 B · 1 alloc |
-| 1 MB | 16.5 ns · 0 B · 0 allocs | 64.3 ns · 0 B · 0 allocs | 109 ns · 32 B · 1 alloc |
+| 1 KB | 18.4 ns · 0 B · 0 allocs | 66.6 ns · 0 B · 0 allocs | 109 ns · 32 B · 1 alloc |
+| 32 KB | 18.7 ns · 0 B · 0 allocs | 67.1 ns · 0 B · 0 allocs | 112 ns · 32 B · 1 alloc |
+| 1 MB | 18.4 ns · 0 B · 0 allocs | 67.3 ns · 0 B · 0 allocs | 107 ns · 32 B · 1 alloc |
 
 ## Diff one change
 
@@ -85,9 +85,9 @@ in one replica count.
 
 | Size | tenon |
 | --- | --- |
-| 1 KB | 6.16 µs · 9.20 KB · 224 allocs |
-| 32 KB | 239 µs · 303 KB · 7.40k allocs |
-| 1 MB | 8.56 ms · 9.68 MB · 237k allocs |
+| 1 KB | 6.33 µs · 9.20 KB · 224 allocs |
+| 32 KB | 234 µs · 303 KB · 7.40k allocs |
+| 1 MB | 8.68 ms · 9.68 MB · 237k allocs |
 
 ## Cross between go-cty and tenon
 
@@ -97,9 +97,9 @@ time does.
 
 | Size | go-cty to tenon | tenon to go-cty |
 | --- | --- | --- |
-| 1 KB | 73.1 µs · 96.8 KB · 1.87k allocs | 23.0 µs · 37.2 KB · 737 allocs |
-| 32 KB | 2.72 ms · 3.08 MB · 59.7k allocs | 861 µs · 1.19 MB · 23.8k allocs |
-| 1 MB | 80.5 ms · 98.3 MB · 1.91M allocs | 26.6 ms · 37.8 MB · 762k allocs |
+| 1 KB | 81.6 µs · 96.8 KB · 1.87k allocs | 26.2 µs · 37.2 KB · 737 allocs |
+| 32 KB | 2.97 ms · 3.08 MB · 59.7k allocs | 944 µs · 1.19 MB · 23.8k allocs |
+| 1 MB | 87.4 ms · 98.3 MB · 1.91M allocs | 28.2 ms · 37.8 MB · 762k allocs |
 
 ## Call a function
 
@@ -109,9 +109,9 @@ the call, where go-cty leaves converting to the caller.
 
 | Size | tenon | go-cty |
 | --- | --- | --- |
-| 1 KB | 947 ns · 1.97 KB · 36 allocs | 1.33 µs · 1.34 KB · 30 allocs |
-| 32 KB | 32.6 µs · 65.6 KB · 1.20k allocs | 45.7 µs · 44.8 KB · 1.00k allocs |
-| 1 MB | 1.22 ms · 2.10 MB · 38.4k allocs | 1.72 ms · 1.43 MB · 32.0k allocs |
+| 1 KB | 1.07 µs · 1.97 KB · 36 allocs | 1.42 µs · 1.34 KB · 30 allocs |
+| 32 KB | 34.2 µs · 65.6 KB · 1.20k allocs | 46.9 µs · 44.8 KB · 1.00k allocs |
+| 1 MB | 1.39 ms · 2.10 MB · 38.4k allocs | 1.76 ms · 1.43 MB · 32.0k allocs |
 
 ## Call a library function
 
@@ -120,9 +120,9 @@ library's own merge function.
 
 | Size | tenon | go-cty |
 | --- | --- | --- |
-| 1 KB | 5.66 µs · 10.7 KB · 168 allocs | 9.80 µs · 9.46 KB · 258 allocs |
-| 32 KB | 196 µs · 357 KB · 5.60k allocs | 332 µs · 315 KB · 8.60k allocs |
-| 1 MB | 6.65 ms · 11.4 MB · 179k allocs | 10.6 ms · 10.1 MB · 275k allocs |
+| 1 KB | 5.56 µs · 10.7 KB · 168 allocs | 9.50 µs · 9.46 KB · 258 allocs |
+| 32 KB | 201 µs · 357 KB · 5.60k allocs | 325 µs · 315 KB · 8.60k allocs |
+| 1 MB | 6.69 ms · 11.4 MB · 179k allocs | 11.0 ms · 10.1 MB · 275k allocs |
 
 ## Format text
 
@@ -131,9 +131,9 @@ name, its replica count as an integer and its CPU share to one decimal place.
 
 | Size | tenon | go-cty |
 | --- | --- | --- |
-| 1 KB | 6.09 µs · 9.18 KB · 216 allocs | 5.89 µs · 4.47 KB · 156 allocs |
-| 32 KB | 200 µs · 301 KB · 7.20k allocs | 198 µs · 149 KB · 5.20k allocs |
-| 1 MB | 6.83 ms · 9.63 MB · 230k allocs | 7.32 ms · 4.77 MB · 166k allocs |
+| 1 KB | 6.27 µs · 9.18 KB · 216 allocs | 6.27 µs · 4.47 KB · 156 allocs |
+| 32 KB | 217 µs · 301 KB · 7.20k allocs | 207 µs · 149 KB · 5.20k allocs |
+| 1 MB | 7.27 ms · 9.63 MB · 230k allocs | 7.17 ms · 4.77 MB · 166k allocs |
 
 ## Reading the figures
 
