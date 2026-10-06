@@ -524,7 +524,7 @@ func readQuoted(s string) (string, int, string) {
 				}
 				hex := s[i+3 : i+end]
 				r, err := strconv.ParseUint(hex, 16, 32)
-				if err != nil || len(hex) < 4 || !utf8.ValidRune(rune(r)) {
+				if err != nil || len(hex) < 4 || r > utf8.MaxRune || !utf8.ValidRune(rune(r)) {
 					return "", i, "the escape " + quoted(s[i:i+end+1]) + " names no code point"
 				}
 				b.WriteRune(rune(r))
