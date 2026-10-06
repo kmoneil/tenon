@@ -1,4 +1,4 @@
-# Moving a function library from go-cty to tenon
+# Moving from go-cty to tenon
 
 Package `stdlib` is go-cty's `cty/function/stdlib`, function for function, as
 tenon functions. Each is a variable named as go-cty names it, so a host's table
@@ -125,3 +125,83 @@ go-cty's `Bytes`, `BytesVal`, `BytesLen` and `BytesSlice` are not carried: no
 expression of HCL, Terraform, OpenTofu or Packer can make a Bytes value. A host
 that holds them pairs go-cty's capsule type with one of tenon's through
 `ctytenon.PairCapsules` and crosses go-cty's functions with `FunctionFromCty`.
+
+## Paths, traversal and marks with their paths
+
+A host that stores or redacts marked values walks them, rewrites them and
+moves their marks with their paths. What go-cty offers for that, tenon
+offers in its own terms:
+
+| go-cty | tenon | What differs |
+| --- | --- | --- |
+| `cty.Path`, `Path.Equals` | `Path`, `Path.Equal`, `ComparePaths`, `HasPrefix`, `Parent`, `Last`, `ParsePath` | A path never changes, so one handed to a callback stays valid; paths have a canonical order; a step into a set names the member's place in the set's order, not the member (`VA-020`, `VA-021`, `VA-026`, `DI-038`) |
+| `Path.Apply` | `Path.Apply`, `Path.Lookup` | A failure is an error value with a code, located at the step; through a value not known yet the answer keeps every container's marks, where go-cty drops a list's or a map's and panics for a tuple; `Lookup` answers whether the path reaches anything (`VA-022` to `VA-025`) |
+| `cty.Walk` | `Walk`, `All` | The canonical order; `WalkSkip` and `WalkStop` in place of a bool and an error (`VA-027`) |
+| `cty.Transform`, `TransformWithTransformer` | `Transform`, `TransformWith` | Members that no longer share a type are an error value with `convert.no_common_type` at the collection, where go-cty panics; the canonical order, where go-cty visits an object's attributes in Go map order (`VA-028`) |
+| `UnmarkDeepWithPaths`, `PathValueMarks` | `MarkLocations` with `UnmarkDeep`, `LocatedMarks` | A deep mark is reported at every value it reached, and `CompactLocatedMarks` reports it only where it was put (`MK-012`, `MK-014`) |
+| `MarkWithPaths` | `WithLocatedMarks` | Every entry for a path is placed, where go-cty keeps the first; the entries that reach nothing are handed back, where go-cty drops them; 8,000 entries take milliseconds, where go-cty takes seconds (`MK-013`) |
+| `HasSameMarks`, `HasMarkDeep`, `ContainsMarked` | `SameMarks`, `HasMarkDeep` | `SameMarks` compares the marks within the values too; both answer a value holding no mark without walking it (`MK-015`) |
+| `ctymarks.WrangleMarksDeep` | `RewriteMarks` | The canonical order, where go-cty's comes from a Go map; keep, drop or replace, and no expand: a host collects the marks and puts them on the root with `WithMarks` (`MK-016`) |
+| `cty.PathSet` | A sorted `[]Path` | `ComparePaths` sorts and `Path.Equal` compares; ctytenon's `PathSetFromCty` and `PathSetToCty` cross a set of paths |
+| `cty.UnknownAsNull` | The recipe below | |
+
+tenon's own encoding carries marks (`MK-009`), so a host storing tenon
+values with `Serialize` strips nothing. Located marks serve what cannot
+carry marks: JSON, a foreign protocol, a state file's side channel.
+
+`UnknownAsNull` is not in the core, since it makes a value known not to be
+null into null. A host that needs it, as Terraform does before writing its
+state, writes it over `Transform`:
+
+```go
+func unknownAsNull(v tenon.Value) tenon.Value {
+	return tenon.Transform(v, func(_ tenon.Path, v tenon.Value) tenon.Value {
+		u, marks := tenon.Unmark(v)
+		switch {
+		case u.IsPending() && !u.HasMembers():
+			return tenon.WithMarks(tenon.Narrow(tenon.Pending(u.Constraint()), tenon.NullOnly()), marks...)
+		case u.IsResolved() && !u.HasContent() && !u.IsNull():
+			return tenon.WithMarks(tenon.Null(u.Type()), marks...)
+		}
+		return v
+	})
+}
+```
+
+It breaks what go-cty's breaks: a value known not to be null becomes null,
+and set members that differed only by what was not known become one member.
+ctytenon's tests hold it to go-cty's answers. One difference remains: a known
+list, set or map whose element type is not known yet crosses from go-cty as
+a pending value, which the recipe makes null, where go-cty keeps the known
+collection.
+
+ctytenon crosses located marks both ways. `LocatedMarksFromCty` takes what
+`UnmarkDeepWithPaths` gives; go-cty hands a container's marks to every value
+read out of it, so each entry's marks are located at every value within its
+path, as `FromCty` puts them. `LocatedMarksToCty` gives what `MarkWithPaths`
+takes, leaving out the marks a container's entry already carries. Its test
+`TestSensitiveValuesWalkthrough` takes a resource's sensitive values through
+Terraform's state with go-cty and with tenon side by side, holding both to
+the same values, marks and bytes at every step:
+
+1. strip the marks with their places;
+2. make unknowns null;
+3. write the value as JSON and the places as `sensitive_attributes`;
+4. read both back and put the marks back;
+5. show the next plan's changes without what is sensitive;
+6. and keep it all in tenon's own encoding, marks included, with no
+   stripping at all.
+
+Where tenon differs, it is on purpose:
+
+- **Map `sensitive` to a deep mark.** Everything within a sensitive value is
+  sensitive, which go-cty says by handing marks down, so the walkthrough
+  maps it to a deep, redacting mark. Its compacted located marks are then
+  exactly Terraform's paths; a mark that is not deep is reported at every
+  value within.
+- **Reading a set from JSON is unsafe.** A set is written as an array, and
+  two equal elements would merge when it is read back, so `ParseJSON` takes
+  the unsafe policy to read one.
+- **Paths are in the canonical order.** tenon writes located marks in that
+  order, and Terraform sorts its paths by their text. The two agree but
+  where an index passes 9: Terraform's text puts `[10]` before `[2]`.

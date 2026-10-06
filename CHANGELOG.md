@@ -70,6 +70,11 @@
   one way 1,748 times in 2,000 and another 252; a value whose marks are
   all kept comes back as itself. The specification says so (`MK-014` to
   `MK-016`).
+- `MIGRATING.md` moves from go-cty as a whole, not only its function
+  library: it maps go-cty's paths, traversal and marks with their paths to
+  tenon's, gives go-cty's `UnknownAsNull` as a recipe over `Transform`, and
+  points to ctytenon's walkthrough taking sensitive values through
+  Terraform's state with both.
 
 ## 0.18.0 (2026-10-06)
 
