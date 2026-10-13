@@ -153,7 +153,7 @@ proof:
 # vulnerability can be published against code that has not changed. vuln
 # fails only on a vulnerability tenon's code can reach, the standard
 # library's included, so it also flags a toolchain that needs updating.
-STATICCHECK := honnef.co/go/tools/cmd/staticcheck@v0.8.1
+STATICCHECK := honnef.co/go/tools/cmd/staticcheck@v0.8.2
 GOVULNCHECK := golang.org/x/vuln/cmd/govulncheck@v1.8.0
 lint:
 	go run $(STATICCHECK) ./...
