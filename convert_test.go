@@ -563,7 +563,7 @@ func TestConformance_CV024_NestedOneOfsGrowWithTheirDepth(t *testing.T) {
 		for _, p := range []tenon.Policy{safe, uns} {
 			var sizes [2]uint64
 			for i, depth := range []int{4, 16} {
-				c := nestedOneOfs(depth)
+				c := nestedOneOfs(depth, tenon.ListOf(tenon.Any()))
 				var before, after runtime.MemStats
 				runtime.GC()
 				runtime.ReadMemStats(&before)
@@ -582,10 +582,48 @@ func TestConformance_CV024_NestedOneOfsGrowWithTheirDepth(t *testing.T) {
 	}
 }
 
+// TestConformance_CV024_NestedOneOfsFailInProportionToTheirDepth holds a
+// conversion to nested OneOfs that fails under the safe policy to work in
+// proportion to their depth: a tuple of numbers, known and unknown, converted
+// to OneOfs around a list of strings, which it converts to only unsafely, so
+// that no member applies at any level and each fails naming its whole OneOf.
+// Each level wrote its message out, the square of the depth, for the top to
+// keep one: four times the levels allocate under eight times as much, where
+// writing them allocated over twelve times as much. The two messages that
+// name the constraint read as they did.
+func TestConformance_CV024_NestedOneOfsFailInProportionToTheirDepth(t *testing.T) {
+	conformance.Covers(t, "CV-024")
+	for _, v := range []tenon.Value{tenon.Tuple(n(1), n(2)), tenon.Unknown(tenon.TupleType(num, num))} {
+		var sizes [2]uint64
+		for i, depth := range []int{64, 256} {
+			c := nestedOneOfs(depth, tenon.ListOf(is(str)))
+			var before, after runtime.MemStats
+			runtime.GC()
+			runtime.ReadMemStats(&before)
+			r := tenon.Convert(v, c, safe)
+			runtime.ReadMemStats(&after)
+			want := "tuple([number, number]) converts to " + c.String() + " only unsafely, and the policy is safe"
+			if d := r.Diagnostics(); len(d) != 1 || d[0].Code != tenon.CodeConvertUnsafe || d[0].Message != want {
+				t.Fatalf("Convert(%v, %d levels, safe) = %v, want %s: %q", v, depth, r, tenon.CodeConvertUnsafe, want)
+			}
+			sizes[i] = after.TotalAlloc - before.TotalAlloc
+		}
+		if sizes[1] > 8*sizes[0] {
+			t.Errorf("Convert(%v, ..., safe): four times the levels allocated %d bytes, where the first allocated %d: more than eight times as much",
+				v, sizes[1], sizes[0])
+		}
+	}
+	c := nestedOneOfs(2, tenon.ListOf(is(str)))
+	want := "bool does not convert to " + c.String()
+	if d := tenon.Convert(tenon.Bool(true), c, uns).Diagnostics(); len(d) != 1 || d[0].Code != tenon.CodeConvertNoConversion || d[0].Message != want {
+		t.Errorf("Convert(true, %v, unsafe) gives %v, want %s: %q", c, d, tenon.CodeConvertNoConversion, want)
+	}
+}
+
 // nestedOneOfs returns depth OneOfs, each of a number and the level below,
-// around a list of anything.
-func nestedOneOfs(depth int) tenon.Constraint {
-	c := tenon.ListOf(tenon.Any())
+// around leaf.
+func nestedOneOfs(depth int, leaf tenon.Constraint) tenon.Constraint {
+	c := leaf
 	for range depth {
 		c = tenon.OneOf(is(num), c)
 	}
@@ -1863,25 +1901,33 @@ func BenchmarkMarkedComb(b *testing.B) {
 }
 
 // BenchmarkNestedOneOfs measures converting a tuple of numbers, known and
-// unknown, to nestedOneOfs at two depths, for make growth to read as a pair:
-// the conversion applies the last member at every level, and allocates in
+// unknown, under the safe policy to nestedOneOfs at two depths, for make
+// growth to read as a pair: around a list of anything, which applies the last
+// member at every level, and around a list of strings, which the tuple
+// converts to only unsafely, so that every level fails. Both allocate in
 // proportion to the depth.
 func BenchmarkNestedOneOfs(b *testing.B) {
-	for _, v := range []tenon.Value{tenon.Tuple(n(1), n(2)), tenon.Unknown(tenon.TupleType(num, num))} {
-		state := "known"
-		if !v.IsKnown() {
-			state = "unknown"
-		}
-		for _, depth := range []int{100, 400} {
-			c := nestedOneOfs(depth)
-			b.Run(fmt.Sprintf("%s/%d", state, depth), func(b *testing.B) {
-				b.ReportAllocs()
-				for b.Loop() {
-					if got := tenon.Convert(v, c, tenon.Safe); got.IsError() {
-						b.Fatalf("the tuple did not convert: %v", got)
+	for _, leaf := range []struct {
+		name  string
+		c     tenon.Constraint
+		fails bool
+	}{{"applies", tenon.ListOf(tenon.Any()), false}, {"fails", tenon.ListOf(is(str)), true}} {
+		for _, v := range []tenon.Value{tenon.Tuple(n(1), n(2)), tenon.Unknown(tenon.TupleType(num, num))} {
+			state := "known"
+			if !v.IsKnown() {
+				state = "unknown"
+			}
+			for _, depth := range []int{100, 400} {
+				c := nestedOneOfs(depth, leaf.c)
+				b.Run(fmt.Sprintf("%s/%s/%d", leaf.name, state, depth), func(b *testing.B) {
+					b.ReportAllocs()
+					for b.Loop() {
+						if got := tenon.Convert(v, c, tenon.Safe); got.IsError() != leaf.fails {
+							b.Fatalf("the tuple converted to %v", got)
+						}
 					}
-				}
-			})
+				})
+			}
 		}
 	}
 }
