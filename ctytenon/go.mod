@@ -3,7 +3,7 @@ module github.com/kmoneil/tenon/ctytenon
 go 1.26.0
 
 require (
-	github.com/kmoneil/tenon v0.19.1
+	github.com/kmoneil/tenon v0.19.2
 	github.com/zclconf/go-cty v1.19.0
 )
 
