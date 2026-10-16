@@ -786,7 +786,7 @@ func (x converter) pending(v Value, c Constraint) Value {
 			return errorValue(Diagnostic{
 				Code: CodeOperationWrongType,
 				Message: "the operand of Convert is pending with constraint " + pc.String() +
-					", and the type it allows does not convert: " + out.fail.message,
+					", and the type it allows does not convert: " + out.fail.text(),
 			})
 		case out.pending:
 			return pendingConverted(n, c)

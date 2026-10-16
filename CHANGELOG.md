@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- `Convert` to `OneOf`s nested in one another, where it failed under the
+  safe policy, wrote out at every level a message naming that level's
+  whole `OneOf`, which the level above discarded: the square of the
+  depth, 134 MB for 1,280 levels and about 21 MB for the deepest a
+  document holds, which encodes in about 2.5 KB. The two messages that
+  name a conversion's constraint are now written only when they are
+  read, and the work grows with the depth. Every message reads as it
+  did. Every release from 0.1.0 to 0.19.1 has it; before 0.19.1, the
+  doubling it fixed came first.
+
 ## 0.19.1 (2026-10-16)
 
 A fix to `Convert`, whose work doubled with each level of `OneOf`s nested

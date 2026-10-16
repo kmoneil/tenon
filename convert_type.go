@@ -55,8 +55,8 @@ var openType = func() Type {
 // element type nothing settles: it has no members, or none that settle a type,
 // and c gives none.
 func unsettledElement(c Constraint) *failure {
-	return &failure{CodeConvertNoCommonType,
-		"nothing settles an element type for " + c.String() + ": there are no members, and the constraint admits more than one type"}
+	return &failure{code: CodeConvertNoCommonType,
+		message: "nothing settles an element type for " + c.String() + ": there are no members, and the constraint admits more than one type"}
 }
 
 // fillOpen returns p, the type a conversion gave, with each part it leaves
@@ -117,13 +117,36 @@ func firstOpen(outs []typeOutcome, elem Type, c Constraint) *failure {
 }
 
 // failure says why a conversion fails: a diagnostic code and a message.
+//
+// A failure that names the constraint the conversion was to, noConversion's
+// and unsafeConversion's, keeps the source's name and the constraint, and
+// writes its message only when it is read (text). A OneOf asks each member in
+// turn and discards what fails, and where no member of a OneOf nested in it
+// applies, that OneOf fails naming itself whole, at every level: written out
+// at once, those messages made the square of the depth, 134 MB for 1,280
+// levels, for the one the top kept.
 type failure struct {
 	code    Code
 	message string
+	// from and to are what noConversion and unsafeConversion name, the
+	// source and the constraint; to is the zero Constraint for any other.
+	from string
+	to   Constraint
 }
 
 func (f *failure) diagnostic() Diagnostic {
-	return Diagnostic{Code: f.code, Message: f.message}
+	return Diagnostic{Code: f.code, Message: f.text()}
+}
+
+// text returns the message of f.
+func (f *failure) text() string {
+	switch {
+	case f.to.c == nil:
+		return f.message
+	case f.code == CodeConvertUnsafe:
+		return f.from + " converts to " + f.to.String() + " only unsafely, and the policy is safe"
+	}
+	return f.from + " does not convert to " + f.to.String()
 }
 
 // typeConvert returns what converting a value of type t to c under the policy
@@ -382,16 +405,16 @@ func elementType(types []Type, c Constraint, p Policy, withhold bool, memo *conv
 	elem, ok := unifyTypes(types, p)
 	switch {
 	case !ok && withhold:
-		return Type{}, &failure{CodeConvertNoCommonType, "the members have no common type"}
+		return Type{}, &failure{code: CodeConvertNoCommonType, message: "the members have no common type"}
 	case !ok:
-		return Type{}, &failure{CodeConvertNoCommonType, "the members have no common type: " + typeList(types)}
+		return Type{}, &failure{code: CodeConvertNoCommonType, message: "the members have no common type: " + typeList(types)}
 	case elem.t.open:
 		return elem, nil
 	case !memo.satisfies(c, elem) && withhold:
-		return Type{}, &failure{CodeConvertNoCommonType, "the members' common type does not satisfy " + c.String()}
+		return Type{}, &failure{code: CodeConvertNoCommonType, message: "the members' common type does not satisfy " + c.String()}
 	case !memo.satisfies(c, elem):
-		return Type{}, &failure{CodeConvertNoCommonType,
-			"the members' common type " + typeText(elem) + " does not satisfy " + c.String()}
+		return Type{}, &failure{code: CodeConvertNoCommonType,
+			message: "the members' common type " + typeText(elem) + " does not satisfy " + c.String()}
 	}
 	return elem, nil
 }
@@ -413,7 +436,7 @@ func pendingElements(settled, least []Type, c Constraint, p Policy, withhold boo
 		return typeOutcome{pending: true}
 	}
 	if _, ok := unifyTypes(types, p); !ok {
-		f := &failure{CodeConvertNoCommonType, "the members have no common type"}
+		f := &failure{code: CodeConvertNoCommonType, message: "the members have no common type"}
 		if !withhold {
 			f.message += ": " + typeList(types)
 		}
@@ -450,7 +473,7 @@ func (m *convertMemo) tupleTypeConvert(t Type, c Constraint, p Policy, k keys) t
 	switch from.kind {
 	case KindTuple:
 		if len(from.elems) != len(d.members) {
-			return failed(&failure{CodeConvertNoConversion, "a tuple of " + count(len(from.elems), "element") +
+			return failed(&failure{code: CodeConvertNoConversion, message: "a tuple of " + count(len(from.elems), "element") +
 				" does not convert to " + c.String() + ", which has " + count(len(d.members), "member")})
 		}
 	case KindList, KindSet:
@@ -634,25 +657,25 @@ func capsuleTypeConvert(t, s Type, from string, p Policy) typeOutcome {
 // what the message names the source by: a type as typeText renders it, or a
 // value's type as typeName does.
 func noConversion(from string, c Constraint) *failure {
-	return &failure{CodeConvertNoConversion, from + " does not convert to " + c.String()}
+	return &failure{code: CodeConvertNoConversion, from: from, to: c}
 }
 
 // unsafeConversion returns the failure of a conversion that exists only under
 // the unsafe policy, applied under the safe one.
 func unsafeConversion(from string, c Constraint) *failure {
-	return &failure{CodeConvertUnsafe, from + " converts to " + c.String() + " only unsafely, and the policy is safe"}
+	return &failure{code: CodeConvertUnsafe, from: from, to: c}
 }
 
 // missingAttribute returns the failure of an object that lacks an attribute
 // it must have.
 func missingAttribute(name string) *failure {
-	return &failure{CodeConvertMissingAttribute, "attribute " + quoted(name) + " is required, and absent"}
+	return &failure{code: CodeConvertMissingAttribute, message: "attribute " + quoted(name) + " is required, and absent"}
 }
 
 // unexpectedAttribute returns the failure of an object or map with an
 // attribute or key that the constraint does not allow.
 func unexpectedAttribute(name string) *failure {
-	return &failure{CodeConvertUnexpectedAttribute, "attribute " + quoted(name) + " is not one the constraint allows"}
+	return &failure{code: CodeConvertUnexpectedAttribute, message: "attribute " + quoted(name) + " is not one the constraint allows"}
 }
 
 // count renders n things, as in "1 element" or "3 elements".
