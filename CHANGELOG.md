@@ -1,6 +1,25 @@
 # Changelog
 
-## Unreleased
+## 0.19.1 (2026-10-16)
+
+A fix to `Convert`, whose work doubled with each level of `OneOf`s nested
+in one another in the constraint it converted to, in every release since
+0.1.0. It implements version 0.17.0 of the tenon specification, as 0.19.0
+does: 390 rules. A security advisory follows this release.
+
+**Upgrade if you convert to constraints you did not write**, a pending
+value's constraint read from a document among them. In 0.19.0 and
+before, `OneOf`s nested 40 deep, 254 bytes encoded, would hold `Convert`
+for about a month.
+
+The patch version moves: nothing that existed changes but the time this
+takes.
+
+**Upgrading from 0.19.0.** Nothing changes for a program: the compiler
+finds nothing, every conversion answers as it did, documents decode as
+they did, and values encode to the same bytes.
+
+**What `CONFORMANCE.md` states.** 390 of 390.
 
 ### Fixed
 
@@ -12,7 +31,7 @@
   arrive in a document, as a pending value's, so a few hundred bytes
   could hold a call to `Convert` for as long as they liked. A conversion
   now converts each type to each constraint once, and its work grows
-  with the depth. Every release since 0.1.0 has it.
+  with the depth. Every release from 0.1.0 to 0.19.0 has it.
 
 ## 0.19.0 (2026-10-06)
 
