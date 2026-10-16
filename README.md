@@ -37,9 +37,9 @@ fmt.Println(address.IsKnown(), tenon.Length(address))
 // false unknown(number, not null, >= 0)
 ```
 
-    go get github.com/kmoneil/tenon@v0.19.1
+    go get github.com/kmoneil/tenon@v0.19.2
 
-Version 0.19.1 implements version 0.17.0 of the tenon specification. A
+Version 0.19.2 implements version 0.17.0 of the tenon specification. A
 conformance test covers every one of its 390 rules, as `CONFORMANCE.md`
 reports; `CHANGELOG.md` says what each release holds, and, where there are
 any, which rules the report states more widely than its test exercises.
