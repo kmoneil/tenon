@@ -5,6 +5,19 @@ module of its own (`github.com/kmoneil/tenon/ctytenon`) whose versions are
 tagged `ctytenon/vX.Y.Z`. tenon's own changes are in the repository's
 `CHANGELOG.md`.
 
+## 0.4.2 (2026-10-16)
+
+Requires tenon 0.19.2, which completes 0.19.1's fix to `Convert` through
+`OneOf`s nested in one another: where such a conversion failed under the
+safe policy, each level wrote out a message that the level above
+discarded, about 21 MB for the deepest a document holds. This release
+makes sure every build with the bridge takes it. tenon's security
+advisory, GHSA-h4rg-x9f5-rwpg, covers both fixes.
+
+### Changed
+
+- Requires tenon 0.19.2, where 0.4.1 required 0.19.1.
+
 ## 0.4.1 (2026-10-16)
 
 Requires tenon 0.19.1, which fixes `Convert`: its work doubled with each
