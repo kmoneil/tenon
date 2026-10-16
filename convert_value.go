@@ -34,7 +34,14 @@ func convertTop(v Value, cv conversion) Value {
 // walked the rest of the constraint, or the marked values beneath the
 // container, and asking again at every level cost the value's size times its
 // depth. Remembered, each constraint, type and marked value is walked once.
+//
+// A conversion asks too what each type converts to (typeConvert): a OneOf asks
+// it of its members, to find the one that applies, and then converts to that
+// one, where a OneOf within it asks the same of its own members again. Each
+// level of OneOfs doubled the work, and a tuple converted to OneOfs nested 20
+// deep took 2.7 s. Remembered, each type is converted to each constraint once.
 type convertMemo struct {
+	converted map[typeConversion]typeOutcome
 	fit       map[typeAsked]bool
 	sat       map[typeAsked]bool
 	canon     *canonMemo
@@ -48,6 +55,15 @@ type convertMemo struct {
 type typeAsked struct {
 	c *constraintData
 	t *typeData
+}
+
+// typeConversion is a type converted to a constraint under a policy, for
+// values whose map keys k describes, as typeConvert is asked it.
+type typeConversion struct {
+	t *typeData
+	c *constraintData
+	p Policy
+	k keys
 }
 
 // fits is fits, remembered where m is not nil.
@@ -386,7 +402,7 @@ func (x converter) unsettled(v Value, c Constraint) draft {
 	if n.state == stateNull {
 		k = keysNone
 	}
-	out := typeConvert(n.typ, c, x.policy, k)
+	out := x.memo.typeConvert(n.typ, c, x.policy, k)
 	switch {
 	case out.fail != nil:
 		return finished(errorValue(out.fail.diagnostic()))
@@ -761,7 +777,7 @@ func (x converter) pending(v Value, c Constraint) Value {
 		if n.null == nullOnly {
 			k = keysNone
 		}
-		out := typeConvert(s, c, x.policy, k)
+		out := x.memo.typeConvert(s, c, x.policy, k)
 		// A pending value is held by no container, so nothing settles what
 		// its conversion leaves open.
 		out.fail = cmp.Or(out.fail, out.open)
@@ -860,7 +876,7 @@ func (x converter) known(v Value, c Constraint) draft {
 		return x.exactly(v, s)
 	}
 	if c.c.kind == ConstraintOneOf {
-		m, f := oneOfMember(n.typ, x.typeName(n), c, x.policy)
+		m, f := x.memo.oneOfMember(n.typ, x.typeName(n), c, x.policy)
 		if f != nil {
 			return finished(errorValue(f.diagnostic()))
 		}
@@ -1097,7 +1113,7 @@ func (x converter) collection(v Value, c Constraint) draft {
 			// itself, a pending tuple's or object's (UN-025), which has no
 			// type to convert.
 			if src := h.vals[i].n; src.state != statePending {
-				if none := typeConvert(src.typ, d.elem, x.policy, keysNone); none.fail == nil {
+				if none := x.memo.typeConvert(src.typ, d.elem, x.policy, keysNone); none.fail == nil {
 					least = append(least, none.typ)
 				}
 			}
@@ -1107,7 +1123,7 @@ func (x converter) collection(v Value, c Constraint) draft {
 	}
 	var nullOpen *failure
 	if from == KindList || from == KindSet || from == KindMap {
-		out := typeConvert(n.typ.t.elem, d.elem, x.policy, keysNone)
+		out := x.memo.typeConvert(n.typ.t.elem, d.elem, x.policy, keysNone)
 		if out.fail != nil {
 			return finished(failedReading(n, out.fail.diagnostic()))
 		}
@@ -1369,7 +1385,7 @@ func (x converter) partialSetTuple(v Value, c Constraint) draft {
 		return finished(errorValue(Diagnostic{Code: CodeConvertLengthMismatch,
 			Message: "a set of " + strconv.Itoa(low) + " to " + count(high, "member") + " does not convert to " + c.String() + ", which has " + count(want, "member")}))
 	}
-	out := typeConvert(n.typ, c, x.policy, keysUnknown)
+	out := x.memo.typeConvert(n.typ, c, x.policy, keysUnknown)
 	switch {
 	case out.fail != nil:
 		return finished(errorValue(out.fail.diagnostic()))

@@ -547,6 +547,51 @@ func TestConformance_CV024_ConvertingToOneOf(t *testing.T) {
 	wantErrors(t, "none", tenon.Convert(n(1), tenon.OneOf(), uns), wantDiag{tenon.CodeConvertNoConversion, "."})
 }
 
+// TestConformance_CV024_NestedOneOfsGrowWithTheirDepth holds a conversion to
+// OneOfs nested within each other to work in proportion to their depth: a
+// tuple of numbers, known and unknown, converted under each policy to OneOfs
+// whose first member is a number and whose second is the level below, ending
+// in a list, so that the last member applies at every level. Finding that
+// member converted the type to it, and converting to it again did all of that
+// once more, so each level doubled the work: the nightly fuzzing found 17
+// levels running past the ten seconds the fuzzer gives an input. Four times
+// the levels allocate under eight times as much, where the doubling allocated
+// thousands of times as much.
+func TestConformance_CV024_NestedOneOfsGrowWithTheirDepth(t *testing.T) {
+	conformance.Covers(t, "CV-024")
+	for _, v := range []tenon.Value{tenon.Tuple(n(1), n(2)), tenon.Unknown(tenon.TupleType(num, num))} {
+		for _, p := range []tenon.Policy{safe, uns} {
+			var sizes [2]uint64
+			for i, depth := range []int{4, 16} {
+				c := nestedOneOfs(depth)
+				var before, after runtime.MemStats
+				runtime.GC()
+				runtime.ReadMemStats(&before)
+				r := tenon.Convert(v, c, p)
+				runtime.ReadMemStats(&after)
+				if r.IsError() || r.Type() != tenon.ListType(num) {
+					t.Fatalf("Convert(%v, %d levels, %v) = %v, want a list of numbers", v, depth, p, r)
+				}
+				sizes[i] = after.TotalAlloc - before.TotalAlloc
+			}
+			if sizes[1] > 8*sizes[0] {
+				t.Errorf("Convert(%v, ..., %v): four times the levels allocated %d bytes, where the first allocated %d: more than eight times as much",
+					v, p, sizes[1], sizes[0])
+			}
+		}
+	}
+}
+
+// nestedOneOfs returns depth OneOfs, each of a number and the level below,
+// around a list of anything.
+func nestedOneOfs(depth int) tenon.Constraint {
+	c := tenon.ListOf(tenon.Any())
+	for range depth {
+		c = tenon.OneOf(is(num), c)
+	}
+	return c
+}
+
 func TestConformance_CV025_ConvertingToAny(t *testing.T) {
 	conformance.Covers(t, "CV-025")
 	for _, v := range []tenon.Value{n(1), tenon.Null(str), tenon.Unknown(tenon.ListType(num)), tenon.Tuple(s("a"), n(1))} {
@@ -1814,6 +1859,30 @@ func BenchmarkMarkedComb(b *testing.B) {
 				}
 			}
 		})
+	}
+}
+
+// BenchmarkNestedOneOfs measures converting a tuple of numbers, known and
+// unknown, to nestedOneOfs at two depths, for make growth to read as a pair:
+// the conversion applies the last member at every level, and allocates in
+// proportion to the depth.
+func BenchmarkNestedOneOfs(b *testing.B) {
+	for _, v := range []tenon.Value{tenon.Tuple(n(1), n(2)), tenon.Unknown(tenon.TupleType(num, num))} {
+		state := "known"
+		if !v.IsKnown() {
+			state = "unknown"
+		}
+		for _, depth := range []int{100, 400} {
+			c := nestedOneOfs(depth)
+			b.Run(fmt.Sprintf("%s/%d", state, depth), func(b *testing.B) {
+				b.ReportAllocs()
+				for b.Loop() {
+					if got := tenon.Convert(v, c, tenon.Safe); got.IsError() {
+						b.Fatalf("the tuple did not convert: %v", got)
+					}
+				}
+			})
+		}
 	}
 }
 

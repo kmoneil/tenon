@@ -130,14 +130,23 @@ func (f *failure) diagnostic() Diagnostic {
 // p gives, for values whose map keys k describes. It is what decides whether a
 // conversion exists, and the result type of a null, an unknown or a pending
 // value. A constraint that gives a type (CV-027) settles the result type,
-// whatever keys it would otherwise have taken.
-func typeConvert(t Type, c Constraint, p Policy, k keys) typeOutcome {
-	out := typeConvertKind(t, c, p, k)
+// whatever keys it would otherwise have taken. What it gives is remembered in
+// m for the rest of the conversion (convertMemo).
+func (m *convertMemo) typeConvert(t Type, c Constraint, p Policy, k keys) typeOutcome {
+	asked := typeConversion{t.t, c.c, p, k}
+	if out, ok := m.converted[asked]; ok {
+		return out
+	}
+	out := m.typeConvertKind(t, c, p, k)
 	if out.pending {
 		if s, ok := resultType(c); ok {
-			return typeOutcome{typ: s}
+			out = typeOutcome{typ: s}
 		}
 	}
+	if m.converted == nil {
+		m.converted = map[typeConversion]typeOutcome{}
+	}
+	m.converted[asked] = out
 	return out
 }
 
@@ -147,30 +156,30 @@ func typeConvert(t Type, c Constraint, p Policy, k keys) typeOutcome {
 // rest. One that structural builds is converted to as it stands, since it
 // converts as Exactly of its type already, unless t is a capsule type, which
 // converts by what the capsule types declare.
-func typeConvertKind(t Type, c Constraint, p Policy, k keys) typeOutcome {
+func (m *convertMemo) typeConvertKind(t Type, c Constraint, p Policy, k keys) typeOutcome {
 	if fits(c, t) {
 		return typeOutcome{typ: t}
 	}
 	if t.t.kind != KindCapsule && isStructural(c) {
-		return typeConvertStructure(t, c, p, k)
+		return m.typeConvertStructure(t, c, p, k)
 	}
 	if s, ok := soleType(c); ok {
-		return typeConvertExactly(t, s, p, k)
+		return m.typeConvertExactly(t, s, p, k)
 	}
 	if c.c.kind == ConstraintOneOf {
-		return typeConvertOneOf(t, c, p, k)
+		return m.typeConvertOneOf(t, c, p, k)
 	}
 	if t.t.kind == KindCapsule {
 		// A capsule type converts only to a type that it, or the type it
 		// converts to, declares.
 		return failed(noConversion(typeText(t), c))
 	}
-	return typeConvertStructure(t, c, p, k)
+	return m.typeConvertStructure(t, c, p, k)
 }
 
 // typeConvertExactly converts t to the type s, as converting to Exactly(s)
 // does (CV-020).
-func typeConvertExactly(t, s Type, p Policy, k keys) typeOutcome {
+func (m *convertMemo) typeConvertExactly(t, s Type, p Policy, k keys) typeOutcome {
 	switch {
 	case t.t.kind == KindCapsule || s.t.kind == KindCapsule:
 		return capsuleTypeConvert(t, s, typeText(t), p)
@@ -179,19 +188,19 @@ func typeConvertExactly(t, s Type, p Policy, k keys) typeOutcome {
 	}
 	// The structure of s admits s alone, so converting to it does not ask
 	// for its one type again.
-	return typeConvertStructure(t, structural(s), p, k)
+	return m.typeConvertStructure(t, structural(s), p, k)
 }
 
 // typeConvertStructure converts t to a ListOf, SetOf, MapOf, TupleOf or
 // ObjectWith constraint.
-func typeConvertStructure(t Type, c Constraint, p Policy, k keys) typeOutcome {
+func (m *convertMemo) typeConvertStructure(t Type, c Constraint, p Policy, k keys) typeOutcome {
 	switch c.c.kind {
 	case ConstraintListOf, ConstraintSetOf, ConstraintMapOf:
-		return collectionTypeConvert(t, c, p, k)
+		return m.collectionTypeConvert(t, c, p, k)
 	case ConstraintTupleOf:
-		return tupleTypeConvert(t, c, p, k)
+		return m.tupleTypeConvert(t, c, p, k)
 	case ConstraintObjectWith:
-		return objectTypeConvert(t, c, p, k)
+		return m.objectTypeConvert(t, c, p, k)
 	}
 	return failed(noConversion(typeText(t), c))
 }
@@ -282,7 +291,7 @@ func primitiveTypeConvert(t, s Type, from string, p Policy) typeOutcome {
 }
 
 // collectionTypeConvert converts t to a ListOf, SetOf or MapOf constraint.
-func collectionTypeConvert(t Type, c Constraint, p Policy, k keys) typeOutcome {
+func (m *convertMemo) collectionTypeConvert(t Type, c Constraint, p Policy, k keys) typeOutcome {
 	d, from := c.c, t.t
 	var members []Type
 	unsafe := false
@@ -306,8 +315,8 @@ func collectionTypeConvert(t Type, c Constraint, p Policy, k keys) typeOutcome {
 	var least []Type
 	var opens []typeOutcome
 	pending := false
-	for _, m := range members {
-		out := typeConvert(m, d.elem, p, k)
+	for _, member := range members {
+		out := m.typeConvert(member, d.elem, p, k)
 		switch {
 		case out.fail != nil:
 			return out
@@ -321,7 +330,7 @@ func collectionTypeConvert(t Type, c Constraint, p Policy, k keys) typeOutcome {
 			// says nothing about the element type: keys it has yet to see can
 			// still give it attributes that convert, so the failure is not
 			// one every value shares, and the rest decide.
-			if none := typeConvert(m, d.elem, p, keysNone); none.fail == nil {
+			if none := m.typeConvert(member, d.elem, p, keysNone); none.fail == nil {
 				least = append(least, none.typ)
 			}
 		default:
@@ -435,7 +444,7 @@ func typeList(types []Type) string {
 }
 
 // tupleTypeConvert converts t to a TupleOf constraint.
-func tupleTypeConvert(t Type, c Constraint, p Policy, k keys) typeOutcome {
+func (m *convertMemo) tupleTypeConvert(t Type, c Constraint, p Policy, k keys) typeOutcome {
 	d, from := c.c, t.t
 	unsafe := false
 	switch from.kind {
@@ -452,12 +461,12 @@ func tupleTypeConvert(t Type, c Constraint, p Policy, k keys) typeOutcome {
 	elems := make([]Type, len(d.members))
 	pending := false
 	var open *failure
-	for i, m := range d.members {
+	for i, to := range d.members {
 		member := from.elem
 		if from.kind == KindTuple {
 			member = from.elems[i]
 		}
-		out := typeConvert(member, m, p, k)
+		out := m.typeConvert(member, to, p, k)
 		switch {
 		case out.fail != nil:
 			return out
@@ -478,12 +487,12 @@ func tupleTypeConvert(t Type, c Constraint, p Policy, k keys) typeOutcome {
 }
 
 // objectTypeConvert converts t to an ObjectWith constraint.
-func objectTypeConvert(t Type, c Constraint, p Policy, k keys) typeOutcome {
+func (m *convertMemo) objectTypeConvert(t Type, c Constraint, p Policy, k keys) typeOutcome {
 	d, from := c.c, t.t
 	switch from.kind {
 	case KindObject:
 	case KindMap:
-		return mapObjectTypeConvert(t, c, p, k)
+		return m.mapObjectTypeConvert(t, c, p, k)
 	default:
 		return failed(noConversion(typeText(t), c))
 	}
@@ -506,7 +515,7 @@ func objectTypeConvert(t Type, c Constraint, p Policy, k keys) typeOutcome {
 			attrs[a.name] = a.typ
 			continue
 		}
-		out := typeConvert(a.typ, fields[0].Constraint, p, k)
+		out := m.typeConvert(a.typ, fields[0].Constraint, p, k)
 		switch {
 		case out.fail != nil:
 			return out
@@ -544,7 +553,7 @@ func addNull(attrs map[string]Type, f field) {
 // the optional ones a conversion adds as null. An unknown map's type is
 // pending where its keys could still decide which attributes are there: under
 // an open constraint, or for an optional field that adds nothing when absent.
-func mapObjectTypeConvert(t Type, c Constraint, p Policy, k keys) typeOutcome {
+func (m *convertMemo) mapObjectTypeConvert(t Type, c Constraint, p Policy, k keys) typeOutcome {
 	d := c.c
 	attrs := map[string]Type{}
 	pending := k == keysUnknown && !d.closed
@@ -557,7 +566,7 @@ func mapObjectTypeConvert(t Type, c Constraint, p Policy, k keys) typeOutcome {
 			addNull(attrs, f)
 			continue
 		}
-		out := typeConvert(t.t.elem, f.Constraint, p, k)
+		out := m.typeConvert(t.t.elem, f.Constraint, p, k)
 		switch {
 		case out.fail != nil:
 			return out
@@ -579,26 +588,26 @@ func mapObjectTypeConvert(t Type, c Constraint, p Policy, k keys) typeOutcome {
 
 // typeConvertOneOf converts t to the first member of a OneOf constraint to
 // which a conversion from t exists under the policy.
-func typeConvertOneOf(t Type, c Constraint, p Policy, k keys) typeOutcome {
-	m, f := oneOfMember(t, typeText(t), c, p)
+func (m *convertMemo) typeConvertOneOf(t Type, c Constraint, p Policy, k keys) typeOutcome {
+	member, f := m.oneOfMember(t, typeText(t), c, p)
 	if f != nil {
 		return failed(f)
 	}
-	return typeConvert(t, m, p, k)
+	return m.typeConvert(t, member, p, k)
 }
 
 // oneOfMember returns the first member of the OneOf constraint c to which a
 // conversion from t exists under the policy, or the failure when none does,
 // which names t by from (noConversion).
-func oneOfMember(t Type, from string, c Constraint, p Policy) (Constraint, *failure) {
-	for _, m := range c.c.members {
-		if typeConvert(t, m, p, keysNone).fail == nil {
-			return m, nil
+func (m *convertMemo) oneOfMember(t Type, from string, c Constraint, p Policy) (Constraint, *failure) {
+	for _, member := range c.c.members {
+		if m.typeConvert(t, member, p, keysNone).fail == nil {
+			return member, nil
 		}
 	}
 	if p == Safe {
-		for _, m := range c.c.members {
-			if typeConvert(t, m, Unsafe, keysNone).fail == nil {
+		for _, member := range c.c.members {
+			if m.typeConvert(t, member, Unsafe, keysNone).fail == nil {
 				return Constraint{}, unsafeConversion(from, c)
 			}
 		}
