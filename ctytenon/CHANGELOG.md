@@ -5,6 +5,19 @@ module of its own (`github.com/kmoneil/tenon/ctytenon`) whose versions are
 tagged `ctytenon/vX.Y.Z`. tenon's own changes are in the repository's
 `CHANGELOG.md`.
 
+## 0.4.1 (2026-10-16)
+
+Requires tenon 0.19.1, which fixes `Convert`: its work doubled with each
+level of `OneOf`s nested in one another in the constraint it converted
+to. The bridge makes no `OneOf` itself, since go-cty has none, but a
+program that crosses values with it converts them with tenon, and this
+release makes sure every build with it takes the fix. tenon's security
+advisory covers the defect.
+
+### Changed
+
+- Requires tenon 0.19.1, where 0.4.0 required 0.19.0.
+
 ## 0.4.0 (2026-10-06)
 
 Requires tenon 0.19.0, for its marks with their paths. A host that
