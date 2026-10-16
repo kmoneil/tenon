@@ -76,7 +76,7 @@ func (x converter) fittingValueOf(v Value, c Constraint) Value {
 		if n.state == stateNull {
 			k = keysNone
 		}
-		out := typeConvert(n.typ, c, x.policy, k)
+		out := x.memo.typeConvert(n.typ, c, x.policy, k)
 		switch {
 		case out.fail != nil:
 			return errorValue(out.fail.diagnostic())
@@ -296,7 +296,7 @@ func (x converter) fittingKnown(v Value, c Constraint) Value {
 		return x.fittingExactly(v, s)
 	}
 	if c.c.kind == ConstraintOneOf {
-		m, f := oneOfMember(n.typ, x.typeName(n), c, x.policy)
+		m, f := x.memo.oneOfMember(n.typ, x.typeName(n), c, x.policy)
 		if f != nil {
 			return errorValue(f.diagnostic())
 		}
@@ -399,7 +399,7 @@ func (x converter) fittingCollection(v Value, c Constraint) Value {
 			// contributing the zero Type; so is a member that is pending
 			// itself, which has no type to convert.
 			if src := h.vals[i].n; src.state != statePending {
-				if none := typeConvert(src.typ, d.elem, x.policy, keysNone); none.fail == nil {
+				if none := x.memo.typeConvert(src.typ, d.elem, x.policy, keysNone); none.fail == nil {
 					least = append(least, none.typ)
 				}
 			}
@@ -408,7 +408,7 @@ func (x converter) fittingCollection(v Value, c Constraint) Value {
 		types = append(types, r.n.typ)
 	}
 	if from == KindList || from == KindSet || from == KindMap {
-		out := typeConvert(n.typ.t.elem, d.elem, x.policy, keysNone)
+		out := x.memo.typeConvert(n.typ.t.elem, d.elem, x.policy, keysNone)
 		if out.fail != nil {
 			return failedReading(n, out.fail.diagnostic())
 		}

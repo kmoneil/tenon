@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- `Convert` to a `OneOf` converted the value's type to the member that
+  applies twice, once to find it and once to apply it, and a `OneOf`
+  among the members did the same of its own, so each level of `OneOf`s
+  nested in one another doubled the work: 20 levels took 2.7 s, and 40,
+  which encode in 254 bytes, would take about a month. A constraint can
+  arrive in a document, as a pending value's, so a few hundred bytes
+  could hold a call to `Convert` for as long as they liked. A conversion
+  now converts each type to each constraint once, and its work grows
+  with the depth. Every release since 0.1.0 has it.
+
 ## 0.19.0 (2026-10-06)
 
 Values can be walked, rewritten and stored with their marks where they
