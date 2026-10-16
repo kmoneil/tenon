@@ -1,6 +1,27 @@
 # Changelog
 
-## Unreleased
+## 0.19.2 (2026-10-16)
+
+A fix to `Convert` where it fails under the safe policy through `OneOf`s
+nested in one another: each level wrote out a message that the level
+above discarded, the square of the depth, about 21 MB for the deepest a
+document holds. It completes 0.19.1's fix to the same conversions. It
+implements version 0.17.0 of the tenon specification, as 0.19.1 does:
+390 rules. The security advisory for 0.19.1 covers this release's fix
+too.
+
+**Upgrade if you convert to constraints you did not write**, as for
+0.19.1.
+
+The patch version moves: nothing that existed changes but the memory
+this takes.
+
+**Upgrading from 0.19.1.** Nothing changes for a program: the compiler
+finds nothing, every conversion answers as it did and every message
+reads as it did, documents decode as they did, and values encode to the
+same bytes.
+
+**What `CONFORMANCE.md` states.** 390 of 390.
 
 ### Fixed
 
