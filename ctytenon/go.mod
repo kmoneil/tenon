@@ -4,7 +4,7 @@ go 1.26.0
 
 require (
 	github.com/kmoneil/tenon v0.19.2
-	github.com/zclconf/go-cty v1.19.0
+	github.com/zclconf/go-cty v1.20.0
 )
 
 require (
